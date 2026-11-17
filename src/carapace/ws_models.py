@@ -229,6 +229,8 @@ class LlmActivity(BaseModel):
     first_thinking_at: datetime | None = None
     last_thinking_at: datetime | None = None
     first_text_at: datetime | None = None
+    tool_name: str | None = None
+    streamed_chars: int = 0
 
 
 class TurnUsage(BaseModel):

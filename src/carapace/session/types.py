@@ -135,6 +135,8 @@ class ActiveSession:
     autonomy: AutonomyStreak = field(default_factory=AutonomyStreak)
     llm_request_log: LlmRequestLog = field(default_factory=LlmRequestLog)
     llm_request_state: LlmRequestState | None = None
+    # time.monotonic() of the last llm_activity broadcast, to throttle streamed-chars updates.
+    llm_activity_sent_at: float = 0.0
     # Every request in flight, untracked and parallel ones included (``llm_request_state`` holds only
     # the latest tracked one): the timeline draws a running bar for each.
     llm_requests_in_flight: dict[str, LlmRequestState] = field(default_factory=dict)

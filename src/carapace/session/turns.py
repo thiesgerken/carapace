@@ -656,7 +656,6 @@ class SessionTurnMixin(SessionTurnHost):
         )
 
     async def _handle_token_chunk(self, active: ActiveSession, chunk: str) -> None:
-        await self._maybe_promote_llm_request_state(active, _engine_module().current_llm_request_state())
         await self._broadcast(active, "on_token", chunk)
 
     async def _handle_thinking_token_chunk(self, active: ActiveSession, chunk: str) -> None:
@@ -665,7 +664,6 @@ class SessionTurnMixin(SessionTurnHost):
             active.llm_request_thinking[state.request_id] = (
                 active.llm_request_thinking.get(state.request_id, "") + chunk
             )
-        await self._maybe_promote_llm_request_state(active, state)
         await self._broadcast(active, "on_thinking_token", chunk)
 
     def _schedule_title_generation_if_needed(

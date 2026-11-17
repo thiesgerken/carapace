@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -39,6 +40,9 @@ from ..usage import (
 from ..ws_models import TurnUsage, TurnUsageBreakdownPct
 from .manager import SessionManager
 from .types import ActiveSession
+
+# Streamed-chars updates of a request go out at most this often; the client ticks the clock itself.
+LLM_PROGRESS_INTERVAL_S = 0.3
 
 BUDGET_METRIC_FIELDS: dict[BudgetMetric, str] = {
     "input": "input_tokens",
@@ -226,6 +230,7 @@ class SessionUsageBudgetMixin:
 
     async def _set_llm_request_state(self, active: ActiveSession, state: LlmRequestState) -> None:
         active.llm_request_state = state.model_copy(deep=True)
+        active.llm_activity_sent_at = time.monotonic()
         self._session_mgr.save_llm_request_state(active.state.session_id, active.llm_request_state)
         await self._broadcast(active, "on_llm_activity", active.llm_request_state.model_copy(deep=True))
 
@@ -242,11 +247,18 @@ class SessionUsageBudgetMixin:
         self._session_mgr.save_llm_context(active.state.session_id, context)
         await self._broadcast(active, "on_llm_context", context.role, context.request_id, context.status)
 
-    async def _maybe_promote_llm_request_state(self, active: ActiveSession, state: LlmRequestState | None) -> None:
-        if state is None:
-            return
+    async def _maybe_promote_llm_request_state(self, active: ActiveSession, state: LlmRequestState) -> None:
         current = active.llm_request_state
-        if current is not None and current.phase == state.phase and current.first_text_at == state.first_text_at:
+        unchanged = current is not None and (current.phase, current.tool_name, current.first_text_at) == (
+            state.phase,
+            state.tool_name,
+            state.first_text_at,
+        )
+        # Only the streamed-chars counter moved: send it at a pace a counter needs, not per chunk.
+        if unchanged and (
+            state.streamed_chars == current.streamed_chars
+            or time.monotonic() - active.llm_activity_sent_at < LLM_PROGRESS_INTERVAL_S
+        ):
             return
         await self._set_llm_request_state(active, state)
 
@@ -337,6 +349,10 @@ class SessionUsageBudgetMixin:
                     await engine._set_llm_request_state(active, state)
                 if state.turn_id is not None:
                     await engine._broadcast(active, "on_span", state.turn_id, state.request_id, "running")
+
+            async def on_request_progress(self, state: LlmRequestState) -> None:
+                if track_activity:
+                    await engine._maybe_promote_llm_request_state(active, state)
 
             async def on_request_completed(self, record: LlmRequestRecord) -> None:
                 active.llm_requests_in_flight.pop(record.request_id or "", None)

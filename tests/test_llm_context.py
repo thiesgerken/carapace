@@ -287,6 +287,45 @@ async def test_a_tool_call_response_records_when_its_first_token_arrived(tmp_pat
     assert answer.first_token_at is not None and answer.first_token_at == answer.first_text_at
 
 
+async def _stream_lookup_in_pieces(
+    messages: list[ModelMessage], _info: AgentInfo
+) -> AsyncIterator[str | DeltaToolCalls]:
+    if len(messages) == 1:
+        yield {0: DeltaToolCall(name="lookup", json_args='{"key": ', tool_call_id="c1")}
+        yield {0: DeltaToolCall(json_args='"abc')}
+        yield {0: DeltaToolCall(json_args='def"}')}
+    else:
+        yield "done"
+
+
+@pytest.mark.asyncio
+async def test_writing_a_tool_call_shows_as_its_own_phase_with_the_tool_name(tmp_path: Path, db_factory) -> None:
+    engine, active, subscriber = _session(tmp_path, db_factory)
+
+    with engine.llm_request_recording(active):
+        await _agent(FunctionModel(stream_function=_stream_lookup_in_pieces)).run("ping")
+
+    # The arguments' later pieces only move the counter, within the throttle interval: no update.
+    activity = [(a.phase, a.tool_name, a.streamed_chars) for a in subscriber.llm_activity_updates if a is not None]
+    assert activity == [
+        ("processing_prompt", None, 0),
+        ("tool_call", "lookup", len('{"key": ')),
+        ("processing_prompt", None, 0),
+        ("generating", None, len("done")),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_streamed_chars_reach_the_client_once_the_throttle_interval_passed(tmp_path: Path, db_factory) -> None:
+    engine, active, subscriber = _session(tmp_path, db_factory)
+
+    with patch("carapace.session.usage_budget.LLM_PROGRESS_INTERVAL_S", 0), engine.llm_request_recording(active):
+        await _agent(FunctionModel(stream_function=_stream_lookup_in_pieces)).run("ping")
+
+    counts = [a.streamed_chars for a in subscriber.llm_activity_updates if a is not None and a.phase == "tool_call"]
+    assert counts == [len('{"key": '), len('{"key": "abc'), len('{"key": "abcdef"}')]
+
+
 @pytest.mark.asyncio
 async def test_sentinel_streams_so_its_requests_record_their_phases(tmp_path: Path, db_factory) -> None:
     engine, active, _subscriber = _session(tmp_path, db_factory)

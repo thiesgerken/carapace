@@ -39,6 +39,7 @@ from pydantic_ai.messages import (
     ThinkingPart,
     ThinkingPartDelta,
     ToolCallPart,
+    ToolCallPartDelta,
     ToolReturnPart,
     UserPromptPart,
     post_compaction_window,
@@ -456,7 +457,7 @@ def usage_limits_for_remaining_budget(
 
 
 LlmSource = Literal["agent", "sentinel", "titler", "compaction", "memory"]
-LlmRequestPhase = Literal["processing_prompt", "thinking", "generating"]
+LlmRequestPhase = Literal["processing_prompt", "thinking", "generating", "tool_call"]
 LlmRequestOutcome = Literal["completed", "interrupted", "failed"]
 UnfinishedOutcome = Literal["interrupted", "failed"]
 LlmContextStatus = Literal["running", "completed", "failed", "interrupted"]
@@ -487,6 +488,11 @@ class LlmRequestState(BaseModel):
     first_thinking_at: datetime | None = None
     last_thinking_at: datetime | None = None
     first_text_at: datetime | None = None
+    # The tool whose call the model is writing, while the phase is tool_call.
+    tool_name: str | None = None
+    # Characters of thinking, text and tool-call arguments streamed so far: a live estimate of the
+    # output tokens, which the provider only reports once the response is complete.
+    streamed_chars: int = 0
 
 
 class LlmContext(BaseModel):
@@ -512,6 +518,8 @@ class LlmContext(BaseModel):
 
 class LlmRequestObserver(Protocol):
     async def on_request_started(self, state: LlmRequestState) -> None: ...
+
+    async def on_request_progress(self, state: LlmRequestState) -> None: ...
 
     async def on_request_completed(self, record: LlmRequestRecord) -> None: ...
 
@@ -560,6 +568,7 @@ def note_llm_stream_event(
                 state.first_thinking_at = when
             state.last_thinking_at = when
             state.phase = "thinking"
+            state.streamed_chars += len(chunk)
         case (
             PartStartEvent(part=TextPart(content=str(chunk)))
             | PartDeltaEvent(delta=TextPartDelta(content_delta=str(chunk)))
@@ -567,6 +576,19 @@ def note_llm_stream_event(
             if state.first_text_at is None:
                 state.first_text_at = when
             state.phase = "generating"
+            state.streamed_chars += len(chunk)
+        case PartStartEvent(part=ToolCallPart() as part):
+            state.phase = "tool_call"
+            state.tool_name = part.tool_name
+            # Streamed arguments are partial JSON text, which args_as_json_str would not pass through as is.
+            if isinstance(part.args, str):
+                state.streamed_chars += len(part.args)
+            elif part.args:
+                state.streamed_chars += len(part.args_as_json_str())
+        case PartDeltaEvent(delta=ToolCallPartDelta(args_delta=delta)):
+            state.phase = "tool_call"
+            if delta:
+                state.streamed_chars += len(delta) if isinstance(delta, str) else len(json.dumps(delta))
 
 
 class InputShapeRatios(BaseModel):
@@ -993,6 +1015,8 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
     async def on_event(self, ctx: RunContext[AgentDepsT], *, event: AgentStreamEvent) -> None:
         if isinstance(event, PartStartEvent | PartDeltaEvent) and (state := _current_llm_request_state.get()):
             note_llm_stream_event(state, event)
+            if (sink := _llm_request_sink.get()) is not None:
+                await sink.on_request_progress(state)
 
     async def before_model_request(
         self,
