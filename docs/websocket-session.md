@@ -110,6 +110,26 @@ When present:
 
 **`bypass`** — the action was silently allowed without sentinel evaluation (e.g., proxy bypass during sandbox-provided skill activation).
 
+### Streamed tool calls in the web UI
+
+The web UI opens a tool card at `tool_call_start`, before the gate runs, and fills it from the
+`tool_call_delta`s: it appends them to the args text and parses that tolerantly
+([partial-json](https://www.npmjs.com/package/partial-json)), so the card shows what the final one
+will (the command of an `exec`, the file text of a `write` with its line breaks). A box below the row
+shows that growing text, tail in view, until `tool_call_end`; it is plain text, not highlighted, so
+long args stay cheap.
+
+- The final `tool_call` replaces the card in place, matched by `tool_call_id`. An `approval_request`
+  for the call does the same, so the call never shows twice. A `tool_result` completes a card that
+  got no `tool_call` of its own (`list_skills` sends none).
+- Only a card still waiting for its final `tool_call` matches: some providers reuse ids such as
+  `call_0` across responses.
+- Parallel calls each get their own card.
+- `tool_call_end` with `aborted: true` marks the card **not run**. So does the end of the turn
+  (`done`, `cancelled`, `error`) for a card whose final `tool_call` never came, e.g. when its args
+  failed validation. A group of tool calls counts it apart (`1 not run`). The card stays visible until the chat re-renders from the saved history (on
+  `done`, or a reload): nothing of a streamed call is persisted before its final `tool_call`.
+
 ## Turn-control messages
 
 Two client message types are not slash commands but explicit UI controls:

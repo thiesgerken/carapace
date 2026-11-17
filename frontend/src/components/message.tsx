@@ -802,6 +802,9 @@ export function Message({
           compaction={message.compaction}
           server={server}
           sessionId={sessionId}
+          argsText={message.argsText}
+          argsStreaming={message.argsStreaming}
+          notRun={message.notRun}
           childCalls={message.children?.map((c) => ({
             tool: c.tool,
             args: c.args,
