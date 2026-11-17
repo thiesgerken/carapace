@@ -1502,8 +1502,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
     # --- Runtime ---
 
     # The short title and contexts come before a command that may be a long heredoc, so the chat can
-    # show the title while it streams. Only strict mode makes models write args in schema order:
-    # without it, GPT writes the command first.
+    # show the title while it streams. Without strict mode GPT writes the command first; strict
+    # decoding keeps the schema order.
     @agent.tool(strict=True)
     async def exec(
         ctx: RunContext[Deps],

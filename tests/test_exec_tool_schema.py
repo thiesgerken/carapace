@@ -19,7 +19,10 @@ from carapace.usage import UsageTracker
 
 
 def test_exec_offers_title_and_contexts_before_the_command(tmp_path: Path) -> None:
-    """Strict mode makes models write args in schema order; a title after a long heredoc would reach the chat last."""
+    """Strict decoding keeps the schema order, which GPT ignores otherwise.
+
+    A title after a long heredoc would reach the chat last.
+    """
     deps = Deps(
         config=Config(),
         data_dir=tmp_path,
