@@ -42,6 +42,7 @@ import { toolCallStatus } from "@/lib/tool-call-status";
 import { cn } from "@/lib/utils";
 import { sentFileUrl } from "@/lib/api";
 import { artifactSnapshotTitle, artifactViewerHref, sentArtifactSlug } from "@/lib/artifacts";
+import { parseStreamingArgs } from "@/lib/live-tool-calls";
 
 interface ToolCallBadgeProps {
   tool: string;
@@ -638,8 +639,9 @@ export function ToolCallBadge({
       ? fencedCodeBlock(languageFromFilePath(readPath), readSplit.body)
       : "";
   const execCommand = isExecTool ? getExecCommand(args) : "";
+  // While the model writes the call, the title shows once it is complete; until then, the command's first line.
   const execTitle = isExecTool
-    ? normalizeOptionalLabel(stringArg(args, "title"))
+    ? normalizeOptionalLabel(stringArg(argsStreaming ? parseStreamingArgs(argsText ?? "", false) ?? {} : args, "title"))
     : "";
   const execTranscript = isExecTool
     ? buildShellTranscript(execCommand || t("fallbacks.missingCommand"), result)
@@ -697,7 +699,7 @@ export function ToolCallBadge({
   );
   const argsSummary =
     artifactSlug !== null ? "" : isExecTool
-      ? execTitle || firstLine(execCommand) || t("fallbacks.missingCommand")
+      ? execTitle || firstLine(execCommand) || (argsStreaming ? "" : t("fallbacks.missingCommand"))
       : isReadTool
         ? formatReadSummaryFromSplit(
             args,

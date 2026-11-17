@@ -1502,22 +1502,25 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
     # --- Runtime ---
 
     @agent.tool
+    # The parameter order is the order models write the args in, so the short title and contexts
+    # come before a command that may be a long heredoc: the chat can show the title while it streams.
     async def exec(
         ctx: RunContext[Deps],
-        command: str,
         title: str | None = None,
         contexts: list[str] | None = None,
+        *,
+        command: str,
     ) -> str | ToolDenied:
         """Run a shell command (typically bash) and return its output. Runs in a Docker sandbox.
 
         Args:
-            command: The shell command to execute.
             title: Optional short label (a few words) describing the purpose of this command,
                 e.g. "clean up temp files and commit".
             contexts: Optional list of activated skill names whose declared network domains
                 and credentials should be available for this command. Each entry must match
                 an activated skill; unknown names are rejected.
                 Always set this to the list of skills that are needed for the command.
+            command: The shell command to execute.
         """
         original_command = command
         requested_contexts = list(contexts or [])

@@ -5,6 +5,8 @@ import { NextIntlClientProvider } from "next-intl";
 import messages from "../../messages/en.json";
 import { installDom, renderReact } from "../../test/react-test-utils";
 
+import { parseStreamingArgs } from "@/lib/live-tool-calls";
+
 import { ToolCallBadge } from "./tool-call-badge";
 
 test("a streaming call shows its args growing, then becomes the final card in place", async () => {
@@ -73,6 +75,30 @@ test("a multi-line command shows only its first line in the row, a one-line comm
     };
     assert.equal(await row("cat > stats.py <<'EOF'\nimport statistics\nEOF\npython3 stats.py"), "cat > stats.py <<'EOF' …");
     assert.equal(await row("ls -la /workspace"), "ls -la /workspace");
+  } finally {
+    restore();
+  }
+});
+
+test("a streaming exec shows its title once the model finished it, the command's first line until then", async () => {
+  const restore = installDom();
+  try {
+    const card = (argsText: string, argsStreaming = true) => (
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <ToolCallBadge tool="exec" args={parseStreamingArgs(argsText)!} argsText={argsText} argsStreaming={argsStreaming} detail="" loading />
+      </NextIntlClientProvider>
+    );
+    const summary = () => view.container.querySelector("button span.font-mono")?.textContent ?? null;
+    const view = await renderReact(card('{"title": "Average the rat'));
+    assert.equal(summary(), null, "nothing half-written, and no missing-command fallback");
+    await view.rerender(card('{"command": "cat > stats.py <<\'EOF\'\\nimport stat'));
+    assert.equal(summary(), "cat > stats.py <<'EOF' …", "an untitled call shows its command's first line");
+    await view.rerender(card('{"title": "Average the ratings", "contexts": [], "command": "cat > stats.py <<\'EOF\'\\nimport stat'));
+    assert.equal(summary(), "Average the ratings");
+    // The final card shows the same, so nothing jumps.
+    await view.rerender(card('{"title": "Average the ratings", "contexts": [], "command": "cat > stats.py <<\'EOF\'\\nEOF"}', false));
+    assert.equal(summary(), "Average the ratings");
+    await view.unmount();
   } finally {
     restore();
   }

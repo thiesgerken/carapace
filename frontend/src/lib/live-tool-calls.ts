@@ -7,11 +7,13 @@ type ToolCallMessage = Extract<ChatMessage, { kind: "tool_call" }>;
 /**
  * The args streamed so far as an object, so a streaming card renders like the final one. Null when
  * the text can't be read as an object (the model wrote malformed JSON): the card keeps what it had.
+ * Without *partialStrings*, a string the model is still writing is left out, for a label that must
+ * not show half-written.
  */
-export function parseStreamingArgs(text: string): Record<string, unknown> | null {
+export function parseStreamingArgs(text: string, partialStrings = true): Record<string, unknown> | null {
   if (!text.trim()) return {};
   try {
-    const value: unknown = parse(text, Allow.ALL);
+    const value: unknown = parse(text, partialStrings ? Allow.ALL : Allow.ALL & ~Allow.STR);
     return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
   } catch (error) {
     if (error instanceof MalformedJSON) return null;
