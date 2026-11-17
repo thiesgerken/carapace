@@ -1,6 +1,13 @@
 # CHANGELOG
 
 
+## v0.184.1 (2026-11-17)
+
+### ⬆️ Upgrade dependencies
+
+- chore: upgrade all routine dependency updates
+- chore: upgrade pnpm to 12.21.0
+
 ## v0.184.0 (2026-11-17)
 
 ### ✨ Introduce new features
