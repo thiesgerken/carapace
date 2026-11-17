@@ -19,7 +19,7 @@ from carapace.usage import UsageTracker
 
 
 def test_exec_offers_title_and_contexts_before_the_command(tmp_path: Path) -> None:
-    """Models write args in schema order; a title after a long heredoc would reach the chat last."""
+    """Strict mode makes models write args in schema order; a title after a long heredoc would reach the chat last."""
     deps = Deps(
         config=Config(),
         data_dir=tmp_path,
@@ -36,8 +36,10 @@ def test_exec_offers_title_and_contexts_before_the_command(tmp_path: Path) -> No
         credential_registry=CredentialRegistry(),
         load_session_events=list,
     )
-    schema = create_agent(deps)._function_toolset.tools["exec"].tool_def.parameters_json_schema
+    tool_def = create_agent(deps)._function_toolset.tools["exec"].tool_def
+    schema = tool_def.parameters_json_schema
 
+    assert tool_def.strict is True
     assert list(schema["properties"]) == ["title", "contexts", "command"]
     assert schema["required"] == ["command"]
     assert schema["properties"]["command"]["description"] == "The shell command to execute."
