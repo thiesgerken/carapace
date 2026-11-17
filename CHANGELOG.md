@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.186.0 (2026-11-17)
+
+### ✨ Introduce new features
+
+- feat: shimmering status line and braille spinners for running work
+
+### 💄 Add or update the UI and style files
+
+- style: status line at row size, softer shimmer peak
+- style: slow the braille spinner to 120 ms per frame
+- style: braille spinners one size up next to row text
+
+### 🐛 Fix a bug
+
+- fix: drive braille spinners from one wall clock, anchor the shimmer
+
 ## v0.185.0 (2026-11-17)
 
 ### ✨ Introduce new features
