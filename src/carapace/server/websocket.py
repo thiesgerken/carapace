@@ -43,6 +43,7 @@ from ..ws_models import (
     ThinkingChunk,
     TokenChunk,
     ToolCallInfo,
+    ToolCallStream,
     ToolResultInfo,
     TurnUsage,
     UserMessage,
@@ -139,6 +140,7 @@ class WebSocketSubscriber:
         approval_explanation: str | None = None,
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
+        tool_call_id: str | None = None,
     ) -> None:
         normalized_args = normalize_tool_call_args(tool, args)
         contexts_raw = normalized_args.get("contexts")
@@ -154,6 +156,7 @@ class WebSocketSubscriber:
                 approval_explanation=approval_explanation,
                 tool_id=tool_id,
                 parent_tool_id=parent_tool_id,
+                tool_call_id=tool_call_id,
             )
         )
 
@@ -164,9 +167,13 @@ class WebSocketSubscriber:
                 result=result.output,
                 exit_code=result.exit_code,
                 tool_id=result.tool_id,
+                tool_call_id=result.model_tool_call_id,
                 files=list(result.files) or None,
             )
         )
+
+    async def on_tool_call_stream(self, msg: ToolCallStream) -> None:
+        await self._safe_send(msg)
 
     async def on_token(self, content: str) -> None:
         await self._safe_send(TokenChunk(content=content))
