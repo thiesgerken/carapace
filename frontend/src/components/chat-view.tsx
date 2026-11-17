@@ -1496,10 +1496,13 @@ export function ChatView({
             loading: isLoading,
             toolId: msg.tool_id,
             parentToolId: msg.parent_tool_id,
+            // Also without a streamed card (a client that connected mid-call), so span status finds it.
+            // Conditional, so a later update of the call by tool_id keeps the id.
+            ...(msg.tool_call_id && { toolCallId: msg.tool_call_id }),
           };
           // The card the call's streamed args opened becomes this call; without one, it is placed as before.
           const intoStreamedCard = (place: (prev: ChatMessage[]) => ChatMessage[]) => (prev: ChatMessage[]) =>
-            replaceStreamedCall(prev, msg.tool_call_id, { ...newMsg, toolCallId: msg.tool_call_id ?? undefined }) ?? place(prev);
+            replaceStreamedCall(prev, msg.tool_call_id, newMsg) ?? place(prev);
           if (
             isUserApprovedReplay(
               msg.tool,
