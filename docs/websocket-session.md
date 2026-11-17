@@ -94,7 +94,9 @@ Each message is one JSON object with a `type` field.
 `activity` describes the session's current LLM request (`null` once it ends):
 
 - `phase`: `processing_prompt` until the first token, then `thinking`, `generating` (answer text) or
-  `tool_call` (the model is writing a tool call's arguments, `tool_name` names the tool).
+  `tool_call` (the model is writing a tool call's arguments, `tool_name` names the tool). An output
+  tool's call (an unattended run's `task_done`, the sentinel's verdict) is the answer, so it counts as
+  `generating`.
 - `started_at` and the phase timestamps (`first_thinking_at`, `last_thinking_at`, `first_text_at`).
 - `streamed_chars`: characters of thinking, text and tool-call arguments streamed so far. The web UI
   shows a quarter of it as approximate output tokens; the provider's count only arrives with the
@@ -103,6 +105,17 @@ Each message is one JSON object with a `type` field.
 A phase change is sent right away. Growth of `streamed_chars` alone is sent at most every 0.3 s, so a
 long tool call streams a live counter without one message per chunk. Clients tick the elapsed time
 themselves from `started_at`.
+
+### `span`
+
+Every span of the running turn sends one message when it starts and one when it ends: `turn_id`,
+`span_id`, `kind` (`tool`, `gate`, `sentinel`, `sandbox`, `skill`, `domain`, `wait`, `llm`, ...),
+`name` (a tool's name, a sandbox step, a domain) and `status`. `tool_call_id` is the provider's id of
+the tool call whose `tool` span the span is or nests under, `null` outside one. Calls from inside the
+sandbox (proxy domain checks) nest under the newest running exec, with parallel execs possibly the
+other one. The chat uses it to show what a
+running call's card waits for (the sentinel, a sandbox start, a domain check, an approval), the
+Debug view to refetch its timeline.
 
 ### `tool_call` variants
 

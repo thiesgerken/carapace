@@ -985,6 +985,14 @@
         "mismatchSr": "Frontend and backend versions do not match."
     },
     "toolCallBadge": {
+        "status": {
+            "sentinel": "Sentinel reviewing…",
+            "sandbox": "Starting sandbox…",
+            "skill": "Activating skill…",
+            "credential": "Fetching credential…",
+            "domain": "Checking domain {domain}…",
+            "wait": "Waiting for approval…"
+        },
         "notRun": "not run",
         "notRunTitle": "The model wrote this call, but it never ran: the turn was cancelled, the model failed, or the call was rejected.",
         "approvalBadge": {

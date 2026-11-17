@@ -20,7 +20,7 @@ from carapace.security.context import SENTINEL_VERDICT_TOOL, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.engine import SessionEngine
 from carapace.session.timeline import session_turns, turn_timeline
-from carapace.spans import Span, ToolSpanCapability, TurnTrace, attach, current_span_ref, span
+from carapace.spans import Span, SpanNotice, ToolSpanCapability, TurnTrace, attach, current_span_ref, span
 from carapace.usage import LlmRequestLogCapability, LlmRequestState
 from carapace.ws_models import ApprovalResponse
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel
@@ -49,10 +49,32 @@ def test_span_text_is_capped_and_other_attrs_kept() -> None:
     assert capped.attrs == {"command": "c" * 200, "exit_code": 1, "ok": True}
 
 
+def test_steps_belong_to_the_outermost_tool_call() -> None:
+    notices: list[SpanNotice] = []
+    trace = TurnTrace("t1", on_change=notices.append)
+    root = trace.start("turn", "turn", parent_id=None, attrs={})
+    # The sentinel reviewing the agent's exec calls a tool of its own; the user sees the agent's call.
+    with (
+        attach(trace, root.span_id),
+        span("tool", "exec", tool_call_id="call-agent"),
+        span("sentinel", "tool_call"),
+        span("tool", "read_skill_file", tool_call_id="call-sentinel"),
+        span("file", "read"),
+    ):
+        pass
+    assert [(n.name, n.tool_call_id) for n in notices if n.status == "running"] == [
+        ("turn", None),
+        ("exec", "call-agent"),
+        ("tool_call", "call-agent"),
+        ("read_skill_file", "call-agent"),
+        ("read", "call-agent"),
+    ]
+
+
 def test_spans_nest_and_end_with_how_their_block_exits() -> None:
     trace, root, changes = _trace()
     with attach(trace, root.span_id):
-        with span("tool", "exec", command="ls") as tool:
+        with span("tool", "exec", tool_call_id="call-1") as tool:
             assert current_span_ref() == ("t1", tool.span_id)
             with pytest.raises(RuntimeError), span("sandbox", "ensure"):
                 raise RuntimeError("boom")
@@ -60,7 +82,7 @@ def test_spans_nest_and_end_with_how_their_block_exits() -> None:
 
     by_name = {s.name: s for s in trace.spans.values()}
     assert by_name["exec"].parent_id == root.span_id
-    assert by_name["exec"].attrs == {"command": "ls"}
+    assert by_name["exec"].attrs == {"tool_call_id": "call-1"}
     assert by_name["ensure"].parent_id == tool.span_id
     assert (by_name["exec"].status, by_name["ensure"].status) == ("ok", "error")
     assert by_name["ensure"].ended_at is not None
@@ -123,7 +145,7 @@ def test_turn_flushes_its_spans_and_joins_its_llm_requests(tmp_path: Path, db_fa
         )
 
         async def _fake_turn(user_input: str, _deps: Any, history: list[Any], **_kwargs: Any) -> Any:
-            with span("tool", "exec", command="ls"):
+            with span("tool", "exec", tool_call_id="call-1"):
                 result = await model.run(user_input)
             return [*history, *result.new_messages()], result.output, "", None
 
@@ -150,8 +172,11 @@ def test_turn_flushes_its_spans_and_joins_its_llm_requests(tmp_path: Path, db_fa
         assert (llm.kind, llm.parent_id, llm.status) == ("llm", tool.span_id, "ok")
         assert llm.llm is not None and (llm.llm.role, llm.llm.input_tokens) == ("agent", 100)
         assert llm.llm.first_token_at is not None and llm.llm.first_token_at == llm.llm.first_text_at
-        assert {(span_id, status) for _, span_id, status in sub.span_updates} == {
-            (s.span_id, status) for s in (root, prepare, tool, llm) for status in ("running", "ok")
+        # The tool span and everything under it, its LLM request included, name the tool call's card.
+        assert {(n.span_id, n.kind, n.status, n.tool_call_id) for n in sub.span_updates} == {
+            (s.span_id, s.kind, status, "call-1" if s in (tool, llm) else None)
+            for s in (root, prepare, tool, llm)
+            for status in ("running", "ok")
         }
         assert turn_timeline(engine.session_mgr, sid, "nope", active) is None
 
@@ -218,7 +243,9 @@ async def test_tool_calls_get_tool_spans_and_a_deferred_call_ends_ok() -> None:
 
     def _call_tools(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         if len(messages) == 1:
-            return ModelResponse(parts=[ToolCallPart("lookup", {}), ToolCallPart("guarded", {})])
+            return ModelResponse(
+                parts=[ToolCallPart("lookup", {}, tool_call_id="c1"), ToolCallPart("guarded", {}, tool_call_id="c2")]
+            )
         return ModelResponse(parts=[TextPart("done")])
 
     agent = Agent(
@@ -241,8 +268,8 @@ async def test_tool_calls_get_tool_spans_and_a_deferred_call_ends_ok() -> None:
         "lookup": (root.span_id, "ok"),
         "guarded": (root.span_id, "ok"),
     }
-    assert tools["guarded"].attrs == {"deferred": True}
-    assert tools["lookup"].attrs == {}
+    assert tools["guarded"].attrs == {"tool_call_id": "c2", "deferred": True}
+    assert tools["lookup"].attrs == {"tool_call_id": "c1"}
 
 
 @pytest.mark.asyncio
@@ -378,7 +405,7 @@ def test_a_stop_records_parallel_requests_as_interrupted_bars(tmp_path: Path, db
         assert [r.outcome for r in records] == ["interrupted", "interrupted"]
         await asyncio.sleep(0)
         bar_ids = {bar.span_id for bar in bars}
-        assert {(span_id, status) for _, span_id, status in sub.span_updates if span_id in bar_ids} == {
+        assert {(n.span_id, n.status) for n in sub.span_updates if n.span_id in bar_ids} == {
             (span_id, status) for span_id in bar_ids for status in ("running", "interrupted")
         }
 
@@ -414,5 +441,6 @@ async def test_a_failed_request_is_an_error_bar(tmp_path: Path, db_factory, mode
     (record,) = active.llm_request_log.records
     assert record.outcome == "failed"
     assert engine.session_mgr.load_llm_request_log(sid).records == [record]
-    assert sub.span_updates[-1] == ("t1", record.request_id, "error")
+    last = sub.span_updates[-1]
+    assert (last.turn_id, last.span_id, last.kind, last.status) == ("t1", record.request_id, "llm", "error")
     assert active.llm_requests_in_flight == {}

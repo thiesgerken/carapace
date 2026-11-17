@@ -347,7 +347,18 @@ export interface SpanUpdate {
   type: "span";
   turn_id: string;
   span_id: string;
+  kind: string;
+  name: string;
   status: SpanStatus;
+  /** The provider id of the tool call whose span this is or nests under. */
+  tool_call_id?: string | null;
+}
+
+/** A step of a tool call that is still running, as far as its card needs it. */
+export interface RunningSpan {
+  spanId: string;
+  kind: string;
+  name: string;
 }
 
 export interface ToolCallInfo {
@@ -698,6 +709,8 @@ export type ChatMessage =
       argsStreaming?: boolean;
       /** The streamed call never ran: the turn was cancelled, the model failed, or its args were rejected. */
       notRun?: boolean;
+      /** The call's steps still running (sentinel, sandbox start, domain check...), from span notifications. */
+      runningSpans?: RunningSpan[];
       children?: Array<{
         kind: "tool_call";
         tool: string;

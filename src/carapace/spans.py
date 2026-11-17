@@ -37,6 +37,18 @@ class Span(BaseModel):
     attrs: dict[str, SpanAttr] = Field(default_factory=dict)
 
 
+class SpanNotice(BaseModel):
+    """A span of the running turn started or ended, as the session's subscribers hear it."""
+
+    turn_id: str
+    span_id: str
+    kind: str
+    name: str
+    status: SpanStatus
+    # The call whose tool span this span is or nests under: the chat shows it on that call's card.
+    tool_call_id: str | None = None
+
+
 # Spans keep small attrs only (full arguments and outputs stay in the history), and some come
 # straight from the sandbox, like the proxy's domains.
 SPAN_TEXT_MAX = 200
@@ -56,7 +68,7 @@ def _new_span(kind: str, name: str, parent_id: str | None, attrs: dict[str, Span
 class TurnTrace:
     """The spans of one running turn; *on_change* hears every span start and end."""
 
-    def __init__(self, turn_id: str, on_change: Callable[[Span], None]) -> None:
+    def __init__(self, turn_id: str, on_change: Callable[[SpanNotice], None]) -> None:
         self.turn_id = turn_id
         self.spans: dict[str, Span] = {}
         self.closed = False
@@ -67,7 +79,7 @@ class TurnTrace:
             raise RuntimeError(f"turn {self.turn_id} is closed, no span can start in it")
         span = _new_span(kind, name, parent_id, attrs)
         self.spans[span.span_id] = span
-        self._on_change(span)
+        self._on_change(self._notice(span))
         return span
 
     def end(self, span: Span, status: SpanStatus) -> None:
@@ -76,7 +88,31 @@ class TurnTrace:
             return
         span.status = status
         span.ended_at = datetime.now(tz=UTC)
-        self._on_change(span)
+        self._on_change(self._notice(span))
+
+    def _notice(self, span: Span) -> SpanNotice:
+        return SpanNotice(
+            turn_id=self.turn_id,
+            span_id=span.span_id,
+            kind=span.kind,
+            name=span.name,
+            status=span.status,
+            tool_call_id=self.tool_call_id(span.span_id),
+        )
+
+    def tool_call_id(self, span_id: str | None) -> str | None:
+        """The id of the outermost tool call *span_id* is or nests under; ``None`` outside a tool call.
+
+        Outermost: the sentinel's own tool calls (reading skill files) run inside the agent call they
+        review, which is the call the user sees.
+        """
+        found = None
+        while span_id is not None:
+            span = self.spans[span_id]
+            if span.kind == "tool":
+                found = str(span.attrs["tool_call_id"])
+            span_id = span.parent_id
+        return found
 
     def sandbox_call_parent(self) -> str:
         """The span a call from inside the sandbox nests under: the newest running exec or file span, else the root."""
@@ -183,5 +219,5 @@ class ToolSpanCapability(AbstractCapability[AgentDepsT]):
     ) -> Any:
         if tool_def.kind != "function":
             return await handler(args)
-        with span("tool", call.tool_name):
+        with span("tool", call.tool_name, tool_call_id=call.tool_call_id):
             return await handler(args)

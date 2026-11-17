@@ -24,7 +24,7 @@ from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
 from carapace.session.types import ActiveSession, SessionSubscriber
 from carapace.skills import SkillRegistry
-from carapace.spans import SpanStatus
+from carapace.spans import SpanNotice
 from carapace.usage import LlmContextStatus, LlmRequestState, LlmSource
 from carapace.ws_models import ApprovalRequest, FinalStatus, ToolCallStream, TurnUsage
 
@@ -58,7 +58,7 @@ class _FakeSubscriber(SessionSubscriber):
         self.title_updates: list[tuple[str, TurnUsage | None]] = []
         self.llm_activity_updates: list[LlmRequestState | None] = []
         self.llm_context_updates: list[tuple[LlmSource, str, LlmContextStatus]] = []
-        self.span_updates: list[tuple[str, str, SpanStatus]] = []
+        self.span_updates: list[SpanNotice] = []
         self.status_updates: list[tuple[TurnUsage | None, SessionBudget]] = []
         self.tool_call_stream: list[ToolCallStream] = []
         self.tool_calls: list[tuple[str, str | None]] = []
@@ -134,8 +134,8 @@ class _FakeSubscriber(SessionSubscriber):
     async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None:
         self.llm_context_updates.append((role, request_id, status))
 
-    async def on_span(self, turn_id: str, span_id: str, status: SpanStatus) -> None:
-        self.span_updates.append((turn_id, span_id, status))
+    async def on_span(self, notice: SpanNotice) -> None:
+        self.span_updates.append(notice)
 
     async def on_status(
         self,

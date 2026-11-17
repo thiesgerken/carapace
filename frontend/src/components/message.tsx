@@ -805,6 +805,7 @@ export function Message({
           argsText={message.argsText}
           argsStreaming={message.argsStreaming}
           notRun={message.notRun}
+          runningSpans={message.runningSpans}
           childCalls={message.children?.map((c) => ({
             tool: c.tool,
             args: c.args,

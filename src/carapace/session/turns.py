@@ -44,7 +44,7 @@ from ..models.tooling import ToolCallCallback, ToolResult
 from ..notifications.router import NotificationRouter, build_turn_outcome_notification_id
 from ..sandbox.manager import SandboxManager
 from ..security.context import ApprovalSource, ApprovalVerdict, format_denial_message, normalize_optional_message
-from ..spans import Span, SpanStatus, TurnTrace, attach, span
+from ..spans import SpanNotice, SpanStatus, TurnTrace, attach, span
 from ..usage import (
     BudgetGauge,
     SessionBudgetExceededError,
@@ -209,7 +209,7 @@ class SessionTurnMixin(SessionTurnHost):
         """Execute a single agent turn, timed as the root span of its timeline."""
         session_id = active.state.session_id
         turn_id = secrets.token_hex(4)
-        trace = TurnTrace(turn_id, on_change=partial(self._broadcast_span, active, turn_id))
+        trace = TurnTrace(turn_id, on_change=partial(self._broadcast_span, active))
         root = trace.start("turn", "turn", parent_id=None, attrs={"prompt": _truncate_for_log(user_input, 60)})
         active.turn_trace = trace
         status: SpanStatus = "error"
@@ -226,9 +226,9 @@ class SessionTurnMixin(SessionTurnHost):
             self._session_mgr.save_turn_spans(session_id, turn_id, trace.close())
             active.turn_trace = None
 
-    def _broadcast_span(self, active: ActiveSession, turn_id: str, span: Span) -> None:
+    def _broadcast_span(self, active: ActiveSession, notice: SpanNotice) -> None:
         # Scheduled, not awaited: a span boundary must not wait on slow subscribers.
-        task = asyncio.ensure_future(self._broadcast(active, "on_span", turn_id, span.span_id, span.status))
+        task = asyncio.ensure_future(self._broadcast(active, "on_span", notice))
         active._pending_sends.add(task)
         task.add_done_callback(active._pending_sends.discard)
 

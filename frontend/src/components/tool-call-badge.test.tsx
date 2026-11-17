@@ -32,3 +32,28 @@ test("a streaming call shows its args growing, then becomes the final card in pl
     restore();
   }
 });
+
+test("a loading card names the step it waits for, and drops it once done", async () => {
+  const restore = installDom();
+  try {
+    const card = (props: Partial<Parameters<typeof ToolCallBadge>[0]>) => (
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <ToolCallBadge tool="exec" args={{ command: "pip install rich" }} detail="" {...props} />
+      </NextIntlClientProvider>
+    );
+    const exec = { spanId: "e", kind: "exec", name: "exec" };
+    const view = await renderReact(card({ loading: true, runningSpans: [exec, { spanId: "d", kind: "domain", name: "pypi.org" }] }));
+    const status = () => view.container.querySelector('[role="status"]')?.textContent ?? null;
+    assert.equal(status(), "Checking domain pypi.org…");
+
+    await view.rerender(card({ loading: true, runningSpans: [exec, { spanId: "w", kind: "wait", name: "pypi.org" }] }));
+    assert.equal(status(), "Waiting for approval…");
+    await view.rerender(card({ loading: true, runningSpans: [exec] }));
+    assert.equal(status(), null, "the exec itself is the card's spinner");
+    await view.rerender(card({ loading: false, runningSpans: [{ spanId: "s", kind: "sentinel", name: "tool_call" }] }));
+    assert.equal(status(), null, "a finished card shows no step");
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
