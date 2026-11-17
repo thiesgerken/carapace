@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
+from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from functools import partial
 from typing import Any, Literal, Protocol, TypedDict, assert_never
 
 import tiktoken
@@ -554,8 +556,17 @@ def current_llm_request_state() -> LlmRequestState | None:
 
 
 def note_llm_stream_event(
-    state: LlmRequestState, event: PartStartEvent | PartDeltaEvent, *, ts: datetime | None = None
+    state: LlmRequestState,
+    event: PartStartEvent | PartDeltaEvent,
+    *,
+    is_output_tool: Callable[[str], bool] = lambda _name: False,
+    ts: datetime | None = None,
 ) -> None:
+    """Stamp *event* on the request's phases and streamed-chars counter.
+
+    An output tool's call is the run's answer (an unattended agent's report, the sentinel's verdict),
+    so writing it counts as generating, not as a tool call.
+    """
     when = ts or datetime.now(tz=UTC)
     if state.first_token_at is None:
         state.first_token_at = when
@@ -568,6 +579,7 @@ def note_llm_stream_event(
                 state.first_thinking_at = when
             state.last_thinking_at = when
             state.phase = "thinking"
+            state.tool_name = None
             state.streamed_chars += len(chunk)
         case (
             PartStartEvent(part=TextPart(content=str(chunk)))
@@ -576,17 +588,18 @@ def note_llm_stream_event(
             if state.first_text_at is None:
                 state.first_text_at = when
             state.phase = "generating"
+            state.tool_name = None
             state.streamed_chars += len(chunk)
         case PartStartEvent(part=ToolCallPart() as part):
-            state.phase = "tool_call"
-            state.tool_name = part.tool_name
+            output = is_output_tool(part.tool_name)
+            state.phase = "generating" if output else "tool_call"
+            state.tool_name = None if output else part.tool_name
             # Streamed arguments are partial JSON text, which args_as_json_str would not pass through as is.
             if isinstance(part.args, str):
                 state.streamed_chars += len(part.args)
             elif part.args:
                 state.streamed_chars += len(part.args_as_json_str())
         case PartDeltaEvent(delta=ToolCallPartDelta(args_delta=delta)):
-            state.phase = "tool_call"
             if delta:
                 state.streamed_chars += len(delta) if isinstance(delta, str) else len(json.dumps(delta))
 
@@ -962,6 +975,11 @@ def _request_llm_context(
     )
 
 
+def _is_output_tool(ctx: RunContext[Any], tool_name: str) -> bool:
+    tool_def = ctx.tool_manager.get_tool_def(tool_name) if ctx.tool_manager is not None else None
+    return tool_def is not None and tool_def.kind == "output"
+
+
 @dataclass
 class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
     """Report every model request to the session sink: activity, usage record and LLM context.
@@ -1014,7 +1032,7 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
 
     async def on_event(self, ctx: RunContext[AgentDepsT], *, event: AgentStreamEvent) -> None:
         if isinstance(event, PartStartEvent | PartDeltaEvent) and (state := _current_llm_request_state.get()):
-            note_llm_stream_event(state, event)
+            note_llm_stream_event(state, event, is_output_tool=partial(_is_output_tool, ctx))
             if (sink := _llm_request_sink.get()) is not None:
                 await sink.on_request_progress(state)
 

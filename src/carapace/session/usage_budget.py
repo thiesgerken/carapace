@@ -228,10 +228,11 @@ class SessionUsageBudgetMixin:
             budget_gauges=budget_gauges,
         )
 
-    async def _set_llm_request_state(self, active: ActiveSession, state: LlmRequestState) -> None:
+    async def _set_llm_request_state(self, active: ActiveSession, state: LlmRequestState, *, save: bool = True) -> None:
         active.llm_request_state = state.model_copy(deep=True)
         active.llm_activity_sent_at = time.monotonic()
-        self._session_mgr.save_llm_request_state(active.state.session_id, active.llm_request_state)
+        if save:
+            self._session_mgr.save_llm_request_state(active.state.session_id, active.llm_request_state)
         await self._broadcast(active, "on_llm_activity", active.llm_request_state.model_copy(deep=True))
 
     async def _clear_llm_request_state(self, active: ActiveSession) -> None:
@@ -249,18 +250,20 @@ class SessionUsageBudgetMixin:
 
     async def _maybe_promote_llm_request_state(self, active: ActiveSession, state: LlmRequestState) -> None:
         current = active.llm_request_state
-        unchanged = current is not None and (current.phase, current.tool_name, current.first_text_at) == (
+        if current is None or (current.phase, current.tool_name, current.first_text_at) != (
             state.phase,
             state.tool_name,
             state.first_text_at,
-        )
-        # Only the streamed-chars counter moved: send it at a pace a counter needs, not per chunk.
-        if unchanged and (
-            state.streamed_chars == current.streamed_chars
-            or time.monotonic() - active.llm_activity_sent_at < LLM_PROGRESS_INTERVAL_S
         ):
+            await self._set_llm_request_state(active, state)
             return
-        await self._set_llm_request_state(active, state)
+        # Only the streamed-chars counter moved: send it at a pace a counter needs, not per chunk, and
+        # don't save it, since a reconnect after a restart needs the phase only.
+        if (
+            state.streamed_chars != current.streamed_chars
+            and time.monotonic() - active.llm_activity_sent_at >= LLM_PROGRESS_INTERVAL_S
+        ):
+            await self._set_llm_request_state(active, state, save=False)
 
     def usage_details(self, active: ActiveSession) -> SessionUsageDetails:
         """The session's usage breakdown as ``/usage`` and the usage API show it.

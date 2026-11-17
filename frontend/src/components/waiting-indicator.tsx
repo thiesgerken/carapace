@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 
 import { useNow } from "@/hooks/use-now";
+import { compactCount } from "@/lib/request-table";
 import type { LlmActivity } from "@/lib/types";
 
 // A rough average for English text and code; the request record brings the real count.
@@ -31,8 +32,7 @@ export function WaitingIndicator({ activity }: { activity: LlmActivity | null })
     const parts = [seconds < 60 ? t("seconds", { seconds }) : t("minutes", { minutes: Math.floor(seconds / 60), seconds: seconds % 60 })];
     const tokens = Math.round((agent.streamed_chars ?? 0) / CHARS_PER_TOKEN);
     if (tokens > 0) {
-      const count = tokens < 1000 ? format.number(tokens) : `${format.number(tokens / 1000, { maximumFractionDigits: 1 })}k`;
-      parts.push(t("tokens", { count }));
+      parts.push(t("tokens", { count: compactCount(tokens, (n, maximumFractionDigits) => format.number(n, { maximumFractionDigits })) }));
     }
     counter = parts.join(" · ");
   }

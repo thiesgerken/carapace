@@ -47,7 +47,6 @@ from ..security.context import ApprovalSource, ApprovalVerdict, format_denial_me
 from ..spans import Span, SpanStatus, TurnTrace, attach, span
 from ..usage import (
     BudgetGauge,
-    LlmRequestState,
     SessionBudgetExceededError,
     aggregate_turn_generation,
 )
@@ -180,12 +179,6 @@ class SessionTurnHost(Protocol):
     def _agent_request_limit_message(self, active: ActiveSession, error: UsageLimitExceeded) -> str | None: ...
 
     def _budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]: ...
-
-    async def _maybe_promote_llm_request_state(
-        self,
-        active: ActiveSession,
-        state: LlmRequestState | None,
-    ) -> None: ...
 
     def _turn_usage_payload(self, active: ActiveSession) -> TurnUsage | None: ...
 
