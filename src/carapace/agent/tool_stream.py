@@ -23,8 +23,8 @@ from pydantic_ai.messages import (
 
 from ..ws_models import ToolCallDelta, ToolCallEnd, ToolCallStart, ToolCallStream
 
-# At most ~10 delta messages per second and call: a fast model writes hundreds of tiny chunks.
-DELTA_INTERVAL_S = 0.1
+# At most ~20 delta messages per second and call: a fast model writes hundreds of tiny chunks.
+DELTA_INTERVAL_S = 0.05
 
 
 @dataclass

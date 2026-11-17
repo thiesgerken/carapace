@@ -43,7 +43,7 @@ from .manager import SessionManager
 from .types import ActiveSession
 
 # Streamed-chars updates of a request go out at most this often; the client ticks the clock itself.
-LLM_PROGRESS_INTERVAL_S = 0.3
+LLM_PROGRESS_INTERVAL_S = 0.1
 
 BUDGET_METRIC_FIELDS: dict[BudgetMetric, str] = {
     "input": "input_tokens",

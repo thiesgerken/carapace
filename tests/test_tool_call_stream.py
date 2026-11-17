@@ -18,7 +18,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
-from carapace.agent.tool_stream import ToolCallStreamer
+from carapace.agent.tool_stream import DELTA_INTERVAL_S, ToolCallStreamer
 from carapace.ws_models import ToolCallDelta, ToolCallEnd, ToolCallStart, ToolCallStream
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel
 
@@ -45,16 +45,18 @@ def _delta(index: int, text: str | dict[str, object]) -> PartDeltaEvent:
 
 
 @pytest.mark.asyncio
-async def test_args_deltas_are_coalesced_to_ten_a_second_and_flushed_at_the_end() -> None:
+async def test_args_deltas_are_coalesced_per_interval_and_flushed_at_the_end() -> None:
     clock = _Clock()
     streamer, sent = _streamer(clock)
     part = ToolCallPart("exec", '{"comm', tool_call_id="a")
+    # Three chunks stay inside one interval, the fourth crosses it.
+    step = DELTA_INTERVAL_S * 0.3
 
     await streamer.handle(PartStartEvent(index=0, part=part))
     for text in ('and": "', "ec", "ho"):
-        clock.now += 0.03
+        clock.now += step
         await streamer.handle(_delta(0, text))
-    clock.now += 0.03
+    clock.now += step
     await streamer.handle(_delta(0, ' hi"}'))
     await streamer.handle(PartEndEvent(index=0, part=part))
 

@@ -102,7 +102,7 @@ Each message is one JSON object with a `type` field.
   shows a quarter of it as approximate output tokens; the provider's count only arrives with the
   request's record once the response is complete.
 
-A phase change is sent right away. Growth of `streamed_chars` alone is sent at most every 0.3 s, so a
+A phase change is sent right away. Growth of `streamed_chars` alone is sent at most every 0.1 s, so a
 long tool call streams a live counter without one message per chunk. Clients tick the elapsed time
 themselves from `started_at`.
 
@@ -135,7 +135,7 @@ Exact args depend on the producer; see `WebSocketSubscriber` in [`src/carapace/s
 While the agent model writes a tool call, the client sees it before it runs:
 
 1. `tool_call_start` as soon as the model starts the call.
-2. `tool_call_delta` with the args text written since the previous delta, at most about ten per second and call. Concatenated, the deltas are the call's JSON args; parsing the partial JSON is up to the client. Providers that hand over args as an object send them as one delta at the end.
+2. `tool_call_delta` with the args text written since the previous delta, at most about twenty per second and call. Concatenated, the deltas are the call's JSON args; parsing the partial JSON is up to the client. Providers that hand over args as an object send them as one delta at the end.
 3. `tool_call_end`. `aborted: false` means the args are complete: the call goes to the security gate and shows up as `tool_call` (later `tool_result`) with the same `tool_call_id`, or as an `approval_request`, whose `tool_call_id` is that id too. `aborted: true` means the request was cancelled or failed while the call was still being written; the turn's `cancelled` or `error` follows.
 
 Parallel calls in one response each stream under their own `tool_call_id`. Some OpenAI-compatible servers reuse ids (`call_0`) across responses, so a `tool_call_start` with an id the client has already seen starts a new card, and later messages with that id belong to the newest one. A provider that sends a call's id only after its name streams it under a stand-in id the executed call does not carry; the server logs a warning, and the card ends up "not run" next to the real call. A finished call can still never run, for instance when its args fail validation, so a client should mark a card still waiting for its `tool_call` when the turn ends as not run, and keep it visible. `list_skills` sends no `tool_call`, only its `tool_result`. Only the agent role streams calls; sentinel, titler and compaction requests do not. Nothing of this is persisted: history only has the executed call, and a client that connects mid-call sees it from its `tool_call` on.
