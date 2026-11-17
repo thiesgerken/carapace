@@ -148,7 +148,10 @@ long args stay cheap.
   failed validation. A group of tool calls counts it apart (`1 not run`).
 - Nothing of a streamed call is persisted before its final `tool_call`, so a not-run card is kept
   client-side: when the chat re-renders from the saved history after `done` (or a compaction), it
-  goes back after the saved call it followed. Only a reload or a session switch drops it.
+  goes back before what followed it (the next saved call or user message), so it stays below the
+  thinking and text it came after. Only a reload or a session switch drops it.
+- A dropped connection is not the end of the turn: the cards still streaming go, and after the
+  reconnect the server sends those calls as `tool_call`.
 
 ### `approval_source` / `approval_verdict` (on `tool_call`)
 

@@ -83,27 +83,33 @@ export function markUnrunCalls(messages: ChatMessage[]): ChatMessage[] {
 
 /**
  * The chat re-rendered from the saved history (*projected*) with the not-run cards of the *live* one
- * kept: they are never saved, but must not vanish seconds after their turn ended. Each goes after the
- * saved tool call it followed, or else after its turn's user message.
+ * kept: they are never saved, but must not vanish seconds after their turn ended. Each goes before
+ * what followed it: the next saved call or user message, or else the end of the chat. A not-run card
+ * is almost always the last thing its turn did, so this keeps it below the thinking and text before it.
  */
 export function keepUnrunCalls(live: ChatMessage[], projected: ChatMessage[]): ChatMessage[] {
   if (!live.some((m) => m.kind === "tool_call" && m.notRun)) return projected;
   const kept = [...projected];
-  let insertAfter = -1;
-  let users = 0;
-  for (const message of live) {
-    if (message.kind === "user") {
-      users++;
-      insertAfter = nthIndex(kept, (m) => m.kind === "user", users);
-    } else if (message.kind === "tool_call" && message.notRun) {
-      insertAfter = insertAfter === -1 ? kept.length : insertAfter + 1;
-      kept.splice(insertAfter, 0, message);
-    } else if (message.kind === "tool_call" && message.toolId) {
-      const index = kept.findIndex((m) => m.kind === "tool_call" && m.toolId === message.toolId);
-      if (index !== -1) insertAfter = index;
-    }
+  for (const [index, message] of live.entries()) {
+    if (message.kind !== "tool_call" || !message.notRun) continue;
+    let before = -1;
+    for (let next = index + 1; next < live.length && before === -1; next++) before = savedIndex(kept, live, next);
+    kept.splice(before === -1 ? kept.length : before, 0, message);
   }
   return kept;
+}
+
+/** Where the message at *index* of *live* is in the saved chat, if it is a saved call or a user message. */
+function savedIndex(kept: ChatMessage[], live: ChatMessage[], index: number): number {
+  const message = live[index];
+  if (message.kind === "tool_call" && message.toolId) return kept.findIndex((m) => m.kind === "tool_call" && m.toolId === message.toolId);
+  if (message.kind === "user") return nthIndex(kept, (m) => m.kind === "user", live.slice(0, index + 1).filter((m) => m.kind === "user").length);
+  return -1;
+}
+
+/** Without the streamed cards still waiting: after a reconnect, the server sends those calls as tool_call. */
+export function dropOpenCalls(messages: ChatMessage[]): ChatMessage[] {
+  return messages.some(isOpen) ? messages.filter((m) => !isOpen(m)) : messages;
 }
 
 function nthIndex(messages: ChatMessage[], matches: (message: ChatMessage) => boolean, n: number): number {

@@ -62,7 +62,7 @@ import {
   shouldConfirmArchiveSession,
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
-import { appendStreamedArgs, completeStreamedCall, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall } from "@/lib/live-tool-calls";
+import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall } from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 import { ChatInput } from "./chat-input";
@@ -1332,9 +1332,8 @@ export function ChatView({
   // Clear the loading spinner on any tool_call messages still pending
   const clearToolLoading = useCallback(() => {
     setMessages((prev) => {
-      const settled = markUnrunCalls(prev);
-      if (!settled.some((m) => m.kind === "tool_call" && m.loading)) return settled;
-      return settled.map((m) =>
+      if (!prev.some((m) => m.kind === "tool_call" && m.loading)) return prev;
+      return prev.map((m) =>
         m.kind === "tool_call" && m.loading ? { ...m, loading: false } : m,
       );
     });
@@ -1360,6 +1359,12 @@ export function ChatView({
       setWaiting(false);
     }
   }, [clearToolLoading, markSessionKnowledgeChanged]);
+
+  // The turn is over: a streamed call that has not become a real one by now never ran.
+  const endTurn = useCallback(() => {
+    setMessages(markUnrunCalls);
+    finishWaiting();
+  }, [finishWaiting]);
 
   const snapshotThinkingDurationMs = useCallback((): number | undefined => {
     const startedAt = lastThinkingStartedAtRef.current;
@@ -1467,7 +1472,7 @@ export function ChatView({
           void refreshSandbox();
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
-          finishWaiting();
+          endTurn();
           break;
         }
         case "tool_call": {
@@ -1677,7 +1682,7 @@ export function ChatView({
           }
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
-          finishWaiting();
+          endTurn();
           break;
         case "error":
           setMessages((prev) => {
@@ -1696,7 +1701,7 @@ export function ChatView({
           });
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
-          finishWaiting();
+          endTurn();
           break;
         case "cancelled":
           resetRollbackRef.current = null;
@@ -1706,7 +1711,7 @@ export function ChatView({
           ]);
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
-          finishWaiting();
+          endTurn();
           break;
         case "llm_activity":
           setLlmActivity(msg.activity ?? null);
@@ -1784,7 +1789,7 @@ export function ChatView({
           break;
       }
     },
-    [applySandboxSnapshot, finalizeThinkingMessages, finishWaiting, onBudgetUpdate, onTitleUpdate, refreshSandbox, server, token, sessionId, t],
+    [applySandboxSnapshot, endTurn, finalizeThinkingMessages, finishWaiting, onBudgetUpdate, onTitleUpdate, refreshSandbox, server, token, sessionId, t],
   );
 
   const onWsDisconnect = useCallback(() => {
@@ -1793,6 +1798,8 @@ export function ChatView({
     queuedAttachmentsRef.current = [];
     lastThinkingStartedAtRef.current = null;
     setQueuedMessage(null);
+    // The server keeps writing and running these calls; after the reconnect they arrive as tool_call.
+    setMessages(dropOpenCalls);
     clearToolLoading();
     setWaiting(false);
   }, [clearToolLoading]);
