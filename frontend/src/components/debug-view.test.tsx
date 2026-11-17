@@ -186,8 +186,8 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     assert.ok(view.container.querySelector('tbody tr:nth-child(2) [aria-label="Interrupted"]'));
     assert.equal(view.container.querySelectorAll('tbody [aria-label="Completed"]').length, 0);
 
-    // The cache pill scales with the input against the table's largest, and fills by the cache hits.
-    requests.push(record({ ts: "2026-11-09T12:00:10Z", request_id: "r3", input_tokens: 24690, cache_read_tokens: 24690 }));
+    // The cache pill scales with the input against the table's largest, in another turn too, so turns compare; it fills by the cache hits.
+    requests.push(record({ ts: "2026-11-09T12:00:10Z", request_id: "r3", turn_id: "t-other", input_tokens: 24690, cache_read_tokens: 24690 }));
     await runInAct(() => socket.onmessage?.({ data: JSON.stringify({ type: "llm_context", role: "agent", request_id: "r3", status: "completed" }) }));
     await settle();
     const cachePills = Array.from(view.container.querySelectorAll<HTMLElement>("tbody .min-w-\\[3px\\]"), (pill) => [pill.style.width, (pill.firstElementChild as HTMLElement).style.width]);
