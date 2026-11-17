@@ -15,7 +15,6 @@ import {
   History,
   Hourglass,
   KeyRound,
-  Loader2,
   Plug,
   Puzzle,
   Replace,
@@ -32,6 +31,7 @@ import type { LucideIcon } from "lucide-react";
 import { diffLines } from "diff";
 import { MarkdownContent } from "./markdown-content";
 import { FilePreview } from "./file-preview";
+import { BrailleSpinner } from "./braille-spinner";
 import { ActivityCounter } from "./waiting-indicator";
 import {
   fencedCodeBlock,
@@ -454,7 +454,7 @@ function ApprovalBadge({
           className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-500/10 text-slate-600 dark:text-slate-400"
           title={tooltip || undefined}
         >
-          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+          <BrailleSpinner className="text-[10px]" />
           {t("review")}
         </span>
       );
@@ -826,7 +826,7 @@ export function ToolCallBadge({
       )}
       {streamingActivity && <ActivityCounter activity={streamingActivity} />}
       {loading && (
-        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+        <BrailleSpinner className="text-xs text-muted-foreground" />
       )}
     </span>
   );
@@ -941,7 +941,7 @@ export function ToolCallBadge({
           {isSentinelReviewPending && (
             <div className="text-[11px] text-muted-foreground leading-relaxed">
                 <span className="font-medium text-foreground/70">
-                  <Loader2 className="inline h-3 w-3 -translate-y-px mr-1 animate-spin" />
+                  <BrailleSpinner className="mr-1 text-xs" />
                   {t("details.sentinelLabel")}
                 </span>{" "}
                 {t("details.sentinelReviewing")}

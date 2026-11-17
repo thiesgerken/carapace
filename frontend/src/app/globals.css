@@ -346,3 +346,44 @@ body {
   font-size: 0.8em;
   color: var(--destructive);
 }
+
+/* Running indicator: the frames sit in a column inside a one-line window, and steps() moves the
+   column up one line every 80 ms. A column keeps every frame aligned whatever width the fallback
+   font gives braille, and the pseudo-element keeps the glyphs out of the text content. */
+.braille-spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  height: 1em;
+  overflow: hidden;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  line-height: 1;
+  vertical-align: -0.125em;
+}
+.braille-spinner::before {
+  content: "⠋\A⠙\A⠹\A⠸\A⠼\A⠴\A⠦\A⠧\A⠇\A⠏";
+  display: block;
+  white-space: pre;
+  animation: braille-spin 800ms steps(10) infinite;
+}
+@keyframes braille-spin {
+  to { transform: translateY(-10em); }
+}
+
+/* Status-line label: a bright band sweeps across muted text. */
+@media (prefers-reduced-motion: no-preference) {
+  .text-shimmer {
+    color: transparent;
+    background: linear-gradient(90deg, var(--muted-foreground) 40%, var(--foreground) 50%, var(--muted-foreground) 60%) 0 0 / 250% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: text-shimmer 2s linear infinite;
+  }
+}
+@keyframes text-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .braille-spinner::before { animation: none; }
+}

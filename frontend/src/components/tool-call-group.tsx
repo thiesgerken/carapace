@@ -2,10 +2,11 @@
 
 import { useTranslations } from "next-intl";
 import { useState } from "react";
-import { ChevronRight, Layers, Loader2 } from "lucide-react";
+import { ChevronRight, Layers } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { BrailleSpinner } from "./braille-spinner";
 
 interface ToolCallGroupProps {
   /** The grouped tool_call / thinking messages, for summary counting. */
@@ -156,7 +157,7 @@ export function ToolCallGroup({
           {summary}
         </span>
         {inProgress && (
-          <Loader2 className="ml-auto h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+          <BrailleSpinner className="ml-auto text-xs text-muted-foreground" />
         )}
       </button>
 

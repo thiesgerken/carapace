@@ -1,6 +1,5 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 
 import { useNow } from "@/hooks/use-now";
@@ -41,8 +40,7 @@ export function WaitingIndicator({ activity }: { activity: LlmActivity | null })
 
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-      <span>{agent ? t(PHASE_KEYS[agent.phase]) : t("working")}</span>
+      <span className="text-shimmer">{agent ? t(PHASE_KEYS[agent.phase]) : t("working")}</span>
       {agent && <ActivityCounter activity={agent} />}
     </div>
   );

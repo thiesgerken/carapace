@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Archive, Brain, Bug, Check, ChevronRight, Copy, GitBranch, Info, Loader2, Paperclip, Play, RotateCcw, Undo2 } from "lucide-react";
+import { AlertTriangle, Archive, Brain, Bug, Check, ChevronRight, Copy, GitBranch, Info, Paperclip, Play, RotateCcw, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
@@ -11,6 +11,7 @@ import { useAppLocale } from "@/components/locale-provider";
 import { MarkdownContent } from "./markdown-content";
 import { FilePreview } from "./file-preview";
 import { ToolCallBadge } from "./tool-call-badge";
+import { BrailleSpinner } from "./braille-spinner";
 import { ApprovalCard } from "./approval-card";
 import { CredentialApprovalCard } from "./credential-approval-card";
 import { DomainAccessApprovalCard } from "./domain-access-approval-card";
@@ -269,7 +270,7 @@ function ThinkingBadge({
           )}
         />
         {streaming ? (
-          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-foreground/65 dark:text-foreground/70" />
+          <BrailleSpinner className="text-xs text-foreground/65 dark:text-foreground/70" />
         ) : (
           <Brain className="h-3 w-3 shrink-0 text-foreground/65 dark:text-foreground/70" />
         )}
