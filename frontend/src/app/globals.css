@@ -347,29 +347,22 @@ body {
   color: var(--destructive);
 }
 
-/* Running indicator: the frames sit in a column inside a one-line window, and steps() moves the
-   column up one line every 80 ms. A column keeps every frame aligned whatever width the fallback
-   font gives braille, and the pseudo-element keeps the glyphs out of the text content. */
+/* Running indicator (BrailleSpinner sets the frame). The fixed width keeps the row from jittering
+   when a fallback font gives the frames different widths. */
 .braille-spinner {
   display: inline-block;
   flex-shrink: 0;
-  height: 1em;
-  overflow: hidden;
+  width: 1ch;
   font-family: var(--font-mono), ui-monospace, monospace;
   line-height: 1;
-  vertical-align: -0.125em;
+  text-align: center;
 }
 .braille-spinner::before {
-  content: "⠋\A⠙\A⠹\A⠸\A⠼\A⠴\A⠦\A⠧\A⠇\A⠏";
-  display: block;
-  white-space: pre;
-  animation: braille-spin 800ms steps(10) infinite;
-}
-@keyframes braille-spin {
-  to { transform: translateY(-10em); }
+  content: attr(data-frame);
 }
 
-/* Status-line label: a bright band sweeps across muted text. */
+/* Status-line label: a bright band sweeps across muted text. WaitingIndicator anchors the sweep to
+   the wall clock with a negative delay, so a remounted label picks up where the last one was. */
 @media (prefers-reduced-motion: no-preference) {
   .text-shimmer {
     color: transparent;
@@ -385,5 +378,5 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .braille-spinner::before { animation: none; }
+  .braille-spinner::before { content: "⠋"; }
 }
