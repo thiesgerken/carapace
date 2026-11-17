@@ -64,6 +64,7 @@ async def evaluate_with(
     assert_llm_budget_available: Callable[[], None] | None = None,
     usage_limits: UsageLimits | None = None,
     tool_call_callback: Any = None,
+    tool_call_id: str | None = None,
 ) -> None:
     """Main security gate. Auto-allows safe tools; asks the sentinel for everything else.
 
@@ -88,6 +89,7 @@ async def evaluate_with(
             args,
             "[bypass] yolo mode auto-allowed",
             tool_call_callback,
+            tool_call_id=tool_call_id,
             approval_source="bypass",
             approval_verdict="allow",
             approval_explanation=explanation,
@@ -110,6 +112,7 @@ async def evaluate_with(
             args,
             "[safe-list] auto-allowed",
             tool_call_callback,
+            tool_call_id=tool_call_id,
             approval_source="safe-list",
             approval_verdict="allow",
             approval_explanation="auto-allowed",
@@ -136,6 +139,7 @@ async def evaluate_with(
                 args,
                 f"[safe-list] auto-allowed read-only exec heuristic ({matched_exec})",
                 tool_call_callback,
+                tool_call_id=tool_call_id,
                 approval_source="safe-list",
                 approval_verdict="allow",
                 approval_explanation=explanation,
@@ -147,6 +151,7 @@ async def evaluate_with(
         args,
         "[sentinel] reviewing",
         tool_call_callback,
+        tool_call_id=tool_call_id,
         approval_source="sentinel",
     )
 
@@ -188,6 +193,7 @@ async def evaluate_with(
         args,
         detail,
         tool_call_callback,
+        tool_call_id=tool_call_id,
         approval_source="sentinel",
         approval_verdict=verdict.decision,
         approval_explanation=verdict.explanation,
@@ -945,6 +951,8 @@ def _log_tool_call(
     approval_source: ApprovalSource | None = None,
     approval_verdict: ApprovalVerdict | None = None,
     approval_explanation: str | None = None,
+    *,
+    tool_call_id: str | None,
 ) -> None:
     args_parts = []
     for k, v in args.items():
@@ -957,6 +965,6 @@ def _log_tool_call(
         args_str = args_str[:197] + "..."
 
     if callback:
-        callback(tool_name, args, detail, approval_source, approval_verdict, approval_explanation)
+        callback(tool_name, args, detail, approval_source, approval_verdict, approval_explanation, tool_call_id)
     else:
         print(f"  \033[2m{tool_name}({args_str}) {detail}\033[0m")

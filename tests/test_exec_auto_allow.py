@@ -40,7 +40,7 @@ async def test_exec_auto_allow_skips_sentinel_for_read_only_commands(
         sentinel,
         "exec",
         {"command": command},
-        tool_call_callback=lambda tool, args, detail, source, verdict, explanation: callback_calls.append(
+        tool_call_callback=lambda tool, args, detail, source, verdict, explanation, _call_id: callback_calls.append(
             (tool, args, detail, source, verdict, explanation)
         ),
     )
