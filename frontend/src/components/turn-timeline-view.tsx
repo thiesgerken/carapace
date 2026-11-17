@@ -26,6 +26,7 @@ import { useFormatter, useTranslations } from "next-intl";
 import { Stat } from "@/components/debug-stat";
 import { useFormatCost } from "@/components/memory-ui";
 import { useKeyedFetch } from "@/hooks/use-keyed-fetch";
+import { useNow } from "@/hooks/use-now";
 import { fetchLlmContext, fetchTurns, fetchTurnTimeline } from "@/lib/api";
 import {
   llmSegments,
@@ -112,17 +113,6 @@ const STATUS_BAR_CLASS: Partial<Record<SpanStatus, string>> = {
   error: "bg-red-500 dark:bg-red-400",
   interrupted: "bg-zinc-400 dark:bg-zinc-600",
 };
-
-/** Ticks while *active*, so running spans grow to now. */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    const id = setInterval(() => setNow(Date.now()), 500);
-    return () => clearInterval(id);
-  }, [active]);
-  return now;
-}
 
 function useFormatDuration(): (ms: number) => string {
   const t = useTranslations("debugView.turns.duration");

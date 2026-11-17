@@ -547,39 +547,19 @@ def test_fork_session_normalizes_unattended_history_with_thinking_parts(tmp_path
     assert response_part.content == "completed"
 
 
-def test_handle_token_chunk_promotes_activity_and_broadcasts(tmp_path: Path, db_factory) -> None:
+def test_handle_token_chunk_broadcasts(tmp_path: Path, db_factory) -> None:
     async def _run() -> None:
         with _patch_sentinel():
             engine = _make_engine(tmp_path, session_factory=db_factory)
 
-        state = engine.session_mgr.create_session(user="thies")
-        sid = state.session_id
+        sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
         subscriber = _FakeSubscriber()
         engine.subscribe(sid, subscriber)
 
-        started_at = datetime.now(tz=UTC)
-        llm_state = LlmRequestState(
-            request_id="req-token",
-            source="agent",
-            model_name="anthropic:claude-haiku-4-5",
-            started_at=started_at,
-            first_text_at=started_at,
-            phase="generating",
-        )
-
-        with patch("carapace.session.engine.current_llm_request_state", return_value=llm_state):
-            await engine._handle_token_chunk(active, "hello")
+        await engine._handle_token_chunk(active, "hello")
 
         assert subscriber.token_chunks == ["hello"]
-        assert active.llm_request_state is not None
-        assert active.llm_request_state.phase == "generating"
-        assert subscriber.llm_activity_updates
-        assert subscriber.llm_activity_updates[-1] is not None
-        assert subscriber.llm_activity_updates[-1].phase == "generating"
-        persisted = engine.session_mgr.load_llm_request_state(sid)
-        assert persisted is not None
-        assert persisted.phase == "generating"
 
     asyncio.run(_run())
 
@@ -589,20 +569,12 @@ def test_handle_thinking_token_chunk_updates_buffer_and_broadcasts(tmp_path: Pat
         with _patch_sentinel():
             engine = _make_engine(tmp_path, session_factory=db_factory)
 
-        state = engine.session_mgr.create_session(user="thies")
-        sid = state.session_id
+        sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
         subscriber = _FakeSubscriber()
         engine.subscribe(sid, subscriber)
-
-        started_at = datetime.now(tz=UTC)
         llm_state = LlmRequestState(
-            request_id="req-thinking",
-            source="agent",
-            model_name="anthropic:claude-haiku-4-5",
-            started_at=started_at,
-            first_thinking_at=started_at,
-            phase="thinking",
+            request_id="req-thinking", source="agent", started_at=datetime.now(tz=UTC), phase="thinking"
         )
 
         with patch("carapace.session.engine.current_llm_request_state", return_value=llm_state):
@@ -610,14 +582,6 @@ def test_handle_thinking_token_chunk_updates_buffer_and_broadcasts(tmp_path: Pat
 
         assert subscriber.thinking_chunks == ["ponder"]
         assert active.llm_request_thinking == {"req-thinking": "ponder"}
-        assert active.llm_request_state is not None
-        assert active.llm_request_state.phase == "thinking"
-        assert subscriber.llm_activity_updates
-        assert subscriber.llm_activity_updates[-1] is not None
-        assert subscriber.llm_activity_updates[-1].phase == "thinking"
-        persisted = engine.session_mgr.load_llm_request_state(sid)
-        assert persisted is not None
-        assert persisted.phase == "thinking"
 
     asyncio.run(_run())
 

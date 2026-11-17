@@ -313,7 +313,7 @@ export interface ThinkingChunk {
   content: string;
 }
 
-export type LlmActivityPhase = "processing_prompt" | "thinking" | "generating";
+export type LlmActivityPhase = "processing_prompt" | "thinking" | "generating" | "tool_call";
 
 export interface LlmActivity {
   request_id: string;
@@ -324,6 +324,10 @@ export interface LlmActivity {
   first_thinking_at?: string | null;
   last_thinking_at?: string | null;
   first_text_at?: string | null;
+  /** The tool whose call the model is writing, while the phase is tool_call. */
+  tool_name?: string | null;
+  /** Characters of thinking, text and tool-call arguments streamed so far. */
+  streamed_chars?: number;
 }
 
 export interface LlmActivityUpdate {

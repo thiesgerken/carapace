@@ -47,7 +47,6 @@ from ..security.context import ApprovalSource, ApprovalVerdict, format_denial_me
 from ..spans import Span, SpanStatus, TurnTrace, attach, span
 from ..usage import (
     BudgetGauge,
-    LlmRequestState,
     SessionBudgetExceededError,
     aggregate_turn_generation,
 )
@@ -180,12 +179,6 @@ class SessionTurnHost(Protocol):
     def _agent_request_limit_message(self, active: ActiveSession, error: UsageLimitExceeded) -> str | None: ...
 
     def _budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]: ...
-
-    async def _maybe_promote_llm_request_state(
-        self,
-        active: ActiveSession,
-        state: LlmRequestState | None,
-    ) -> None: ...
 
     def _turn_usage_payload(self, active: ActiveSession) -> TurnUsage | None: ...
 
@@ -659,7 +652,6 @@ class SessionTurnMixin(SessionTurnHost):
         )
 
     async def _handle_token_chunk(self, active: ActiveSession, chunk: str) -> None:
-        await self._maybe_promote_llm_request_state(active, _engine_module().current_llm_request_state())
         await self._broadcast(active, "on_token", chunk)
 
     async def _handle_thinking_token_chunk(self, active: ActiveSession, chunk: str) -> None:
@@ -668,7 +660,6 @@ class SessionTurnMixin(SessionTurnHost):
             active.llm_request_thinking[state.request_id] = (
                 active.llm_request_thinking.get(state.request_id, "") + chunk
             )
-        await self._maybe_promote_llm_request_state(active, state)
         await self._broadcast(active, "on_thinking_token", chunk)
 
     def _schedule_title_generation_if_needed(

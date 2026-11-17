@@ -83,6 +83,8 @@ def _llm_activity_payload(activity: LlmRequestState | None) -> LlmActivity | Non
         first_thinking_at=activity.first_thinking_at,
         last_thinking_at=activity.last_thinking_at,
         first_text_at=activity.first_text_at,
+        tool_name=activity.tool_name,
+        streamed_chars=activity.streamed_chars,
     )
 
 
