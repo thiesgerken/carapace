@@ -1,6 +1,6 @@
 import { Allow, MalformedJSON, parse } from "partial-json";
 
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, LlmActivity } from "@/lib/types";
 
 type ToolCallMessage = Extract<ChatMessage, { kind: "tool_call" }>;
 
@@ -117,6 +117,16 @@ export function dropOpenCalls(messages: ChatMessage[]): ChatMessage[] {
 function nthIndex(messages: ChatMessage[], matches: (message: ChatMessage) => boolean, n: number): number {
   let seen = 0;
   return messages.findIndex((m) => matches(m) && ++seen === n);
+}
+
+/**
+ * The card the agent's request is writing right now, which carries the request's counter: the newest
+ * card still streaming args. -1 outside a tool call phase or before its card arrived.
+ */
+export function streamingCallIndex(messages: ChatMessage[], activity: LlmActivity | null): number {
+  if (activity?.source !== "agent" || activity.phase !== "tool_call") return -1;
+  // ponytail: parallel calls stream one after another, so the newest open card is the one being written.
+  return messages.findLastIndex((m) => isOpen(m) && m.argsStreaming === true);
 }
 
 function isOpen(message: ChatMessage): message is ToolCallMessage {

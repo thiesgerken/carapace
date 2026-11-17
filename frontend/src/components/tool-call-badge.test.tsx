@@ -60,6 +60,30 @@ test("a loading card names the step it waits for, and drops it once done", async
   }
 });
 
+test("the card being written shows its request's time and approximate tokens in the header", async () => {
+  const restore = installDom();
+  try {
+    const startedAt = new Date(Date.now() - 30_500).toISOString();
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <ToolCallBadge
+          tool="exec"
+          args={{}}
+          detail=""
+          loading
+          argsText=""
+          argsStreaming
+          streamingActivity={{ request_id: "r1", source: "agent", phase: "tool_call", tool_name: "exec", started_at: startedAt, streamed_chars: 5_200 }}
+        />
+      </NextIntlClientProvider>,
+    );
+    assert.match(view.container.querySelector("button")?.textContent ?? "", /30 s · ~1\.3k tokens/);
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
 test("a multi-line command shows only its first line in the row, a one-line command all of it", async () => {
   const restore = installDom();
   try {

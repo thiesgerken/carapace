@@ -1177,7 +1177,6 @@
             "processingPrompt": "Processing prompt...",
             "thinking": "Thinking...",
             "generating": "Generating...",
-            "toolCall": "Writing {tool} call...",
             "working": "Working...",
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",

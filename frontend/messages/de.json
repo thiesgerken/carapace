@@ -1177,7 +1177,6 @@
             "processingPrompt": "Prompt wird verarbeitet...",
             "thinking": "Denke nach...",
             "generating": "Generiere...",
-            "toolCall": "Schreibe {tool}-Aufruf...",
             "working": "Arbeite...",
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",

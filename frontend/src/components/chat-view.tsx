@@ -63,7 +63,7 @@ import {
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
 import { applySpanToToolCall } from "@/lib/tool-call-status";
-import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall } from "@/lib/live-tool-calls";
+import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall, streamingCallIndex } from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 import { ChatInput } from "./chat-input";
@@ -1818,6 +1818,8 @@ export function ChatView({
 
   const terminalIndices = completedTurnMessageIndices(messages);
   const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
+  // The card being written carries the request's counter; the waiting line covers the other phases.
+  const streamingCall = waiting ? streamingCallIndex(messages, llmActivity) : -1;
   const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
 
   function showInspectorSection(selector: string, block: ScrollLogicalPosition): void {
@@ -2979,6 +2981,7 @@ export function ChatView({
                         server={server}
                         sessionId={sessionId}
                         activeLlmActivity={llmActivity}
+                        streamingActivity={i === streamingCall ? llmActivity : null}
                         canFork={canFork}
                         canRetry={canRetry}
                         canContinue={canContinue}
@@ -3010,7 +3013,7 @@ export function ChatView({
                   ),
                 );
               })()}
-              {waiting && <WaitingIndicator activity={llmActivity} />}
+              {waiting && streamingCall === -1 && <WaitingIndicator activity={llmActivity} />}
               <div ref={bottomRef} />
             </div>
           </div>
