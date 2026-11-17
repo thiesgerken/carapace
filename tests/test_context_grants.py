@@ -938,6 +938,27 @@ class TestExecNotificationDedupe:
         assert [c[0] for c in calls] == ["files.pythonhosted.org", "pypi.org"]
         assert "s1" not in mgr._exec_notified_domains
 
+    @pytest.mark.asyncio
+    async def test_domain_dedupe_bypass_in_container_exec_keeps_enclosing_set(self, tmp_path: Path, db_factory):
+        """Inside an exec() (re-activation during recreate_session), the exec's set is reused and kept."""
+        mgr = self._make_manager(tmp_path, db_factory)
+        calls: list[tuple] = []
+        mgr._domain_notify_cbs["s1"] = lambda *a: calls.append(a)
+        enclosing = {"pypi.org"}
+        mgr._exec_notified_domains["s1"] = enclosing
+        sc = MagicMock(container_id="c1", session_id="s1", session_env={})
+
+        async def fake_runtime_exec(*_a, **_kw):
+            for domain in ["pypi.org", "files.pythonhosted.org"]:
+                mgr.notify_domain_access("s1", domain, True)
+            return ExecResult(stdout="", exit_code=0, output="")
+
+        mgr._runtime.exec = fake_runtime_exec
+        await mgr._exec_in_container(sc, "pip install x", bypass_proxy=True)
+
+        assert [c[0] for c in calls] == ["files.pythonhosted.org"]
+        assert mgr._exec_notified_domains["s1"] is enclosing
+
     def test_domain_dedupe_skill_during_exec(self, tmp_path: Path, db_factory):
         """During an exec, repeated skill-granted domain notifications are deduped."""
         mgr = self._make_manager(tmp_path, db_factory)
