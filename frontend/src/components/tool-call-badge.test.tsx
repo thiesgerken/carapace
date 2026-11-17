@@ -77,7 +77,7 @@ test("the card being written shows its request's time and approximate tokens in 
         />
       </NextIntlClientProvider>,
     );
-    assert.match(view.container.querySelector("button")?.textContent ?? "", /30 s · ~1\.3k tokens/);
+    assert.match(view.container.querySelector("button")?.textContent ?? "", /30 s · 1\.3k tokens/);
     await view.unmount();
   } finally {
     restore();

@@ -1180,7 +1180,7 @@
             "working": "Working...",
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",
-            "tokens": "~{count} tokens"
+            "tokens": "{count} tokens"
         },
         "unknown": "Unknown",
         "status": {
