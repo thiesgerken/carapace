@@ -61,6 +61,7 @@ import {
   shouldConfirmArchiveSession,
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
+import { appendStreamedArgs, completeStreamedCall, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall } from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 import { ChatInput } from "./chat-input";
@@ -1330,8 +1331,9 @@ export function ChatView({
   // Clear the loading spinner on any tool_call messages still pending
   const clearToolLoading = useCallback(() => {
     setMessages((prev) => {
-      if (!prev.some((m) => m.kind === "tool_call" && m.loading)) return prev;
-      return prev.map((m) =>
+      const settled = markUnrunCalls(prev);
+      if (!settled.some((m) => m.kind === "tool_call" && m.loading)) return settled;
+      return settled.map((m) =>
         m.kind === "tool_call" && m.loading ? { ...m, loading: false } : m,
       );
     });
@@ -1453,7 +1455,7 @@ export function ChatView({
             .then((history) => {
               if (refetchSeq !== doneRefetchSeqRef.current) return;
               setMessages((prev) => [
-                ...projectHistoryToMessages(history),
+                ...keepUnrunCalls(prev.slice(0, doneBaselineLen), projectHistoryToMessages(history)),
                 ...prev.slice(doneBaselineLen),
               ]);
             })
@@ -1495,6 +1497,9 @@ export function ChatView({
             toolId: msg.tool_id,
             parentToolId: msg.parent_tool_id,
           };
+          // The card the call's streamed args opened becomes this call; without one, it is placed as before.
+          const intoStreamedCard = (place: (prev: ChatMessage[]) => ChatMessage[]) => (prev: ChatMessage[]) =>
+            replaceStreamedCall(prev, msg.tool_call_id, { ...newMsg, toolCallId: msg.tool_call_id ?? undefined }) ?? place(prev);
           if (
             isUserApprovedReplay(
               msg.tool,
@@ -1513,7 +1518,7 @@ export function ChatView({
             break;
           }
           if (msg.tool_id) {
-            setMessages((prev) => {
+            setMessages(intoStreamedCard((prev) => {
               const withThinkingFinalized = finalizeThinkingMessages(prev);
               const updated = updateToolCallMessageById(withThinkingFinalized, msg.tool_id!, (entry) => ({
                 ...entry,
@@ -1536,7 +1541,7 @@ export function ChatView({
               }
 
               return [...withThinkingFinalized, newMsg];
-            });
+            }));
             if (isGitPush) finishWaiting();
             break;
           }
@@ -1558,7 +1563,7 @@ export function ChatView({
               return [...updated, newMsg];
             });
           } else {
-            setMessages((prev) => [...finalizeThinkingMessages(prev), newMsg]);
+            setMessages(intoStreamedCard((prev) => [...finalizeThinkingMessages(prev), newMsg]));
           }
           if (isGitPush) finishWaiting();
           break;
@@ -1566,6 +1571,8 @@ export function ChatView({
         case "tool_result":
           setWaiting(true);
           setMessages((prev) => {
+            const completed = completeStreamedCall(prev, msg.tool_call_id, { result: msg.result, files: msg.files, exitCode: msg.exit_code, toolId: msg.tool_id });
+            if (completed) return completed;
             if (msg.tool_id) {
               const updatedById = updateToolResultById(prev, msg.tool_id, {
                 result: msg.result,
@@ -1595,9 +1602,22 @@ export function ChatView({
             void refreshSandbox();
           }
           break;
+        case "tool_call_start":
+          setWaiting(true);
+          setMessages((prev) => startStreamedCall(finalizeThinkingMessages(prev), msg.tool_call_id, msg.tool));
+          break;
+        case "tool_call_delta":
+          setMessages((prev) => appendStreamedArgs(prev, msg.tool_call_id, msg.args_delta));
+          break;
+        case "tool_call_end":
+          setMessages((prev) => endStreamedCall(prev, msg.tool_call_id, msg.aborted));
+          break;
         case "approval_request":
           setWaiting(true);
-          setMessages((prev) => appendEscalationCard(prev, { kind: "approval", request: msg }));
+          setMessages((prev) => {
+            const card = { kind: "approval", request: msg } as const;
+            return replaceStreamedCall(prev, msg.tool_call_id, card) ?? appendEscalationCard(prev, card);
+          });
           break;
         case "domain_access_approval_request":
           setWaiting(true);
@@ -1639,7 +1659,7 @@ export function ChatView({
             fetchHistory(server, token, sessionId)
               .then((history) =>
                 setMessages((prev) => [
-                  ...projectHistoryToMessages(history),
+                  ...keepUnrunCalls(prev.slice(0, compactBaselineLen), projectHistoryToMessages(history)),
                   ...prev.slice(compactBaselineLen),
                 ]),
               )

@@ -272,6 +272,7 @@ class SessionTurnMixin(SessionTurnHost):
             approval_source: ApprovalSource | None = None,
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
+            tool_call_id: str | None = None,
         ) -> None:
             if approval_verdict == "allow":
                 budget = active.state.budget
@@ -305,6 +306,7 @@ class SessionTurnMixin(SessionTurnHost):
                     approval_verdict,
                     approval_explanation,
                     tool_id,
+                    tool_call_id=tool_call_id,
                 )
             )
             active._pending_sends.add(task)
@@ -643,6 +645,7 @@ class SessionTurnMixin(SessionTurnHost):
                 collect_approvals=collect_approvals,
                 on_token=partial(self._handle_token_chunk, active),
                 on_thinking_token=partial(self._handle_thinking_token_chunk, active),
+                on_tool_call_stream=partial(self._broadcast, active, "on_tool_call_stream"),
                 on_assistant_text=on_assistant_text,
                 on_messages_snapshot=lambda snapshot: on_messages_snapshot(snapshot),
                 before_llm_call=lambda: self._assert_llm_budget_available(active),
