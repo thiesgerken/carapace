@@ -317,12 +317,14 @@ function RequestTimeline({
     value === null ? <span className="text-muted-foreground">–</span> : <span title={format.number(value)}>{compactCount(value, (n, maximumFractionDigits) => format.number(n, { maximumFractionDigits }))}</span>;
   const countColumn = (key: string, value: (record: LlmRequestRecord) => number | null): TimelineColumn[] =>
     isEmptyColumn(records, value) ? [] : [{ key, numeric: true, cell: (r) => count(value(r)) }];
+  // One scale for the whole tab, not per turn, so turns compare.
+  const maxInput = records.reduce((max, r) => Math.max(max, r.input_tokens), 0);
   const columns: TimelineColumn[] = [
     { key: "time", cell: (r) => <Time record={r} linked={r.request_id !== null && r.request_id === contextRequestId} /> },
     { key: "duration", cell: (r) => <RequestDuration record={r} /> },
     { key: "input", numeric: true, cell: (r) => count(r.input_tokens) },
     // Without any cache read (caching off, or prompts too short to cache) every row would be a 0 % "miss": a miss is only news among hits.
-    ...(isEmptyColumn(records, (r) => r.cache_read_tokens) ? [] : [{ key: "cacheHitRate", cell: (r: LlmRequestRecord) => <CacheMeter record={r} /> }]),
+    ...(isEmptyColumn(records, (r) => r.cache_read_tokens) ? [] : [{ key: "cacheHitRate", cell: (r: LlmRequestRecord) => <CacheMeter record={r} maxInput={maxInput} /> }]),
     ...countColumn("cacheRead", (r) => r.cache_read_tokens),
     ...countColumn("cacheWrite", (r) => r.cache_write_tokens),
     { key: "output", numeric: true, cell: (r) => count(r.output_tokens) },
@@ -393,8 +395,12 @@ function PhaseBar({ phases, start, end, className }: { phases: LlmRequestRecord;
   );
 }
 
-/** Hits are the norm and stay quiet; a miss, the thing to notice, gets the accent. */
-function CacheMeter({ record }: { record: LlmRequestRecord }) {
+/**
+ * The pill's length is the request's input relative to the table's largest, its grey part the cache
+ * read, so a miss on a big request outweighs one on a small request. Hits are the norm and stay
+ * quiet; a miss, the thing to notice, gets the accent.
+ */
+function CacheMeter({ record, maxInput }: { record: LlmRequestRecord; maxInput: number }) {
   const t = useTranslations("debugView.timeline");
   const format = useFormatter();
   const rate = cacheHitRate(record);
@@ -402,8 +408,14 @@ function CacheMeter({ record }: { record: LlmRequestRecord }) {
   const miss = rate === 0;
   return (
     <span className="flex items-center gap-1.5" title={miss ? t("cacheMiss") : undefined}>
-      <span aria-hidden className={cn("h-1.5 w-10 overflow-hidden rounded-full", miss ? "bg-amber-500/30" : "bg-muted")}>
-        <span className="block h-full bg-muted-foreground/45" style={{ width: `${rate * 100}%` }} />
+      <span aria-hidden className="w-10">
+        {/* The minimum width keeps a tiny request visible. */}
+        <span
+          className={cn("block h-1.5 min-w-[3px] overflow-hidden rounded-full", miss ? "bg-amber-500/30" : "bg-muted")}
+          style={{ width: `${(record.input_tokens / maxInput) * 100}%` }}
+        >
+          <span className="block h-full bg-muted-foreground/45" style={{ width: `${rate * 100}%` }} />
+        </span>
       </span>
       <span className={cn("w-9 text-right", miss ? "font-medium text-amber-700 dark:text-amber-300" : "text-muted-foreground")}>
         {format.number(rate, { style: "percent", maximumFractionDigits: 0 })}

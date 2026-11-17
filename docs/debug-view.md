@@ -20,8 +20,10 @@ group takes its own line). Each role tab shows the role's **Requests** table and
   - Counts are compact (12.3k), with the exact number in the tooltip.
   - A count column that is 0 or unknown in every row is left out. Cache hits go with the cache
     reads: without any (caching off, or prompts too short to cache), every row would be a 0 % miss.
-  - Cache hits show as a small meter. A miss (0 %) is the one in an accent color, so it stands out
-    where caching otherwise works: a cold first request, or a broken prefix.
+  - Cache hits show as a small pill: its length is the request's input relative to the largest
+    input in the table (all turns, so turns compare), its grey part the cache read, the rest the
+    uncached input. A miss (0 %) is the one in an accent color, so it stands out where caching
+    otherwise works: a cold first request, or a broken prefix.
   - The cost is one cell: the actual cost, or `≈` the equivalent for a subscription request
     (nothing billed). The server prices a request at its list price or, on a subscription, at zero.
   - The model column shows only when the rows differ in model.
