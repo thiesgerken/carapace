@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { appendStreamedArgs, completeStreamedCall, endStreamedCall, keepUnrunCalls, markUnrunCalls, parseStreamingArgs, replaceStreamedCall, startStreamedCall } from "./live-tool-calls";
+import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, parseStreamingArgs, replaceStreamedCall, startStreamedCall } from "./live-tool-calls";
 import type { ChatMessage } from "./types";
 
 test("streamed args parse as far as they go; malformed JSON keeps what the card had", () => {
@@ -74,18 +74,32 @@ test("a repeated start opens a new card; the earlier open one under that id was 
   assert.deepEqual(messages.map((m) => m.kind === "tool_call" && [m.tool, m.notRun, m.loading, m.args]), [["write", true, false, {}], ["exec", undefined, true, { command: "ls" }]]);
 });
 
-test("not-run cards outlive the re-render from saved history, after the call they followed", () => {
+test("not-run cards outlive the re-render from saved history, before what followed them", () => {
   const user = (content: string): ChatMessage => ({ kind: "user", content });
   const saved = (toolId: string): ChatMessage => ({ kind: "tool_call", tool: "exec", args: {}, detail: "", toolId });
   const notRun = (toolCallId: string): ChatMessage => ({ kind: "tool_call", tool: "exec", args: {}, detail: "", toolCallId, argsText: "{}", notRun: true });
-  const answer: ChatMessage = { kind: "assistant", content: "done" };
-  const live = [user("one"), notRun("early"), saved("a"), notRun("x"), notRun("y"), saved("b"), user("two"), saved("c")];
-  // The saved history has more (thinking, the answer) and fresh objects, never the not-run cards.
-  const projected = [user("one"), { kind: "thinking", content: "…" } as ChatMessage, saved("a"), saved("b"), answer, user("two"), saved("c"), answer];
+  const thinking: ChatMessage = { kind: "thinking", content: "…" };
+  const text = (content: string): ChatMessage => ({ kind: "assistant", content, partial: true });
+  const error: ChatMessage = { kind: "error", detail: "Cancelled by user.", turnTerminal: true };
+  // Turn one: a call rejected mid-turn, narration after a saved call, then a cancel mid-write.
+  // Turn two: a call whose final tool_call never came, after the answer.
+  const live = [user("one"), thinking, notRun("rejected"), saved("a"), text("next"), notRun("x"), notRun("y"), error, user("two"), saved("b"), text("answer"), notRun("late")];
+  // The saved history has fresh objects, never the not-run cards.
+  const projected = [user("one"), thinking, saved("a"), text("next"), error, user("two"), saved("b"), text("answer")];
   const kept = keepUnrunCalls(live, projected);
-  assert.deepEqual(
-    kept.map((m) => (m.kind === "tool_call" ? m.toolId ?? m.toolCallId : m.kind)),
-    ["user", "early", "thinking", "a", "x", "y", "b", "assistant", "user", "c", "assistant"],
-  );
+  const label = (m: ChatMessage) => (m.kind === "tool_call" ? m.toolId ?? m.toolCallId : m.kind === "assistant" ? m.content : m.kind);
+  assert.deepEqual(kept.map(label), ["user", "thinking", "rejected", "a", "next", "error", "x", "y", "user", "b", "answer", "late"]);
   assert.equal(keepUnrunCalls([user("one"), saved("a")], projected), projected);
+});
+
+test("a dropped socket drops the cards still streaming: the call comes back as one tool_call", () => {
+  let messages = startStreamedCall([{ kind: "user", content: "go" }], "c", "exec");
+  messages = appendStreamedArgs(messages, "c", '{"command": "make"}');
+  const done: ChatMessage = { kind: "tool_call", tool: "exec", args: {}, detail: "", toolId: "t-d", toolCallId: "d", notRun: true };
+  messages = dropOpenCalls([...messages, done]);
+  assert.deepEqual(messages.map((m) => m.kind), ["user", "tool_call"], "a not-run card stays; only open ones go");
+  // After the reconnect the server sends the call itself; there is no card to replace, so it is placed once.
+  const final: ChatMessage = { kind: "tool_call", tool: "exec", args: { command: "make" }, detail: "", toolId: "t-c", toolCallId: "c" };
+  assert.equal(replaceStreamedCall(messages, "c", final), null);
+  assert.equal(markUnrunCalls(messages), messages, "nothing left for the turn end to mark");
 });
