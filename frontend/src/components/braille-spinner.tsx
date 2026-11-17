@@ -5,7 +5,7 @@ import { useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
 
 const FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
-const FRAME_MS = 80;
+const FRAME_MS = 120;
 
 // One wall-clock ticker for every spinner: a spinner that remounts mid-stream shows the same frame
 // as the others instead of starting over, and many running rows still cost one interval.
@@ -27,7 +27,7 @@ function subscribe(onTick: () => void): () => void {
 const currentFrame = () => FRAMES[Math.floor(Date.now() / FRAME_MS) % FRAMES.length];
 const firstFrame = () => FRAMES[0];
 
-/** The chat's "still running" mark: braille dots cycling every 80 ms. */
+/** The chat's "still running" mark: braille dots cycling every 120 ms. */
 export function BrailleSpinner({ className }: { className?: string }) {
   const frame = useSyncExternalStore(subscribe, currentFrame, firstFrame);
   // The frame reaches the screen through CSS (`.braille-spinner` in globals.css): that keeps it out
