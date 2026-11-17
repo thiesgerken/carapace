@@ -66,6 +66,12 @@ class SandboxExecCoordinator:
         extra_env: dict[str, str] | None = None,
     ) -> ExecResult:
         """Run *command* in *sc* without acquiring the exec lock."""
+        # A bypassed install (e.g. skill re-activation after a sandbox restart) opens
+        # one connection per package; without a dedupe set each one becomes a UI entry.
+        # An enclosing exec() already owns a set, so only create (and drop) our own.
+        owns_notified_domains = bypass_proxy and sc.session_id not in self._state.exec_notified_domains
+        if owns_notified_domains:
+            self._state.exec_notified_domains[sc.session_id] = set()
         if bypass_proxy:
             self._state.proxy_bypass_sessions.add(sc.session_id)
             logger.info(f"Proxy bypass ENABLED for session {sc.session_id}")
@@ -84,6 +90,8 @@ class SandboxExecCoordinator:
             if bypass_proxy:
                 self._state.proxy_bypass_sessions.discard(sc.session_id)
                 logger.info(f"Proxy bypass DISABLED for session {sc.session_id}")
+            if owns_notified_domains:
+                self._state.exec_notified_domains.pop(sc.session_id, None)
 
     async def exec(
         self,
