@@ -372,7 +372,8 @@ function RequestTimeline({
 
 /**
  * The main column after the time: how long the request took, with its phases in the waterfall's
- * colors. The pill's length is the duration relative to the table's longest, so slow requests stand out.
+ * colors. The pill's length is the duration relative to the table's longest, so slow requests stand
+ * out. The square root keeps a short tool-call request readable next to a long answer.
  */
 function RequestDuration({ record, maxDuration }: { record: LlmRequestRecord; maxDuration: number }) {
   const t = useTranslations("debugView.timeline");
@@ -384,7 +385,7 @@ function RequestDuration({ record, maxDuration }: { record: LlmRequestRecord; ma
     <span className="flex items-center gap-2">
       <span className="w-12 text-right font-medium text-foreground">{t("seconds", { seconds: format.number(duration / 1000, { maximumFractionDigits: 1 }) })}</span>
       {/* Every request of the table may have taken 0 ms. */}
-      <ScaledPill share={maxDuration > 0 ? duration / maxDuration : 0} className="w-16">
+      <ScaledPill share={maxDuration > 0 ? Math.sqrt(duration / maxDuration) : 0} className="w-16">
         <PhaseBar phases={record} start={start} end={start + duration} />
       </ScaledPill>
     </span>
