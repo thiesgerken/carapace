@@ -57,3 +57,23 @@ test("a loading card names the step it waits for, and drops it once done", async
     restore();
   }
 });
+
+test("a multi-line command shows only its first line in the row, a one-line command all of it", async () => {
+  const restore = installDom();
+  try {
+    const row = async (command: string) => {
+      const view = await renderReact(
+        <NextIntlClientProvider locale="en" messages={messages}>
+          <ToolCallBadge tool="exec" args={{ command }} detail="" result="4.2" />
+        </NextIntlClientProvider>,
+      );
+      const summary = view.container.querySelector("button span.font-mono")?.textContent;
+      await view.unmount();
+      return summary;
+    };
+    assert.equal(await row("cat > stats.py <<'EOF'\nimport statistics\nEOF\npython3 stats.py"), "cat > stats.py <<'EOF' …");
+    assert.equal(await row("ls -la /workspace"), "ls -la /workspace");
+  } finally {
+    restore();
+  }
+});

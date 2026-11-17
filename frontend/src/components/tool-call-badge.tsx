@@ -258,6 +258,13 @@ function getExecCommand(args: Record<string, unknown>): string {
   return "";
 }
 
+/** A command's first line, marked as cut when there is more: the row has room for one, the details show it all. */
+function firstLine(command: string): string {
+  const text = command.trim();
+  const end = text.indexOf("\n");
+  return end === -1 ? text : `${text.slice(0, end).trimEnd()} …`;
+}
+
 function normalizeOptionalLabel(value: string): string {
   let trimmed = value.trim();
   if (trimmed.length === 0) return "";
@@ -690,7 +697,7 @@ export function ToolCallBadge({
   );
   const argsSummary =
     artifactSlug !== null ? "" : isExecTool
-      ? execTitle || execCommand || t("fallbacks.missingCommand")
+      ? execTitle || firstLine(execCommand) || t("fallbacks.missingCommand")
       : isReadTool
         ? formatReadSummaryFromSplit(
             args,
