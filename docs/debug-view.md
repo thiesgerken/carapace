@@ -16,7 +16,9 @@ group takes its own line). Each role tab shows the role's **Requests** table and
   reasoning tokens, cost and model. The table stresses exceptions, not the norm:
   - A completed request has no status marker. A failed one gets a red icon, and an interrupted one
     a grey icon.
-  - The duration leads, with a bar of the request's phases in the waterfall's colors.
+  - The duration leads, with a pill of the request's phases in the waterfall's colors. Its length is
+    the duration relative to the longest request in the table (all turns, like the cache pill), so
+    slow requests stand out.
   - Counts are compact (12.3k), with the exact number in the tooltip.
   - A count column that is 0 or unknown in every row is left out. Cache hits go with the cache
     reads: without any (caching off, or prompts too short to cache), every row would be a 0 % miss.
