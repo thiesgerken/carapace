@@ -13,6 +13,7 @@ from pydantic_ai.usage import UsageLimits
 
 from ..models.config import DEFAULT_CONTEXT_WINDOW_TOKENS, Config, is_subscription_model
 from ..models.session import SessionBudget
+from ..spans import SpanNotice, SpanStatus
 from ..usage import (
     BudgetGauge,
     BudgetMetric,
@@ -335,8 +336,7 @@ class SessionUsageBudgetMixin:
                 active.llm_request_thinking.pop(state.request_id, None)
                 if track_activity:
                     await engine._set_llm_request_state(active, state)
-                if state.turn_id is not None:
-                    await engine._broadcast(active, "on_span", state.turn_id, state.request_id, "running")
+                await self._broadcast_llm_span(state, "running")
 
             async def on_request_completed(self, record: LlmRequestRecord) -> None:
                 active.llm_requests_in_flight.pop(record.request_id or "", None)
@@ -361,8 +361,7 @@ class SessionUsageBudgetMixin:
                 engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
                 if track_activity:
                     await engine._clear_llm_request_state(active)
-                if record.turn_id is not None and record.request_id is not None:
-                    await engine._broadcast(active, "on_span", record.turn_id, record.request_id, "ok")
+                await self._broadcast_llm_span(record, "ok")
 
             async def on_context(self, context: LlmContext) -> None:
                 # A failed or interrupted request ends here: it never reaches on_request_completed, so it is
@@ -376,9 +375,7 @@ class SessionUsageBudgetMixin:
             async def _record_unfinished(self, state: LlmRequestState, outcome: UnfinishedOutcome) -> None:
                 active.llm_request_log.records.append(unfinished_request_record(state, outcome))
                 engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-                if state.turn_id is not None:
-                    status = "interrupted" if outcome == "interrupted" else "error"
-                    await engine._broadcast(active, "on_span", state.turn_id, state.request_id, status)
+                await self._broadcast_llm_span(state, "interrupted" if outcome == "interrupted" else "error")
 
             async def on_context_failed(self, role: LlmSource, error: str) -> None:
                 context = engine._session_mgr.load_llm_context(session_id, role)
@@ -402,8 +399,25 @@ class SessionUsageBudgetMixin:
                     return
                 records[index] = records[index].model_copy(update={"outcome": "failed"})
                 engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-                if (turn_id := records[index].turn_id) is not None:
-                    await engine._broadcast(active, "on_span", turn_id, request_id, "error")
+                await self._broadcast_llm_span(records[index], "error")
+
+            async def _broadcast_llm_span(
+                self, request: LlmRequestState | LlmRequestRecord, status: SpanStatus
+            ) -> None:
+                """An LLM request's bar in the turn timeline, nested where the request started."""
+                if request.turn_id is None or request.request_id is None:
+                    return
+                trace = active.turn_trace
+                in_trace = trace is not None and trace.turn_id == request.turn_id
+                notice = SpanNotice(
+                    turn_id=request.turn_id,
+                    span_id=request.request_id,
+                    kind="llm",
+                    name=request.source,
+                    status=status,
+                    tool_call_id=trace.tool_call_id(request.span_id) if trace is not None and in_trace else None,
+                )
+                await engine._broadcast(active, "on_span", notice)
 
         with llm_request_sink_scope(Sink()):
             yield

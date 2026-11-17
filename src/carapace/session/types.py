@@ -20,7 +20,7 @@ from ..models.session import SessionBudget, SessionState
 from ..models.tooling import ToolResult
 from ..security.context import ApprovalSource, ApprovalVerdict, SessionSecurity
 from ..security.sentinel import Sentinel
-from ..spans import SpanStatus, TurnTrace
+from ..spans import SpanNotice, TurnTrace
 from ..usage import LlmContextStatus, LlmRequestLog, LlmRequestState, LlmSource, UsageTracker
 from ..ws_models import ApprovalRequest, ApprovalResponse, FinalStatus, TurnUsage
 from .escalation_waiters import EscalationWaiters
@@ -47,7 +47,7 @@ class SessionSubscriber(Protocol):
     async def on_thinking_token(self, content: str) -> None: ...
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None: ...
     async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None: ...
-    async def on_span(self, turn_id: str, span_id: str, status: SpanStatus) -> None: ...
+    async def on_span(self, notice: SpanNotice) -> None: ...
     async def on_status(
         self,
         *,

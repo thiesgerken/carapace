@@ -86,6 +86,16 @@ Each message is one JSON object with a `type` field.
 | `span`                           | A span of the running turn started or ended         | `turn_id`, `span_id`, `status`; LLM bars included (see [debug-view.md](debug-view.md#websocket)) |
 | `user_message`                   | Echo: user line from this client or another channel | `content`                                                                                        |
 
+### `span`
+
+Every span of the running turn sends one message when it starts and one when it ends: `turn_id`,
+`span_id`, `kind` (`tool`, `gate`, `sentinel`, `sandbox`, `skill`, `domain`, `wait`, `llm`, ...),
+`name` (a tool's name, a sandbox step, a domain) and `status`. `tool_call_id` is the provider's id of
+the tool call whose `tool` span the span is or nests under, `null` outside one. Calls from inside the
+sandbox (proxy domain checks) nest under the exec that made them. The chat uses it to show what a
+running call's card waits for (the sentinel, a sandbox start, a domain check, an approval), the
+Debug view to refetch its timeline.
+
 ### `tool_call` variants
 
 The same envelope is used for normal agent tools and for security-side notifications. Examples:

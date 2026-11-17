@@ -15,7 +15,7 @@ from ..models.tooling import ToolResult, normalize_tool_call_args
 from ..notifications.models import NotificationClientType
 from ..notifications.vapid import derive_vapid_public_key
 from ..security.context import ApprovalSource, ApprovalVerdict
-from ..spans import SpanStatus
+from ..spans import SpanNotice
 from ..usage import LlmContextStatus, LlmRequestState, LlmSource
 from ..ws_models import (
     SLASH_COMMANDS,
@@ -178,8 +178,8 @@ class WebSocketSubscriber:
     async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None:
         await self._safe_send(LlmContextUpdate(role=role, request_id=request_id, status=status))
 
-    async def on_span(self, turn_id: str, span_id: str, status: SpanStatus) -> None:
-        await self._safe_send(SpanUpdate(turn_id=turn_id, span_id=span_id, status=status))
+    async def on_span(self, notice: SpanNotice) -> None:
+        await self._safe_send(SpanUpdate(**notice.model_dump()))
 
     async def on_status(
         self,
