@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -13,6 +14,7 @@ from pydantic_ai.usage import UsageLimits
 
 from ..models.config import DEFAULT_CONTEXT_WINDOW_TOKENS, Config, is_subscription_model
 from ..models.session import SessionBudget
+from ..spans import SpanNotice, SpanStatus
 from ..usage import (
     BudgetGauge,
     BudgetMetric,
@@ -39,6 +41,9 @@ from ..usage import (
 from ..ws_models import TurnUsage, TurnUsageBreakdownPct
 from .manager import SessionManager
 from .types import ActiveSession
+
+# Streamed-chars updates of a request go out at most this often; the client ticks the clock itself.
+LLM_PROGRESS_INTERVAL_S = 0.1
 
 BUDGET_METRIC_FIELDS: dict[BudgetMetric, str] = {
     "input": "input_tokens",
@@ -224,9 +229,11 @@ class SessionUsageBudgetMixin:
             budget_gauges=budget_gauges,
         )
 
-    async def _set_llm_request_state(self, active: ActiveSession, state: LlmRequestState) -> None:
+    async def _set_llm_request_state(self, active: ActiveSession, state: LlmRequestState, *, save: bool = True) -> None:
         active.llm_request_state = state.model_copy(deep=True)
-        self._session_mgr.save_llm_request_state(active.state.session_id, active.llm_request_state)
+        active.llm_activity_sent_at = time.monotonic()
+        if save:
+            self._session_mgr.save_llm_request_state(active.state.session_id, active.llm_request_state)
         await self._broadcast(active, "on_llm_activity", active.llm_request_state.model_copy(deep=True))
 
     async def _clear_llm_request_state(self, active: ActiveSession) -> None:
@@ -242,13 +249,22 @@ class SessionUsageBudgetMixin:
         self._session_mgr.save_llm_context(active.state.session_id, context)
         await self._broadcast(active, "on_llm_context", context.role, context.request_id, context.status)
 
-    async def _maybe_promote_llm_request_state(self, active: ActiveSession, state: LlmRequestState | None) -> None:
-        if state is None:
-            return
+    async def _maybe_promote_llm_request_state(self, active: ActiveSession, state: LlmRequestState) -> None:
         current = active.llm_request_state
-        if current is not None and current.phase == state.phase and current.first_text_at == state.first_text_at:
+        if current is None or (current.phase, current.tool_name, current.first_text_at) != (
+            state.phase,
+            state.tool_name,
+            state.first_text_at,
+        ):
+            await self._set_llm_request_state(active, state)
             return
-        await self._set_llm_request_state(active, state)
+        # Only the streamed-chars counter moved: send it at a pace a counter needs, not per chunk, and
+        # don't save it, since a reconnect after a restart needs the phase only.
+        if (
+            state.streamed_chars != current.streamed_chars
+            and time.monotonic() - active.llm_activity_sent_at >= LLM_PROGRESS_INTERVAL_S
+        ):
+            await self._set_llm_request_state(active, state, save=False)
 
     def usage_details(self, active: ActiveSession) -> SessionUsageDetails:
         """The session's usage breakdown as ``/usage`` and the usage API show it.
@@ -335,8 +351,11 @@ class SessionUsageBudgetMixin:
                 active.llm_request_thinking.pop(state.request_id, None)
                 if track_activity:
                     await engine._set_llm_request_state(active, state)
-                if state.turn_id is not None:
-                    await engine._broadcast(active, "on_span", state.turn_id, state.request_id, "running")
+                await self._broadcast_llm_span(state, "running")
+
+            async def on_request_progress(self, state: LlmRequestState) -> None:
+                if track_activity:
+                    await engine._maybe_promote_llm_request_state(active, state)
 
             async def on_request_completed(self, record: LlmRequestRecord) -> None:
                 active.llm_requests_in_flight.pop(record.request_id or "", None)
@@ -361,8 +380,7 @@ class SessionUsageBudgetMixin:
                 engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
                 if track_activity:
                     await engine._clear_llm_request_state(active)
-                if record.turn_id is not None and record.request_id is not None:
-                    await engine._broadcast(active, "on_span", record.turn_id, record.request_id, "ok")
+                await self._broadcast_llm_span(record, "ok")
 
             async def on_context(self, context: LlmContext) -> None:
                 # A failed or interrupted request ends here: it never reaches on_request_completed, so it is
@@ -376,9 +394,7 @@ class SessionUsageBudgetMixin:
             async def _record_unfinished(self, state: LlmRequestState, outcome: UnfinishedOutcome) -> None:
                 active.llm_request_log.records.append(unfinished_request_record(state, outcome))
                 engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-                if state.turn_id is not None:
-                    status = "interrupted" if outcome == "interrupted" else "error"
-                    await engine._broadcast(active, "on_span", state.turn_id, state.request_id, status)
+                await self._broadcast_llm_span(state, "interrupted" if outcome == "interrupted" else "error")
 
             async def on_context_failed(self, role: LlmSource, error: str) -> None:
                 context = engine._session_mgr.load_llm_context(session_id, role)
@@ -402,8 +418,25 @@ class SessionUsageBudgetMixin:
                     return
                 records[index] = records[index].model_copy(update={"outcome": "failed"})
                 engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-                if (turn_id := records[index].turn_id) is not None:
-                    await engine._broadcast(active, "on_span", turn_id, request_id, "error")
+                await self._broadcast_llm_span(records[index], "error")
+
+            async def _broadcast_llm_span(
+                self, request: LlmRequestState | LlmRequestRecord, status: SpanStatus
+            ) -> None:
+                """An LLM request's bar in the turn timeline, nested where the request started."""
+                if request.turn_id is None or request.request_id is None:
+                    return
+                trace = active.turn_trace
+                in_trace = trace is not None and trace.turn_id == request.turn_id
+                notice = SpanNotice(
+                    turn_id=request.turn_id,
+                    span_id=request.request_id,
+                    kind="llm",
+                    name=request.source,
+                    status=status,
+                    tool_call_id=trace.tool_call_id(request.span_id) if trace is not None and in_trace else None,
+                )
+                await engine._broadcast(active, "on_span", notice)
 
         with llm_request_sink_scope(Sink()):
             yield

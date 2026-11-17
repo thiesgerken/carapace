@@ -147,7 +147,7 @@ async def test_exec_tool_records_its_command_and_exit_code(tmp_path: Path) -> No
     trace, root = _trace()
 
     with attach(trace, root.span_id):
-        await tool.function(ctx, "x" * 300)
+        await tool.function(ctx, command="x" * 300)
 
     [call] = [s for s in trace.spans.values() if s.kind == "exec"]
     assert call.parent_id == root.span_id

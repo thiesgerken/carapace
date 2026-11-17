@@ -20,9 +20,9 @@ from ..models.session import SessionBudget, SessionState
 from ..models.tooling import ToolResult
 from ..security.context import ApprovalSource, ApprovalVerdict, SessionSecurity
 from ..security.sentinel import Sentinel
-from ..spans import SpanStatus, TurnTrace
+from ..spans import SpanNotice, TurnTrace
 from ..usage import LlmContextStatus, LlmRequestLog, LlmRequestState, LlmSource, UsageTracker
-from ..ws_models import ApprovalRequest, ApprovalResponse, FinalStatus, TurnUsage
+from ..ws_models import ApprovalRequest, ApprovalResponse, FinalStatus, ToolCallStream, TurnUsage
 from .escalation_waiters import EscalationWaiters
 
 
@@ -41,13 +41,15 @@ class SessionSubscriber(Protocol):
         approval_explanation: str | None = None,
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
+        tool_call_id: str | None = None,
     ) -> None: ...
     async def on_tool_result(self, result: ToolResult) -> None: ...
+    async def on_tool_call_stream(self, msg: ToolCallStream) -> None: ...
     async def on_token(self, content: str) -> None: ...
     async def on_thinking_token(self, content: str) -> None: ...
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None: ...
     async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None: ...
-    async def on_span(self, turn_id: str, span_id: str, status: SpanStatus) -> None: ...
+    async def on_span(self, notice: SpanNotice) -> None: ...
     async def on_status(
         self,
         *,
@@ -135,6 +137,8 @@ class ActiveSession:
     autonomy: AutonomyStreak = field(default_factory=AutonomyStreak)
     llm_request_log: LlmRequestLog = field(default_factory=LlmRequestLog)
     llm_request_state: LlmRequestState | None = None
+    # time.monotonic() of the last llm_activity broadcast, to throttle streamed-chars updates.
+    llm_activity_sent_at: float = 0.0
     # Every request in flight, untracked and parallel ones included (``llm_request_state`` holds only
     # the latest tracked one): the timeline draws a running bar for each.
     llm_requests_in_flight: dict[str, LlmRequestState] = field(default_factory=dict)

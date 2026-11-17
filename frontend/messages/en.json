@@ -985,6 +985,16 @@
         "mismatchSr": "Frontend and backend versions do not match."
     },
     "toolCallBadge": {
+        "status": {
+            "sentinel": "Sentinel reviewing…",
+            "sandbox": "Starting sandbox…",
+            "skill": "Activating skill…",
+            "credential": "Fetching credential…",
+            "domain": "Checking domain {domain}…",
+            "wait": "Waiting for approval…"
+        },
+        "notRun": "not run",
+        "notRunTitle": "The model wrote this call, but it never ran: the turn was cancelled, the model failed, or the call was rejected.",
         "approvalBadge": {
             "review": "review",
             "skill": "skill",
@@ -1057,6 +1067,7 @@
     },
     "toolCallGroup": {
         "empty": "tool calls",
+        "notRun": "{count} not run",
         "past": {
             "exec": "{count, plural, one {ran # command} other {ran # commands}}",
             "read": "{count, plural, one {read # file} other {read # files}}",
@@ -1166,7 +1177,10 @@
             "processingPrompt": "Processing prompt...",
             "thinking": "Thinking...",
             "generating": "Generating...",
-            "working": "Working..."
+            "working": "Working...",
+            "seconds": "{seconds} s",
+            "minutes": "{minutes} min {seconds} s",
+            "tokens": "{count} tokens"
         },
         "unknown": "Unknown",
         "status": {

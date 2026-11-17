@@ -1,9 +1,10 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Archive,
+  Ban,
   ChevronRight,
   ExternalLink,
   FileText,
@@ -31,15 +32,18 @@ import type { LucideIcon } from "lucide-react";
 import { diffLines } from "diff";
 import { MarkdownContent } from "./markdown-content";
 import { FilePreview } from "./file-preview";
+import { ActivityCounter } from "./waiting-indicator";
 import {
   fencedCodeBlock,
   languageFromFilePath,
   splitReadToolResult,
 } from "@/lib/sandbox-read";
-import type { ApprovalVerdict, CompactionAnnotation, SentFile } from "@/lib/types";
+import type { ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, SentFile } from "@/lib/types";
+import { toolCallStatus } from "@/lib/tool-call-status";
 import { cn } from "@/lib/utils";
 import { sentFileUrl } from "@/lib/api";
 import { artifactSnapshotTitle, artifactViewerHref, sentArtifactSlug } from "@/lib/artifacts";
+import { parseStreamingArgs } from "@/lib/live-tool-calls";
 
 interface ToolCallBadgeProps {
   tool: string;
@@ -58,6 +62,16 @@ interface ToolCallBadgeProps {
   childCalls?: ToolCallBadgeProps[];
   server?: string;
   sessionId?: string;
+  /** The raw JSON args while the model streams the call; `args` holds what parses of them so far. */
+  argsText?: string;
+  /** The model is still writing the args: the card shows them growing. */
+  argsStreaming?: boolean;
+  /** The streamed call never ran. */
+  notRun?: boolean;
+  /** The call's steps still running; while it loads, the card names the innermost one. */
+  runningSpans?: RunningSpan[];
+  /** The agent request writing this call right now: the card shows its counter. */
+  streamingActivity?: LlmActivity | null;
 }
 
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "unknown";
@@ -246,6 +260,13 @@ function getExecCommand(args: Record<string, unknown>): string {
   const raw = args.command;
   if (typeof raw === "string" && raw.trim().length > 0) return raw;
   return "";
+}
+
+/** A command's first line, marked as cut when there is more: the row has room for one, the details show it all. */
+function firstLine(command: string): string {
+  const text = command.trim();
+  const end = text.indexOf("\n");
+  return end === -1 ? text : `${text.slice(0, end).trimEnd()} …`;
 }
 
 function normalizeOptionalLabel(value: string): string {
@@ -544,8 +565,14 @@ export function ToolCallBadge({
   childCalls,
   server,
   sessionId,
+  argsText,
+  argsStreaming,
+  notRun,
+  runningSpans,
+  streamingActivity,
 }: ToolCallBadgeProps) {
   const t = useTranslations("toolCallBadge");
+  const step = loading ? toolCallStatus(runningSpans) : null;
   const tc = useTranslations("compaction");
   const ta = useTranslations("artifacts");
   const isSendFileTool = tool === "send_file";
@@ -616,8 +643,9 @@ export function ToolCallBadge({
       ? fencedCodeBlock(languageFromFilePath(readPath), readSplit.body)
       : "";
   const execCommand = isExecTool ? getExecCommand(args) : "";
+  // While the model writes the call, the title shows once it is complete; until then, the command's first line.
   const execTitle = isExecTool
-    ? normalizeOptionalLabel(stringArg(args, "title"))
+    ? normalizeOptionalLabel(stringArg(argsStreaming ? parseStreamingArgs(argsText ?? "", false) ?? {} : args, "title"))
     : "";
   const execTranscript = isExecTool
     ? buildShellTranscript(execCommand || t("fallbacks.missingCommand"), result)
@@ -675,7 +703,7 @@ export function ToolCallBadge({
   );
   const argsSummary =
     artifactSlug !== null ? "" : isExecTool
-      ? execTitle || execCommand || t("fallbacks.missingCommand")
+      ? execTitle || firstLine(execCommand) || (argsStreaming ? "" : t("fallbacks.missingCommand"))
       : isReadTool
         ? formatReadSummaryFromSplit(
             args,
@@ -790,6 +818,13 @@ export function ToolCallBadge({
           <Archive className="h-2.5 w-2.5" />
         </span>
       )}
+      {notRun && (
+        <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground" title={t("notRunTitle")}>
+          <Ban className="h-2.5 w-2.5" />
+          {t("notRun")}
+        </span>
+      )}
+      {streamingActivity && <ActivityCounter activity={streamingActivity} />}
       {loading && (
         <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
       )}
@@ -868,6 +903,14 @@ export function ToolCallBadge({
           </>
         )}
       </div>
+
+      {step && (
+        <div role="status" className="ml-5 truncate text-[11px] text-muted-foreground">
+          {step.kind === "domain" ? t("status.domain", { domain: step.name }) : t(`status.${step.kind}`)}
+        </div>
+      )}
+
+      {argsStreaming && !open && <StreamingArgs text={streamingPreview(tool, args, argsText ?? "")} />}
 
       {open && (
         <div className="tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2 text-xs">
@@ -1231,5 +1274,39 @@ export function ToolCallBadge({
         </div>
       )}
     </div>
+  );
+}
+
+/** What a streaming call's args will mainly show once it is final: the command, or the file text. */
+function streamingPreview(tool: string, args: Record<string, unknown>, argsText: string): string {
+  switch (tool) {
+    case "exec":
+      return getExecCommand(args) && `$ ${getExecCommand(args)}`;
+    case "write":
+      return stringArg(args, "content");
+    case "str_replace":
+      return stringArg(args, "new_string");
+    default:
+      return argsText;
+  }
+}
+
+/**
+ * The args as the model writes them. Plain text, not the final card's highlighted Markdown, so a long
+ * file stays cheap to re-render on every delta; the box keeps the newest lines in view.
+ */
+function StreamingArgs({ text }: { text: string }) {
+  const ref = useRef<HTMLPreElement>(null);
+  useLayoutEffect(() => {
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [text]);
+  if (!text) return null;
+  return (
+    <pre
+      ref={ref}
+      className="ml-5 mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border/60 bg-muted/30 p-2 font-mono text-[11px] leading-4 text-foreground/75"
+    >
+      {text}
+    </pre>
   );
 }

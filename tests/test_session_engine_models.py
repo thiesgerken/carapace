@@ -211,6 +211,7 @@ def test_evaluate_with_usage_limit_exceeded_escalates_to_user(tmp_path: Path):
                 sentinel,
                 "use_skill",
                 {"skill_name": "paperless"},
+                tool_call_id="call_1",
             )
 
         metadata = exc_info.value.metadata

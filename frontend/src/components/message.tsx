@@ -620,6 +620,8 @@ interface MessageProps {
   server?: string;
   sessionId?: string;
   activeLlmActivity?: LlmActivity | null;
+  /** The agent request writing this tool call right now, for the card's counter. */
+  streamingActivity?: LlmActivity | null;
   canFork?: boolean;
   canRetry?: boolean;
   canContinue?: boolean;
@@ -647,6 +649,7 @@ export function Message({
   server,
   sessionId,
   activeLlmActivity,
+  streamingActivity,
   canFork,
   canRetry,
   canContinue,
@@ -802,6 +805,11 @@ export function Message({
           compaction={message.compaction}
           server={server}
           sessionId={sessionId}
+          argsText={message.argsText}
+          argsStreaming={message.argsStreaming}
+          notRun={message.notRun}
+          runningSpans={message.runningSpans}
+          streamingActivity={streamingActivity}
           childCalls={message.children?.map((c) => ({
             tool: c.tool,
             args: c.args,

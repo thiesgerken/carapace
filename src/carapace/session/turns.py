@@ -44,10 +44,9 @@ from ..models.tooling import ToolCallCallback, ToolResult
 from ..notifications.router import NotificationRouter, build_turn_outcome_notification_id
 from ..sandbox.manager import SandboxManager
 from ..security.context import ApprovalSource, ApprovalVerdict, format_denial_message, normalize_optional_message
-from ..spans import Span, SpanStatus, TurnTrace, attach, span
+from ..spans import SpanNotice, SpanStatus, TurnTrace, attach, span
 from ..usage import (
     BudgetGauge,
-    LlmRequestState,
     SessionBudgetExceededError,
     aggregate_turn_generation,
 )
@@ -181,12 +180,6 @@ class SessionTurnHost(Protocol):
 
     def _budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]: ...
 
-    async def _maybe_promote_llm_request_state(
-        self,
-        active: ActiveSession,
-        state: LlmRequestState | None,
-    ) -> None: ...
-
     def _turn_usage_payload(self, active: ActiveSession) -> TurnUsage | None: ...
 
     async def _clear_llm_request_state(self, active: ActiveSession) -> None: ...
@@ -216,7 +209,7 @@ class SessionTurnMixin(SessionTurnHost):
         """Execute a single agent turn, timed as the root span of its timeline."""
         session_id = active.state.session_id
         turn_id = secrets.token_hex(4)
-        trace = TurnTrace(turn_id, on_change=partial(self._broadcast_span, active, turn_id))
+        trace = TurnTrace(turn_id, on_change=partial(self._broadcast_span, active))
         root = trace.start("turn", "turn", parent_id=None, attrs={"prompt": _truncate_for_log(user_input, 60)})
         active.turn_trace = trace
         status: SpanStatus = "error"
@@ -233,9 +226,9 @@ class SessionTurnMixin(SessionTurnHost):
             self._session_mgr.save_turn_spans(session_id, turn_id, trace.close())
             active.turn_trace = None
 
-    def _broadcast_span(self, active: ActiveSession, turn_id: str, span: Span) -> None:
+    def _broadcast_span(self, active: ActiveSession, notice: SpanNotice) -> None:
         # Scheduled, not awaited: a span boundary must not wait on slow subscribers.
-        task = asyncio.ensure_future(self._broadcast(active, "on_span", turn_id, span.span_id, span.status))
+        task = asyncio.ensure_future(self._broadcast(active, "on_span", notice))
         active._pending_sends.add(task)
         task.add_done_callback(active._pending_sends.discard)
 
@@ -272,6 +265,7 @@ class SessionTurnMixin(SessionTurnHost):
             approval_source: ApprovalSource | None = None,
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
+            tool_call_id: str | None = None,
         ) -> None:
             if approval_verdict == "allow":
                 budget = active.state.budget
@@ -305,6 +299,7 @@ class SessionTurnMixin(SessionTurnHost):
                     approval_verdict,
                     approval_explanation,
                     tool_id,
+                    tool_call_id=tool_call_id,
                 )
             )
             active._pending_sends.add(task)
@@ -643,6 +638,7 @@ class SessionTurnMixin(SessionTurnHost):
                 collect_approvals=collect_approvals,
                 on_token=partial(self._handle_token_chunk, active),
                 on_thinking_token=partial(self._handle_thinking_token_chunk, active),
+                on_tool_call_stream=partial(self._broadcast, active, "on_tool_call_stream"),
                 on_assistant_text=on_assistant_text,
                 on_messages_snapshot=lambda snapshot: on_messages_snapshot(snapshot),
                 before_llm_call=lambda: self._assert_llm_budget_available(active),
@@ -656,7 +652,6 @@ class SessionTurnMixin(SessionTurnHost):
         )
 
     async def _handle_token_chunk(self, active: ActiveSession, chunk: str) -> None:
-        await self._maybe_promote_llm_request_state(active, _engine_module().current_llm_request_state())
         await self._broadcast(active, "on_token", chunk)
 
     async def _handle_thinking_token_chunk(self, active: ActiveSession, chunk: str) -> None:
@@ -665,7 +660,6 @@ class SessionTurnMixin(SessionTurnHost):
             active.llm_request_thinking[state.request_id] = (
                 active.llm_request_thinking.get(state.request_id, "") + chunk
             )
-        await self._maybe_promote_llm_request_state(active, state)
         await self._broadcast(active, "on_thinking_token", chunk)
 
     def _schedule_title_generation_if_needed(

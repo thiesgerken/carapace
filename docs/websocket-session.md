@@ -69,9 +69,12 @@ Each message is one JSON object with a `type` field.
 | `type`                           | When                                                | Main fields                                                                                      |
 | -------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `status`                         | On connect and after a session budget change        | `agent_running`, `usage`, `llm_activity`, `budget`                                               |
-| `llm_activity`                   | LLM request phase changed                           | `activity` or `null`                                                                             |
+| `llm_activity`                   | LLM request phase changed, or its output grew       | `activity` or `null`                                                                             |
 | `token`                          | Streaming assistant text                            | `content`                                                                                        |
 | `thinking`                       | Streaming reasoning text                            | `content`                                                                                        |
+| `tool_call_start`                | Agent model started writing a tool call             | `tool_call_id`, `tool` (see [Streaming tool calls](#streaming-tool-calls))                       |
+| `tool_call_delta`                | Next piece of that call's args                      | `tool_call_id`, `args_delta` (raw JSON text, append in order)                                    |
+| `tool_call_end`                  | Model stopped writing the call                      | `tool_call_id`, `aborted`                                                                        |
 | `tool_call`                      | Tool started / security notification                | `tool`, `args`, `detail`; optional `approval_source`, `approval_verdict`, `approval_explanation` |
 | `tool_result`                    | Tool finished                                       | `tool`, `result`, `exit_code`                                                                    |
 | `approval_request`               | Sentinel escalated a **tool** to the user           | `tool_call_id`, `tool`, `args`, `explanation`, `risk_level`                                      |
@@ -86,6 +89,36 @@ Each message is one JSON object with a `type` field.
 | `span`                           | A span of the running turn started or ended         | `turn_id`, `span_id`, `status`; LLM bars included (see [debug-view.md](debug-view.md#websocket)) |
 | `user_message`                   | Echo: user line from this client or another channel | `content`                                                                                        |
 
+### `llm_activity`
+
+`activity` describes the session's current LLM request (`null` once it ends):
+
+- `phase`: `processing_prompt` until the first token, then `thinking`, `generating` (answer text) or
+  `tool_call` (the model is writing a tool call's arguments, `tool_name` names the tool). An output
+  tool's call (an unattended run's `task_done`, the sentinel's verdict) is the answer, so it counts as
+  `generating`.
+- `started_at` and the phase timestamps (`first_thinking_at`, `last_thinking_at`, `first_text_at`).
+- `streamed_chars`: characters of thinking, text and tool-call arguments streamed so far. The web UI
+  shows a quarter of it as approximate output tokens; the provider's count only arrives with the
+  request's record once the response is complete.
+
+A phase change is sent right away. Growth of `streamed_chars` alone is sent at most every 0.1 s, so a
+long tool call streams a live counter without one message per chunk. Clients tick the elapsed time
+themselves from `started_at`.
+While the agent writes a tool call, the web UI shows the counter in the header of the newest card still
+streaming its arguments, not on the waiting line below the messages.
+
+### `span`
+
+Every span of the running turn sends one message when it starts and one when it ends: `turn_id`,
+`span_id`, `kind` (`tool`, `gate`, `sentinel`, `sandbox`, `skill`, `domain`, `wait`, `llm`, ...),
+`name` (a tool's name, a sandbox step, a domain) and `status`. `tool_call_id` is the provider's id of
+the tool call whose `tool` span the span is or nests under, `null` outside one. Calls from inside the
+sandbox (proxy domain checks) nest under the newest running exec, with parallel execs possibly the
+other one. The chat uses it to show what a
+running call's card waits for (the sentinel, a sandbox start, a domain check, an approval), the
+Debug view to refetch its timeline.
+
 ### `tool_call` variants
 
 The same envelope is used for normal agent tools and for security-side notifications. Examples:
@@ -97,7 +130,43 @@ The same envelope is used for normal agent tools and for security-side notificat
 
 Exact args depend on the producer; see `WebSocketSubscriber` in [`src/carapace/server/websocket.py`](../src/carapace/server/websocket.py).
 
-`tool_call` and `tool_result` may also include stable `tool_id` values, and nested tool calls include `parent_tool_id` so the frontend can render tool trees.
+`tool_call` and `tool_result` may also include stable `tool_id` values, and nested tool calls include `parent_tool_id` so the frontend can render tool trees. Calls the agent model made also carry the model's `tool_call_id` (the one the streaming messages below use); it is `null` for calls the model did not make, such as `proxy_domain`.
+
+### Streaming tool calls
+
+While the agent model writes a tool call, the client sees it before it runs:
+
+1. `tool_call_start` as soon as the model starts the call.
+2. `tool_call_delta` with the args text written since the previous delta, at most about twenty per second and call. Concatenated, the deltas are the call's JSON args; parsing the partial JSON is up to the client. Providers that hand over args as an object send them as one delta at the end.
+3. `tool_call_end`. `aborted: false` means the args are complete: the call goes to the security gate and shows up as `tool_call` (later `tool_result`) with the same `tool_call_id`, or as an `approval_request`, whose `tool_call_id` is that id too. `aborted: true` means the request was cancelled or failed while the call was still being written; the turn's `cancelled` or `error` follows.
+
+Parallel calls in one response each stream under their own `tool_call_id`. Some OpenAI-compatible servers reuse ids (`call_0`) across responses, so a `tool_call_start` with an id the client has already seen starts a new card, and later messages with that id belong to the newest one. A provider that sends a call's id only after its name streams it under a stand-in id the executed call does not carry; the server logs a warning, and the card ends up "not run" next to the real call. A finished call can still never run, for instance when its args fail validation, so a client should mark a card still waiting for its `tool_call` when the turn ends as not run, and keep it visible. `list_skills` sends no `tool_call`, only its `tool_result`. Only the agent role streams calls; sentinel, titler and compaction requests do not. Nothing of this is persisted: history only has the executed call, and a client that connects mid-call sees it from its `tool_call` on.
+
+### Streamed tool calls in the web UI
+
+The web UI opens a tool card at `tool_call_start`, before the gate runs, and fills it from the
+`tool_call_delta`s: it appends them to the args text and parses that tolerantly
+([partial-json](https://www.npmjs.com/package/partial-json)), so the card shows what the final one
+will (the command of an `exec`, the file text of a `write` with its line breaks). A box below the row
+shows that growing text, tail in view, until `tool_call_end`; it is plain text, not highlighted, so
+long args stay cheap.
+
+- The final `tool_call` replaces the card in place, matched by `tool_call_id`. An `approval_request`
+  for the call does the same, so the call never shows twice. A `tool_result` completes a card that
+  got no `tool_call` of its own (`list_skills` sends none).
+- Only a card still waiting for its final `tool_call` matches: some providers reuse ids such as
+  `call_0` across responses. A repeated `tool_call_start` opens a new card, and an open card under
+  that id from the earlier response is marked not run (that response's calls ran before).
+- Parallel calls each get their own card.
+- `tool_call_end` with `aborted: true` marks the card **not run**. So does the end of the turn
+  (`done`, `cancelled`, `error`) for a card whose final `tool_call` never came, e.g. when its args
+  failed validation. A group of tool calls counts it apart (`1 not run`).
+- Nothing of a streamed call is persisted before its final `tool_call`, so a not-run card is kept
+  client-side: when the chat re-renders from the saved history after `done` (or a compaction), it
+  goes back before what followed it (the next saved call or user message), so it stays below the
+  thinking and text it came after. Only a reload or a session switch drops it.
+- A dropped connection is not the end of the turn: the cards still streaming go, and after the
+  reconnect the server sends those calls as `tool_call`.
 
 ### `approval_source` / `approval_verdict` (on `tool_call`)
 
@@ -124,7 +193,7 @@ Both controls operate on the normalized event log used by `/api/sessions/{sessio
 1. Optional: `user_message` (if echoed).
 2. `llm_activity` and optional `thinking` chunks while the model is working.
 3. Many `token` chunks (streaming).
-4. Interleaved `tool_call` / `tool_result` pairs while tools run.
+4. `tool_call_start` / `tool_call_delta` / `tool_call_end` while the model writes a tool call, then interleaved `tool_call` / `tool_result` pairs while tools run.
 5. Possible: `approval_request` or escalation requests — client must respond; turn stays blocked until then. If the turn ends first (cancel, failure, restart), the server records a system denial for the request instead (see [sessions-and-channels.md](sessions-and-channels.md#unanswered-requests)).
 6. `done` with final text and optional `usage`.
 

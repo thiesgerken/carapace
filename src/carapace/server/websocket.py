@@ -15,7 +15,7 @@ from ..models.tooling import ToolResult, normalize_tool_call_args
 from ..notifications.models import NotificationClientType
 from ..notifications.vapid import derive_vapid_public_key
 from ..security.context import ApprovalSource, ApprovalVerdict
-from ..spans import SpanStatus
+from ..spans import SpanNotice
 from ..usage import LlmContextStatus, LlmRequestState, LlmSource
 from ..ws_models import (
     SLASH_COMMANDS,
@@ -43,6 +43,7 @@ from ..ws_models import (
     ThinkingChunk,
     TokenChunk,
     ToolCallInfo,
+    ToolCallStream,
     ToolResultInfo,
     TurnUsage,
     UserMessage,
@@ -82,6 +83,8 @@ def _llm_activity_payload(activity: LlmRequestState | None) -> LlmActivity | Non
         first_thinking_at=activity.first_thinking_at,
         last_thinking_at=activity.last_thinking_at,
         first_text_at=activity.first_text_at,
+        tool_name=activity.tool_name,
+        streamed_chars=activity.streamed_chars,
     )
 
 
@@ -137,6 +140,7 @@ class WebSocketSubscriber:
         approval_explanation: str | None = None,
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
+        tool_call_id: str | None = None,
     ) -> None:
         normalized_args = normalize_tool_call_args(tool, args)
         contexts_raw = normalized_args.get("contexts")
@@ -152,6 +156,7 @@ class WebSocketSubscriber:
                 approval_explanation=approval_explanation,
                 tool_id=tool_id,
                 parent_tool_id=parent_tool_id,
+                tool_call_id=tool_call_id,
             )
         )
 
@@ -162,9 +167,13 @@ class WebSocketSubscriber:
                 result=result.output,
                 exit_code=result.exit_code,
                 tool_id=result.tool_id,
+                tool_call_id=result.model_tool_call_id,
                 files=list(result.files) or None,
             )
         )
+
+    async def on_tool_call_stream(self, msg: ToolCallStream) -> None:
+        await self._safe_send(msg)
 
     async def on_token(self, content: str) -> None:
         await self._safe_send(TokenChunk(content=content))
@@ -178,8 +187,8 @@ class WebSocketSubscriber:
     async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None:
         await self._safe_send(LlmContextUpdate(role=role, request_id=request_id, status=status))
 
-    async def on_span(self, turn_id: str, span_id: str, status: SpanStatus) -> None:
-        await self._safe_send(SpanUpdate(turn_id=turn_id, span_id=span_id, status=status))
+    async def on_span(self, notice: SpanNotice) -> None:
+        await self._safe_send(SpanUpdate(**notice.model_dump()))
 
     async def on_status(
         self,

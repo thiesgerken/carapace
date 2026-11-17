@@ -313,7 +313,7 @@ export interface ThinkingChunk {
   content: string;
 }
 
-export type LlmActivityPhase = "processing_prompt" | "thinking" | "generating";
+export type LlmActivityPhase = "processing_prompt" | "thinking" | "generating" | "tool_call";
 
 export interface LlmActivity {
   request_id: string;
@@ -324,6 +324,10 @@ export interface LlmActivity {
   first_thinking_at?: string | null;
   last_thinking_at?: string | null;
   first_text_at?: string | null;
+  /** The tool whose call the model is writing, while the phase is tool_call. */
+  tool_name?: string | null;
+  /** Characters of thinking, text and tool-call arguments streamed so far. */
+  streamed_chars?: number;
 }
 
 export interface LlmActivityUpdate {
@@ -343,7 +347,18 @@ export interface SpanUpdate {
   type: "span";
   turn_id: string;
   span_id: string;
+  kind: string;
+  name: string;
   status: SpanStatus;
+  /** The provider id of the tool call whose span this is or nests under. */
+  tool_call_id?: string | null;
+}
+
+/** A step of a tool call that is still running, as far as its card needs it. */
+export interface RunningSpan {
+  spanId: string;
+  kind: string;
+  name: string;
 }
 
 export interface ToolCallInfo {
@@ -364,6 +379,8 @@ export interface ToolCallInfo {
   approval_explanation?: string;
   tool_id?: string;
   parent_tool_id?: string;
+  /** The provider's id of a model-issued call: links it to the card its streamed args opened. */
+  tool_call_id?: string | null;
 }
 
 export interface ToolResultInfo {
@@ -372,7 +389,29 @@ export interface ToolResultInfo {
   result: string;
   exit_code?: number;
   tool_id?: string;
+  tool_call_id?: string | null;
   files?: SentFile[];
+}
+
+/** The model started a tool call; its args follow as `tool_call_delta`s. */
+export interface ToolCallStart {
+  type: "tool_call_start";
+  tool_call_id: string;
+  tool: string;
+}
+
+/** The next piece of a streaming call's raw JSON args, to append to the ones before. */
+export interface ToolCallDelta {
+  type: "tool_call_delta";
+  tool_call_id: string;
+  args_delta: string;
+}
+
+/** The model finished writing the call's args, or the request was cancelled or failed while it did (`aborted`). */
+export interface ToolCallEnd {
+  type: "tool_call_end";
+  tool_call_id: string;
+  aborted: boolean;
 }
 
 export interface ApprovalRequest {
@@ -507,6 +546,9 @@ export type ServerMessage =
   | ThinkingChunk
   | ToolCallInfo
   | ToolResultInfo
+  | ToolCallStart
+  | ToolCallDelta
+  | ToolCallEnd
   | ApprovalRequest
   | DomainAccessApprovalRequest
   | GitPushApprovalRequest
@@ -659,6 +701,16 @@ export type ChatMessage =
       parentToolId?: string;
       compaction?: CompactionAnnotation;
       eventIndex?: number;
+      /** The provider's id of a call the model is streaming; see `argsText`. */
+      toolCallId?: string;
+      /** The raw JSON args streamed so far. Set only on a streamed card, until its final tool_call replaces it. */
+      argsText?: string;
+      /** The model is still writing the args. */
+      argsStreaming?: boolean;
+      /** The streamed call never ran: the turn was cancelled, the model failed, or its args were rejected. */
+      notRun?: boolean;
+      /** The call's steps still running (sentinel, sandbox start, domain check...), from span notifications. */
+      runningSpans?: RunningSpan[];
       children?: Array<{
         kind: "tool_call";
         tool: string;

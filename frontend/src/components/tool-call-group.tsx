@@ -60,11 +60,11 @@ interface ToolCallLike {
   args: Record<string, unknown>;
 }
 
-/** All tool calls in the run, including ones nested as children rows. */
+/** All tool calls in the run that ran or run, including ones nested as children rows. */
 function flattenToolCalls(items: ChatMessage[]): ToolCallLike[] {
   const out: ToolCallLike[] = [];
   for (const m of items) {
-    if (m.kind !== "tool_call") continue;
+    if (m.kind !== "tool_call" || m.notRun) continue;
     out.push({ tool: m.tool, args: m.args });
     for (const c of m.children ?? []) out.push({ tool: c.tool, args: c.args });
   }
@@ -114,6 +114,8 @@ function buildSummary(
   if (edit.calls > 0) parts.push(t(`${tense}.edit`, { count: edit.files }));
   if (skill > 0) parts.push(t(`${tense}.skill`, { count: skill }));
   if (other > 0) parts.push(t(`${tense}.other`, { count: other }));
+  const notRun = items.filter((m) => m.kind === "tool_call" && m.notRun).length;
+  if (notRun > 0) parts.push(t("notRun", { count: notRun }));
 
   const joined = parts.join(", ");
   if (joined.length === 0) return t("empty");

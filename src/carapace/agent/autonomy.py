@@ -144,5 +144,13 @@ class AutonomyLimitCapability(AbstractCapability[AgentDepsT]):
             )
         self.streak.stop_after(_batch_tool_call_ids(ctx.messages), limit)
         if self.tool_call_callback is not None:
-            self.tool_call_callback(call.tool_name, args, f"[autonomy] {reason}", "autonomy", "deny", reason)
+            self.tool_call_callback(
+                call.tool_name,
+                args,
+                f"[autonomy] {reason}",
+                "autonomy",
+                "deny",
+                reason,
+                call.tool_call_id,
+            )
         return ToolDenied(AUTONOMY_WRAP_UP)

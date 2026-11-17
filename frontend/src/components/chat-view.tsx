@@ -13,6 +13,7 @@ import { SandboxGitControls } from "@/components/git-sync";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
 import { SessionBudgetSection, type SessionBudgetField } from "@/components/session-budget-section";
 import { SessionOptionTiles } from "@/components/session-option-tiles";
+import { WaitingIndicator } from "@/components/waiting-indicator";
 import { useAppLocale } from "@/components/locale-provider";
 import { useAppShell } from "@/components/app-shell-context";
 import { useSessionPresence } from "@/hooks/use-session-presence";
@@ -61,6 +62,8 @@ import {
   shouldConfirmArchiveSession,
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
+import { applySpanToToolCall } from "@/lib/tool-call-status";
+import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall, streamingCallIndex } from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 import { ChatInput } from "./chat-input";
@@ -1358,6 +1361,12 @@ export function ChatView({
     }
   }, [clearToolLoading, markSessionKnowledgeChanged]);
 
+  // The turn is over: a streamed call that has not become a real one by now never ran.
+  const endTurn = useCallback(() => {
+    setMessages(markUnrunCalls);
+    finishWaiting();
+  }, [finishWaiting]);
+
   const snapshotThinkingDurationMs = useCallback((): number | undefined => {
     const startedAt = lastThinkingStartedAtRef.current;
     if (!startedAt) return undefined;
@@ -1453,7 +1462,7 @@ export function ChatView({
             .then((history) => {
               if (refetchSeq !== doneRefetchSeqRef.current) return;
               setMessages((prev) => [
-                ...projectHistoryToMessages(history),
+                ...keepUnrunCalls(prev.slice(0, doneBaselineLen), projectHistoryToMessages(history)),
                 ...prev.slice(doneBaselineLen),
               ]);
             })
@@ -1464,7 +1473,7 @@ export function ChatView({
           void refreshSandbox();
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
-          finishWaiting();
+          endTurn();
           break;
         }
         case "tool_call": {
@@ -1494,7 +1503,13 @@ export function ChatView({
             loading: isLoading,
             toolId: msg.tool_id,
             parentToolId: msg.parent_tool_id,
+            // Also without a streamed card (a client that connected mid-call), so span status finds it.
+            // Conditional, so a later update of the call by tool_id keeps the id.
+            ...(msg.tool_call_id && { toolCallId: msg.tool_call_id }),
           };
+          // The card the call's streamed args opened becomes this call; without one, it is placed as before.
+          const intoStreamedCard = (place: (prev: ChatMessage[]) => ChatMessage[]) => (prev: ChatMessage[]) =>
+            replaceStreamedCall(prev, msg.tool_call_id, newMsg) ?? place(prev);
           if (
             isUserApprovedReplay(
               msg.tool,
@@ -1513,7 +1528,7 @@ export function ChatView({
             break;
           }
           if (msg.tool_id) {
-            setMessages((prev) => {
+            setMessages(intoStreamedCard((prev) => {
               const withThinkingFinalized = finalizeThinkingMessages(prev);
               const updated = updateToolCallMessageById(withThinkingFinalized, msg.tool_id!, (entry) => ({
                 ...entry,
@@ -1536,7 +1551,7 @@ export function ChatView({
               }
 
               return [...withThinkingFinalized, newMsg];
-            });
+            }));
             if (isGitPush) finishWaiting();
             break;
           }
@@ -1558,7 +1573,7 @@ export function ChatView({
               return [...updated, newMsg];
             });
           } else {
-            setMessages((prev) => [...finalizeThinkingMessages(prev), newMsg]);
+            setMessages(intoStreamedCard((prev) => [...finalizeThinkingMessages(prev), newMsg]));
           }
           if (isGitPush) finishWaiting();
           break;
@@ -1566,6 +1581,8 @@ export function ChatView({
         case "tool_result":
           setWaiting(true);
           setMessages((prev) => {
+            const completed = completeStreamedCall(prev, msg.tool_call_id, { result: msg.result, files: msg.files, exitCode: msg.exit_code, toolId: msg.tool_id });
+            if (completed) return completed;
             if (msg.tool_id) {
               const updatedById = updateToolResultById(prev, msg.tool_id, {
                 result: msg.result,
@@ -1595,9 +1612,22 @@ export function ChatView({
             void refreshSandbox();
           }
           break;
+        case "tool_call_start":
+          setWaiting(true);
+          setMessages((prev) => startStreamedCall(finalizeThinkingMessages(prev), msg.tool_call_id, msg.tool));
+          break;
+        case "tool_call_delta":
+          setMessages((prev) => appendStreamedArgs(prev, msg.tool_call_id, msg.args_delta));
+          break;
+        case "tool_call_end":
+          setMessages((prev) => endStreamedCall(prev, msg.tool_call_id, msg.aborted));
+          break;
         case "approval_request":
           setWaiting(true);
-          setMessages((prev) => appendEscalationCard(prev, { kind: "approval", request: msg }));
+          setMessages((prev) => {
+            const card = { kind: "approval", request: msg } as const;
+            return replaceStreamedCall(prev, msg.tool_call_id, card) ?? appendEscalationCard(prev, card);
+          });
           break;
         case "domain_access_approval_request":
           setWaiting(true);
@@ -1639,7 +1669,7 @@ export function ChatView({
             fetchHistory(server, token, sessionId)
               .then((history) =>
                 setMessages((prev) => [
-                  ...projectHistoryToMessages(history),
+                  ...keepUnrunCalls(prev.slice(0, compactBaselineLen), projectHistoryToMessages(history)),
                   ...prev.slice(compactBaselineLen),
                 ]),
               )
@@ -1653,7 +1683,7 @@ export function ChatView({
           }
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
-          finishWaiting();
+          endTurn();
           break;
         case "error":
           setMessages((prev) => {
@@ -1672,7 +1702,7 @@ export function ChatView({
           });
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
-          finishWaiting();
+          endTurn();
           break;
         case "cancelled":
           resetRollbackRef.current = null;
@@ -1682,7 +1712,10 @@ export function ChatView({
           ]);
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
-          finishWaiting();
+          endTurn();
+          break;
+        case "span":
+          setMessages((prev) => applySpanToToolCall(prev, msg));
           break;
         case "llm_activity":
           setLlmActivity(msg.activity ?? null);
@@ -1760,7 +1793,7 @@ export function ChatView({
           break;
       }
     },
-    [applySandboxSnapshot, finalizeThinkingMessages, finishWaiting, onBudgetUpdate, onTitleUpdate, refreshSandbox, server, token, sessionId, t],
+    [applySandboxSnapshot, endTurn, finalizeThinkingMessages, finishWaiting, onBudgetUpdate, onTitleUpdate, refreshSandbox, server, token, sessionId, t],
   );
 
   const onWsDisconnect = useCallback(() => {
@@ -1769,6 +1802,8 @@ export function ChatView({
     queuedAttachmentsRef.current = [];
     lastThinkingStartedAtRef.current = null;
     setQueuedMessage(null);
+    // The server keeps writing and running these calls; after the reconnect they arrive as tool_call.
+    setMessages(dropOpenCalls);
     clearToolLoading();
     setWaiting(false);
   }, [clearToolLoading]);
@@ -1783,6 +1818,8 @@ export function ChatView({
 
   const terminalIndices = completedTurnMessageIndices(messages);
   const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
+  // The card being written carries the request's counter; the waiting line covers the other phases.
+  const streamingCall = waiting ? streamingCallIndex(messages, llmActivity) : -1;
   const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
 
   function showInspectorSection(selector: string, block: ScrollLogicalPosition): void {
@@ -2329,17 +2366,6 @@ export function ChatView({
     ? t("inputDisabled.archived")
     : t("inputDisabled.unattended");
   const canCommitKnowledge = !!session && !sessionPrivate && !sessionArchived && hasKnowledgeContent && hasKnowledgeChanges;
-  const waitingLabel = !waiting
-    ? null
-    : llmActivity?.source === "agent"
-      ? llmActivity.phase === "processing_prompt"
-        ? t("waiting.processingPrompt")
-        : llmActivity.phase === "thinking"
-          ? t("waiting.thinking")
-        : llmActivity.phase === "generating"
-          ? t("waiting.generating")
-          : t("waiting.working")
-      : t("waiting.working");
     const showsStartSandbox = shouldShowStartSandbox(sandbox);
     const sandboxActionDisabled = waiting
       || sandboxLoading
@@ -2955,6 +2981,7 @@ export function ChatView({
                         server={server}
                         sessionId={sessionId}
                         activeLlmActivity={llmActivity}
+                        streamingActivity={i === streamingCall ? llmActivity : null}
                         canFork={canFork}
                         canRetry={canRetry}
                         canContinue={canContinue}
@@ -2986,12 +3013,7 @@ export function ChatView({
                   ),
                 );
               })()}
-              {waitingLabel && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>{waitingLabel}</span>
-                </div>
-              )}
+              {waiting && streamingCall === -1 && <WaitingIndicator activity={llmActivity} />}
               <div ref={bottomRef} />
             </div>
           </div>

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from .models.session import SessionBudget
 from .models.tooling import SentFileInfo
 from .security.context import ApprovalSource, ApprovalVerdict
-from .spans import SpanStatus
+from .spans import SpanNotice
 from .usage import BudgetGauge, LlmContextStatus, LlmRequestPhase, LlmSource
 
 FinalStatus = Literal["success", "warning"]
@@ -158,6 +158,9 @@ class ToolCallInfo(BaseModel):
     approval_explanation: str | None = None
     tool_id: str | None = None
     parent_tool_id: str | None = None
+    # The model's id for the call (``ToolCallStart.tool_call_id``); ``None`` for calls the model
+    # did not make, such as a proxy domain check inside an exec.
+    tool_call_id: str | None = None
 
 
 class ToolResultInfo(BaseModel):
@@ -166,7 +169,43 @@ class ToolResultInfo(BaseModel):
     result: str
     exit_code: int = 0
     tool_id: str | None = None
+    tool_call_id: str | None = None
     files: list[SentFileInfo] | None = None
+
+
+class ToolCallStart(BaseModel):
+    """Server → Client: the agent model started writing a tool call; its args follow as deltas.
+
+    Only a preview: the call runs (and shows up as ``ToolCallInfo`` with the same ``tool_call_id``)
+    once the model finished it and the security gate let it through. Not persisted.
+    """
+
+    type: Literal["tool_call_start"] = "tool_call_start"
+    tool_call_id: str
+    tool: str
+
+
+class ToolCallDelta(BaseModel):
+    """Server → Client: the next piece of a streaming call's raw JSON args text, to be appended."""
+
+    type: Literal["tool_call_delta"] = "tool_call_delta"
+    tool_call_id: str
+    args_delta: str
+
+
+class ToolCallEnd(BaseModel):
+    """Server → Client: the model stopped writing the call.
+
+    ``aborted`` is false when the args are complete (the call goes to the gate next) and true when
+    the request was cancelled or failed while the call was still being written.
+    """
+
+    type: Literal["tool_call_end"] = "tool_call_end"
+    tool_call_id: str
+    aborted: bool
+
+
+ToolCallStream = ToolCallStart | ToolCallDelta | ToolCallEnd
 
 
 class ApprovalRequest(BaseModel):
@@ -229,6 +268,8 @@ class LlmActivity(BaseModel):
     first_thinking_at: datetime | None = None
     last_thinking_at: datetime | None = None
     first_text_at: datetime | None = None
+    tool_name: str | None = None
+    streamed_chars: int = 0
 
 
 class TurnUsage(BaseModel):
@@ -307,13 +348,10 @@ class LlmContextUpdate(BaseModel):
     status: LlmContextStatus
 
 
-class SpanUpdate(BaseModel):
+class SpanUpdate(SpanNotice):
     """Server → Client: a timing span of the running turn started or ended. Clients fetch the timeline via REST."""
 
     type: Literal["span"] = "span"
-    turn_id: str
-    span_id: str
-    status: SpanStatus
 
 
 class StatusUpdate(BaseModel):
@@ -343,6 +381,9 @@ ServerEnvelope = (
     | ThinkingChunk
     | ToolCallInfo
     | ToolResultInfo
+    | ToolCallStart
+    | ToolCallDelta
+    | ToolCallEnd
     | ApprovalRequest
     | DomainAccessApprovalRequest
     | GitPushApprovalRequest
