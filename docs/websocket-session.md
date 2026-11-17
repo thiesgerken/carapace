@@ -110,18 +110,7 @@ While the agent model writes a tool call, the client sees it before it runs:
 2. `tool_call_delta` with the args text written since the previous delta, at most about ten per second and call. Concatenated, the deltas are the call's JSON args; parsing the partial JSON is up to the client. Providers that hand over args as an object send them as one delta at the end.
 3. `tool_call_end`. `aborted: false` means the args are complete: the call goes to the security gate and shows up as `tool_call` (later `tool_result`) with the same `tool_call_id`, or as an `approval_request`, whose `tool_call_id` is that id too. `aborted: true` means the request was cancelled or failed while the call was still being written; the turn's `cancelled` or `error` follows.
 
-Parallel calls in one response each stream under their own `tool_call_id`. Some OpenAI-compatible servers reuse ids (`call_0`) across responses, so a `tool_call_start` with an id the client has already seen starts a new card, and later messages with that id belong to the newest one. A provider that sends a call's id only after its name streams it under a stand-in id the executed call does not carry; the server logs a warning, and the card ends up "not run" next to the real call. A finished call can still never run, for instance when its args fail validation, so a client should drop a card still waiting for its `tool_call` when the turn ends. `list_skills` sends no `tool_call`, only its `tool_result`. Only the agent role streams calls; sentinel, titler and compaction requests do not. Nothing of this is persisted: history only has the executed call, and a client that connects mid-call sees it from its `tool_call` on.
-
-### `approval_source` / `approval_verdict` (on `tool_call`)
-
-When present:
-
-- `approval_source`: `safe-list` \| `sentinel` \| `user` \| `skill` \| `bypass` \| `unknown`
-- `approval_verdict`: `allow` \| `revise` \| `deny` \| `escalate`
-
-**`skill`** — the action was allowed because it's covered by a context grant from an activated skill (e.g., domain access or credential fetch within a matching `contexts` exec).
-
-**`bypass`** — the action was silently allowed without sentinel evaluation (e.g., proxy bypass during sandbox-provided skill activation).
+Parallel calls in one response each stream under their own `tool_call_id`. Some OpenAI-compatible servers reuse ids (`call_0`) across responses, so a `tool_call_start` with an id the client has already seen starts a new card, and later messages with that id belong to the newest one. A provider that sends a call's id only after its name streams it under a stand-in id the executed call does not carry; the server logs a warning, and the card ends up "not run" next to the real call. A finished call can still never run, for instance when its args fail validation, so a client should mark a card still waiting for its `tool_call` when the turn ends as not run, and keep it visible. `list_skills` sends no `tool_call`, only its `tool_result`. Only the agent role streams calls; sentinel, titler and compaction requests do not. Nothing of this is persisted: history only has the executed call, and a client that connects mid-call sees it from its `tool_call` on.
 
 ### Streamed tool calls in the web UI
 
@@ -145,6 +134,17 @@ long args stay cheap.
 - Nothing of a streamed call is persisted before its final `tool_call`, so a not-run card is kept
   client-side: when the chat re-renders from the saved history after `done` (or a compaction), it
   goes back after the saved call it followed. Only a reload or a session switch drops it.
+
+### `approval_source` / `approval_verdict` (on `tool_call`)
+
+When present:
+
+- `approval_source`: `safe-list` \| `sentinel` \| `user` \| `skill` \| `bypass` \| `unknown`
+- `approval_verdict`: `allow` \| `revise` \| `deny` \| `escalate`
+
+**`skill`** — the action was allowed because it's covered by a context grant from an activated skill (e.g., domain access or credential fetch within a matching `contexts` exec).
+
+**`bypass`** — the action was silently allowed without sentinel evaluation (e.g., proxy bypass during sandbox-provided skill activation).
 
 ## Turn-control messages
 
