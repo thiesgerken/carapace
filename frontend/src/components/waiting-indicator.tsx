@@ -44,7 +44,7 @@ export function WaitingIndicator({ activity }: { activity: LlmActivity | null })
   const [shimmerDelay] = useState(() => `-${Date.now() % SHIMMER_MS}ms`);
 
   return (
-    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+    <div className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
       <span className="text-shimmer" style={{ animationDelay: shimmerDelay }}>{agent ? t(PHASE_KEYS[agent.phase]) : t("working")}</span>
       {agent && <ActivityCounter activity={agent} />}
     </div>
