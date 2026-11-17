@@ -112,7 +112,8 @@ Every span of the running turn sends one message when it starts and one when it 
 `span_id`, `kind` (`tool`, `gate`, `sentinel`, `sandbox`, `skill`, `domain`, `wait`, `llm`, ...),
 `name` (a tool's name, a sandbox step, a domain) and `status`. `tool_call_id` is the provider's id of
 the tool call whose `tool` span the span is or nests under, `null` outside one. Calls from inside the
-sandbox (proxy domain checks) nest under the exec that made them. The chat uses it to show what a
+sandbox (proxy domain checks) nest under the newest running exec, with parallel execs possibly the
+other one. The chat uses it to show what a
 running call's card waits for (the sentinel, a sandbox start, a domain check, an approval), the
 Debug view to refetch its timeline.
 

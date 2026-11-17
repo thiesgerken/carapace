@@ -101,13 +101,18 @@ class TurnTrace:
         )
 
     def tool_call_id(self, span_id: str | None) -> str | None:
-        """The id of the tool call whose span *span_id* is or nests under; ``None`` outside a tool call."""
+        """The id of the outermost tool call *span_id* is or nests under; ``None`` outside a tool call.
+
+        Outermost: the sentinel's own tool calls (reading skill files) run inside the agent call they
+        review, which is the call the user sees.
+        """
+        found = None
         while span_id is not None:
             span = self.spans[span_id]
             if span.kind == "tool":
-                return str(span.attrs["tool_call_id"])
+                found = str(span.attrs["tool_call_id"])
             span_id = span.parent_id
-        return None
+        return found
 
     def sandbox_call_parent(self) -> str:
         """The span a call from inside the sandbox nests under: the newest running exec or file span, else the root."""

@@ -20,7 +20,7 @@ from carapace.security.context import SENTINEL_VERDICT_TOOL, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.engine import SessionEngine
 from carapace.session.timeline import session_turns, turn_timeline
-from carapace.spans import Span, ToolSpanCapability, TurnTrace, attach, current_span_ref, span
+from carapace.spans import Span, SpanNotice, ToolSpanCapability, TurnTrace, attach, current_span_ref, span
 from carapace.usage import LlmRequestLogCapability, LlmRequestState
 from carapace.ws_models import ApprovalResponse
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel
@@ -47,6 +47,28 @@ def test_span_text_is_capped_and_other_attrs_kept() -> None:
         pass
     assert capped.name == "n" * 200
     assert capped.attrs == {"command": "c" * 200, "exit_code": 1, "ok": True}
+
+
+def test_steps_belong_to_the_outermost_tool_call() -> None:
+    notices: list[SpanNotice] = []
+    trace = TurnTrace("t1", on_change=notices.append)
+    root = trace.start("turn", "turn", parent_id=None, attrs={})
+    # The sentinel reviewing the agent's exec calls a tool of its own; the user sees the agent's call.
+    with (
+        attach(trace, root.span_id),
+        span("tool", "exec", tool_call_id="call-agent"),
+        span("sentinel", "tool_call"),
+        span("tool", "read_skill_file", tool_call_id="call-sentinel"),
+        span("file", "read"),
+    ):
+        pass
+    assert [(n.name, n.tool_call_id) for n in notices if n.status == "running"] == [
+        ("turn", None),
+        ("exec", "call-agent"),
+        ("tool_call", "call-agent"),
+        ("read_skill_file", "call-agent"),
+        ("read", "call-agent"),
+    ]
 
 
 def test_spans_nest_and_end_with_how_their_block_exits() -> None:
