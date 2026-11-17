@@ -4,15 +4,24 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import pytest
-from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ThinkingPart, ToolCallPart, UserPromptPart
+from pydantic import BaseModel
+from pydantic_ai import Agent, ToolOutput
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    PartStartEvent,
+    TextPart,
+    ThinkingPart,
+    ToolCallPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.usage import RequestUsage
 
@@ -20,7 +29,14 @@ from carapace.security.context import SENTINEL_VERDICT_TOOL, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.engine import SessionEngine
 from carapace.session.types import ActiveSession
-from carapace.usage import LlmRequestLogCapability, ModelUsage, RequestCost, price_for_usage
+from carapace.usage import (
+    LlmRequestLogCapability,
+    LlmRequestState,
+    ModelUsage,
+    RequestCost,
+    note_llm_stream_event,
+    price_for_usage,
+)
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel
 from tests.streaming_model import ReplayStreamModel
 
@@ -41,6 +57,10 @@ async def _hang(_messages: list[ModelMessage], _info: AgentInfo) -> ModelRespons
 async def _overload_mid_stream(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
     yield "Checking the"
     raise RuntimeError("overloaded")
+
+
+class TaskReport(BaseModel):
+    summary: str
 
 
 def _agent(model: FunctionModel, model_id: str = "test:model") -> Agent[None, str]:
@@ -285,6 +305,82 @@ async def test_a_tool_call_response_records_when_its_first_token_arrived(tmp_pat
     assert call.started_at <= call.first_token_at <= call.completed_at
     assert call.first_text_at is None
     assert answer.first_token_at is not None and answer.first_token_at == answer.first_text_at
+
+
+async def _stream_lookup_in_pieces(
+    messages: list[ModelMessage], _info: AgentInfo
+) -> AsyncIterator[str | DeltaToolCalls]:
+    if len(messages) == 1:
+        yield {0: DeltaToolCall(name="lookup", json_args='{"key": ', tool_call_id="c1")}
+        yield {0: DeltaToolCall(json_args='"abc')}
+        yield {0: DeltaToolCall(json_args='def"}')}
+    else:
+        yield "done"
+
+
+@pytest.mark.asyncio
+async def test_writing_a_tool_call_shows_as_its_own_phase_with_the_tool_name(tmp_path: Path, db_factory) -> None:
+    engine, active, subscriber = _session(tmp_path, db_factory)
+
+    with engine.llm_request_recording(active):
+        await _agent(FunctionModel(stream_function=_stream_lookup_in_pieces)).run("ping")
+
+    # The arguments' later pieces only move the counter, within the throttle interval: no update.
+    activity = [(a.phase, a.tool_name, a.streamed_chars) for a in subscriber.llm_activity_updates if a is not None]
+    assert activity == [
+        ("processing_prompt", None, 0),
+        ("tool_call", "lookup", len('{"key": ')),
+        ("processing_prompt", None, 0),
+        ("generating", None, len("done")),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_streamed_chars_reach_the_client_once_the_throttle_interval_passed(tmp_path: Path, db_factory) -> None:
+    engine, active, subscriber = _session(tmp_path, db_factory)
+
+    saved: list[str] = []
+    save = engine.session_mgr.save_llm_request_state
+    with (
+        patch("carapace.session.usage_budget.LLM_PROGRESS_INTERVAL_S", 0),
+        patch.object(
+            engine.session_mgr, "save_llm_request_state", lambda sid, st: (saved.append(st.phase), save(sid, st))
+        ),
+        engine.llm_request_recording(active),
+    ):
+        await _agent(FunctionModel(stream_function=_stream_lookup_in_pieces)).run("ping")
+
+    counts = [a.streamed_chars for a in subscriber.llm_activity_updates if a is not None and a.phase == "tool_call"]
+    assert counts == [len('{"key": '), len('{"key": "abc'), len('{"key": "abcdef"}')]
+    # Counter ticks are only sent: a reconnect after a restart needs the phase alone.
+    assert saved == ["processing_prompt", "tool_call", "processing_prompt", "generating"]
+
+
+@pytest.mark.asyncio
+async def test_writing_an_output_tool_call_is_generating_the_answer(tmp_path: Path, db_factory) -> None:
+    engine, active, subscriber = _session(tmp_path, db_factory)
+
+    async def report(_messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        yield {0: DeltaToolCall(name=info.output_tools[0].name, json_args='{"summary": "all done"}', tool_call_id="c1")}
+
+    agent = Agent(
+        FunctionModel(stream_function=report),
+        output_type=ToolOutput(TaskReport, name="task_done"),
+        capabilities=[LlmRequestLogCapability(source="agent", model_id="test:model")],
+    )
+    with engine.llm_request_recording(active):
+        await agent.run("ping")
+
+    activity = [(a.phase, a.tool_name) for a in subscriber.llm_activity_updates if a is not None]
+    assert activity == [("processing_prompt", None), ("generating", None)]
+
+
+def test_a_new_phase_drops_the_previous_calls_tool_name() -> None:
+    state = LlmRequestState(request_id="r", source="agent", started_at=datetime.now(tz=UTC))
+    note_llm_stream_event(state, PartStartEvent(index=0, part=ToolCallPart("lookup", '{"key"')))
+    assert (state.phase, state.tool_name) == ("tool_call", "lookup")
+    note_llm_stream_event(state, PartStartEvent(index=1, part=TextPart("found it")))
+    assert (state.phase, state.tool_name, state.streamed_chars) == ("generating", None, len('{"key"') + len("found it"))
 
 
 @pytest.mark.asyncio

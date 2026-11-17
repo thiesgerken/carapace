@@ -69,7 +69,7 @@ Each message is one JSON object with a `type` field.
 | `type`                           | When                                                | Main fields                                                                                      |
 | -------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `status`                         | On connect and after a session budget change        | `agent_running`, `usage`, `llm_activity`, `budget`                                               |
-| `llm_activity`                   | LLM request phase changed                           | `activity` or `null`                                                                             |
+| `llm_activity`                   | LLM request phase changed, or its output grew       | `activity` or `null`                                                                             |
 | `token`                          | Streaming assistant text                            | `content`                                                                                        |
 | `thinking`                       | Streaming reasoning text                            | `content`                                                                                        |
 | `tool_call_start`                | Agent model started writing a tool call             | `tool_call_id`, `tool` (see [Streaming tool calls](#streaming-tool-calls))                       |
@@ -88,6 +88,21 @@ Each message is one JSON object with a `type` field.
 | `session_title`                  | Title changed                                       | `title`                                                                                          |
 | `span`                           | A span of the running turn started or ended         | `turn_id`, `span_id`, `status`; LLM bars included (see [debug-view.md](debug-view.md#websocket)) |
 | `user_message`                   | Echo: user line from this client or another channel | `content`                                                                                        |
+
+### `llm_activity`
+
+`activity` describes the session's current LLM request (`null` once it ends):
+
+- `phase`: `processing_prompt` until the first token, then `thinking`, `generating` (answer text) or
+  `tool_call` (the model is writing a tool call's arguments, `tool_name` names the tool).
+- `started_at` and the phase timestamps (`first_thinking_at`, `last_thinking_at`, `first_text_at`).
+- `streamed_chars`: characters of thinking, text and tool-call arguments streamed so far. The web UI
+  shows a quarter of it as approximate output tokens; the provider's count only arrives with the
+  request's record once the response is complete.
+
+A phase change is sent right away. Growth of `streamed_chars` alone is sent at most every 0.3 s, so a
+long tool call streams a live counter without one message per chunk. Clients tick the elapsed time
+themselves from `started_at`.
 
 ### `span`
 

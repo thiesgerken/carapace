@@ -1177,7 +1177,11 @@
             "processingPrompt": "Processing prompt...",
             "thinking": "Thinking...",
             "generating": "Generating...",
-            "working": "Working..."
+            "toolCall": "Writing {tool} call...",
+            "working": "Working...",
+            "seconds": "{seconds} s",
+            "minutes": "{minutes} min {seconds} s",
+            "tokens": "~{count} tokens"
         },
         "unknown": "Unknown",
         "status": {

@@ -13,6 +13,7 @@ import { SandboxGitControls } from "@/components/git-sync";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
 import { SessionBudgetSection, type SessionBudgetField } from "@/components/session-budget-section";
 import { SessionOptionTiles } from "@/components/session-option-tiles";
+import { WaitingIndicator } from "@/components/waiting-indicator";
 import { useAppLocale } from "@/components/locale-provider";
 import { useAppShell } from "@/components/app-shell-context";
 import { useSessionPresence } from "@/hooks/use-session-presence";
@@ -2353,17 +2354,6 @@ export function ChatView({
     ? t("inputDisabled.archived")
     : t("inputDisabled.unattended");
   const canCommitKnowledge = !!session && !sessionPrivate && !sessionArchived && hasKnowledgeContent && hasKnowledgeChanges;
-  const waitingLabel = !waiting
-    ? null
-    : llmActivity?.source === "agent"
-      ? llmActivity.phase === "processing_prompt"
-        ? t("waiting.processingPrompt")
-        : llmActivity.phase === "thinking"
-          ? t("waiting.thinking")
-        : llmActivity.phase === "generating"
-          ? t("waiting.generating")
-          : t("waiting.working")
-      : t("waiting.working");
     const showsStartSandbox = shouldShowStartSandbox(sandbox);
     const sandboxActionDisabled = waiting
       || sandboxLoading
@@ -3010,12 +3000,7 @@ export function ChatView({
                   ),
                 );
               })()}
-              {waitingLabel && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>{waitingLabel}</span>
-                </div>
-              )}
+              {waiting && <WaitingIndicator activity={llmActivity} />}
               <div ref={bottomRef} />
             </div>
           </div>
