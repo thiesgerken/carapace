@@ -346,3 +346,38 @@ body {
   font-size: 0.8em;
   color: var(--destructive);
 }
+
+/* Running indicator (BrailleSpinner sets the frame). The fixed width keeps the row from jittering
+   when a fallback font gives the frames different widths. */
+.braille-spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 1ch;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  line-height: 1;
+  text-align: center;
+}
+.braille-spinner::before {
+  content: attr(data-frame);
+}
+
+/* Status-line label: a band sweeps across muted text. Its peak is the 70 % foreground of the tool
+   rows above, so it is no brighter than they are. WaitingIndicator anchors the sweep to the wall
+   clock with a negative delay, so a remounted label picks up where the last one was. */
+@media (prefers-reduced-motion: no-preference) {
+  .text-shimmer {
+    color: transparent;
+    background: linear-gradient(90deg, var(--muted-foreground) 40%, color-mix(in oklch, var(--foreground) 70%, transparent) 50%, var(--muted-foreground) 60%) 0 0 / 250% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: text-shimmer 2s linear infinite;
+  }
+}
+@keyframes text-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .braille-spinner::before { content: "⠋"; }
+}
