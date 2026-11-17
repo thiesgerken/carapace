@@ -94,7 +94,9 @@ Each message is one JSON object with a `type` field.
 `activity` describes the session's current LLM request (`null` once it ends):
 
 - `phase`: `processing_prompt` until the first token, then `thinking`, `generating` (answer text) or
-  `tool_call` (the model is writing a tool call's arguments, `tool_name` names the tool).
+  `tool_call` (the model is writing a tool call's arguments, `tool_name` names the tool). An output
+  tool's call (an unattended run's `task_done`, the sentinel's verdict) is the answer, so it counts as
+  `generating`.
 - `started_at` and the phase timestamps (`first_thinking_at`, `last_thinking_at`, `first_text_at`).
 - `streamed_chars`: characters of thinking, text and tool-call arguments streamed so far. The web UI
   shows a quarter of it as approximate output tokens; the provider's count only arrives with the
