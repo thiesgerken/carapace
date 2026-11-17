@@ -1502,8 +1502,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
     # --- Runtime ---
 
     @agent.tool
-    # The parameter order is the order models write the args in, so the short title and contexts
-    # come before a command that may be a long heredoc: the chat can show the title while it streams.
+    # The short title and contexts come before a command that may be a long heredoc, so the chat can
+    # show the title while it streams. Most models write args in schema order; GPT needs the
+    # explicit instruction on `title`.
     async def exec(
         ctx: RunContext[Deps],
         title: str | None = None,
@@ -1515,7 +1516,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
 
         Args:
             title: Optional short label (a few words) describing the purpose of this command,
-                e.g. "clean up temp files and commit".
+                e.g. "clean up temp files and commit". Write it before `command`, so the user
+                sees it while the command is still being written.
             contexts: Optional list of activated skill names whose declared network domains
                 and credentials should be available for this command. Each entry must match
                 an activated skill; unknown names are rejected.
