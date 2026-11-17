@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 
 from loguru import logger
 
+from ..spans import span
+
 _CONNECT_OK = b"HTTP/1.1 200 Connection Established\r\n\r\n"
 _PROXY_AUTH_REQUIRED = (
     b"HTTP/1.1 407 Proxy Authentication Required\r\n"
@@ -47,6 +49,7 @@ class ProxyServer:
         self,
         verify_session_token: Callable[[str, str], bool],
         get_allowed_domains: Callable[[str], set[str]],
+        attach_sandbox_call: Callable[[str], contextlib.AbstractContextManager[None]],
         request_approval: Callable[[str, str], Awaitable[bool]] | None = None,
         notify_domain_access: Callable[[str, str, bool], None] | None = None,
         host: str = "0.0.0.0",
@@ -54,6 +57,8 @@ class ProxyServer:
     ) -> None:
         self._verify_session_token = verify_session_token
         self._get_domains = get_allowed_domains
+        # The proxy serves the sandbox outside the turn's task, so its spans need the session's turn attached.
+        self._attach_sandbox_call = attach_sandbox_call
         self._request_approval = request_approval
         self._notify_domain_access = notify_domain_access
         self._host = host
@@ -345,6 +350,12 @@ class ProxyServer:
     # ------------------------------------------------------------------
 
     async def _authorize_domain(self, session_id: str, domain: str) -> bool:
+        with self._attach_sandbox_call(session_id), span("domain", domain, domain=domain) as check:
+            allowed = await self._decide_domain(session_id, domain)
+            check.attrs["allowed"] = allowed
+        return allowed
+
+    async def _decide_domain(self, session_id: str, domain: str) -> bool:
         """Return True if *domain* is allowed for *session_id*.
 
         If the domain is not in the allowlist and a ``request_approval``

@@ -5,7 +5,7 @@ import contextlib
 import logging  # stdlib logging used only for _InterceptHandler → loguru bridge
 import os
 import sys
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -576,6 +576,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     proxy = ProxyServer(
         verify_session_token=_sandbox_mgr.verify_session_token,
         get_allowed_domains=_sandbox_mgr.get_effective_domains,
+        attach_sandbox_call=_engine.attach_sandbox_call,
         request_approval=_sandbox_mgr.request_domain_approval,
         notify_domain_access=_sandbox_mgr.notify_domain_access,
         host="0.0.0.0",
@@ -820,7 +821,8 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
     if active.security is None or active.sentinel is None:
         return {"verdict": "deny", "reason": "Session not initialized"}
 
-    with _engine.llm_request_recording(active):
+    # The pre-receive hook runs in its own request, outside the git push that triggered it.
+    with _engine.llm_request_recording(active), _engine.attach_sandbox_call(req.session_id):
         try:
             evaluation = await evaluate_push_with(
                 active.security,
@@ -865,6 +867,18 @@ app.include_router(router)
 # --- Sandbox-facing API (Basic Auth, serves git HTTP backend) ---
 
 sandbox_app = FastAPI(title="carapace Sandbox API")
+
+
+@sandbox_app.middleware("http")
+async def attach_sandbox_call_to_turn(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Sandbox API calls come from an exec in a running turn: their spans (credential, sentinel, waits) belong to it."""
+    session_id = _authenticate_sandbox(request.headers.get("authorization"))
+    if session_id is None:
+        return await call_next(request)
+    with _engine.attach_sandbox_call(session_id):
+        return await call_next(request)
 
 
 @sandbox_app.api_route("/git/{path:path}", methods=["GET", "POST"])

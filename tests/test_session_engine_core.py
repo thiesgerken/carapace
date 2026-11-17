@@ -568,7 +568,7 @@ def test_handle_token_chunk_promotes_activity_and_broadcasts(tmp_path: Path, db_
             phase="generating",
         )
 
-        with patch("carapace.session.engine.note_llm_request_text", return_value=llm_state):
+        with patch("carapace.session.engine.current_llm_request_state", return_value=llm_state):
             await engine._handle_token_chunk(active, "hello")
 
         assert subscriber.token_chunks == ["hello"]
@@ -605,7 +605,7 @@ def test_handle_thinking_token_chunk_updates_buffer_and_broadcasts(tmp_path: Pat
             phase="thinking",
         )
 
-        with patch("carapace.session.engine.note_llm_request_thinking", return_value=llm_state):
+        with patch("carapace.session.engine.current_llm_request_state", return_value=llm_state):
             await engine._handle_thinking_token_chunk(active, "ponder")
 
         assert subscriber.thinking_chunks == ["ponder"]
@@ -862,7 +862,7 @@ def test_finalize_successful_turn_dispatches_attended_notification(tmp_path: Pat
         active = engine.get_or_activate(sid)
         engine.session_mgr.append_events(sid, [{"role": "user", "content": "hello"}])
 
-        await engine._finalize_successful_turn(active, sid, [], "done", "thinking", turn_event_start=0)
+        await engine._finalize_successful_turn(active, sid, [], "done", "thinking", turn_id="t1", turn_event_start=0)
 
         engine._notification_router.dispatch_turn_outcome.assert_awaited_once_with(
             session_id=sid,
@@ -923,6 +923,7 @@ def test_finalize_failed_turn_dispatches_unattended_failure_notification(tmp_pat
             active,
             sid,
             "run",
+            turn_id="t1",
             turn_event_start=0,
             terminal_message="The previous turn failed before completion.",
         )

@@ -10,6 +10,7 @@ from loguru import logger
 
 from ...models.session import SessionBudget
 from ...models.tooling import ToolResult
+from ...spans import SpanStatus
 from ...usage import LlmContextStatus, LlmRequestState, LlmSource
 from ...ws_models import ApprovalRequest, TurnUsage
 from .approval import (
@@ -125,6 +126,9 @@ class MatrixSubscriber:
     async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None:
         pass
 
+    async def on_span(self, turn_id: str, span_id: str, status: SpanStatus) -> None:
+        pass
+
     async def on_status(
         self,
         *,
@@ -140,6 +144,7 @@ class MatrixSubscriber:
         content: str,
         usage: TurnUsage,
         *,
+        turn_id: str,
         thinking: str | None = None,
         final_status: str | None = None,
     ) -> None:
@@ -157,14 +162,14 @@ class MatrixSubscriber:
         self._stream_last_len = 0
         self._stop_typing()
 
-    async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
+    async def on_error(self, detail: str, *, turn_id: str | None = None) -> None:
         self._stream_buffer = ""
         self._stream_last_len = 0
         self._stream_event_id = None
         self._stop_typing()
         await self._channel._send_text(self._room_id, f"Error: {detail}")
 
-    async def on_cancelled(self) -> None:
+    async def on_cancelled(self, *, turn_id: str) -> None:
         self._stream_buffer = ""
         self._stream_last_len = 0
         self._stream_event_id = None

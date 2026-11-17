@@ -9,6 +9,7 @@ import {
   nextUnattendedInputLockBaseline,
   projectHistoryToMessages,
 } from "./chat-view";
+import { turnTimelineHref } from "./message";
 
 test("countSubmittedUserMessages ignores slash commands", () => {
   assert.equal(
@@ -90,6 +91,7 @@ test("a failed turn's persisted error renders as a turn-terminal error after rel
     eventIndex: 1,
     compaction: undefined,
     turnTerminal: true,
+    turnId: undefined,
   });
 });
 
@@ -131,4 +133,25 @@ test("appendEscalationCard skips a request that history already shows", () => {
     appendEscalationCard(once, { kind: "approval", request: { ...request, tool_call_id: "call-2" } }).length,
     2,
   );
+});
+
+test("a failed turn's error carries its turn id, like a successful turn's last bubble", () => {
+  const [, error] = projectHistoryToMessages([
+    { role: "user", content: "go on", event_index: 0, turn_id: "9c1e0a7f" },
+    { role: "error", content: "The previous turn was interrupted before completion.", event_index: 1, turn_id: "9c1e0a7f" },
+  ]);
+  assert.equal(error.kind === "error" ? error.turnId : null, "9c1e0a7f");
+});
+
+test("only the bubble that ended a turn carries its turn id", () => {
+  const messages = projectHistoryToMessages([
+    { role: "user", content: "check the backups", event_index: 0, turn_id: "9c1e0a7f" },
+    { role: "assistant", content: "Looking.", event_index: 1, partial: true },
+    { role: "assistant", content: "All fine.", event_index: 2, turn_id: "9c1e0a7f" },
+  ]);
+  assert.deepEqual(messages.map((message) => (message.kind === "assistant" ? message.turnId : null)), [null, undefined, "9c1e0a7f"]);
+});
+
+test("the debug link opens the timeline tab on the turn", () => {
+  assert.equal(turnTimelineHref("s 1", "9c1e0a7f"), "/?session=s%201&view=debug&tab=timeline&turn=9c1e0a7f");
 });

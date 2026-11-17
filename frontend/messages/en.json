@@ -1386,7 +1386,8 @@
             "fork": "Fork session from here",
             "retry": "Retry turn",
             "continue": "Continue turn",
-            "reset": "Reset conversation to after this turn"
+            "reset": "Reset conversation to after this turn",
+            "timeline": "Show this turn's timeline"
         },
         "finalStatus": {
             "status": {
@@ -1719,7 +1720,8 @@
             "providerCost": "Provider-reported"
         },
         "hint": "The latest request of each agent role, exactly as sent to the model. Updates live.",
-        "role": "Agent role",
+        "tab": "Debug view",
+        "requestTabs": "Requests:",
         "roles": {
             "agent": "Agent",
             "sentinel": "Sentinel",
@@ -1769,7 +1771,6 @@
             "seconds": "{seconds} s",
             "columns": {
                 "time": "Time",
-                "status": "Status",
                 "input": "Input",
                 "cacheRead": "Cache read",
                 "cacheWrite": "Cache write",
@@ -1777,10 +1778,89 @@
                 "reasoning": "Reasoning",
                 "cacheHitRate": "Cache hits",
                 "cost": "Cost",
-                "equivalentCost": "Equivalent",
                 "duration": "Duration",
                 "model": "Model"
+            },
+            "outsideTurn": "Outside a turn",
+            "showTurn": "Show turn",
+            "cacheMiss": "Cache miss: nothing of the input came from the cache",
+            "subscription": "Subscription: nothing billed, the list-price equivalent"
+        },
+        "turns": {
+            "tab": "Turns",
+            "hint": "Where a turn's time went: every timed step as a waterfall. Follows the newest turn live.",
+            "turns": "Turns",
+            "empty": "No turn with a timeline yet. Turns from before timing was recorded have none.",
+            "loadError": "Could not load the turns: {error}",
+            "timelineError": "Could not load the timeline: {error}",
+            "wall": "Wall time",
+            "system": "System time",
+            "breakdown": "Where the time went",
+            "offset": "+{value}",
+            "duration": {
+                "ms": "{value} ms",
+                "s": "{value} s",
+                "min": "{minutes} min {seconds} s"
+            },
+            "categories": {
+                "preparation": "Preparation",
+                "llmWaiting": "Agent LLM: first token",
+                "llmThinking": "Agent LLM: thinking",
+                "llmOutput": "Agent LLM: output",
+                "sentinel": "Sentinel",
+                "sandbox": "Sandbox",
+                "skill": "Skills",
+                "execFile": "Exec and files",
+                "credential": "Credentials",
+                "compaction": "Compaction",
+                "other": "Other",
+                "notCovered": "Not covered",
+                "userWait": "Waiting for you"
+            },
+            "statuses": {
+                "running": "Running",
+                "ok": "OK",
+                "error": "Error",
+                "interrupted": "Interrupted"
+            },
+            "detail": {
+                "kind": "Kind",
+                "status": "Status",
+                "start": "Start",
+                "duration": "Duration",
+                "model": "Model",
+                "llmWaiting": "Until first token",
+                "llmThinking": "Thinking",
+                "llmOutput": "Output",
+                "input": "Input tokens",
+                "output": "Output tokens",
+                "outputRate": "Output speed",
+                "cacheRead": "Cache read",
+                "cacheWrite": "Cache write",
+                "cost": "Cost",
+                "openRole": "Show in the {role} tab"
+            },
+            "collapse": "Collapse",
+            "expand": "Expand",
+            "facts": {
+                "denied": "denied",
+                "blocked": "blocked",
+                "exitCode": "exit {code}",
+                "output": "{tokens} output tokens",
+                "rate": "{rate} tok/s"
             }
-        }
+        },
+        "duration": "Duration",
+        "inputShape": "Message text by kind (estimated)",
+        "shape": {
+            "system": "System",
+            "user": "User",
+            "assistant": "Assistant",
+            "tool_calls": "Tool calls",
+            "tool_returns": "Tool returns",
+            "other": "Other"
+        },
+        "showAllLines": "{count, plural, one {Show the whole line} other {Show all # lines}}",
+        "showLess": "Show less"
     }
 }

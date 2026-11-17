@@ -20,6 +20,7 @@ from ..models.session import SessionBudget, SessionState
 from ..models.tooling import ToolResult
 from ..security.context import ApprovalSource, ApprovalVerdict, SessionSecurity
 from ..security.sentinel import Sentinel
+from ..spans import SpanStatus, TurnTrace
 from ..usage import LlmContextStatus, LlmRequestLog, LlmRequestState, LlmSource, UsageTracker
 from ..ws_models import ApprovalRequest, ApprovalResponse, FinalStatus, TurnUsage
 from .escalation_waiters import EscalationWaiters
@@ -46,6 +47,7 @@ class SessionSubscriber(Protocol):
     async def on_thinking_token(self, content: str) -> None: ...
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None: ...
     async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None: ...
+    async def on_span(self, turn_id: str, span_id: str, status: SpanStatus) -> None: ...
     async def on_status(
         self,
         *,
@@ -59,11 +61,13 @@ class SessionSubscriber(Protocol):
         content: str,
         usage: TurnUsage,
         *,
+        turn_id: str,
         thinking: str | None = None,
         final_status: FinalStatus | None = None,
     ) -> None: ...
-    async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None: ...
-    async def on_cancelled(self) -> None: ...
+    # *turn_id* marks the error that ended that turn; other errors belong to no turn.
+    async def on_error(self, detail: str, *, turn_id: str | None = None) -> None: ...
+    async def on_cancelled(self, *, turn_id: str) -> None: ...
     async def on_approval_request(self, req: ApprovalRequest) -> None: ...
     async def on_domain_access_approval_request(self, request_id: str, domain: str, command: str) -> None: ...
     async def on_git_push_approval_request(
@@ -131,7 +135,12 @@ class ActiveSession:
     autonomy: AutonomyStreak = field(default_factory=AutonomyStreak)
     llm_request_log: LlmRequestLog = field(default_factory=LlmRequestLog)
     llm_request_state: LlmRequestState | None = None
+    # Every request in flight, untracked and parallel ones included (``llm_request_state`` holds only
+    # the latest tracked one): the timeline draws a running bar for each.
+    llm_requests_in_flight: dict[str, LlmRequestState] = field(default_factory=dict)
     llm_request_thinking: dict[str, str] = field(default_factory=dict)
+    # Spans of the running turn; flushed to the database when it ends.
+    turn_trace: TurnTrace | None = None
     agent_model: Model | None = None
     agent_model_name: str | None = None
     sentinel_model_name: str | None = None

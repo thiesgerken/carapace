@@ -49,6 +49,7 @@ from ..security.context import (
     ToolResultEntry,
 )
 from ..skills import SkillDocumentError, SkillRegistry
+from ..spans import ToolSpanCapability, span
 from ..usage import LlmRequestLogCapability
 from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, AutonomyLimitCapability
 from .deps import Deps, TaskDone, TaskFailed
@@ -324,19 +325,21 @@ async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> 
     Returns ``ToolDenied`` when the sentinel denies the call or requests changes (the caller must
     return it to pydantic-ai), or ``None`` when the call is allowed.
     """
-    try:
-        await security.evaluate_with(
-            ctx.deps.security,
-            ctx.deps.sentinel,
-            tool_name,
-            args,
-            usage_tracker=ctx.deps.usage_tracker,
-            assert_llm_budget_available=ctx.deps.assert_llm_budget_available,
-            usage_limits=ctx.deps.llm_usage_limits() if ctx.deps.llm_usage_limits is not None else None,
-            tool_call_callback=ctx.deps.tool_call_callback,
-        )
-    except (security.SecurityDeniedError, security.ChangesRequestedError) as exc:
-        return ToolDenied(str(exc))
+    with span("gate", tool_name) as gate:
+        try:
+            await security.evaluate_with(
+                ctx.deps.security,
+                ctx.deps.sentinel,
+                tool_name,
+                args,
+                usage_tracker=ctx.deps.usage_tracker,
+                assert_llm_budget_available=ctx.deps.assert_llm_budget_available,
+                usage_limits=ctx.deps.llm_usage_limits() if ctx.deps.llm_usage_limits is not None else None,
+                tool_call_callback=ctx.deps.tool_call_callback,
+            )
+        except (security.SecurityDeniedError, security.ChangesRequestedError) as exc:
+            gate.attrs["denied"] = True
+            return ToolDenied(str(exc))
     return None
 
 
@@ -411,7 +414,8 @@ async def _prepare_exec_tool_result(ctx: RunContext[Deps], result: str) -> str:
 
     session_id = ctx.deps.session_state.session_id
     spill_path = (_EXEC_OUTPUT_SPILL_ROOT / session_id / f"{secrets.token_hex(8)}.txt").as_posix()
-    write_result = await ctx.deps.sandbox.file_write(session_id, spill_path, result)
+    with span("spill", "spill", chars=len(result)):
+        write_result = await ctx.deps.sandbox.file_write(session_id, spill_path, result)
     if write_result.exit_code != 0:
         # A truncated preview without the spill file would lose the rest of the output.
         raise RuntimeError(
@@ -834,18 +838,21 @@ async def _run_stdio_bridge(
     command = " ".join(parts)
 
     inj = await _collect_context_injection(ctx, [skill_name])
-    exec_result = await ctx.deps.sandbox.exec_command(
-        ctx.deps.session_state.session_id,
-        command,
-        contexts=[skill_name],
-        extra_env=inj.extra_env or None,
-        context_domains=inj.domains or None,
-        context_tunnels=inj.tunnels or None,
-        context_file_creds=inj.file_creds or None,
-        after_exec_credential_notify=_notify_injected_creds_callback(ctx, inj.injected_creds)
-        if inj.injected_creds
-        else None,
-    )
+    # The bridge command carries the tool arguments, so the span names the server and tool instead.
+    with span("exec", f"mcp:{decl.name}", skill=skill_name, mode=mode, tool=tool or "") as call:
+        exec_result = await ctx.deps.sandbox.exec_command(
+            ctx.deps.session_state.session_id,
+            command,
+            contexts=[skill_name],
+            extra_env=inj.extra_env or None,
+            context_domains=inj.domains or None,
+            context_tunnels=inj.tunnels or None,
+            context_file_creds=inj.file_creds or None,
+            after_exec_credential_notify=_notify_injected_creds_callback(ctx, inj.injected_creds)
+            if inj.injected_creds
+            else None,
+        )
+        call.attrs["exit_code"] = exec_result.exit_code
     envelope = _parse_bridge_envelope(exec_result.output)
     if not envelope.get("ok"):
         raise RuntimeError(envelope.get("error", "unknown MCP bridge error"))
@@ -1118,6 +1125,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         capabilities=[
             *_compaction_capabilities(deps),
             LlmRequestLogCapability(source="agent", model_id=deps.agent_model_id),
+            # Before the autonomy limit, so a call it holds back still shows as a (deferred) tool span.
+            ToolSpanCapability(),
             AutonomyLimitCapability(
                 streak=deps.autonomy,
                 session_state=deps.session_state,
@@ -1280,7 +1289,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             # Eagerly connect/enumerate declared MCP servers so tools are ready and any
             # failure (missing/expired credential, unreachable server) is reported now
             # instead of falsely promising the tools.
-            status_lines.extend(await _prewarm_skill_mcp(ctx, skill_name, grant))
+            with span("skill", "mcp prewarm", skill=skill_name):
+                status_lines.extend(await _prewarm_skill_mcp(ctx, skill_name, grant))
         if cred_msg:
             status_lines.extend(cred_msg.splitlines())
 
@@ -1326,7 +1336,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         media_type = _image_media_type(path)
         if media_type is not None and not line_numbers_given and supports_vision:
             try:
-                data = await ctx.deps.sandbox.file_read_bytes(session_id, path)
+                with span("file", "read", path=path):
+                    data = await ctx.deps.sandbox.file_read_bytes(session_id, path)
             except Exception as exc:
                 _log_sandbox_tool_exception("read", session_id)
                 return _emit_tool_result(ctx, "read", f"Error: {exc}", exit_code=-1)
@@ -1336,7 +1347,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
 
         exit_code = 0
         try:
-            result = await ctx.deps.sandbox.file_read(session_id, path, offset=text_offset, limit=text_limit)
+            with span("file", "read", path=path):
+                result = await ctx.deps.sandbox.file_read(session_id, path, offset=text_offset, limit=text_limit)
         except Exception as exc:
             _log_sandbox_tool_exception("read", session_id)
             result = f"Error: {exc}"
@@ -1395,7 +1407,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         name = PurePosixPath(path).name or "file"
         file_id, dest = sent_files.reserve(ctx.deps.data_dir, session_id, name)
         try:
-            size = await ctx.deps.sandbox.download_tmp_file(session_id, path, dest, max_bytes=SEND_FILE_MAX_BYTES)
+            with span("file", "send_file", path=path):
+                size = await ctx.deps.sandbox.download_tmp_file(session_id, path, dest, max_bytes=SEND_FILE_MAX_BYTES)
         except UploadTooLargeError:
             dest.unlink(missing_ok=True)
             return _emit_tool_result(
@@ -1421,7 +1434,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         session_id = ctx.deps.session_state.session_id
         exit_code = 0
         try:
-            exec_result = await ctx.deps.sandbox.file_write(session_id, path, content)
+            with span("file", "write", path=path):
+                exec_result = await ctx.deps.sandbox.file_write(session_id, path, content)
             result = exec_result.output
             exit_code = exec_result.exit_code
         except Exception as exc:
@@ -1461,13 +1475,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         session_id = ctx.deps.session_state.session_id
         exit_code = 0
         try:
-            exec_result = await ctx.deps.sandbox.file_str_replace(
-                session_id,
-                path,
-                old_string,
-                new_string,
-                replace_all=replace_all,
-            )
+            with span("file", "str_replace", path=path):
+                exec_result = await ctx.deps.sandbox.file_str_replace(
+                    session_id,
+                    path,
+                    old_string,
+                    new_string,
+                    replace_all=replace_all,
+                )
             result = exec_result.output
             exit_code = exec_result.exit_code
         except Exception as exc:
@@ -1539,16 +1554,18 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         notify = _notify_injected_creds_callback(ctx, inj.injected_creds)
 
         try:
-            exec_result = await ctx.deps.sandbox.exec_command(
-                session_id,
-                command,
-                contexts=contexts,
-                extra_env=inj.extra_env or None,
-                context_domains=inj.domains or None,
-                context_tunnels=inj.tunnels or None,
-                context_file_creds=inj.file_creds or None,
-                after_exec_credential_notify=notify if inj.injected_creds else None,
-            )
+            with span("exec", "exec", command=command) as call:
+                exec_result = await ctx.deps.sandbox.exec_command(
+                    session_id,
+                    command,
+                    contexts=contexts,
+                    extra_env=inj.extra_env or None,
+                    context_domains=inj.domains or None,
+                    context_tunnels=inj.tunnels or None,
+                    context_file_creds=inj.file_creds or None,
+                    after_exec_credential_notify=notify if inj.injected_creds else None,
+                )
+                call.attrs["exit_code"] = exec_result.exit_code
             result = exec_result.output
             exit_code = exec_result.exit_code
         except Exception as exc:

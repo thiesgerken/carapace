@@ -15,8 +15,10 @@ from genai_prices import Usage as PriceUsage
 from genai_prices import calc_price
 from loguru import logger
 from pydantic import BaseModel, Field
+from pydantic_ai import AgentRunResult
 from pydantic_ai.capabilities.abstract import AbstractCapability, WrapModelRequestHandler
 from pydantic_ai.messages import (
+    AgentStreamEvent,
     CompactionPart,
     FilePart,
     InstructionPart,
@@ -27,11 +29,15 @@ from pydantic_ai.messages import (
     ModelResponsePart,
     NativeToolCallPart,
     NativeToolReturnPart,
+    PartDeltaEvent,
+    PartStartEvent,
     RetryFeedbackPart,
     SpeechPart,
     SystemPromptPart,
     TextPart,
+    TextPartDelta,
     ThinkingPart,
+    ThinkingPartDelta,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -43,6 +49,7 @@ from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
 
 from .models.config import is_subscription_model
 from .models.session import SessionBudget
+from .spans import current_span_ref
 
 
 class ModelUsage(BaseModel):
@@ -450,7 +457,8 @@ def usage_limits_for_remaining_budget(
 
 LlmSource = Literal["agent", "sentinel", "titler", "compaction", "memory"]
 LlmRequestPhase = Literal["processing_prompt", "thinking", "generating"]
-LlmRequestOutcome = Literal["completed", "interrupted"]
+LlmRequestOutcome = Literal["completed", "interrupted", "failed"]
+UnfinishedOutcome = Literal["interrupted", "failed"]
 LlmContextStatus = Literal["running", "completed", "failed", "interrupted"]
 CompactionTarget = Literal["agent", "sentinel"]
 
@@ -468,9 +476,14 @@ _current_llm_context: ContextVar[LlmContext | None] = ContextVar("current_llm_co
 class LlmRequestState(BaseModel):
     request_id: str
     source: LlmSource
+    # The turn and the span the request started in; None outside a turn.
+    turn_id: str | None = None
+    span_id: str | None = None
     model_name: str | None = None
     started_at: datetime
     phase: LlmRequestPhase = "processing_prompt"
+    # The first streamed part of any kind (thinking, text, tool call): ends the wait for the model.
+    first_token_at: datetime | None = None
     first_thinking_at: datetime | None = None
     last_thinking_at: datetime | None = None
     first_text_at: datetime | None = None
@@ -528,27 +541,32 @@ async def fail_llm_context(role: LlmSource, error: str) -> None:
         await sink.on_context_failed(role, error)
 
 
-def note_llm_request_thinking(ts: datetime | None = None) -> LlmRequestState | None:
-    state = _current_llm_request_state.get()
-    if state is None:
-        return None
-    when = ts or datetime.now(tz=UTC)
-    if state.first_thinking_at is None:
-        state.first_thinking_at = when
-    state.last_thinking_at = when
-    state.phase = "thinking"
-    return state
+def current_llm_request_state() -> LlmRequestState | None:
+    return _current_llm_request_state.get()
 
 
-def note_llm_request_text(ts: datetime | None = None) -> LlmRequestState | None:
-    state = _current_llm_request_state.get()
-    if state is None:
-        return None
+def note_llm_stream_event(
+    state: LlmRequestState, event: PartStartEvent | PartDeltaEvent, *, ts: datetime | None = None
+) -> None:
     when = ts or datetime.now(tz=UTC)
-    if state.first_text_at is None:
-        state.first_text_at = when
-    state.phase = "generating"
-    return state
+    if state.first_token_at is None:
+        state.first_token_at = when
+    match event:
+        case (
+            PartStartEvent(part=ThinkingPart(content=str(chunk)))
+            | PartDeltaEvent(delta=ThinkingPartDelta(content_delta=str(chunk)))
+        ) if chunk:
+            if state.first_thinking_at is None:
+                state.first_thinking_at = when
+            state.last_thinking_at = when
+            state.phase = "thinking"
+        case (
+            PartStartEvent(part=TextPart(content=str(chunk)))
+            | PartDeltaEvent(delta=TextPartDelta(content_delta=str(chunk)))
+        ) if chunk:
+            if state.first_text_at is None:
+                state.first_text_at = when
+            state.phase = "generating"
 
 
 class InputShapeRatios(BaseModel):
@@ -566,6 +584,8 @@ class LlmRequestRecord(BaseModel):
     ts: datetime
     request_id: str | None = None
     source: LlmSource
+    turn_id: str | None = None
+    span_id: str | None = None
     model_name: str | None = None
     outcome: LlmRequestOutcome = "completed"
     input_tokens: int = 0
@@ -576,6 +596,7 @@ class LlmRequestRecord(BaseModel):
     # None on interrupted requests and on records written before costs were kept.
     cost: RequestCost | None = None
     started_at: datetime | None = None
+    first_token_at: datetime | None = None
     first_thinking_at: datetime | None = None
     last_thinking_at: datetime | None = None
     first_text_at: datetime | None = None
@@ -589,15 +610,21 @@ class LlmRequestLog(BaseModel):
     records: list[LlmRequestRecord] = Field(default_factory=list)
 
 
-def interrupted_request_record(state: LlmRequestState, *, ts: datetime | None = None) -> LlmRequestRecord:
+def unfinished_request_record(
+    state: LlmRequestState, outcome: UnfinishedOutcome, *, ts: datetime | None = None
+) -> LlmRequestRecord:
+    """The record of a request that ended without a response: only its timestamps, no usage or cost."""
     when = ts or datetime.now(tz=UTC)
     return LlmRequestRecord(
         ts=when,
         request_id=state.request_id,
         source=state.source,
+        turn_id=state.turn_id,
+        span_id=state.span_id,
         model_name=state.model_name,
-        outcome="interrupted",
+        outcome=outcome,
         started_at=state.started_at,
+        first_token_at=state.first_token_at,
         first_thinking_at=state.first_thinking_at,
         last_thinking_at=state.last_thinking_at,
         first_text_at=state.first_text_at,
@@ -915,7 +942,12 @@ def _request_llm_context(
 
 @dataclass
 class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
-    """Report every model request to the session sink: activity, usage record and LLM context."""
+    """Report every model request to the session sink: activity, usage record and LLM context.
+
+    Its ``on_event`` hook makes pydantic-ai stream every run that carries it, with or without an
+    ``event_stream_handler``: only a streamed request shows when the first token, thinking and text
+    arrived, and the turn timeline needs those phases for every role.
+    """
 
     source: LlmSource
     # The carapace model id (provider:model): pricing and subscription checks key on it, and the
@@ -943,6 +975,12 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
             await self._finish_context("failed", error=f"{type(exc).__name__}: {exc}")
             raise
 
+    async def on_run_error(self, ctx: RunContext[AgentDepsT], *, error: BaseException) -> AgentRunResult[Any]:
+        # Streamed, a failing request only sees its cancellation; the run sees the actual error.
+        if not isinstance(error, asyncio.CancelledError):
+            await fail_llm_context(self.source, f"{type(error).__name__}: {error}")
+        raise error
+
     async def _finish_context(self, status: LlmContextStatus, *, error: str | None) -> None:
         context = _current_llm_context.get()
         if context is None or context.status != "running":
@@ -952,15 +990,22 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
         if (sink := _llm_request_sink.get()) is not None:
             await sink.on_context(context)
 
+    async def on_event(self, ctx: RunContext[AgentDepsT], *, event: AgentStreamEvent) -> None:
+        if isinstance(event, PartStartEvent | PartDeltaEvent) and (state := _current_llm_request_state.get()):
+            note_llm_stream_event(state, event)
+
     async def before_model_request(
         self,
         ctx: RunContext[AgentDepsT],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
         sink = _llm_request_sink.get()
+        turn_id, span_id = current_span_ref() or (None, None)
         state = LlmRequestState(
             request_id=secrets.token_hex(8),
             source=self.source,
+            turn_id=turn_id,
+            span_id=span_id,
             model_name=self.model_id,
             started_at=datetime.now(tz=UTC),
         )
@@ -970,7 +1015,8 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
         )
         _current_llm_context.set(context)
         if sink is not None:
-            await sink.on_request_started(state.model_copy(deep=True))
+            # The live state: stream events keep stamping its phases while the request runs.
+            await sink.on_request_started(state)
             await sink.on_context(context)
         return request_context
 
@@ -1004,6 +1050,8 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
             ts=completed_at,
             request_id=state.request_id,
             source=self.source,
+            turn_id=state.turn_id,
+            span_id=state.span_id,
             model_name=self.model_id,
             input_tokens=usage.input_tokens or 0,
             output_tokens=usage.output_tokens or 0,
@@ -1011,6 +1059,7 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
             cache_write_tokens=usage.cache_write_tokens,
             cost=cost,
             started_at=state.started_at,
+            first_token_at=state.first_token_at,
             first_thinking_at=state.first_thinking_at,
             last_thinking_at=state.last_thinking_at,
             first_text_at=state.first_text_at,

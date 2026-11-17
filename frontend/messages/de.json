@@ -659,8 +659,8 @@
         "modelRow": "Modell {index}",
         "compaction": {
             "modelDefault": "Standard (Titelmodell)",
-            "keepTurns": "Letzte Runden behalten",
-            "verbatimTurns": "Tool-Runden wörtlich behalten",
+            "keepTurns": "Letzte Turns behalten",
+            "verbatimTurns": "Tool-Turns wörtlich behalten",
             "toolFloor": "Tool-Ausgabe-Schwelle (Tokens)"
         }
     },
@@ -803,7 +803,7 @@
         },
         "notifications": {
             "title": "Push-Benachrichtigungen",
-            "description": "Liefert Eskalationen und Zug-Ergebnisse an diesen Browser oder die installierte PWA.",
+            "description": "Liefert Eskalationen und Turn-Ergebnisse an diesen Browser oder die installierte PWA.",
             "status": {
                 "loading": "Benachrichtigungsunterstützung wird geprüft…",
                 "loadingShort": "Prüfung",
@@ -841,7 +841,7 @@
             "preferences": {
                 "label": "Benachrichtigungen senden für",
                 "escalation_pending": "Eskalationen, die Freigabe brauchen",
-                "attended_turn_completed": "Begleitete Sitzungen, wenn ein Zug endet",
+                "attended_turn_completed": "Begleitete Sitzungen, wenn ein Turn endet",
                 "unattended_turn_completed": "Unbeaufsichtigte Jobs mit erfolgreichem Abschluss",
                 "unattended_turn_failed": "Unbeaufsichtigte Jobs mit Fehler"
             },
@@ -1152,7 +1152,7 @@
             "title": "Compaction",
             "nothing": "Nichts für eine Compaction.",
             "saved": "{saved} Tokens gespart ({before}→{after}).",
-            "folded": "{count} Runden gefaltet",
+            "folded": "{count} Turns gefaltet",
             "tools": "{count} Tool-Ausgaben zusammengefasst",
             "thinking": "{count} Denk-Teile verworfen"
         }
@@ -1345,7 +1345,7 @@
             "nothing": "Noch nichts zu kompaktieren.",
             "plan": "Kompaktieren würde",
             "thinking": "{count, plural, one {# Thinking-Teil} other {# Thinking-Teile}} entfernen",
-            "fold": "{count, plural, one {# Runde} other {# Runden}} ({tokens} Tokens) in die Zusammenfassung falten",
+            "fold": "{count, plural, one {# Turn} other {# Turns}} ({tokens} Tokens) in die Zusammenfassung falten",
             "toolOutput": "eine Ausgabe von {tool} ({tokens} Tokens) zusammenfassen",
             "estimate": "Danach etwa {tokens} Tokens, plus die Zusammenfassungen.",
             "focus": "Fokus (optional)",
@@ -1384,9 +1384,10 @@
         },
         "actions": {
             "fork": "Sitzung von hier forken",
-            "retry": "Zug erneut ausführen",
-            "continue": "Zug fortsetzen",
-            "reset": "Unterhaltung zu diesem Zug zurücksetzen"
+            "retry": "Turn erneut ausführen",
+            "continue": "Turn fortsetzen",
+            "reset": "Unterhaltung zu diesem Turn zurücksetzen",
+            "timeline": "Zeitleiste dieses Turns zeigen"
         },
         "finalStatus": {
             "status": {
@@ -1397,7 +1398,7 @@
         }
     },
     "turnMeta": {
-        "turn": "Runde {n}",
+        "turn": "Turn {n}",
         "messageInTurn": "Nachricht {i} von {n}",
         "tools": "{count, plural, one {# Tool} other {# Tools}}",
         "tokens": "{in} rein, {out} raus",
@@ -1663,11 +1664,11 @@
         }
     },
     "compaction": {
-        "railHeader": "{count, plural, one {# Runde} other {# Runden}} für das Modell verdichtet",
+        "railHeader": "{count, plural, one {# Turn} other {# Turns}} für das Modell verdichtet",
         "modelSees": "Modell sieht",
         "modelSummaryLabel": "Zusammenfassung im Modell-Kontext",
         "tokenDelta": "{from}→{to} Tok",
-        "foldTitle": "Diese Runden sind im Modell-Kontext zu einer Zusammenfassung verdichtet — Originale hier angezeigt",
+        "foldTitle": "Diese Turns sind im Modell-Kontext zu einer Zusammenfassung verdichtet — Originale hier angezeigt",
         "toolTitle": "Tool-Ausgabe zusammengefasst, um Kontext zu sparen ({orig}→{summary} Tokens)",
         "providerMarker": "Kontext von {provider} verdichtet",
         "providerTitle": "Der Anbieter des Modells hat alles darüber im Modell-Kontext durch eine Zusammenfassung ersetzt. Originale hier angezeigt",
@@ -1719,7 +1720,8 @@
             "providerCost": "Laut Anbieter"
         },
         "hint": "Die letzte Anfrage jeder Agentenrolle, genau so, wie sie an das Modell ging. Aktualisiert sich live.",
-        "role": "Agentenrolle",
+        "tab": "Debug-Ansicht",
+        "requestTabs": "Anfragen:",
         "roles": {
             "agent": "Agent",
             "sentinel": "Sentinel",
@@ -1769,7 +1771,6 @@
             "seconds": "{seconds} s",
             "columns": {
                 "time": "Zeit",
-                "status": "Status",
                 "input": "Eingabe",
                 "cacheRead": "Cache gelesen",
                 "cacheWrite": "Cache geschrieben",
@@ -1777,10 +1778,89 @@
                 "reasoning": "Reasoning",
                 "cacheHitRate": "Cache-Treffer",
                 "cost": "Kosten",
-                "equivalentCost": "Äquivalent",
                 "duration": "Dauer",
                 "model": "Modell"
+            },
+            "outsideTurn": "Außerhalb eines Turns",
+            "showTurn": "Turn anzeigen",
+            "cacheMiss": "Cache-Miss: nichts von der Eingabe kam aus dem Cache",
+            "subscription": "Abo: nichts berechnet, Listenpreis-Äquivalent"
+        },
+        "turns": {
+            "tab": "Turns",
+            "hint": "Wohin die Zeit eines Turns ging: jeder gemessene Schritt als Wasserfall. Folgt live dem neuesten Turn.",
+            "turns": "Turns",
+            "empty": "Noch kein Turn mit Zeitleiste. Turns von vor der Zeitmessung haben keine.",
+            "loadError": "Die Turns konnten nicht geladen werden: {error}",
+            "timelineError": "Die Zeitleiste konnte nicht geladen werden: {error}",
+            "wall": "Gesamtdauer",
+            "system": "Systemzeit",
+            "breakdown": "Wohin die Zeit ging",
+            "offset": "+{value}",
+            "duration": {
+                "ms": "{value} ms",
+                "s": "{value} s",
+                "min": "{minutes} min {seconds} s"
+            },
+            "categories": {
+                "preparation": "Vorbereitung",
+                "llmWaiting": "Agent-LLM: erstes Token",
+                "llmThinking": "Agent-LLM: Denken",
+                "llmOutput": "Agent-LLM: Ausgabe",
+                "sentinel": "Sentinel",
+                "sandbox": "Sandbox",
+                "skill": "Skills",
+                "execFile": "Exec und Dateien",
+                "credential": "Zugangsdaten",
+                "compaction": "Compaction",
+                "other": "Sonstiges",
+                "notCovered": "Nicht erfasst",
+                "userWait": "Wartet auf dich"
+            },
+            "statuses": {
+                "running": "Läuft",
+                "ok": "OK",
+                "error": "Fehler",
+                "interrupted": "Unterbrochen"
+            },
+            "detail": {
+                "kind": "Art",
+                "status": "Status",
+                "start": "Start",
+                "duration": "Dauer",
+                "model": "Modell",
+                "llmWaiting": "Bis zum ersten Token",
+                "llmThinking": "Denken",
+                "llmOutput": "Ausgabe",
+                "input": "Eingabe-Tokens",
+                "output": "Ausgabe-Tokens",
+                "outputRate": "Ausgabetempo",
+                "cacheRead": "Cache gelesen",
+                "cacheWrite": "Cache geschrieben",
+                "cost": "Kosten",
+                "openRole": "Im Tab {role} zeigen"
+            },
+            "collapse": "Einklappen",
+            "expand": "Ausklappen",
+            "facts": {
+                "denied": "abgelehnt",
+                "blocked": "blockiert",
+                "exitCode": "Exit {code}",
+                "output": "{tokens} Ausgabe-Tokens",
+                "rate": "{rate} Token/s"
             }
-        }
+        },
+        "duration": "Dauer",
+        "inputShape": "Nachrichtentext nach Art (geschätzt)",
+        "shape": {
+            "system": "System",
+            "user": "Nutzer",
+            "assistant": "Assistent",
+            "tool_calls": "Tool-Aufrufe",
+            "tool_returns": "Tool-Ergebnisse",
+            "other": "Sonstiges"
+        },
+        "showAllLines": "{count, plural, one {Ganze Zeile zeigen} other {Alle # Zeilen zeigen}}",
+        "showLess": "Weniger zeigen"
     }
 }

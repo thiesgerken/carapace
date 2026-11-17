@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic_ai import ApprovalRequired
@@ -136,8 +136,8 @@ def test_budget_blocked_turn_leaves_earlier_tool_calls_alone(tmp_path: Path, db_
         events = _without_timestamps(engine.session_mgr.load_events(sid))
         assert events[: len(earlier_turn)] == earlier_turn
         assert events[len(earlier_turn) :] == [
-            {"role": "user", "content": "go on"},
-            {"role": "error", "content": _TOOL_CALL_BUDGET_MESSAGE},
+            {"role": "user", "content": "go on", "turn_id": ANY},
+            {"role": "error", "content": _TOOL_CALL_BUDGET_MESSAGE, "turn_id": ANY},
         ]
 
     with _patch_sentinel():
@@ -968,6 +968,7 @@ def test_save_user_message_on_failure_appends_cancelled_parallel_tool_returns(tm
     engine._save_user_message_on_failure(
         sid,
         "hello",
+        turn_id="t1",
         turn_event_start=0,
         latest_messages=latest_messages,
         terminal_message="The previous turn was interrupted before completion.",
@@ -1027,6 +1028,7 @@ def test_save_user_message_on_failure_appends_cancelled_parallel_tool_results(tm
     engine._save_user_message_on_failure(
         sid,
         "hello",
+        turn_id="t1",
         turn_event_start=0,
         latest_messages=[ModelRequest(parts=[UserPromptPart(content="hello")])],
         terminal_message="The previous turn was interrupted before completion.",

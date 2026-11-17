@@ -8,6 +8,7 @@ import shlex
 import textwrap
 from asyncio.locks import Lock
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ from ..database.engine import SessionFactory
 from ..knowledge import KnowledgeRepoHandle, KnowledgeRepoResolver
 from ..models.git import GitActionResult, SandboxGitStatus
 from ..security.context import ApprovalSource, ApprovalVerdict
+from ..spans import span
 from . import file_ops
 from .exec_flow import SandboxExecCoordinator, SandboxExecState
 from .file_ops import SandboxFileOps
@@ -448,7 +450,9 @@ class SandboxManager:
             self._save_transient_sandbox_snapshot(session_id, "pending")
 
         try:
-            ensured_sc = await self._attach_or_start(session_id, force_skill_setup=force_skill_setup)
+            # A sandbox that is already up costs nothing worth a span on every exec.
+            with span("sandbox", "ensure") if needs_startup or force_skill_setup else nullcontext():
+                ensured_sc = await self._attach_or_start(session_id, force_skill_setup=force_skill_setup)
         except BaseException as exc:
             if needs_startup:
                 try:

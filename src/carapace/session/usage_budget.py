@@ -23,12 +23,14 @@ from ..usage import (
     ModelCost,
     SessionBudgetExceededError,
     SessionUsageDetails,
+    UnfinishedOutcome,
     UsageContextRow,
     agent_request_limit,
     autonomy_budget_gauge,
     gauge_breakdown_pct_dict,
     last_record_for_source,
     llm_request_sink_scope,
+    unfinished_request_record,
     usage_budget_exceeded_error,
     usage_budget_gauges,
     usage_last_request_row,
@@ -329,11 +331,15 @@ class SessionUsageBudgetMixin:
 
         class Sink:
             async def on_request_started(self, state: LlmRequestState) -> None:
+                active.llm_requests_in_flight[state.request_id] = state
                 active.llm_request_thinking.pop(state.request_id, None)
                 if track_activity:
                     await engine._set_llm_request_state(active, state)
+                if state.turn_id is not None:
+                    await engine._broadcast(active, "on_span", state.turn_id, state.request_id, "running")
 
             async def on_request_completed(self, record: LlmRequestRecord) -> None:
+                active.llm_requests_in_flight.pop(record.request_id or "", None)
                 if track_activity:
                     thinking_content = active.llm_request_thinking.pop(record.request_id or "", "")
                     if thinking_content:
@@ -355,9 +361,24 @@ class SessionUsageBudgetMixin:
                 engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
                 if track_activity:
                     await engine._clear_llm_request_state(active)
+                if record.turn_id is not None and record.request_id is not None:
+                    await engine._broadcast(active, "on_span", record.turn_id, record.request_id, "ok")
 
             async def on_context(self, context: LlmContext) -> None:
+                # A failed or interrupted request ends here: it never reaches on_request_completed, so it is
+                # recorded here, a stop or sentinel timeout as interrupted, a provider error as failed.
+                if context.status in ("interrupted", "failed"):
+                    ended = active.llm_requests_in_flight.pop(context.request_id, None)
+                    if ended is not None:
+                        await self._record_unfinished(ended, context.status)
                 await engine._save_llm_context(active, context)
+
+            async def _record_unfinished(self, state: LlmRequestState, outcome: UnfinishedOutcome) -> None:
+                active.llm_request_log.records.append(unfinished_request_record(state, outcome))
+                engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
+                if state.turn_id is not None:
+                    status = "interrupted" if outcome == "interrupted" else "error"
+                    await engine._broadcast(active, "on_span", state.turn_id, state.request_id, status)
 
             async def on_context_failed(self, role: LlmSource, error: str) -> None:
                 context = engine._session_mgr.load_llm_context(session_id, role)
@@ -367,7 +388,22 @@ class SessionUsageBudgetMixin:
                     return
                 completed_at = context.completed_at or datetime.now(tz=UTC)
                 failed = context.model_copy(update={"status": "failed", "error": error, "completed_at": completed_at})
+                await self._fail_interrupted_record(context.request_id)
                 await engine._save_llm_context(active, failed)
+
+            async def _fail_interrupted_record(self, request_id: str) -> None:
+                """A streamed request cut by a provider error was recorded as interrupted: it failed."""
+                records = active.llm_request_log.records
+                index = next(
+                    (i for i in reversed(range(len(records))) if records[i].request_id == request_id),
+                    None,
+                )
+                if index is None or records[index].outcome != "interrupted":
+                    return
+                records[index] = records[index].model_copy(update={"outcome": "failed"})
+                engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
+                if (turn_id := records[index].turn_id) is not None:
+                    await engine._broadcast(active, "on_span", turn_id, request_id, "error")
 
         with llm_request_sink_scope(Sink()):
             yield

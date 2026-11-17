@@ -216,6 +216,8 @@ export interface HistoryMessage {
   final_status?: "success" | "warning";
   event_index?: number;
   timestamp?: string;
+  /** On the user event that started a turn and the assistant event that ended it; older turns have none. */
+  turn_id?: string;
   usage?: {
     model?: string | null;
     input_tokens?: number;
@@ -336,6 +338,14 @@ export interface LlmContextUpdate {
   status: LlmContextStatus;
 }
 
+/** A turn's span started or ended; clients refetch its timeline, and the turn list on a new *turn_id*. */
+export interface SpanUpdate {
+  type: "span";
+  turn_id: string;
+  span_id: string;
+  status: SpanStatus;
+}
+
 export interface ToolCallInfo {
   type: "tool_call";
   tool: string;
@@ -449,6 +459,7 @@ export interface Done {
   thinking?: string;
   usage?: TurnUsage;
   final_status?: "success" | "warning";
+  turn_id: string;
 }
 
 export interface CommandResult {
@@ -461,11 +472,14 @@ export interface ErrorMessage {
   type: "error";
   detail: string;
   turn_terminal?: boolean;
+  /** Set on the error that ended a turn. */
+  turn_id?: string;
 }
 
 export interface Cancelled {
   type: "cancelled";
   detail: string;
+  turn_id: string;
 }
 
 export interface SessionTitleUpdate {
@@ -504,6 +518,7 @@ export type ServerMessage =
   | SessionTitleUpdate
   | LlmActivityUpdate
   | LlmContextUpdate
+  | SpanUpdate
   | StatusUpdate
   | UserMessageNotification;
 
@@ -584,6 +599,8 @@ export type ChatMessage =
       /** 1-based position of this assistant bubble within its turn, and the turn's total. */
       messageIndexInTurn?: number;
       turnMessageCount?: number;
+      /** Only on the bubble that ended a turn with a timeline; links it to the debug view. */
+      turnId?: string;
     }
   | {
       kind: "compaction_summary";
@@ -691,6 +708,8 @@ export type ChatMessage =
       eventIndex?: number;
       compaction?: CompactionAnnotation;
       turnTerminal?: boolean;
+      /** On the error that ended a turn with a timeline; links it to the debug view. */
+      turnId?: string;
     };
 
 // Memory (/api/memory). Mirrors src/carapace/memory/models.py.
@@ -1107,6 +1126,9 @@ export interface MemoryFactListResponse {
 export const DEBUG_ROLES = ["agent", "sentinel", "titler", "compaction"] as const;
 export type DebugRole = (typeof DEBUG_ROLES)[number];
 export type LlmContextStatus = "running" | "completed" | "failed" | "interrupted";
+/** The debug view's tabs: the turn timeline, then one per role. */
+export const DEBUG_TABS = ["timeline", ...DEBUG_ROLES] as const;
+export type DebugTab = (typeof DEBUG_TABS)[number];
 
 /**
  * pydantic-ai's own serialization of messages and parts. Only the fields the formatted view reads are typed;
@@ -1154,7 +1176,9 @@ export interface LlmRequestRecord {
   request_id: string | null;
   source: DebugRole | "memory";
   model_name: string | null;
-  outcome: "completed" | "interrupted";
+  outcome: "completed" | "interrupted" | "failed";
+  /** Null outside a turn (e.g. the titler) and on records from before turns were tagged. */
+  turn_id: string | null;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number | null;
@@ -1162,8 +1186,17 @@ export interface LlmRequestRecord {
   reasoning_tokens: number | null;
   cost: LlmRequestCost | null;
   started_at: string | null;
+  first_token_at: string | null;
+  first_thinking_at: string | null;
+  last_thinking_at: string | null;
+  first_text_at: string | null;
   completed_at: string | null;
+  /** Estimated share of the input per message kind (sums to about 1), not billed tokens; null when not measured. */
+  input_shape: InputShape | null;
 }
+
+export const INPUT_SHAPE_KINDS = ["system", "user", "assistant", "tool_calls", "tool_returns", "other"] as const;
+export type InputShape = Record<(typeof INPUT_SHAPE_KINDS)[number], number>;
 
 export interface LlmInstructionPart {
   content: string;
@@ -1192,6 +1225,51 @@ export interface LlmContext {
   response: LlmMessage | null;
   error: string | null;
   cost: LlmRequestCost | null;
+}
+
+export type SpanStatus = "running" | "ok" | "error" | "interrupted";
+
+/** One turn of a session; *status* is its root span's. */
+export interface TurnSummary {
+  turn_id: string;
+  started_at: string;
+  ended_at: string | null;
+  prompt_preview: string;
+  status: SpanStatus;
+}
+
+/** An LLM span's request: phase timestamps (null until reached, or unknown) and, once completed, usage and cost. */
+export interface LlmPhases {
+  role: DebugRole;
+  request_id: string;
+  model_name: string | null;
+  first_token_at: string | null;
+  first_thinking_at: string | null;
+  last_thinking_at: string | null;
+  first_text_at: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
+  cost: LlmRequestCost | null;
+}
+
+/** One timed step of a turn. The root has kind `turn` and no parent; unknown kinds are valid and count as "other". */
+export interface Span {
+  span_id: string;
+  parent_id: string | null;
+  kind: string;
+  name: string;
+  started_at: string;
+  ended_at: string | null;
+  status: SpanStatus;
+  attrs: Record<string, string | number | boolean>;
+  llm: LlmPhases | null;
+}
+
+export interface TurnTimeline {
+  turn: TurnSummary;
+  spans: Span[];
 }
 
 export const PROMPT_ROLES = ["agent", "sentinel", "titler", "compaction", "session_extract", "week_digest", "month_digest"] as const;

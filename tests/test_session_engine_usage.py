@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 from pydantic_ai.providers.openai_codex import CredentialsRefreshError
 from pydantic_ai.usage import RunUsage
@@ -697,7 +697,7 @@ def test_submit_message_refresh_failure_does_not_block_completed_turn(tmp_path: 
         assert sub.errors == []
         event = engine.session_mgr.load_events(sid)[-1]
         assert "timestamp" in event
-        assert _without_timestamp(event) == {"role": "assistant", "content": "done"}
+        assert _without_timestamp(event) == {"role": "assistant", "content": "done", "turn_id": ANY}
 
     with _patch_sentinel():
         asyncio.run(_run())

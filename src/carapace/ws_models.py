@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from .models.session import SessionBudget
 from .models.tooling import SentFileInfo
 from .security.context import ApprovalSource, ApprovalVerdict
+from .spans import SpanStatus
 from .usage import BudgetGauge, LlmContextStatus, LlmRequestPhase, LlmSource
 
 FinalStatus = Literal["success", "warning"]
@@ -256,6 +257,8 @@ class Done(BaseModel):
     thinking: str | None = None
     usage: TurnUsage | None = None
     final_status: FinalStatus | None = None
+    # Links the finished turn's last bubble to its timeline in the debug view.
+    turn_id: str
 
 
 class CommandResult(BaseModel):
@@ -268,6 +271,8 @@ class ErrorMessage(BaseModel):
     type: Literal["error"] = "error"
     detail: str
     turn_terminal: bool = False
+    # Set on the error that ended a turn, linking it to its timeline in the debug view.
+    turn_id: str | None = None
 
 
 class Cancelled(BaseModel):
@@ -275,6 +280,7 @@ class Cancelled(BaseModel):
 
     type: Literal["cancelled"] = "cancelled"
     detail: str = "Agent cancelled."
+    turn_id: str
 
 
 class SessionTitleUpdate(BaseModel):
@@ -299,6 +305,15 @@ class LlmContextUpdate(BaseModel):
     role: LlmSource
     request_id: str
     status: LlmContextStatus
+
+
+class SpanUpdate(BaseModel):
+    """Server → Client: a timing span of the running turn started or ended. Clients fetch the timeline via REST."""
+
+    type: Literal["span"] = "span"
+    turn_id: str
+    span_id: str
+    status: SpanStatus
 
 
 class StatusUpdate(BaseModel):
@@ -339,6 +354,7 @@ ServerEnvelope = (
     | SessionTitleUpdate
     | LlmActivityUpdate
     | LlmContextUpdate
+    | SpanUpdate
     | StatusUpdate
     | UserMessageNotification
 )

@@ -78,11 +78,12 @@ Each message is one JSON object with a `type` field.
 | `domain_access_approval_request` | Sentinel escalated **proxy domain** access          | `request_id`, `domain`, `command`                                                                |
 | `git_push_approval_request`      | Sentinel escalated **git push**                     | `request_id`, `ref`, `explanation`, `changed_files`                                              |
 | `credential_approval_request`    | Sentinel escalated **credential** access            | `request_id`, `vault_paths`, `names`, `descriptions`, optional `skill_name`, `explanation`       |
-| `done`                           | Agent turn finished                                 | `content` (final assistant text), optional `usage`, optional `final_status`                      |
+| `done`                           | Agent turn finished                                 | `content` (final assistant text), `turn_id`, optional `usage`, optional `final_status`           |
 | `command_result`                 | Slash command or turn-control acknowledgement       | `command`, `data` (arbitrary)                                                                    |
-| `error`                          | Parse error, unknown command, busy agent, etc.      | `detail`                                                                                         |
-| `cancelled`                      | Turn cancelled after `cancel`                       | `detail` (default explains cancellation)                                                         |
+| `error`                          | Parse error, unknown command, busy agent, etc.      | `detail`, `turn_terminal`; on the error that ended a turn also its `turn_id`                     |
+| `cancelled`                      | Turn cancelled after `cancel`                       | `detail` (default explains cancellation), `turn_id`                                              |
 | `session_title`                  | Title changed                                       | `title`                                                                                          |
+| `span`                           | A span of the running turn started or ended         | `turn_id`, `span_id`, `status`; LLM bars included (see [debug-view.md](debug-view.md#websocket)) |
 | `user_message`                   | Echo: user line from this client or another channel | `content`                                                                                        |
 
 ### `tool_call` variants

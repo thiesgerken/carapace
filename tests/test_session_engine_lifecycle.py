@@ -7,14 +7,14 @@ import contextlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
 import carapace.usage as usage_mod
 from carapace.session.open_approvals import ORPHANED_APPROVAL_MESSAGE
-from carapace.usage import LlmRequestState, ModelUsage
+from carapace.usage import LlmContext, LlmRequestState, ModelUsage
 from carapace.ws_models import ApprovalRequest, EscalationResponse
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel, _without_timestamps
 
@@ -212,8 +212,8 @@ def test_submit_cancel_persists_interruption_marker(tmp_path: Path, db_factory):
         events = engine.session_mgr.load_events(sid)
         assert all("timestamp" in event for event in events[-2:])
         assert _without_timestamps(events[-2:]) == [
-            {"role": "user", "content": "hello"},
-            {"role": "error", "content": "The previous turn was interrupted before completion."},
+            {"role": "user", "content": "hello", "turn_id": ANY},
+            {"role": "error", "content": "The previous turn was interrupted before completion.", "turn_id": ANY},
         ]
         assert sub.cancelled == 1
 
@@ -247,7 +247,23 @@ def test_submit_cancel_persists_interrupted_llm_request_log(tmp_path: Path, db_f
             sink = usage_mod._llm_request_sink.get()
             assert sink is not None
             await sink.on_request_started(request_state)
-            await asyncio.sleep(999)
+            try:
+                await asyncio.sleep(999)
+            except asyncio.CancelledError:
+                # What LlmRequestLogCapability reports when a stop cancels its request.
+                await sink.on_context(
+                    LlmContext(
+                        request_id="req-1",
+                        role="agent",
+                        model_name="anthropic:claude-haiku-4-5",
+                        status="interrupted",
+                        started_at=started_at,
+                        instructions=[],
+                        messages=[],
+                        tool_definitions=[],
+                    )
+                )
+                raise
             return [], "unreachable", ""
 
         with patch("carapace.session.engine.run_agent_turn", new=_hanging_turn):
@@ -607,8 +623,8 @@ def test_retry_latest_turn_rewinds_and_restarts(tmp_path: Path, db_factory):
         assert _without_timestamps(events) == [
             {"role": "user", "content": "first"},
             {"role": "assistant", "content": "first answer"},
-            {"role": "user", "content": "second"},
-            {"role": "assistant", "content": "retried answer"},
+            {"role": "user", "content": "second", "turn_id": ANY},
+            {"role": "assistant", "content": "retried answer", "turn_id": ANY},
         ]
 
         history = engine.session_mgr.load_history(sid)
@@ -666,8 +682,8 @@ def test_retry_latest_turn_after_failure_uses_terminal_marker_history(tmp_path: 
 
         events = engine.session_mgr.load_events(sid)
         assert _without_timestamps(events) == [
-            {"role": "user", "content": "hello"},
-            {"role": "assistant", "content": "recovered"},
+            {"role": "user", "content": "hello", "turn_id": ANY},
+            {"role": "assistant", "content": "recovered", "turn_id": ANY},
         ]
 
     with _patch_sentinel():

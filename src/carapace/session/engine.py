@@ -43,16 +43,14 @@ from ..sandbox.runtime import SkillActivationError, SkillActivationInputs, Skill
 from ..security.context import RewindEntry, SessionSecurity, copy_sentinel_state
 from ..security.sentinel import Sentinel
 from ..skills import SkillDocumentError, SkillRegistry
+from ..spans import attach_sandbox_call
 from ..usage import (
     LlmRequestLog,
     LlmRequestState,
     last_record_for_source,
 )
 from ..usage import (
-    note_llm_request_text as _note_llm_request_text,
-)
-from ..usage import (
-    note_llm_request_thinking as _note_llm_request_thinking,
+    current_llm_request_state as _current_llm_request_state,
 )
 from ..ws_models import (
     ApprovalResponse,
@@ -93,12 +91,8 @@ def run_agent_turn(*args: Any, **kwargs: Any) -> Any:
     return _run_agent_turn(*args, **kwargs)
 
 
-def note_llm_request_text() -> LlmRequestState | None:
-    return _note_llm_request_text()
-
-
-def note_llm_request_thinking() -> LlmRequestState | None:
-    return _note_llm_request_thinking()
+def current_llm_request_state() -> LlmRequestState | None:
+    return _current_llm_request_state()
 
 
 def _user_prompts(events: list[dict[str, Any]]) -> list[str]:
@@ -440,6 +434,11 @@ class SessionEngine(
     def is_agent_running(self, session_id: str) -> bool:
         active = self._active.get(session_id)
         return active is not None and active.agent_task is not None and not active.agent_task.done()
+
+    def attach_sandbox_call(self, session_id: str) -> contextlib.AbstractContextManager[None]:
+        """Nest the spans of a call from inside *session_id*'s sandbox in the session's running turn."""
+        active = self._active.get(session_id)
+        return attach_sandbox_call(active.turn_trace if active is not None else None)
 
     def get_or_activate(self, session_id: str) -> ActiveSession:
         """Return (or load) the ``ActiveSession``."""

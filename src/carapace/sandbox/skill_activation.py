@@ -9,6 +9,7 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from ..models.skills import SkillCommandDecl
+from ..spans import span
 from .file_ops import ContextFileCredential, SessionContainerLike, WrittenContextFile
 from .runtime import ExecResult, SkillActivationError, SkillActivationInputs
 
@@ -237,15 +238,17 @@ class SkillActivationRunner:
             source_revision=source_revision,
             commands=[SkillCommandDecl(name=name, command=command) for name, command in command_aliases],
         )
-        activation_inputs = await self._get_activation_inputs(run_session_id or sc.session_id, skill_name)
-        logger.info(f"Running sandbox skill activator for skill '{skill_name}'")
-        result = await self._exec_activator(
-            skill_name,
-            request,
-            activation_inputs,
-            session_id=run_session_id,
-            sc=None if run_session_id is not None else sc,
-        )
+        with span("skill", "activate", skill=skill_name) as activation:
+            activation_inputs = await self._get_activation_inputs(run_session_id or sc.session_id, skill_name)
+            logger.info(f"Running sandbox skill activator for skill '{skill_name}'")
+            result = await self._exec_activator(
+                skill_name,
+                request,
+                activation_inputs,
+                session_id=run_session_id,
+                sc=None if run_session_id is not None else sc,
+            )
+            activation.attrs["exit_code"] = result.exit_code
 
         try:
             response: SkillActivatorResponse | None = None

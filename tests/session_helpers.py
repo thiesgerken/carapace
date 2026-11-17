@@ -24,6 +24,7 @@ from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
 from carapace.session.types import ActiveSession, SessionSubscriber
 from carapace.skills import SkillRegistry
+from carapace.spans import SpanStatus
 from carapace.usage import LlmContextStatus, LlmRequestState, LlmSource
 from carapace.ws_models import ApprovalRequest, FinalStatus, TurnUsage
 
@@ -57,6 +58,7 @@ class _FakeSubscriber(SessionSubscriber):
         self.title_updates: list[tuple[str, TurnUsage | None]] = []
         self.llm_activity_updates: list[LlmRequestState | None] = []
         self.llm_context_updates: list[tuple[LlmSource, str, LlmContextStatus]] = []
+        self.span_updates: list[tuple[str, str, SpanStatus]] = []
         self.status_updates: list[tuple[TurnUsage | None, SessionBudget]] = []
 
     async def on_user_message(self, content: str, *, from_self: bool, attachments: list | None = None) -> None:
@@ -89,16 +91,17 @@ class _FakeSubscriber(SessionSubscriber):
         content: str,
         usage: TurnUsage,
         *,
+        turn_id: str,
         thinking: str | None = None,
         final_status: FinalStatus | None = None,
     ) -> None:
         self.done_messages.append((content, usage))
 
-    async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
+    async def on_error(self, detail: str, *, turn_id: str | None = None) -> None:
         self.errors.append(detail)
-        self.error_events.append((detail, turn_terminal))
+        self.error_events.append((detail, turn_id is not None))
 
-    async def on_cancelled(self) -> None:
+    async def on_cancelled(self, *, turn_id: str) -> None:
         self.cancelled += 1
 
     async def on_approval_request(self, req: ApprovalRequest) -> None:
@@ -124,6 +127,9 @@ class _FakeSubscriber(SessionSubscriber):
 
     async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None:
         self.llm_context_updates.append((role, request_id, status))
+
+    async def on_span(self, turn_id: str, span_id: str, status: SpanStatus) -> None:
+        self.span_updates.append((turn_id, span_id, status))
 
     async def on_status(
         self,

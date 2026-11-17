@@ -9,6 +9,7 @@ against the host surface provided by session.engine.
 from __future__ import annotations
 
 import asyncio
+import secrets
 import sys
 import traceback
 from collections.abc import Awaitable, Callable
@@ -43,13 +44,12 @@ from ..models.tooling import ToolCallCallback, ToolResult
 from ..notifications.router import NotificationRouter, build_turn_outcome_notification_id
 from ..sandbox.manager import SandboxManager
 from ..security.context import ApprovalSource, ApprovalVerdict, format_denial_message, normalize_optional_message
+from ..spans import Span, SpanStatus, TurnTrace, attach, span
 from ..usage import (
     BudgetGauge,
     LlmRequestState,
     SessionBudgetExceededError,
     aggregate_turn_generation,
-    fail_llm_context,
-    interrupted_request_record,
 )
 from ..ws_models import ApprovalRequest, ApprovalResponse, Attachment, FinalStatus, TurnUsage
 from .attachments import augment_prompt
@@ -213,7 +213,42 @@ class SessionTurnMixin(SessionTurnHost):
         origin: SessionSubscriber | None = None,
         attachments: list[Attachment] | None = None,
     ) -> None:
-        """Execute a single agent turn with semaphore-bounded LLM access."""
+        """Execute a single agent turn, timed as the root span of its timeline."""
+        session_id = active.state.session_id
+        turn_id = secrets.token_hex(4)
+        trace = TurnTrace(turn_id, on_change=partial(self._broadcast_span, active, turn_id))
+        root = trace.start("turn", "turn", parent_id=None, attrs={"prompt": _truncate_for_log(user_input, 60)})
+        active.turn_trace = trace
+        status: SpanStatus = "error"
+        try:
+            with attach(trace, root.span_id):
+                status = await self._run_turn_steps(
+                    active, user_input, turn_id=turn_id, origin=origin, attachments=attachments
+                )
+        except asyncio.CancelledError:
+            status = "interrupted"
+            raise
+        finally:
+            trace.end(root, status)
+            self._session_mgr.save_turn_spans(session_id, turn_id, trace.close())
+            active.turn_trace = None
+
+    def _broadcast_span(self, active: ActiveSession, turn_id: str, span: Span) -> None:
+        # Scheduled, not awaited: a span boundary must not wait on slow subscribers.
+        task = asyncio.ensure_future(self._broadcast(active, "on_span", turn_id, span.span_id, span.status))
+        active._pending_sends.add(task)
+        task.add_done_callback(active._pending_sends.discard)
+
+    async def _run_turn_steps(
+        self,
+        active: ActiveSession,
+        user_input: str,
+        *,
+        turn_id: str,
+        origin: SessionSubscriber | None,
+        attachments: list[Attachment] | None,
+    ) -> SpanStatus:
+        """Run the turn and finalize it; returns how it ended as the root span's status."""
         session_id = active.state.session_id
         attachments = attachments or []
         # The user's bubble shows only *user_input*; the agent prompt (and history.yaml)
@@ -324,16 +359,18 @@ class SessionTurnMixin(SessionTurnHost):
             async with active.lock:
                 if active.security:
                     active.security.clear_current_parent_tool()
-                deps, message_history = await self._prepare_turn_execution(
-                    active,
-                    session_id,
-                    user_input,
-                    origin=origin,
-                    attachments=attachments,
-                    tool_call_callback=_tool_call_cb,
-                    tool_result_callback=_tool_result_cb,
-                    compact_history=_compact_history_cb,
-                )
+                with span("turn.prepare", "prepare"):
+                    deps, message_history = await self._prepare_turn_execution(
+                        active,
+                        session_id,
+                        user_input,
+                        turn_id=turn_id,
+                        origin=origin,
+                        attachments=attachments,
+                        tool_call_callback=_tool_call_cb,
+                        tool_result_callback=_tool_result_cb,
+                        compact_history=_compact_history_cb,
+                    )
 
                 async def _send_approval(req: ApprovalRequest) -> None:
                     await self._send_approval_request(active, session_id, req)
@@ -341,7 +378,8 @@ class SessionTurnMixin(SessionTurnHost):
                 async def _collect_approvals(
                     pending: set[str],
                 ) -> dict[str, bool | ToolDenied]:
-                    return await self._collect_approval_results(active, session_id, pending)
+                    with span("wait", "approval", reason="approval", calls=len(pending)):
+                        return await self._collect_approval_results(active, session_id, pending)
 
                 turn_result = await self._execute_agent_turn(
                     active,
@@ -362,8 +400,10 @@ class SessionTurnMixin(SessionTurnHost):
                     turn_result.thinking,
                     final_status=turn_result.final_status,
                     turn_record_start=turn_record_start,
+                    turn_id=turn_id,
                     turn_event_start=turn_event_start,
                 )
+            return "ok"
 
         except asyncio.CancelledError:
             logger.info(f"Agent turn cancelled for session {session_id}")
@@ -371,46 +411,54 @@ class SessionTurnMixin(SessionTurnHost):
                 active,
                 session_id,
                 agent_input,
+                turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message="The previous turn was interrupted before completion.",
                 save_progress=True,
             )
-            await self._broadcast(active, "on_cancelled")
+            await self._broadcast(active, "on_cancelled", turn_id=turn_id)
+            return "interrupted"
         except SessionBudgetExceededError as exc:
             logger.info(f"Session budget blocked LLM call for {session_id}: {exc}")
             await self._finalize_failed_turn(
                 active,
                 session_id,
                 agent_input,
+                turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message=str(exc),
                 save_progress=True,
             )
-            await self._broadcast(active, "on_error", str(exc), turn_terminal=True)
+            await self._broadcast(active, "on_error", str(exc), turn_id=turn_id)
+            return "error"
         except (DisabledModelError, CodexNotConnectedError) as exc:
             logger.info(f"Turn blocked by unusable model for {session_id}: {exc}")
             await self._finalize_failed_turn(
                 active,
                 session_id,
                 agent_input,
+                turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message=str(exc),
             )
-            await self._broadcast(active, "on_error", str(exc), turn_terminal=True)
+            await self._broadcast(active, "on_error", str(exc), turn_id=turn_id)
+            return "error"
         except CredentialsRefreshError as exc:
             logger.warning(f"ChatGPT subscription refresh failed for {session_id} (owner {active.owner}): {exc}")
             await self._finalize_failed_turn(
                 active,
                 session_id,
                 agent_input,
+                turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message=CODEX_RECONNECT_MESSAGE,
             )
-            await self._broadcast(active, "on_error", CODEX_RECONNECT_MESSAGE, turn_terminal=True)
+            await self._broadcast(active, "on_error", CODEX_RECONNECT_MESSAGE, turn_id=turn_id)
+            return "error"
         except UsageLimitExceeded as exc:
             sentinel_evals = active.security.sentinel_eval_count if active.security else 0
             logger.error(
@@ -423,22 +471,26 @@ class SessionTurnMixin(SessionTurnHost):
                 active,
                 session_id,
                 agent_input,
+                turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message=request_limit_message or "The previous turn failed before completion.",
             )
-            await self._broadcast(active, "on_error", request_limit_message or str(exc), turn_terminal=True)
+            await self._broadcast(active, "on_error", request_limit_message or str(exc), turn_id=turn_id)
+            return "error"
         except Exception:
             logger.exception(f"Agent error session={session_id} prompt={_truncate_for_log(user_input)}")
             await self._finalize_failed_turn(
                 active,
                 session_id,
                 agent_input,
+                turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message="The previous turn failed before completion.",
             )
-            await self._broadcast(active, "on_error", traceback.format_exc(), turn_terminal=True)
+            await self._broadcast(active, "on_error", traceback.format_exc(), turn_id=turn_id)
+            return "error"
         finally:
             if active.security:
                 active.security.clear_current_parent_tool()
@@ -454,6 +506,7 @@ class SessionTurnMixin(SessionTurnHost):
         session_id: str,
         user_input: str,
         *,
+        turn_id: str,
         origin: SessionSubscriber | None,
         attachments: list[Attachment] | None = None,
         tool_call_callback: ToolCallCallback,
@@ -476,7 +529,7 @@ class SessionTurnMixin(SessionTurnHost):
         attachments = attachments or []
         # Persist/broadcast the original text + attachment metadata (not the hidden preamble),
         # so the UI bubble stays clean and reload rebuilds chips from events.
-        event: dict[str, Any] = {"role": "user", "content": user_input}
+        event: dict[str, Any] = {"role": "user", "content": user_input, "turn_id": turn_id}
         if attachments:
             event["attachments"] = [att.model_dump() for att in attachments]
         self._session_mgr.append_events(session_id, [event])
@@ -582,24 +635,19 @@ class SessionTurnMixin(SessionTurnHost):
     ) -> TurnExecutionResult:
         with self.llm_request_recording(active):
             self._assert_llm_budget_available(active)
-            try:
-                messages, output, thinking, final_status = await _engine_module().run_agent_turn(
-                    user_input,
-                    deps,
-                    message_history,
-                    send_approval_request=send_approval_request,
-                    collect_approvals=collect_approvals,
-                    on_token=partial(self._handle_token_chunk, active),
-                    on_thinking_token=partial(self._handle_thinking_token_chunk, active),
-                    on_assistant_text=on_assistant_text,
-                    on_messages_snapshot=lambda snapshot: on_messages_snapshot(snapshot),
-                    before_llm_call=lambda: self._assert_llm_budget_available(active),
-                    get_usage_limits=lambda: self._remaining_usage_limits(active),
-                )
-            except Exception as exc:
-                # The agent streams, so a provider error mid-stream reaches its request only as a cancellation.
-                await fail_llm_context("agent", f"{type(exc).__name__}: {exc}")
-                raise
+            messages, output, thinking, final_status = await _engine_module().run_agent_turn(
+                user_input,
+                deps,
+                message_history,
+                send_approval_request=send_approval_request,
+                collect_approvals=collect_approvals,
+                on_token=partial(self._handle_token_chunk, active),
+                on_thinking_token=partial(self._handle_thinking_token_chunk, active),
+                on_assistant_text=on_assistant_text,
+                on_messages_snapshot=lambda snapshot: on_messages_snapshot(snapshot),
+                before_llm_call=lambda: self._assert_llm_budget_available(active),
+                get_usage_limits=lambda: self._remaining_usage_limits(active),
+            )
         return TurnExecutionResult(
             messages=messages,
             output=output,
@@ -608,11 +656,11 @@ class SessionTurnMixin(SessionTurnHost):
         )
 
     async def _handle_token_chunk(self, active: ActiveSession, chunk: str) -> None:
-        await self._maybe_promote_llm_request_state(active, _engine_module().note_llm_request_text())
+        await self._maybe_promote_llm_request_state(active, _engine_module().current_llm_request_state())
         await self._broadcast(active, "on_token", chunk)
 
     async def _handle_thinking_token_chunk(self, active: ActiveSession, chunk: str) -> None:
-        state = _engine_module().note_llm_request_thinking()
+        state = _engine_module().current_llm_request_state()
         if state is not None:
             active.llm_request_thinking[state.request_id] = (
                 active.llm_request_thinking.get(state.request_id, "") + chunk
@@ -645,6 +693,7 @@ class SessionTurnMixin(SessionTurnHost):
         final_status: FinalStatus | None = None,
         turn_record_start: int = 0,
         *,
+        turn_id: str,
         turn_event_start: int,
     ) -> None:
         self._close_turn_approvals(active, session_id)
@@ -657,7 +706,7 @@ class SessionTurnMixin(SessionTurnHost):
         # turn's TTFT, and generation time summed across requests (tool waits between them excluded,
         # so tok/s reflects decode speed, not tool latency). Live TurnUsage is broadcast, not stored.
         stats = aggregate_turn_generation(active.llm_request_log.records[turn_record_start:])
-        assistant_event: dict[str, Any] = {"role": "assistant", "content": output}
+        assistant_event: dict[str, Any] = {"role": "assistant", "content": output, "turn_id": turn_id}
         if final_status is not None:
             assistant_event["final_status"] = final_status
         if usage_payload.model or stats["input_tokens"] or stats["output_tokens"]:
@@ -688,7 +737,7 @@ class SessionTurnMixin(SessionTurnHost):
                 active.pending_notifications[notif_id] = delivered.delivered_subscription_ids
 
         if output.startswith("Unexpected agent output type:"):
-            await self._broadcast(active, "on_error", output, turn_terminal=True)
+            await self._broadcast(active, "on_error", output, turn_id=turn_id)
         else:
             logger.info(
                 f"Turn done session={session_id} "
@@ -701,6 +750,7 @@ class SessionTurnMixin(SessionTurnHost):
                 "on_done",
                 output,
                 usage_payload,
+                turn_id=turn_id,
                 thinking=thinking or None,
                 final_status=final_status,
             )
@@ -713,6 +763,7 @@ class SessionTurnMixin(SessionTurnHost):
         session_id: str,
         user_input: str,
         *,
+        turn_id: str,
         turn_event_start: int,
         latest_messages: list[ModelMessage] | None = None,
         terminal_message: str | None = None,
@@ -721,13 +772,12 @@ class SessionTurnMixin(SessionTurnHost):
         self._close_turn_approvals(active, session_id)
         active.llm_request_thinking.clear()
         if save_progress:
-            if active.llm_request_state is not None:
-                active.llm_request_log.records.append(interrupted_request_record(active.llm_request_state))
             self._save_turn_progress(session_id, active)
         await self._clear_llm_request_state(active)
         self._save_user_message_on_failure(
             session_id,
             user_input,
+            turn_id=turn_id,
             turn_event_start=turn_event_start,
             latest_messages=latest_messages,
             terminal_message=terminal_message,
@@ -778,6 +828,7 @@ class SessionTurnMixin(SessionTurnHost):
         session_id: str,
         user_input: str,
         *,
+        turn_id: str,
         turn_event_start: int,
         latest_messages: list[ModelMessage] | None = None,
         terminal_message: str | None = None,
@@ -803,6 +854,7 @@ class SessionTurnMixin(SessionTurnHost):
                 {
                     "role": "error",
                     "content": terminal_message,
+                    "turn_id": turn_id,
                     "timestamp": datetime.now(tz=UTC).isoformat(),
                 }
             )
