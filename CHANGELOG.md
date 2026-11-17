@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v0.184.2 (2026-11-17)
+
+### 🐛 Fix a bug
+
+- fix: dedupe bypass domain notifications outside the agent exec path
+
+### ✅ Add, update, or pass tests
+
+- test: bypassed container exec keeps an enclosing exec's dedupe set
+
 ## v0.184.1 (2026-11-17)
 
 ### ⬆️ Upgrade dependencies
