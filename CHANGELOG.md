@@ -1,6 +1,51 @@
 # CHANGELOG
 
 
+## v0.185.0 (2026-11-17)
+
+### ✨ Introduce new features
+
+- feat: make exec a strict tool so its title streams first
+- feat: the request's counter moves onto the tool card being written
+- feat: exec's title streams first and heads the live card
+- feat: tool-call phase and live counter in the waiting label
+- feat: a running tool call's card names the step it waits for
+- feat: stream agent tool calls to clients while the model writes them
+- feat: tool cards appear and fill while the model writes the call
+- feat: span notifications name their kind, name and tool call
+
+### 🐛 Fix a bug
+
+- fix: a multi-line command shows only its first line in the tool row
+- fix: steps belong to the outermost tool call, not the sentinel's own
+- fix: a socket drop is not a turn end, not-run cards keep their place
+- fix: a tool call keeps its provider id without a streamed card
+- fix: unsaved counter ticks, output tools as generating, no stale tool name
+- fix: warn when a streamed tool call's id changes, require tool_call_id at the gate
+- fix: not-run cards survive the end-of-turn refetch, a repeated id opens a new card
+
+### 💄 Add or update the UI and style files
+
+- style: no "~" before the streamed token count
+
+### 💬 Add or update text and literals
+
+- feat: tell models to write the exec title before the command
+
+### ⚡️ Improve performance
+
+- perf: send live tool args and the token counter more often
+
+### 📝 Add or update documentation
+
+- docs: say only GPT needs strict mode for the exec arg order
+- docs: output tool calls count as generating
+- docs: a call that never runs stays visible as not run
+
+### ✅ Add, update, or pass tests
+
+- test: token handlers only broadcast, the sink promotes activity
+
 ## v0.184.2 (2026-11-17)
 
 ### 🐛 Fix a bug
