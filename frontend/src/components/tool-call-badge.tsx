@@ -37,7 +37,8 @@ import {
   languageFromFilePath,
   splitReadToolResult,
 } from "@/lib/sandbox-read";
-import type { ApprovalVerdict, CompactionAnnotation, SentFile } from "@/lib/types";
+import type { ApprovalVerdict, CompactionAnnotation, RunningSpan, SentFile } from "@/lib/types";
+import { toolCallStatus } from "@/lib/tool-call-status";
 import { cn } from "@/lib/utils";
 import { sentFileUrl } from "@/lib/api";
 import { artifactSnapshotTitle, artifactViewerHref, sentArtifactSlug } from "@/lib/artifacts";
@@ -65,6 +66,8 @@ interface ToolCallBadgeProps {
   argsStreaming?: boolean;
   /** The streamed call never ran. */
   notRun?: boolean;
+  /** The call's steps still running; while it loads, the card names the innermost one. */
+  runningSpans?: RunningSpan[];
 }
 
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "unknown";
@@ -554,8 +557,10 @@ export function ToolCallBadge({
   argsText,
   argsStreaming,
   notRun,
+  runningSpans,
 }: ToolCallBadgeProps) {
   const t = useTranslations("toolCallBadge");
+  const step = loading ? toolCallStatus(runningSpans) : null;
   const tc = useTranslations("compaction");
   const ta = useTranslations("artifacts");
   const isSendFileTool = tool === "send_file";
@@ -884,6 +889,12 @@ export function ToolCallBadge({
           </>
         )}
       </div>
+
+      {step && (
+        <div role="status" className="ml-5 truncate text-[11px] text-muted-foreground">
+          {step.kind === "domain" ? t("status.domain", { domain: step.name }) : t(`status.${step.kind}`)}
+        </div>
+      )}
 
       {argsStreaming && !open && <StreamingArgs text={streamingPreview(tool, args, argsText ?? "")} />}
 

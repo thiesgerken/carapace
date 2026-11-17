@@ -61,6 +61,7 @@ import {
   shouldConfirmArchiveSession,
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
+import { applySpanToToolCall } from "@/lib/tool-call-status";
 import { appendStreamedArgs, completeStreamedCall, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall } from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
@@ -1703,6 +1704,9 @@ export function ChatView({
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
           finishWaiting();
+          break;
+        case "span":
+          setMessages((prev) => applySpanToToolCall(prev, msg));
           break;
         case "llm_activity":
           setLlmActivity(msg.activity ?? null);

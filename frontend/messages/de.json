@@ -985,6 +985,14 @@
         "mismatchSr": "Frontend- und Backend-Versionen stimmen nicht überein."
     },
     "toolCallBadge": {
+        "status": {
+            "sentinel": "Sentinel prüft…",
+            "sandbox": "Sandbox startet…",
+            "skill": "Skill wird aktiviert…",
+            "credential": "Lade Zugangsdaten…",
+            "domain": "Domain-Check {domain}…",
+            "wait": "Warte auf Freigabe…"
+        },
         "notRun": "nicht ausgeführt",
         "notRunTitle": "Das Modell hat diesen Aufruf geschrieben, er lief aber nie: Der Turn wurde abgebrochen, das Modell ist gescheitert oder der Aufruf wurde abgelehnt.",
         "approvalBadge": {
