@@ -105,6 +105,8 @@ Each message is one JSON object with a `type` field.
 A phase change is sent right away. Growth of `streamed_chars` alone is sent at most every 0.1 s, so a
 long tool call streams a live counter without one message per chunk. Clients tick the elapsed time
 themselves from `started_at`.
+While the agent writes a tool call, the web UI shows the counter in the header of the newest card still
+streaming its arguments, not on the waiting line below the messages.
 
 ### `span`
 

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, parseStreamingArgs, replaceStreamedCall, startStreamedCall } from "./live-tool-calls";
-import type { ChatMessage } from "./types";
+import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, parseStreamingArgs, replaceStreamedCall, startStreamedCall, streamingCallIndex } from "./live-tool-calls";
+import type { ChatMessage, LlmActivity } from "./types";
 
 test("streamed args parse as far as they go; malformed JSON keeps what the card had", () => {
   assert.deepEqual(parseStreamingArgs(""), {});
@@ -102,4 +102,22 @@ test("a dropped socket drops the cards still streaming: the call comes back as o
   const final: ChatMessage = { kind: "tool_call", tool: "exec", args: { command: "make" }, detail: "", toolId: "t-c", toolCallId: "c" };
   assert.equal(replaceStreamedCall(messages, "c", final), null);
   assert.equal(markUnrunCalls(messages), messages, "nothing left for the turn end to mark");
+});
+
+test("the request's counter goes on the newest card still being written", () => {
+  const writing: LlmActivity = { request_id: "r1", source: "agent", phase: "tool_call", tool_name: "exec", started_at: "2026-01-01T00:00:00Z" };
+  let messages: ChatMessage[] = [{ kind: "user", content: "go" }];
+  assert.equal(streamingCallIndex(messages, writing), -1);
+  messages = startStreamedCall(messages, "a", "exec");
+  messages = startStreamedCall(messages, "b", "exec");
+  assert.equal(streamingCallIndex(messages, writing), 2);
+  messages = endStreamedCall(messages, "b", false);
+  assert.equal(streamingCallIndex(messages, writing), 1);
+  messages = endStreamedCall(messages, "a", false);
+  assert.equal(streamingCallIndex(messages, writing), -1);
+  // Other phases, and other roles' requests, have no card.
+  messages = startStreamedCall(messages, "c", "exec");
+  assert.equal(streamingCallIndex(messages, { ...writing, phase: "generating" }), -1);
+  assert.equal(streamingCallIndex(messages, { ...writing, source: "sentinel" }), -1);
+  assert.equal(streamingCallIndex(messages, null), -1);
 });

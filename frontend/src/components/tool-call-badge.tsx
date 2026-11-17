@@ -32,12 +32,13 @@ import type { LucideIcon } from "lucide-react";
 import { diffLines } from "diff";
 import { MarkdownContent } from "./markdown-content";
 import { FilePreview } from "./file-preview";
+import { ActivityCounter } from "./waiting-indicator";
 import {
   fencedCodeBlock,
   languageFromFilePath,
   splitReadToolResult,
 } from "@/lib/sandbox-read";
-import type { ApprovalVerdict, CompactionAnnotation, RunningSpan, SentFile } from "@/lib/types";
+import type { ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, SentFile } from "@/lib/types";
 import { toolCallStatus } from "@/lib/tool-call-status";
 import { cn } from "@/lib/utils";
 import { sentFileUrl } from "@/lib/api";
@@ -69,6 +70,8 @@ interface ToolCallBadgeProps {
   notRun?: boolean;
   /** The call's steps still running; while it loads, the card names the innermost one. */
   runningSpans?: RunningSpan[];
+  /** The agent request writing this call right now: the card shows its counter. */
+  streamingActivity?: LlmActivity | null;
 }
 
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "unknown";
@@ -566,6 +569,7 @@ export function ToolCallBadge({
   argsStreaming,
   notRun,
   runningSpans,
+  streamingActivity,
 }: ToolCallBadgeProps) {
   const t = useTranslations("toolCallBadge");
   const step = loading ? toolCallStatus(runningSpans) : null;
@@ -820,6 +824,7 @@ export function ToolCallBadge({
           {t("notRun")}
         </span>
       )}
+      {streamingActivity && <ActivityCounter activity={streamingActivity} />}
       {loading && (
         <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
       )}
