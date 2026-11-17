@@ -5,6 +5,11 @@ export function isEmptyColumn(records: LlmRequestRecord[], value: (record: LlmRe
   return records.every((record) => !value(record));
 }
 
+/** How long the request took, in ms; null when it has no completion time (interrupted, or recorded before timing). */
+export function requestDurationMs(record: LlmRequestRecord): number | null {
+  return record.started_at && record.completed_at ? Date.parse(record.completed_at) - Date.parse(record.started_at) : null;
+}
+
 /** Cache read ÷ input; null when the record has no cache count or no input. */
 export function cacheHitRate(record: LlmRequestRecord): number | null {
   return record.cache_read_tokens === null || record.input_tokens === 0 ? null : record.cache_read_tokens / record.input_tokens;

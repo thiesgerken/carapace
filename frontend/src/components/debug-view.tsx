@@ -47,7 +47,7 @@ import {
   type ServerMessage,
   type TurnSummary,
 } from "@/lib/types";
-import { cacheHitRate, compactCount, costShape, isEmptyColumn } from "@/lib/request-table";
+import { cacheHitRate, compactCount, costShape, isEmptyColumn, requestDurationMs } from "@/lib/request-table";
 import { groupRequestsByTurn, llmSegments } from "@/lib/turn-timeline";
 import { cn } from "@/lib/utils";
 
@@ -319,9 +319,10 @@ function RequestTimeline({
     isEmptyColumn(records, value) ? [] : [{ key, numeric: true, cell: (r) => count(value(r)) }];
   // One scale for the whole tab, not per turn, so turns compare.
   const maxInput = records.reduce((max, r) => Math.max(max, r.input_tokens), 0);
+  const maxDuration = records.reduce((max, r) => Math.max(max, requestDurationMs(r) ?? 0), 0);
   const columns: TimelineColumn[] = [
     { key: "time", cell: (r) => <Time record={r} linked={r.request_id !== null && r.request_id === contextRequestId} /> },
-    { key: "duration", cell: (r) => <RequestDuration record={r} /> },
+    { key: "duration", cell: (r) => <RequestDuration record={r} maxDuration={maxDuration} /> },
     { key: "input", numeric: true, cell: (r) => count(r.input_tokens) },
     // Without any cache read (caching off, or prompts too short to cache) every row would be a 0 % "miss": a miss is only news among hits.
     ...(isEmptyColumn(records, (r) => r.cache_read_tokens) ? [] : [{ key: "cacheHitRate", cell: (r: LlmRequestRecord) => <CacheMeter record={r} maxInput={maxInput} /> }]),
@@ -369,16 +370,34 @@ function RequestTimeline({
   );
 }
 
-/** The main column after the time: how long the request took, with its phases in the waterfall's colors. */
-function RequestDuration({ record }: { record: LlmRequestRecord }) {
+/**
+ * The main column after the time: how long the request took, with its phases in the waterfall's
+ * colors. The pill's length is the duration relative to the table's longest, so slow requests stand out.
+ */
+function RequestDuration({ record, maxDuration }: { record: LlmRequestRecord; maxDuration: number }) {
   const t = useTranslations("debugView.timeline");
   const format = useFormatter();
-  if (!record.started_at || !record.completed_at) return <span className="text-muted-foreground">–</span>;
-  const [start, end] = [Date.parse(record.started_at), Date.parse(record.completed_at)];
+  const duration = requestDurationMs(record);
+  if (duration === null) return <span className="text-muted-foreground">–</span>;
+  const start = Date.parse(record.started_at!);
   return (
     <span className="flex items-center gap-2">
-      <span className="w-12 text-right font-medium text-foreground">{t("seconds", { seconds: format.number((end - start) / 1000, { maximumFractionDigits: 1 }) })}</span>
-      <PhaseBar phases={record} start={start} end={end} className="w-16" />
+      <span className="w-12 text-right font-medium text-foreground">{t("seconds", { seconds: format.number(duration / 1000, { maximumFractionDigits: 1 }) })}</span>
+      {/* Every request of the table may have taken 0 ms. */}
+      <ScaledPill share={maxDuration > 0 ? duration / maxDuration : 0} className="w-16">
+        <PhaseBar phases={record} start={start} end={start + duration} />
+      </ScaledPill>
+    </span>
+  );
+}
+
+/** A pill as long as its share of the fixed-width track, so rows compare; the minimum width keeps a tiny share visible. */
+function ScaledPill({ share, className, children }: { share: number; className: string; children: ReactNode }) {
+  return (
+    <span aria-hidden className={className}>
+      <span className="block min-w-[3px]" style={{ width: `${share * 100}%` }}>
+        {children}
+      </span>
     </span>
   );
 }
@@ -408,15 +427,11 @@ function CacheMeter({ record, maxInput }: { record: LlmRequestRecord; maxInput: 
   const miss = rate === 0;
   return (
     <span className="flex items-center gap-1.5" title={miss ? t("cacheMiss") : undefined}>
-      <span aria-hidden className="w-10">
-        {/* The minimum width keeps a tiny request visible. */}
-        <span
-          className={cn("block h-1.5 min-w-[3px] overflow-hidden rounded-full", miss ? "bg-amber-500/30" : "bg-muted")}
-          style={{ width: `${(record.input_tokens / maxInput) * 100}%` }}
-        >
+      <ScaledPill share={record.input_tokens / maxInput} className="w-10">
+        <span className={cn("block h-1.5 overflow-hidden rounded-full", miss ? "bg-amber-500/30" : "bg-muted")}>
           <span className="block h-full bg-muted-foreground/45" style={{ width: `${rate * 100}%` }} />
         </span>
-      </span>
+      </ScaledPill>
       <span className={cn("w-9 text-right", miss ? "font-medium text-amber-700 dark:text-amber-300" : "text-muted-foreground")}>
         {format.number(rate, { style: "percent", maximumFractionDigits: 0 })}
       </span>

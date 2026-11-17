@@ -186,12 +186,15 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     assert.ok(view.container.querySelector('tbody tr:nth-child(2) [aria-label="Interrupted"]'));
     assert.equal(view.container.querySelectorAll('tbody [aria-label="Completed"]').length, 0);
 
-    // The cache pill scales with the input against the table's largest, in another turn too, so turns compare; it fills by the cache hits.
-    requests.push(record({ ts: "2026-11-09T12:00:10Z", request_id: "r3", turn_id: "t-other", input_tokens: 24690, cache_read_tokens: 24690 }));
+    // The duration and cache pills scale against the table's longest and largest request, in another turn too, so turns compare.
+    requests.push(record({ ts: "2026-11-09T12:00:10Z", request_id: "r3", turn_id: "t-other", input_tokens: 24690, cache_read_tokens: 24690, started_at: "2026-11-09T12:00:04Z", completed_at: "2026-11-09T12:00:10Z" }));
     await runInAct(() => socket.onmessage?.({ data: JSON.stringify({ type: "llm_context", role: "agent", request_id: "r3", status: "completed" }) }));
     await settle();
-    const cachePills = Array.from(view.container.querySelectorAll<HTMLElement>("tbody .min-w-\\[3px\\]"), (pill) => [pill.style.width, (pill.firstElementChild as HTMLElement).style.width]);
-    assert.deepEqual(cachePills, [["100%", "100%"], ["50%", "32.4018%"]]);
+    const scaledPills = Array.from(view.container.querySelectorAll("tbody tr"), (row) => Array.from(row.querySelectorAll<HTMLElement>(".min-w-\\[3px\\]"), (pill) => pill.style.width));
+    assert.deepEqual(scaledPills.filter((pills) => pills.length > 0), [["100%", "100%"], ["40.8333%", "50%"], ["50%"]]);
+    // The cache pill fills by the cache hits.
+    const cacheFills = Array.from(view.container.querySelectorAll<HTMLElement>("tbody .bg-muted-foreground\\/45"), (fill) => fill.style.width);
+    assert.deepEqual(cacheFills, ["100%", "32.4018%"]);
 
     const pill = (label: string) => Array.from(view.container.querySelectorAll('[role="radio"]')).find((element) => element.textContent === label)!;
     await click(pill("Sentinel"));
