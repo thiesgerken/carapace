@@ -1,6 +1,97 @@
 # CHANGELOG
 
 
+## v0.184.0 (2026-11-17)
+
+### ✨ Introduce new features
+
+- feat: duration pill on a square-root scale
+- feat: duration pill scales with the request's duration
+- feat: cache-hit pill scales with the request's input
+- feat: debug view tabs in two groups, request table grouped by turn
+- feat: failed and stopped turns link to their timeline too
+- feat: preparation and compaction as their own timeline categories
+- feat: link a turn's last bubble to its timeline
+- feat: timing spans for tools, gate, sentinel, waits, credentials and compaction
+- feat: record when the first token arrives, for every LLM role
+- feat: timeline tab in the debug view
+- feat: sandbox, skill, exec, file and domain spans in the turn timeline
+- feat: turn ids, timing spans and the turn timeline API
+
+### 🐛 Fix a bug
+
+- fix: hit-rate column goes with the cache reads, review nits
+- fix: turn list scrolls only itself, finished turns blue, start times with seconds
+- fix: turn list columns line up across rows, no scrollIntoView promise as effect cleanup
+- fix: "Show turn" always opens the turn it names
+- fix: keep waterfall labels and long durations readable
+- fix: merge only settled ok spans in the waterfall, no "denied deny"
+- fix: LLM bars notify when they end, failed requests show as errors
+- fix: keep warm pool refills out of the turn, cap proxy domains, mark unready sandboxes
+- fix: live in-flight request states, interrupted records for every cut request
+- fix: timeline summary follows the main path, phases update live
+- fix: span notifications for LLM bars, strict turn status and prompt
+
+### 💄 Add or update the UI and style files
+
+- ui: compact turn list instead of the turn dropdown in the timeline tab
+- ui: compact counts read 8.4k in every locale
+- ui: request table drops the model column when every row has the same model
+- ui: latest request with phases and input composition, messages with kind icons
+- ui: request table stresses exceptions, not the norm
+- ui: waterfall rows with icons, tree guides, merged chains and inline facts
+- ui: timeline rows lead with the span's kind
+
+### ♻️ Refactor code
+
+- refactor: cap span names and text attrs in one place
+- refactor: drop the titler rule from the timeline summary
+
+### 🌐 Internationalization and localization
+
+- i18n: German says Turn/Turns everywhere, no Zug or Runde
+
+### ✏️ Fix typos
+
+- fix: German tooltip says Ausgabe-Tokens, duration comment names the real bound
+
+### ⚡️ Improve performance
+
+- perf: one timeline refetch per burst of span notifications
+
+### 📝 Add or update documentation
+
+- docs: the timeline tab's turn list
+- docs: turn timeline terms in the glossary, span message, stale timeline passages
+- docs: ready and capped domain attrs, warm pool refills outside the turn
+- docs: the chat's link to a turn's timeline
+
+### 🌱 Add or update seed files
+
+- chore: seed the pancake turn's sandbox, skill and domain spans as part D records them
+- chore: seed the pancake turn from its own requests, shaped like the server's
+- chore: first-token times on the seeded turn's requests
+- chore: seed a demo turn with a span tree
+
+### ✅ Add, update, or pass tests
+
+- test: cache pill scale spans turns
+- test: sibling-cancel test waits for the cancellation, not a timer
+- test: pin request parameters and request counts in the streaming shape test
+- test: pin that streaming leaves every role's requests unchanged
+
+### 🚧 Work in progress
+
+- wip: open the turn timeline integration branch
+
+### 🔥 Remove code or files
+
+- remove: the debug view's refetch when LLM activity ends
+
+### 🔀 Merge branches
+
+- merge: wire first_token_at into the timeline after merging feat/turn-timeline
+
 ## v0.183.7 (2026-11-15)
 
 ### 👷 Add or update CI build system
