@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { appendStreamedArgs, completeStreamedCall, endStreamedCall, markUnrunCalls, parseStreamingArgs, replaceStreamedCall, startStreamedCall } from "./live-tool-calls";
+import { appendStreamedArgs, completeStreamedCall, endStreamedCall, keepUnrunCalls, markUnrunCalls, parseStreamingArgs, replaceStreamedCall, startStreamedCall } from "./live-tool-calls";
 import type { ChatMessage } from "./types";
 
 test("streamed args parse as far as they go; malformed JSON keeps what the card had", () => {
@@ -64,4 +64,28 @@ test("a result completes a streamed call that sent no tool_call of its own", () 
   assert.deepEqual(messages, [{ kind: "tool_call", tool: "list_skills", args: {}, detail: "", loading: false, toolCallId: "s", argsText: undefined, argsStreaming: undefined, result: "pancakes: recipes", exitCode: 0, toolId: "t-s", files: undefined }]);
   assert.equal(markUnrunCalls(messages), messages, "done, so the turn end leaves it alone");
   assert.equal(completeStreamedCall(messages, "s", { result: "again" }), null);
+});
+
+test("a repeated start opens a new card; the earlier open one under that id was not run", () => {
+  let messages = startStreamedCall([], "call_0", "write");
+  messages = endStreamedCall(messages, "call_0", false);
+  messages = startStreamedCall(messages, "call_0", "exec");
+  messages = appendStreamedArgs(messages, "call_0", '{"command": "ls"}');
+  assert.deepEqual(messages.map((m) => m.kind === "tool_call" && [m.tool, m.notRun, m.loading, m.args]), [["write", true, false, {}], ["exec", undefined, true, { command: "ls" }]]);
+});
+
+test("not-run cards outlive the re-render from saved history, after the call they followed", () => {
+  const user = (content: string): ChatMessage => ({ kind: "user", content });
+  const saved = (toolId: string): ChatMessage => ({ kind: "tool_call", tool: "exec", args: {}, detail: "", toolId });
+  const notRun = (toolCallId: string): ChatMessage => ({ kind: "tool_call", tool: "exec", args: {}, detail: "", toolCallId, argsText: "{}", notRun: true });
+  const answer: ChatMessage = { kind: "assistant", content: "done" };
+  const live = [user("one"), notRun("early"), saved("a"), notRun("x"), notRun("y"), saved("b"), user("two"), saved("c")];
+  // The saved history has more (thinking, the answer) and fresh objects, never the not-run cards.
+  const projected = [user("one"), { kind: "thinking", content: "…" } as ChatMessage, saved("a"), saved("b"), answer, user("two"), saved("c"), answer];
+  const kept = keepUnrunCalls(live, projected);
+  assert.deepEqual(
+    kept.map((m) => (m.kind === "tool_call" ? m.toolId ?? m.toolCallId : m.kind)),
+    ["user", "early", "thinking", "a", "x", "y", "b", "assistant", "user", "c", "assistant"],
+  );
+  assert.equal(keepUnrunCalls([user("one"), saved("a")], projected), projected);
 });

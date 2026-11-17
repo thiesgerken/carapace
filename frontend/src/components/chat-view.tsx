@@ -61,7 +61,7 @@ import {
   shouldConfirmArchiveSession,
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
-import { appendStreamedArgs, completeStreamedCall, endStreamedCall, markUnrunCalls, replaceStreamedCall, startStreamedCall } from "@/lib/live-tool-calls";
+import { appendStreamedArgs, completeStreamedCall, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall } from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 import { ChatInput } from "./chat-input";
@@ -1455,7 +1455,7 @@ export function ChatView({
             .then((history) => {
               if (refetchSeq !== doneRefetchSeqRef.current) return;
               setMessages((prev) => [
-                ...projectHistoryToMessages(history),
+                ...keepUnrunCalls(prev.slice(0, doneBaselineLen), projectHistoryToMessages(history)),
                 ...prev.slice(doneBaselineLen),
               ]);
             })
@@ -1659,7 +1659,7 @@ export function ChatView({
             fetchHistory(server, token, sessionId)
               .then((history) =>
                 setMessages((prev) => [
-                  ...projectHistoryToMessages(history),
+                  ...keepUnrunCalls(prev.slice(0, compactBaselineLen), projectHistoryToMessages(history)),
                   ...prev.slice(compactBaselineLen),
                 ]),
               )

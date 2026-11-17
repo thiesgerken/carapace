@@ -123,12 +123,15 @@ long args stay cheap.
   for the call does the same, so the call never shows twice. A `tool_result` completes a card that
   got no `tool_call` of its own (`list_skills` sends none).
 - Only a card still waiting for its final `tool_call` matches: some providers reuse ids such as
-  `call_0` across responses.
+  `call_0` across responses. A repeated `tool_call_start` opens a new card, and an open card under
+  that id from the earlier response is marked not run (that response's calls ran before).
 - Parallel calls each get their own card.
 - `tool_call_end` with `aborted: true` marks the card **not run**. So does the end of the turn
   (`done`, `cancelled`, `error`) for a card whose final `tool_call` never came, e.g. when its args
-  failed validation. A group of tool calls counts it apart (`1 not run`). The card stays visible until the chat re-renders from the saved history (on
-  `done`, or a reload): nothing of a streamed call is persisted before its final `tool_call`.
+  failed validation. A group of tool calls counts it apart (`1 not run`).
+- Nothing of a streamed call is persisted before its final `tool_call`, so a not-run card is kept
+  client-side: when the chat re-renders from the saved history after `done` (or a compaction), it
+  goes back after the saved call it followed. Only a reload or a session switch drops it.
 
 ## Turn-control messages
 
