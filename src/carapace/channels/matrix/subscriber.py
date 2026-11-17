@@ -12,7 +12,7 @@ from ...models.session import SessionBudget
 from ...models.tooling import ToolResult
 from ...spans import SpanStatus
 from ...usage import LlmContextStatus, LlmRequestState, LlmSource
-from ...ws_models import ApprovalRequest, TurnUsage
+from ...ws_models import ApprovalRequest, ToolCallStream, TurnUsage
 from .approval import (
     TYPING_INTERVAL,
     PendingApproval,
@@ -88,6 +88,7 @@ class MatrixSubscriber:
         approval_explanation: str | None = None,
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
+        tool_call_id: str | None = None,
     ) -> None:
         logger.debug(f"Matrix [{self._room_id}] tool call: {tool}({args}) — {detail}")
         if self._channel._verbose.get(self._room_id, True):
@@ -101,6 +102,9 @@ class MatrixSubscriber:
             preview = result.output[:500] + ("…" if len(result.output) > 500 else "")
             notice = f"📎 `{result.tool}` result:\n```\n{preview}\n```"
             await self._channel._send_notice(self._room_id, notice)
+
+    async def on_tool_call_stream(self, msg: ToolCallStream) -> None:
+        pass  # Matrix shows a call once it runs, in on_tool_call
 
     _STREAM_EDIT_THRESHOLD = 200  # min chars between edits
 

@@ -26,7 +26,7 @@ from carapace.session.types import ActiveSession, SessionSubscriber
 from carapace.skills import SkillRegistry
 from carapace.spans import SpanStatus
 from carapace.usage import LlmContextStatus, LlmRequestState, LlmSource
-from carapace.ws_models import ApprovalRequest, FinalStatus, TurnUsage
+from carapace.ws_models import ApprovalRequest, FinalStatus, ToolCallStream, TurnUsage
 
 
 def _patch_sentinel():
@@ -60,6 +60,8 @@ class _FakeSubscriber(SessionSubscriber):
         self.llm_context_updates: list[tuple[LlmSource, str, LlmContextStatus]] = []
         self.span_updates: list[tuple[str, str, SpanStatus]] = []
         self.status_updates: list[tuple[TurnUsage | None, SessionBudget]] = []
+        self.tool_call_stream: list[ToolCallStream] = []
+        self.tool_calls: list[tuple[str, str | None]] = []
 
     async def on_user_message(self, content: str, *, from_self: bool, attachments: list | None = None) -> None:
         self.user_messages.append((content, from_self))
@@ -74,11 +76,15 @@ class _FakeSubscriber(SessionSubscriber):
         approval_explanation: str | None = None,
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
+        tool_call_id: str | None = None,
     ) -> None:
-        pass
+        self.tool_calls.append((tool, tool_call_id))
 
     async def on_tool_result(self, result: ToolResult) -> None:
         pass
+
+    async def on_tool_call_stream(self, msg: ToolCallStream) -> None:
+        self.tool_call_stream.append(msg)
 
     async def on_token(self, content: str) -> None:
         self.token_chunks.append(content)

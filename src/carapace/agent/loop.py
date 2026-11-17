@@ -36,10 +36,11 @@ from ..security.context import (
     UserMessageEntry,
 )
 from ..usage import ProviderCostCapability, split_provider_compaction_usage
-from ..ws_models import ApprovalRequest, FinalStatus
+from ..ws_models import ApprovalRequest, FinalStatus, ToolCallStream
 from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, resolve_user_approvals
 from .deps import Deps, TaskDone, TaskFailed
-from .tools import create_agent
+from .tool_stream import ToolCallStreamer
+from .tools import TASK_DONE_TOOL, TASK_FAILED_TOOL, create_agent
 
 
 async def run_agent_turn(
@@ -50,6 +51,7 @@ async def run_agent_turn(
     collect_approvals: Callable[[set[str]], Awaitable[dict[str, bool | ToolDenied]]],
     on_token: Callable[[str], Awaitable[None]] | None = None,
     on_thinking_token: Callable[[str], Awaitable[None]] | None = None,
+    on_tool_call_stream: Callable[[ToolCallStream], Awaitable[None]] | None = None,
     on_assistant_text: Callable[[str], Awaitable[None]] | None = None,
     on_messages_snapshot: Callable[[list[Any]], None] | None = None,
     before_llm_call: Callable[[], None] | None = None,
@@ -86,29 +88,41 @@ async def run_agent_turn(
             await on_assistant_text(segment)
 
     async def _stream_handler(_ctx: Any, events: Any) -> None:
-        async for event in events:
-            if isinstance(event, PartStartEvent) and isinstance(event.part, ToolCallPart):
-                await _flush_text_segment()
-            elif isinstance(event, PartStartEvent) and isinstance(event.part, ThinkingPart) and event.part.content:
-                current_thinking_parts.append(event.part.content)
-                if on_thinking_token is not None:
-                    await on_thinking_token(event.part.content)
-            elif (
-                isinstance(event, PartDeltaEvent)
-                and isinstance(event.delta, ThinkingPartDelta)
-                and event.delta.content_delta
-            ):
-                current_thinking_parts.append(event.delta.content_delta)
-                if on_thinking_token is not None:
-                    await on_thinking_token(event.delta.content_delta)
-            elif isinstance(event, PartStartEvent) and isinstance(event.part, TextPart) and event.part.content:
-                current_text_parts.append(event.part.content)
-                if on_token is not None:
-                    await on_token(event.part.content)
-            elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
-                current_text_parts.append(event.delta.content_delta)
-                if on_token is not None:
-                    await on_token(event.delta.content_delta)
+        # Output tools are the turn's answer, not an action to show as a call.
+        streamer = (
+            ToolCallStreamer(on_tool_call_stream, skip_tools=frozenset({TASK_DONE_TOOL, TASK_FAILED_TOOL}))
+            if on_tool_call_stream is not None
+            else None
+        )
+        try:
+            async for event in events:
+                if streamer is not None:
+                    await streamer.handle(event)
+                if isinstance(event, PartStartEvent) and isinstance(event.part, ToolCallPart):
+                    await _flush_text_segment()
+                elif isinstance(event, PartStartEvent) and isinstance(event.part, ThinkingPart) and event.part.content:
+                    current_thinking_parts.append(event.part.content)
+                    if on_thinking_token is not None:
+                        await on_thinking_token(event.part.content)
+                elif (
+                    isinstance(event, PartDeltaEvent)
+                    and isinstance(event.delta, ThinkingPartDelta)
+                    and event.delta.content_delta
+                ):
+                    current_thinking_parts.append(event.delta.content_delta)
+                    if on_thinking_token is not None:
+                        await on_thinking_token(event.delta.content_delta)
+                elif isinstance(event, PartStartEvent) and isinstance(event.part, TextPart) and event.part.content:
+                    current_text_parts.append(event.part.content)
+                    if on_token is not None:
+                        await on_token(event.part.content)
+                elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
+                    current_text_parts.append(event.delta.content_delta)
+                    if on_token is not None:
+                        await on_token(event.delta.content_delta)
+        finally:
+            if streamer is not None:
+                await streamer.abort_open_calls()
 
     if before_llm_call is not None:
         before_llm_call()

@@ -22,7 +22,7 @@ from ..security.context import ApprovalSource, ApprovalVerdict, SessionSecurity
 from ..security.sentinel import Sentinel
 from ..spans import SpanStatus, TurnTrace
 from ..usage import LlmContextStatus, LlmRequestLog, LlmRequestState, LlmSource, UsageTracker
-from ..ws_models import ApprovalRequest, ApprovalResponse, FinalStatus, TurnUsage
+from ..ws_models import ApprovalRequest, ApprovalResponse, FinalStatus, ToolCallStream, TurnUsage
 from .escalation_waiters import EscalationWaiters
 
 
@@ -41,8 +41,10 @@ class SessionSubscriber(Protocol):
         approval_explanation: str | None = None,
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
+        tool_call_id: str | None = None,
     ) -> None: ...
     async def on_tool_result(self, result: ToolResult) -> None: ...
+    async def on_tool_call_stream(self, msg: ToolCallStream) -> None: ...
     async def on_token(self, content: str) -> None: ...
     async def on_thinking_token(self, content: str) -> None: ...
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None: ...
