@@ -11,6 +11,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from loguru import logger
 from pydantic_ai.messages import (
     AgentStreamEvent,
     PartDeltaEvent,
@@ -63,6 +64,12 @@ class ToolCallStreamer:
             ):
                 await self._append(call, text)
             case PartEndEvent(index=index, part=ToolCallPart() as part) if call := self._open.pop(index, None):
+                if part.tool_call_id != call.tool_call_id:
+                    # A provider that sends the name before the id: the stream used pydantic-ai's
+                    # stand-in id, so the executed call will not find this card.
+                    logger.warning(
+                        f"Streamed tool call {call.tool_call_id} ({part.tool_name}) ended as {part.tool_call_id}"
+                    )
                 # Providers that hand over args as a dict never stream text; their args go out whole.
                 if isinstance(part.args, dict):
                     call.pending = json.dumps(part.args)

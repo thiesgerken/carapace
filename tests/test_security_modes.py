@@ -15,7 +15,7 @@ async def test_yolo_mode_bypasses_tool_sentinel_review(tmp_path) -> None:
     sentinel = MagicMock(spec=Sentinel)
     sentinel.evaluate_tool_call = AsyncMock()
 
-    await evaluate_with(session, sentinel, "use_skill", {"skill_name": "web"})
+    await evaluate_with(session, sentinel, "use_skill", {"skill_name": "web"}, tool_call_id="call_1")
 
     sentinel.evaluate_tool_call.assert_not_awaited()
     entry = session.action_log[-1]

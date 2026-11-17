@@ -64,7 +64,7 @@ async def evaluate_with(
     assert_llm_budget_available: Callable[[], None] | None = None,
     usage_limits: UsageLimits | None = None,
     tool_call_callback: Any = None,
-    tool_call_id: str | None = None,
+    tool_call_id: str | None,
 ) -> None:
     """Main security gate. Auto-allows safe tools; asks the sentinel for everything else.
 
