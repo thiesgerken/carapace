@@ -454,7 +454,7 @@ function ApprovalBadge({
           className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-500/10 text-slate-600 dark:text-slate-400"
           title={tooltip || undefined}
         >
-          <BrailleSpinner className="text-[10px]" />
+          <BrailleSpinner className="text-xs" />
           {t("review")}
         </span>
       );
@@ -826,7 +826,7 @@ export function ToolCallBadge({
       )}
       {streamingActivity && <ActivityCounter activity={streamingActivity} />}
       {loading && (
-        <BrailleSpinner className="text-xs text-muted-foreground" />
+        <BrailleSpinner className="text-sm text-muted-foreground" />
       )}
     </span>
   );

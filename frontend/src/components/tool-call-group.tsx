@@ -157,7 +157,7 @@ export function ToolCallGroup({
           {summary}
         </span>
         {inProgress && (
-          <BrailleSpinner className="ml-auto text-xs text-muted-foreground" />
+          <BrailleSpinner className="ml-auto text-sm text-muted-foreground" />
         )}
       </button>
 

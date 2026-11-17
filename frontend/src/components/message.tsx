@@ -270,7 +270,7 @@ function ThinkingBadge({
           )}
         />
         {streaming ? (
-          <BrailleSpinner className="text-xs text-foreground/65 dark:text-foreground/70" />
+          <BrailleSpinner className="text-sm text-foreground/65 dark:text-foreground/70" />
         ) : (
           <Brain className="h-3 w-3 shrink-0 text-foreground/65 dark:text-foreground/70" />
         )}
