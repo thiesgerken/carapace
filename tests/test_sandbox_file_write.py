@@ -77,7 +77,7 @@ def test_chunk_boundary_count() -> None:
 def _assert_fits_kubernetes_exec_url(cmd: str) -> None:
     # The Kubernetes runtime sends the command as URL query params; httpx caps a URL
     # component at 65536 chars and raises InvalidURL beyond that.
-    httpx.URL("https://k8s/api/v1/pods/p/exec", params={"command": ["bash", "-c", cmd], "container": "sandbox"})
+    httpx.URL("https://k8s/api/v1/pods/p/exec", params={"command": ["/bin/bash", "-c", cmd], "container": "sandbox"})
 
 
 # Text whose UTF-8 encodes to bytes heavy in "+/" base64; the exact worst case is

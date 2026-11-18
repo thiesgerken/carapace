@@ -35,6 +35,7 @@ def _runner(
         get_activation_inputs=get_activation_inputs or AsyncMock(return_value=SkillActivationInputs()),
         exec_in_session=exec_in_session,
         exec_in_container=AsyncMock(),
+        kill_leftover_processes=AsyncMock(return_value=0),
         write_context_file_credentials=AsyncMock(),
         delete_context_file_credentials=AsyncMock(),
     )
@@ -419,6 +420,7 @@ async def test_missing_skill_directory_in_both_exec_paths(
         get_activation_inputs=AsyncMock(return_value=SkillActivationInputs()),
         exec_in_session=session_callback,
         exec_in_container=container_callback,
+        kill_leftover_processes=AsyncMock(return_value=0),
         write_context_file_credentials=AsyncMock(return_value=[]),
         delete_context_file_credentials=AsyncMock(),
     )
@@ -557,6 +559,37 @@ async def test_official_activator_fetches_non_tip_revision_over_http(
     assert (workspace / "skills/demo/SKILL.md").read_text() == "selected revision\n"
     assert _git(workspace, "rev-parse", "HEAD") == head_before
     assert not (workspace / ".git/FETCH_HEAD").exists()
+
+
+@pytest.mark.anyio
+async def test_restart_activation_kills_leftovers_before_writing_file_credentials() -> None:
+    """Skills rerun one after another on restart; an earlier activator's process must not see the next one's files."""
+    calls: list[str] = []
+
+    def record(name: str, result: object) -> object:
+        calls.append(name)
+        return result
+
+    runner = SkillActivationRunner(
+        knowledge_workdir="/workspace",
+        activator_timeout=600,
+        get_activation_inputs=AsyncMock(
+            return_value=SkillActivationInputs(
+                file_credentials=[SkillFileCredential(path=".config/token", value="secret")]
+            )
+        ),
+        exec_in_session=AsyncMock(),
+        exec_in_container=AsyncMock(
+            side_effect=lambda *_a, **_kw: record("activator", ExecResult(exit_code=0, output="", stdout=_response({})))
+        ),
+        kill_leftover_processes=AsyncMock(side_effect=lambda _sc: record("kill", 0)),
+        write_context_file_credentials=AsyncMock(side_effect=lambda *_a: record("write credentials", [])),
+        delete_context_file_credentials=AsyncMock(),
+    )
+
+    await runner.activate(SimpleNamespace(session_id="session-1"), "web", _SOURCE_REVISION, command_aliases=[])
+
+    assert calls == ["kill", "write credentials", "activator"]
 
 
 def test_resolved_commands_are_unique_and_keep_declaration_order() -> None:

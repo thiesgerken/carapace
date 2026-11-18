@@ -320,6 +320,7 @@ class SandboxManager:
             get_activation_inputs=self._get_skill_activation_inputs,
             exec_in_session=self._exec,
             exec_in_container=self._exec_in_container,
+            kill_leftover_processes=self._exec_coordinator.kill_leftover_processes,
             write_context_file_credentials=self._sandbox_file_ops.write_context_file_credentials,
             delete_context_file_credentials=self._sandbox_file_ops.delete_context_file_credentials,
         )
@@ -669,9 +670,9 @@ class SandboxManager:
     # so they never appear as agent tool calls ("without telling the agent").
     # The cloned origin URL embeds credentials, so plain git commands work.
     # The origin is the sandbox API host, which is in NO_PROXY, so these need
-    # no proxy bypass. They take the exec lock: the kill at the start of every
-    # exec would otherwise hit a running fetch, pull or push and leave stale
-    # .git lock files behind.
+    # no proxy bypass. Whatever writes to .git takes the exec lock: the kill at
+    # the start of every exec would otherwise hit a running fetch, pull or push
+    # and leave stale lock files behind.
     # ------------------------------------------------------------------
 
     async def _git_in_workspace(self, sc: SessionContainer, args: str, *, timeout: int = 30) -> ExecResult:
@@ -708,42 +709,32 @@ class SandboxManager:
         """Return ahead/behind of the sandbox clone vs the backend repo.
 
         Does not boot a stopped sandbox — returns ``running=False`` instead.
+        The read-only commands run without the exec lock, so the status never waits
+        for a running command; a kill only fails that one status call. The fetch
+        writes to .git, so it runs only while no command does.
         """
-        async with self._get_exec_lock(session_id):
-            sc = await self._running_container(session_id)
-            if sc is None:
-                return SandboxGitStatus(running=False)
+        sc = await self._running_container(session_id)
+        if sc is None:
+            return SandboxGitStatus(running=False)
 
-            fetched = False
-            if fetch:
+        fetched = False
+        exec_lock = self._get_exec_lock(session_id)
+        # An uncontended acquire does not yield, so nothing can take the lock in between.
+        if fetch and not exec_lock.locked():
+            async with exec_lock:
                 fr = await self._git_in_workspace(sc, "fetch origin", timeout=60)
-                fetched = fr.exit_code == 0
+            fetched = fr.exit_code == 0
 
-            branch_res = await self._git_in_workspace(sc, "rev-parse --abbrev-ref HEAD", timeout=10)
-            branch = branch_res.output.strip() if branch_res.exit_code == 0 else None
+        branch_res = await self._git_in_workspace(sc, "rev-parse --abbrev-ref HEAD", timeout=10)
+        branch = branch_res.output.strip() if branch_res.exit_code == 0 else None
 
-            upstream = await self._git_in_workspace(sc, "rev-parse --abbrev-ref --symbolic-full-name @{u}", timeout=10)
-            if upstream.exit_code != 0:
-                return SandboxGitStatus(branch=branch, upstream=False, fetched=fetched)
+        upstream = await self._git_in_workspace(sc, "rev-parse --abbrev-ref --symbolic-full-name @{u}", timeout=10)
+        if upstream.exit_code != 0:
+            return SandboxGitStatus(branch=branch, upstream=False, fetched=fetched)
 
-            counts = await self._git_in_workspace(sc, "rev-list --left-right --count @{u}...HEAD", timeout=10)
-            behind, ahead = self._parse_left_right(counts)
-            return SandboxGitStatus(branch=branch, upstream=True, ahead=ahead, behind=behind, fetched=fetched)
-
-    async def sandbox_unpushed_count(self, session_id: str) -> int:
-        """Local-only count of commits not yet pushed to the backend repo (no fetch).
-
-        Returns 0 when the sandbox isn't running — never boots it.
-        """
-        async with self._get_exec_lock(session_id):
-            sc = await self._running_container(session_id)
-            if sc is None:
-                return 0
-            res = await self._git_in_workspace(sc, "rev-list --count @{u}..HEAD", timeout=10)
-        if res.exit_code != 0:
-            return 0
-        out = res.output.strip()
-        return int(out) if out.isdigit() else 0
+        counts = await self._git_in_workspace(sc, "rev-list --left-right --count @{u}...HEAD", timeout=10)
+        behind, ahead = self._parse_left_right(counts)
+        return SandboxGitStatus(branch=branch, upstream=True, ahead=ahead, behind=behind, fetched=fetched)
 
     async def sandbox_git_pull(self, session_id: str) -> GitActionResult:
         """Pull the sandbox clone from the backend repo (fast-forward only)."""

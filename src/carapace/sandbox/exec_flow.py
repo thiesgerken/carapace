@@ -46,9 +46,8 @@ for proc in /proc/[0-9]*; do
     state=${stat##*) }
     [[ ${state%% *} == Z ]] || leftover=$((leftover + 1))
 done
-if ((leftover > 0)); then
-    kill -9 -1 || exit 1
-fi
+# As root, kill(-1) only fails with ESRCH: everything counted has exited by itself meanwhile.
+kill -9 -1 2>/dev/null || true
 echo "$leftover"
 """
 # Absolute path: /workspace/.carapace/bin comes first in PATH and holds skill shims.
