@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.186.2 (2026-11-18)
+
+### 🐛 Fix a bug
+
+- fix: keep a failed turn's finished steps in the history
+
+### 💄 Add or update the UI and style files
+
+- feat: show an unexpected error as one line with its traceback folded
+
+### ♻️ Refactor code
+
+- refactor: keep interrupted responses, cap the error text, test the turn wiring
+
+### 🎨 Improve structure / format of the code
+
+- style: align the live error object's indentation
+- style: drop the formatting churn, fix the snapshot docstring
+
 ## v0.186.1 (2026-11-18)
 
 ### 🐛 Fix a bug
