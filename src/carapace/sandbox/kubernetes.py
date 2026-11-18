@@ -841,7 +841,7 @@ class KubernetesRuntime(ContainerRuntime):
                 exit_code=126,
                 output=(
                     f"Error: command too long ({len(shell_cmd)} chars) for the sandbox exec API. "
-                    "Write large content to a file with the write tool instead of inlining it."
+                    "Pass large content through a file instead of inlining it in the command."
                 ),
             )
         except TimeoutError:

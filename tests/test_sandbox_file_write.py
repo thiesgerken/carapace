@@ -80,14 +80,19 @@ def _assert_fits_kubernetes_exec_url(cmd: str) -> None:
     httpx.URL("https://k8s/api/v1/pods/p/exec", params={"command": ["bash", "-c", cmd], "container": "sandbox"})
 
 
-# Bytes that base64 to all "+/", the url-encoding worst case.
-_WORST_CASE_CONTENT = (b"\xfb\xff\xbf" * SANDBOX_EXEC_CHUNK_BYTES).decode("latin-1")
+# Text whose UTF-8 encodes to bytes heavy in "+/" base64; the exact worst case is
+# binary data, covered by test_binary_upload_chunks_fit_kubernetes_exec_url.
+_LARGE_CONTENT = "\uffff" * SANDBOX_EXEC_CHUNK_BYTES
+
+
+def test_binary_upload_chunks_fit_kubernetes_exec_url() -> None:
+    # b"\xff" base64-encodes to all "/", each url-encoded to "%2F": the worst case.
+    cmd = f"printf %s {base64.b64encode(b'\xff' * SANDBOX_EXEC_CHUNK_BYTES).decode()} | base64 -d >> /tmp/upload.bin"
+    _assert_fits_kubernetes_exec_url(cmd)
 
 
 def test_chunks_fit_kubernetes_exec_url() -> None:
-    writes, _ = _file_write_commands(
-        "/workspace/" + "d" * 200 + "/out.txt", _WORST_CASE_CONTENT, mode=0o644, quote=True
-    )
+    writes, _ = _file_write_commands("/workspace/" + "d" * 200 + "/out.txt", _LARGE_CONTENT, mode=0o644, quote=True)
     for cmd in writes:
         _assert_fits_kubernetes_exec_url(cmd)
 
@@ -101,7 +106,7 @@ async def test_large_str_replace_fits_kubernetes_exec_url() -> None:
         return ExecResult(stdout="", exit_code=0, output="ok")
 
     ops = SandboxFileOps(exec_in_session=exec_in_session, exec_in_container=exec_in_session, get_session=lambda _: None)
-    result = await ops.file_str_replace("s", "/workspace/big.txt", _WORST_CASE_CONTENT, _WORST_CASE_CONTENT)
+    result = await ops.file_str_replace("s", "/workspace/big.txt", _LARGE_CONTENT, _LARGE_CONTENT)
 
     assert result.exit_code == 0
     assert len(calls) > 2  # chunked payload writes, then the replace script

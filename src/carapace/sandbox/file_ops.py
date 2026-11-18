@@ -50,9 +50,10 @@ def _shell_path(path: str, *, quote: bool) -> str:
 # Linux caps one argv string at MAX_ARG_STRLEN (128 KiB), but the tighter bound is
 # the Kubernetes runtime: it ships the command as ``command=`` URL query params to
 # the pod exec endpoint, and httpx rejects any URL component over 65536 chars
-# (InvalidURL: "URL component 'query' too long"). 16 KiB raw -> ~22 KiB base64 ->
-# ~25 KiB url-encoded, leaving headroom for the path and the rest of the command.
-SANDBOX_EXEC_CHUNK_BYTES = 16 * 1024
+# (InvalidURL: "URL component 'query' too long"). Worst case (binary data whose
+# base64 is all "/" or "+") every raw byte costs 4/3 * 3 = 4 url-encoded chars:
+# 12 KiB raw -> 48 KiB encoded, leaving headroom for the path and the rest of the command.
+SANDBOX_EXEC_CHUNK_BYTES = 12 * 1024
 
 
 def _file_write_commands(path: str, content: str, *, mode: int | None, quote: bool) -> tuple[list[str], str | None]:
