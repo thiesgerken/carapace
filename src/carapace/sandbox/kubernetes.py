@@ -792,7 +792,7 @@ class KubernetesRuntime(ContainerRuntime):
         env: dict[str, str] | None = None,
         workdir: str | None = None,
     ) -> ExecResult:
-        shell_cmd = command if isinstance(command, str) else " ".join(command)
+        shell_cmd = command if isinstance(command, str) else shlex.join(command)
         if workdir:
             shell_cmd = f"cd {shlex.quote(workdir)} && {shell_cmd}"
         command_preview = shell_cmd

@@ -26,7 +26,7 @@ from carapace.sandbox.runtime import (
 from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillDocumentError, SkillRegistry
-from tests.runtime_mocks import make_runtime_mock
+from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, make_runtime_mock
 
 
 def _seed_session_row(session_factory, data_dir: Path, *session_ids: str) -> None:
@@ -389,10 +389,12 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path, db_factory):
             _git_exists,  # knowledge repo probe after first create
             _git_exists,  # install_commit_msg_hook
             _git_exists,  # setup_git_identity
+            NO_LEFTOVER_PROCESSES,  # leftover process kill
             ContainerGoneError(),  # exec_command triggers recreate
             _git_exists,  # knowledge repo probe after recreate
             _git_exists,  # install_commit_msg_hook
             _git_exists,  # setup_git_identity
+            NO_LEFTOVER_PROCESSES,  # leftover process kill in the new sandbox
             ExecResult(stdout="ok", exit_code=0, output="ok"),  # actual command retry
         ]
     )
@@ -415,8 +417,9 @@ async def test_exec_container_gone_recovery_reruns_skill_setup(tmp_path: Path, d
     runtime.sandbox_exists = AsyncMock(return_value="container-1")
     runtime.exec = AsyncMock(
         side_effect=[
-            ContainerGoneError(),
+            ContainerGoneError(),  # leftover process kill
             ExecResult(stdout="", exit_code=0, output=""),  # setup_git_identity
+            NO_LEFTOVER_PROCESSES,  # leftover process kill in the restarted sandbox
             ExecResult(stdout="ok", exit_code=0, output="ok"),
         ]
     )
@@ -453,7 +456,9 @@ async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_pa
             ExecResult(stdout="", exit_code=0, output=""),  # _clone_knowledge_repo probe after create
             ExecResult(stdout="", exit_code=0, output=""),  # install_commit_msg_hook
             ExecResult(stdout="", exit_code=0, output=""),  # setup_git_identity
+            NO_LEFTOVER_PROCESSES,  # leftover process kill before the activator
             ExecResult(exit_code=0, output="", stdout='{"protocol_version":1}'),
+            NO_LEFTOVER_PROCESSES,  # leftover process kill before alias registration
             ExecResult(stdout="", exit_code=0, output=""),  # command alias registration
         ]
     )
@@ -478,7 +483,7 @@ async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_pa
     assert "Command aliases registered: web." in result
     assert "PATH" not in mgr.get_session_env("sess-1")
 
-    register_call = runtime.exec.call_args_list[4]
+    register_call = runtime.exec.call_args_list[6]
     shell_cmd = register_call.args[1]
     wrapper = '#!/bin/sh\nexec uv run --directory /workspace/skills/web web-search "$@"\n'
     assert "/workspace/.carapace/bin/web" in shell_cmd
@@ -802,7 +807,6 @@ async def test_exec_command_sets_up_and_cleans_up_tunnels(tmp_path: Path, db_fac
     runtime.create_sandbox = AsyncMock(return_value="container-1")
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
     runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-    runtime.exec = AsyncMock(return_value=ExecResult(stdout="ok", exit_code=0, output="ok"))
 
     mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
     _seed_session_row(db_factory, tmp_path, "sess-1")
@@ -836,7 +840,6 @@ async def test_exec_command_rejects_conflicting_tunnel_local_ports(tmp_path: Pat
     runtime.create_sandbox = AsyncMock(return_value="container-1")
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
     runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-    runtime.exec = AsyncMock(return_value=ExecResult(stdout="ok", exit_code=0, output="ok"))
 
     mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
     _seed_session_row(db_factory, tmp_path, "sess-1")
@@ -859,7 +862,6 @@ async def test_exec_command_allows_duplicate_tunnel_with_different_descriptions(
     runtime.create_sandbox = AsyncMock(return_value="container-1")
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
     runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-    runtime.exec = AsyncMock(return_value=ExecResult(stdout="ok", exit_code=0, output="ok"))
 
     mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
     _seed_session_row(db_factory, tmp_path, "sess-1")
@@ -904,6 +906,7 @@ async def test_exec_command_recreates_tunnels_before_retry(tmp_path: Path, db_fa
             _ok,  # clone probe (create)
             _ok,  # install_commit_msg_hook
             _ok,  # setup_git_identity
+            NO_LEFTOVER_PROCESSES,  # leftover process kill
             _ok,  # tunnel prep
             _ok,
             _ok,
@@ -912,6 +915,7 @@ async def test_exec_command_recreates_tunnels_before_retry(tmp_path: Path, db_fa
             _ok,  # clone probe (recreate)
             _ok,  # install_commit_msg_hook
             _ok,  # setup_git_identity
+            NO_LEFTOVER_PROCESSES,  # leftover process kill in the new sandbox
             _ok,  # tunnel prep
             _ok,
             _ok,
@@ -950,6 +954,7 @@ async def test_exec_command_cleans_up_tunnels_after_command_failure(tmp_path: Pa
             ExecResult(stdout="", exit_code=0, output=""),  # clone probe
             ExecResult(stdout="", exit_code=0, output=""),  # install_commit_msg_hook
             ExecResult(stdout="", exit_code=0, output=""),  # setup_git_identity
+            NO_LEFTOVER_PROCESSES,  # leftover process kill
             ExecResult(stdout="", exit_code=0, output=""),  # tunnel prep
             ExecResult(stdout="", exit_code=0, output=""),
             ExecResult(stdout="", exit_code=0, output=""),

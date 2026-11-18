@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+from carapace.sandbox.exec_flow import KILL_LEFTOVER_PROCESSES_COMMAND
 from carapace.sandbox.runtime import ContainerRuntime, ExecResult, SandboxInspection
+
+NO_LEFTOVER_PROCESSES = ExecResult(stdout="0\n", exit_code=0, output="0\n")
+
+
+async def _exec_ok(_container_id: str, command: str | list[str], *_args: object, **_kwargs: object) -> ExecResult:
+    if command == KILL_LEFTOVER_PROCESSES_COMMAND:
+        return NO_LEFTOVER_PROCESSES
+    return ExecResult(stdout="ok", exit_code=0, output="ok")
 
 
 def make_runtime_mock() -> MagicMock:
@@ -25,7 +34,7 @@ def make_runtime_mock() -> MagicMock:
         )
     )
     runtime.measure_workspace_usage = AsyncMock(return_value=None)
-    runtime.exec = AsyncMock(return_value=ExecResult(stdout="ok", exit_code=0, output="ok"))
+    runtime.exec = AsyncMock(side_effect=_exec_ok)
     runtime.is_running = AsyncMock(return_value=True)
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
     runtime.resolve_self_network_name = AsyncMock(return_value="bridge")

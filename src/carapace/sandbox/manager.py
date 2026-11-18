@@ -360,6 +360,11 @@ class SandboxManager:
 
         Scoped to one owner so a broken sandbox of another user can't fail this
         owner's settings change.
+
+        Deliberately outside the exec lock: the caller holds the knowledge git
+        runtime lock, which an agent's ``git push`` takes (``push_if_configured``)
+        while its exec holds the exec lock, so waiting here would deadlock. It
+        grants nothing; a concurrent kill only fails the settings save loudly.
         """
         for session_id, session in self._sessions.items():
             if session_owner(self._session_factory, session_id) != owner:
@@ -656,7 +661,7 @@ class SandboxManager:
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
             logger.debug(f"Command failed in session {session_id} (exit {result.exit_code}): {command}")
             output += f"\n[exit code: {result.exit_code}]"
-        return ExecResult(stdout=result.stdout, exit_code=result.exit_code, output=output or "(no output)")
+        return result.model_copy(update={"output": output or "(no output)"})
 
     # ------------------------------------------------------------------
     # Sandbox git status / sync (B1: /workspace clone ↔ backend repo).
@@ -664,9 +669,9 @@ class SandboxManager:
     # so they never appear as agent tool calls ("without telling the agent").
     # The cloned origin URL embeds credentials, so plain git commands work.
     # The origin is the sandbox API host, which is in NO_PROXY, so these need
-    # no proxy bypass. They run outside the exec lock: a bypass here would open
-    # the proxy to every process in the sandbox and end the bypass of an
-    # in-flight skill activation when it finishes.
+    # no proxy bypass. They take the exec lock: the kill at the start of every
+    # exec would otherwise hit a running fetch, pull or push and leave stale
+    # .git lock files behind.
     # ------------------------------------------------------------------
 
     async def _git_in_workspace(self, sc: SessionContainer, args: str, *, timeout: int = 30) -> ExecResult:
@@ -704,35 +709,37 @@ class SandboxManager:
 
         Does not boot a stopped sandbox — returns ``running=False`` instead.
         """
-        sc = await self._running_container(session_id)
-        if sc is None:
-            return SandboxGitStatus(running=False)
+        async with self._get_exec_lock(session_id):
+            sc = await self._running_container(session_id)
+            if sc is None:
+                return SandboxGitStatus(running=False)
 
-        fetched = False
-        if fetch:
-            fr = await self._git_in_workspace(sc, "fetch origin", timeout=60)
-            fetched = fr.exit_code == 0
+            fetched = False
+            if fetch:
+                fr = await self._git_in_workspace(sc, "fetch origin", timeout=60)
+                fetched = fr.exit_code == 0
 
-        branch_res = await self._git_in_workspace(sc, "rev-parse --abbrev-ref HEAD", timeout=10)
-        branch = branch_res.output.strip() if branch_res.exit_code == 0 else None
+            branch_res = await self._git_in_workspace(sc, "rev-parse --abbrev-ref HEAD", timeout=10)
+            branch = branch_res.output.strip() if branch_res.exit_code == 0 else None
 
-        upstream = await self._git_in_workspace(sc, "rev-parse --abbrev-ref --symbolic-full-name @{u}", timeout=10)
-        if upstream.exit_code != 0:
-            return SandboxGitStatus(branch=branch, upstream=False, fetched=fetched)
+            upstream = await self._git_in_workspace(sc, "rev-parse --abbrev-ref --symbolic-full-name @{u}", timeout=10)
+            if upstream.exit_code != 0:
+                return SandboxGitStatus(branch=branch, upstream=False, fetched=fetched)
 
-        counts = await self._git_in_workspace(sc, "rev-list --left-right --count @{u}...HEAD", timeout=10)
-        behind, ahead = self._parse_left_right(counts)
-        return SandboxGitStatus(branch=branch, upstream=True, ahead=ahead, behind=behind, fetched=fetched)
+            counts = await self._git_in_workspace(sc, "rev-list --left-right --count @{u}...HEAD", timeout=10)
+            behind, ahead = self._parse_left_right(counts)
+            return SandboxGitStatus(branch=branch, upstream=True, ahead=ahead, behind=behind, fetched=fetched)
 
     async def sandbox_unpushed_count(self, session_id: str) -> int:
         """Local-only count of commits not yet pushed to the backend repo (no fetch).
 
         Returns 0 when the sandbox isn't running — never boots it.
         """
-        sc = await self._running_container(session_id)
-        if sc is None:
-            return 0
-        res = await self._git_in_workspace(sc, "rev-list --count @{u}..HEAD", timeout=10)
+        async with self._get_exec_lock(session_id):
+            sc = await self._running_container(session_id)
+            if sc is None:
+                return 0
+            res = await self._git_in_workspace(sc, "rev-list --count @{u}..HEAD", timeout=10)
         if res.exit_code != 0:
             return 0
         out = res.output.strip()
@@ -740,15 +747,17 @@ class SandboxManager:
 
     async def sandbox_git_pull(self, session_id: str) -> GitActionResult:
         """Pull the sandbox clone from the backend repo (fast-forward only)."""
-        sc = await self.ensure_session(session_id)
-        res = await self._git_in_workspace(sc, "pull --ff-only", timeout=120)
+        async with self._get_exec_lock(session_id):
+            sc = await self.ensure_session(session_id)
+            res = await self._git_in_workspace(sc, "pull --ff-only", timeout=120)
         ok = res.exit_code == 0
         return GitActionResult(ok=ok, message=res.output.strip() or ("Pulled." if ok else "Pull failed."))
 
     async def sandbox_git_push(self, session_id: str) -> GitActionResult:
         """Push the sandbox clone to the backend repo (sentinel-gated via pre-receive)."""
-        sc = await self.ensure_session(session_id)
-        res = await self._git_in_workspace(sc, "push origin HEAD", timeout=600)
+        async with self._get_exec_lock(session_id):
+            sc = await self.ensure_session(session_id)
+            res = await self._git_in_workspace(sc, "push origin HEAD", timeout=600)
         ok = res.exit_code == 0
         denied = not ok and "DENIED" in res.output
         message = res.output.strip() or ("Pushed." if ok else "Push failed.")

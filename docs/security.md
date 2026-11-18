@@ -159,6 +159,12 @@ Credential access is mediated through the sandbox API and session state:
 
 As with the rest of carapace's model, the "keep secrets out of model output" guarantee is defense-in-depth: policy + sentinel + agent behavior. It is not a protocol-level cryptographic boundary, so secret-echoing commands must remain prohibited.
 
+## Leftover sandbox processes
+
+Grants (context credentials and domains, sentinel-approved domains, the proxy bypass during skill activation) apply to the whole session sandbox while a call runs, not to one process. A process left over from an earlier call, such as a `nohup` job or a script that daemonizes itself, would inherit them. carapace therefore kills every process in the sandbox except PID 1 at the start of every call, before granting anything; see [Process model](sandbox.md#process-model).
+
+This protects against leftovers, accidental or naive. It does not stop an agent that deliberately tampers with the killer's interpreter, the dynamic loader or `bash` inside the sandbox, where it is root. A static killer on a read-only mount is tracked in [#538](https://github.com/thiesgerken/carapace/issues/538).
+
 ## Audit log
 
 Every security decision is written to a per-session audit log file at `$CARAPACE_DATA_DIR/sessions/<session_id>/audit.yaml`. Each entry includes:

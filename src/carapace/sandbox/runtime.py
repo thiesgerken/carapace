@@ -118,6 +118,8 @@ class ExecResult(BaseModel):
     exit_code: int
     output: str
     stdout: str
+    # Set by the exec flow, which kills processes left over from earlier calls first.
+    leftover_processes_killed: int = 0
 
 
 SandboxRuntimeKind = Literal["docker", "kubernetes"]

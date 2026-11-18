@@ -15,6 +15,7 @@ from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
 from carapace.models.session import SessionState
 from carapace.models.skills import ContextGrant, SkillCredentialDecl, context_grants_session_summary
+from carapace.sandbox.exec_flow import KILL_LEFTOVER_PROCESSES_COMMAND
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.runtime import DuplicateSandboxError, ExecResult, PoolSandbox
 from carapace.sandbox.session_lifecycle import SessionContainer
@@ -23,7 +24,7 @@ from carapace.security.context import ApprovalSource, ContextGrantEntry, Credent
 from carapace.security.sentinel import _format_entry
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillRegistry
-from tests.runtime_mocks import make_runtime_mock
+from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, make_runtime_mock
 
 
 def _sandbox_manager(
@@ -927,7 +928,9 @@ class TestExecNotificationDedupe:
         mgr._domain_notify_cbs["s1"] = lambda *a: calls.append(a)
         sc = MagicMock(container_id="c1", session_id="s1", session_env={})
 
-        async def fake_runtime_exec(*_a, **_kw):
+        async def fake_runtime_exec(_container_id, command, *_a, **_kw):
+            if command == KILL_LEFTOVER_PROCESSES_COMMAND:
+                return NO_LEFTOVER_PROCESSES
             for domain in ["files.pythonhosted.org", "pypi.org", "files.pythonhosted.org"]:
                 mgr.notify_domain_access("s1", domain, True)
             return ExecResult(stdout="", exit_code=0, output="")
@@ -948,7 +951,9 @@ class TestExecNotificationDedupe:
         mgr._exec_notified_domains["s1"] = enclosing
         sc = MagicMock(container_id="c1", session_id="s1", session_env={})
 
-        async def fake_runtime_exec(*_a, **_kw):
+        async def fake_runtime_exec(_container_id, command, *_a, **_kw):
+            if command == KILL_LEFTOVER_PROCESSES_COMMAND:
+                return NO_LEFTOVER_PROCESSES
             for domain in ["pypi.org", "files.pythonhosted.org"]:
                 mgr.notify_domain_access("s1", domain, True)
             return ExecResult(stdout="", exit_code=0, output="")
