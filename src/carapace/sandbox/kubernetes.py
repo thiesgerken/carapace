@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
+import httpx
 import kr8s
 from kr8s._api import Api
 from kr8s.asyncio.objects import Deployment, Pod, StatefulSet, new_class
@@ -831,6 +832,18 @@ class KubernetesRuntime(ContainerRuntime):
             raise ContainerGoneError(f"Pod {container_id} no longer exists") from exc
         except kr8s.ExecError:
             return ExecResult(stdout="", exit_code=1, output="Error: exec protocol error")
+        except httpx.InvalidURL:
+            # The exec API carries the command in the URL query, which httpx caps at
+            # 65536 chars per component; nothing was sent, so the agent can retry smaller.
+            logger.warning(f"Command too long for pod exec in {container_id} ({len(shell_cmd)} chars)")
+            return ExecResult(
+                stdout="",
+                exit_code=126,
+                output=(
+                    f"Error: command too long ({len(shell_cmd)} chars) for the sandbox exec API. "
+                    "Pass large content through a file instead of inlining it in the command."
+                ),
+            )
         except TimeoutError:
             logger.warning(f"Command timed out in pod {container_id} after {timeout}s: {command_preview}")
             return ExecResult(stdout="", exit_code=-1, output=f"Error: command timed out ({timeout}s)")

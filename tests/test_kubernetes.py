@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import kr8s
 import pytest
 
@@ -459,6 +460,20 @@ async def test_resume_sandbox_keeps_template_image(replicas: int, template_image
 
     sts.patch.assert_not_awaited()
     sts.scale.assert_awaited_once_with(1)
+
+
+@pytest.mark.asyncio
+async def test_exec_too_long_for_url_returns_tool_error() -> None:
+    rt = _make_runtime()
+    rt._ensure_api = AsyncMock()
+    pod = MagicMock()
+    pod.exec = AsyncMock(side_effect=httpx.InvalidURL("URL component 'query' too long"))
+
+    with patch("carapace.sandbox.kubernetes.Pod.get", AsyncMock(return_value=pod)):
+        result = await rt.exec("carapace-sandbox-abc-0", "echo " + "x" * 70000)
+
+    assert result.exit_code == 126
+    assert "command too long" in result.output
 
 
 @pytest.mark.asyncio
