@@ -10,11 +10,14 @@ from __future__ import annotations
 FILE_READ_BODY_SEPARATOR_TOKEN = "__READ_BODY_SEP__"
 
 SANDBOX_STR_REPLACE_SCRIPT = """\
-import base64, os, sys
-p, o_b64, n_b64, replace_all_flag = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-old = base64.b64decode(o_b64).decode()
-new = base64.b64decode(n_b64).decode()
-replace_all = replace_all_flag == "1"
+import json, os, sys
+p, payload_path = sys.argv[1], sys.argv[2]
+try:
+    with open(payload_path) as f:
+        payload = json.load(f)
+finally:
+    os.remove(payload_path)
+old, new, replace_all = payload["old"], payload["new"], payload["replace_all"]
 if not old:
     print("Error: old_string must not be empty.")
     sys.exit(1)

@@ -814,15 +814,8 @@ class SandboxManager:
             replace_all=replace_all,
         )
 
-    # Each chunk is base64-encoded and inlined as a single shell argument
-    # (``printf %s <b64>``). Linux caps one argv string at MAX_ARG_STRLEN (128 KiB),
-    # but the tighter bound is the Kubernetes runtime: it ships the whole command as
-    # ``command=`` URL query params to the pod exec endpoint, and httpx rejects any URL
-    # component over 65536 chars (InvalidURL: "URL component 'query' too long"). The
-    # base64 (~4/3 of the raw chunk) is url-encoded into that query; only +,/,= expand to
-    # 3 bytes, so real inflation is ~1.15x. 16 KiB raw -> ~22 KiB base64 -> ~25 KiB
-    # encoded, leaving ample headroom under 65536 for the rest of the URL.
-    _UPLOAD_CHUNK_BYTES = 16 * 1024
+    # Same argv/URL-length bound as file writes (see SANDBOX_EXEC_CHUNK_BYTES).
+    _UPLOAD_CHUNK_BYTES = file_ops.SANDBOX_EXEC_CHUNK_BYTES
 
     async def upload_tmp_file(
         self,

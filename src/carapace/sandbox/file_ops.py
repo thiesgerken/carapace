@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import json
+import secrets
 import shlex
 from collections.abc import Awaitable, Callable
 from typing import Protocol
@@ -45,10 +47,12 @@ def _shell_path(path: str, *, quote: bool) -> str:
 
 
 # Each chunk's base64 is inlined as a single shell argument (``printf %s <b64>``).
-# Linux caps one argv string at MAX_ARG_STRLEN (128 KiB), so keep the base64
-# (4/3 of the raw chunk) well under that or execve fails with "Argument list too
-# long". 64 KiB raw -> ~85 KiB base64.
-_FILE_WRITE_CHUNK_BYTES = 64 * 1024
+# Linux caps one argv string at MAX_ARG_STRLEN (128 KiB), but the tighter bound is
+# the Kubernetes runtime: it ships the command as ``command=`` URL query params to
+# the pod exec endpoint, and httpx rejects any URL component over 65536 chars
+# (InvalidURL: "URL component 'query' too long"). 16 KiB raw -> ~22 KiB base64 ->
+# ~25 KiB url-encoded, leaving headroom for the path and the rest of the command.
+SANDBOX_EXEC_CHUNK_BYTES = 16 * 1024
 
 
 def _file_write_commands(path: str, content: str, *, mode: int | None, quote: bool) -> tuple[list[str], str | None]:
@@ -63,8 +67,8 @@ def _file_write_commands(path: str, content: str, *, mode: int | None, quote: bo
     shell_path = _shell_path(path, quote=quote)
     data = content.encode()
     writes: list[str] = []
-    for start in range(0, len(data) or 1, _FILE_WRITE_CHUNK_BYTES):
-        b64 = base64.b64encode(data[start : start + _FILE_WRITE_CHUNK_BYTES]).decode()
+    for start in range(0, len(data) or 1, SANDBOX_EXEC_CHUNK_BYTES):
+        b64 = base64.b64encode(data[start : start + SANDBOX_EXEC_CHUNK_BYTES]).decode()
         if not writes:
             writes.append(
                 f'mkdir -p "$(dirname {shell_path})" && rm -f {shell_path} '
@@ -200,11 +204,14 @@ class SandboxFileOps:
         replace_all: bool = False,
     ) -> ExecResult:
         """Replace text in a file inside the sandbox, optionally replacing all matches."""
-        pq = shlex.quote(path)
-        old_b64 = base64.b64encode(old_string.encode()).decode()
-        new_b64 = base64.b64encode(new_string.encode()).decode()
-        replace_all_flag = "1" if replace_all else "0"
-        cmd = f"python3 -c {shlex.quote(_STR_REPLACE_SCRIPT)} {pq} {old_b64} {new_b64} {replace_all_flag}"
+        # The strings can be arbitrarily large, so they travel as a chunked payload file
+        # instead of inline arguments (see SANDBOX_EXEC_CHUNK_BYTES); the script deletes it.
+        payload_path = f"/tmp/carapace-str-replace-{secrets.token_hex(8)}.json"
+        payload = json.dumps({"old": old_string, "new": new_string, "replace_all": replace_all})
+        write_result = await self.file_write(session_id, payload_path, payload)
+        if write_result.exit_code != 0:
+            return write_result
+        cmd = f"python3 -c {shlex.quote(_STR_REPLACE_SCRIPT)} {shlex.quote(path)} {payload_path}"
         result = await self._exec_in_session(session_id, cmd, timeout=10)
         output = result.output or f"Error: cannot replace in {path}"
         return ExecResult(stdout=result.stdout, exit_code=result.exit_code, output=output)

@@ -5,10 +5,11 @@ from __future__ import annotations
 import base64
 import re
 
+import httpx
 import pytest
 
 from carapace.sandbox.file_ops import (
-    _FILE_WRITE_CHUNK_BYTES,
+    SANDBOX_EXEC_CHUNK_BYTES,
     SandboxFileOps,
     _file_write_commands,
 )
@@ -66,11 +67,47 @@ def test_empty_content_truncates_file() -> None:
 
 
 def test_chunk_boundary_count() -> None:
-    content = "B" * (_FILE_WRITE_CHUNK_BYTES * 2 + 1)
+    content = "B" * (SANDBOX_EXEC_CHUNK_BYTES * 2 + 1)
     writes, chmod = _file_write_commands("/tmp/x", content, mode=None, quote=True)
     assert len(writes) == 3
     assert chmod is None
     assert _reconstruct(writes).decode() == content
+
+
+def _assert_fits_kubernetes_exec_url(cmd: str) -> None:
+    # The Kubernetes runtime sends the command as URL query params; httpx caps a URL
+    # component at 65536 chars and raises InvalidURL beyond that.
+    httpx.URL("https://k8s/api/v1/pods/p/exec", params={"command": ["bash", "-c", cmd], "container": "sandbox"})
+
+
+# Bytes that base64 to all "+/", the url-encoding worst case.
+_WORST_CASE_CONTENT = (b"\xfb\xff\xbf" * SANDBOX_EXEC_CHUNK_BYTES).decode("latin-1")
+
+
+def test_chunks_fit_kubernetes_exec_url() -> None:
+    writes, _ = _file_write_commands(
+        "/workspace/" + "d" * 200 + "/out.txt", _WORST_CASE_CONTENT, mode=0o644, quote=True
+    )
+    for cmd in writes:
+        _assert_fits_kubernetes_exec_url(cmd)
+
+
+@pytest.mark.asyncio
+async def test_large_str_replace_fits_kubernetes_exec_url() -> None:
+    calls: list[str] = []
+
+    async def exec_in_session(_session_id: str, cmd: str, **_kwargs: object) -> ExecResult:
+        calls.append(cmd)
+        return ExecResult(stdout="", exit_code=0, output="ok")
+
+    ops = SandboxFileOps(exec_in_session=exec_in_session, exec_in_container=exec_in_session, get_session=lambda _: None)
+    result = await ops.file_str_replace("s", "/workspace/big.txt", _WORST_CASE_CONTENT, _WORST_CASE_CONTENT)
+
+    assert result.exit_code == 0
+    assert len(calls) > 2  # chunked payload writes, then the replace script
+    assert calls[-1].startswith("python3 -c ")
+    for cmd in calls:
+        _assert_fits_kubernetes_exec_url(cmd)
 
 
 async def _run(exec_one, content, *, mode=None, path="/tmp/f") -> tuple[ExecResult, list[str]]:
@@ -95,7 +132,7 @@ async def test_multichunk_partial_failure_removes_file() -> None:
             else ExecResult(stdout="", exit_code=0, output="")
         )
 
-    result, calls = await _run(exec_one, "C" * (_FILE_WRITE_CHUNK_BYTES * 2))
+    result, calls = await _run(exec_one, "C" * (SANDBOX_EXEC_CHUNK_BYTES * 2))
     assert result.exit_code == 1
     assert any(c.startswith("rm -f /tmp/f") for c in calls)
 
@@ -106,7 +143,7 @@ async def test_first_command_failure_leaves_existing_file() -> None:
     async def exec_one(cmd: str, calls: list[str]) -> ExecResult:
         return ExecResult(stdout="denied", exit_code=1, output="denied")
 
-    result, calls = await _run(exec_one, "C" * (_FILE_WRITE_CHUNK_BYTES * 2))
+    result, calls = await _run(exec_one, "C" * (SANDBOX_EXEC_CHUNK_BYTES * 2))
     assert result.exit_code == 1
     assert not any(c.startswith("rm -f") for c in calls)
 
@@ -119,7 +156,7 @@ async def test_chmod_failure_keeps_written_file() -> None:
             return ExecResult(stdout="chmod denied", exit_code=1, output="chmod denied")
         return ExecResult(stdout="", exit_code=0, output="")
 
-    result, calls = await _run(exec_one, "C" * (_FILE_WRITE_CHUNK_BYTES * 2), mode=0o644)
+    result, calls = await _run(exec_one, "C" * (SANDBOX_EXEC_CHUNK_BYTES * 2), mode=0o644)
     assert result.exit_code == 1
     assert any(c.startswith("chmod") for c in calls)
     assert not any(c.startswith("rm -f") for c in calls)

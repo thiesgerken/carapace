@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import base64
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -11,22 +11,16 @@ from carapace.sandbox.container_scripts import SANDBOX_STR_REPLACE_SCRIPT
 
 
 def _run_script(path: Path, old: str, new: str, *, replace_all: bool) -> subprocess.CompletedProcess[str]:
-    old_b64 = base64.b64encode(old.encode()).decode()
-    new_b64 = base64.b64encode(new.encode()).decode()
-    return subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            SANDBOX_STR_REPLACE_SCRIPT,
-            str(path),
-            old_b64,
-            new_b64,
-            "1" if replace_all else "0",
-        ],
+    payload_path = path.with_name("payload.json")
+    payload_path.write_text(json.dumps({"old": old, "new": new, "replace_all": replace_all}))
+    result = subprocess.run(
+        [sys.executable, "-c", SANDBOX_STR_REPLACE_SCRIPT, str(path), str(payload_path)],
         capture_output=True,
         text=True,
         check=False,
     )
+    assert not payload_path.exists()
+    return result
 
 
 def test_single_replace_reports_original_line(tmp_path: Path) -> None:
