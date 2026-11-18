@@ -288,6 +288,39 @@ async def test_notification_router_filters_by_session_owner(db_factory) -> None:
     sender.send_batch.assert_awaited_once()
 
 
+async def test_notification_router_job_outcome_links_past_invocation_prompt(db_factory) -> None:
+    store = NotificationStore(db_factory)
+    subscription = store.upsert_subscription(
+        user="thies",
+        endpoint="https://push.example.test/sub-1",
+        p256dh="key-1",
+        auth="auth-1",
+        device_name="Phone",
+        notification_prefs=NotificationPreferences(unattended_turn_failed=True),
+        ttl=timedelta(days=30),
+        now=datetime.now(tz=UTC),
+    )
+    sender = AsyncMock()
+    sender.send_batch = AsyncMock(return_value={subscription.id: True})
+    router = NotificationRouter(
+        store=store,
+        presence=NotificationPresenceRegistry(ttl=timedelta(seconds=60)),
+        sender=sender,
+        owner_for_session=lambda _session_id: "thies",
+    )
+
+    await router.dispatch_turn_outcome(
+        session_id="session-1",
+        assistant_event_index=3,
+        turn_event_start=1,
+        kind="unattended_turn_failed",
+        title="Job Failed",
+        body="Budget exceeded",
+    )
+
+    assert sender.send_batch.await_args.args[1].event_index == 2
+
+
 async def test_notification_router_dispatch_test_targets_single_subscription(db_factory) -> None:
     store = NotificationStore(db_factory)
     sender = AsyncMock()
