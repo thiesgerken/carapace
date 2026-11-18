@@ -62,7 +62,10 @@ _TURN_CANCELLED_TOOL_MESSAGE = "Tool call was canceled because the turn ended be
 
 def _turn_error_tool_message(exc: Exception) -> str:
     # The agent continues from this history: naming the error keeps it from blindly repeating the call.
-    return f"The turn stopped on an unexpected error before this tool call completed: {type(exc).__name__}: {exc}"
+    # Only the first line, capped: the history is re-sent with every later request and the full
+    # message may carry server internals.
+    summary = str(exc).splitlines()[0][:200] if str(exc) else ""
+    return f"The turn stopped on an unexpected error before this tool call completed: {type(exc).__name__}: {summary}"
 
 
 def _non_slash_user_message_count(events: list[dict[str, Any]]) -> int:

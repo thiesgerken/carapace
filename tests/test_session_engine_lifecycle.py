@@ -10,7 +10,14 @@ from typing import Any
 from unittest.mock import ANY, patch
 
 import pytest
-from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 
 import carapace.usage as usage_mod
 from carapace.session.open_approvals import ORPHANED_APPROVAL_MESSAGE
@@ -806,3 +813,89 @@ def test_history_for_completed_turn_count_excludes_trailing_incomplete_request(t
 
     assert engine._completed_model_turn_end_indexes(history) == [1]
     assert engine._history_for_completed_turn_count(history, 2) == history[:2]
+
+
+def _finished_steps(user_input: str) -> list[Any]:
+    """A turn that fetched once, then started a second call that never returned."""
+    return [
+        ModelRequest(parts=[UserPromptPart(content=user_input)]),
+        ModelResponse(parts=[ToolCallPart(tool_name="exec", args={"command": "curl a"}, tool_call_id="call-1")]),
+        ModelRequest(parts=[ToolReturnPart(tool_name="exec", content="page a", tool_call_id="call-1")]),
+        ModelResponse(parts=[ToolCallPart(tool_name="exec", args={"command": "curl b"}, tool_call_id="call-2")]),
+    ]
+
+
+def _pending_return(history: list[Any]) -> ToolReturnPart:
+    [part] = [
+        p
+        for m in history
+        if isinstance(m, ModelRequest)
+        for p in m.parts
+        if isinstance(p, ToolReturnPart) and p.tool_call_id == "call-2"
+    ]
+    return part
+
+
+def test_failed_turn_keeps_finished_steps_and_continue_builds_on_them(tmp_path: Path, db_factory):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        engine.subscribe(sid, _FakeSubscriber())
+
+        async def _crashing_turn(user_input: str, *_args: Any, on_messages_snapshot: Any, **_kwargs: Any) -> Any:
+            engine.session_mgr.append_events(sid, [{"role": "tool_call", "tool": "exec", "args": {}, "tool_id": "t-2"}])
+            on_messages_snapshot(_finished_steps(user_input))
+            raise RuntimeError("URL component 'query' too long\nsecond line with internals")
+
+        seen_history: list[Any] = []
+
+        async def _continue_turn(user_input: str, _deps: Any, message_history: list[Any], **_kwargs: Any) -> Any:
+            seen_history.extend(message_history)
+            return [*message_history, ModelRequest(parts=[UserPromptPart(content=user_input)])], "done", "", None
+
+        for fake, prompt in ((_crashing_turn, "research"), (_continue_turn, "Continue.")):
+            with patch("carapace.session.engine.run_agent_turn", new=fake):
+                await engine.submit_message(sid, prompt)
+                active = engine.get_active(sid)
+                assert active is not None and active.agent_task is not None
+                await active.agent_task
+
+        returns = [p for m in seen_history if isinstance(m, ModelRequest) for p in m.parts]
+        assert any(isinstance(p, ToolReturnPart) and p.content == "page a" for p in returns)
+        failed = _pending_return(seen_history)
+        assert failed.outcome == "failed"
+        assert failed.content == (
+            "The turn stopped on an unexpected error before this tool call completed: "
+            "RuntimeError: URL component 'query' too long"
+        )
+        [tool_result] = [e for e in engine.session_mgr.load_events(sid) if e["role"] == "tool_result"]
+        assert tool_result["tool_id"] == "t-2"
+        assert tool_result["result"] == failed.content
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_cancelled_turn_keeps_finished_steps(tmp_path: Path, db_factory):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        engine.subscribe(sid, _FakeSubscriber())
+
+        async def _hanging_turn(user_input: str, *_args: Any, on_messages_snapshot: Any, **_kwargs: Any) -> Any:
+            try:
+                await asyncio.sleep(999)
+            finally:
+                on_messages_snapshot(_finished_steps(user_input))
+
+        with patch("carapace.session.engine.run_agent_turn", new=_hanging_turn):
+            await engine.submit_message(sid, "research")
+            await asyncio.sleep(0.05)
+            await engine.submit_cancel(sid)
+
+        history = engine.session_mgr.load_history(sid)
+        assert any(isinstance(p, ToolReturnPart) and p.content == "page a" for m in history for p in m.parts)
+        assert _pending_return(history).content == "Tool call was canceled because the turn ended before it completed."
+
+    with _patch_sentinel():
+        asyncio.run(_run())

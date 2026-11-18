@@ -19,7 +19,6 @@ from typing import Any
 
 from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied, capture_run_messages
 from pydantic_ai.messages import (
-    ModelResponse,
     PartDeltaEvent,
     PartStartEvent,
     TextPart,
@@ -260,17 +259,16 @@ def _record_usage(deps: Deps, usage: RunUsage, provider_cost: ProviderCostCapabi
 
 @contextmanager
 def _snapshot_on_failure(on_messages_snapshot: Callable[[list[Any]], None] | None) -> Iterator[None]:
-    """Hand the run's finished steps to *on_messages_snapshot* when the run raises or is cancelled.
+    """Hand the run's messages so far to *on_messages_snapshot* when the run raises or is cancelled.
 
     Without this the steps a run completed before failing (model responses, tool results) are lost
-    with it, and the next turn cannot continue from them. A response cut off mid-stream is dropped:
-    its tool calls may carry truncated arguments that would break the next request.
+    with it, and the next turn cannot continue from them. pydantic-ai keeps a response cut off
+    mid-stream as ``state="interrupted"`` and closes out its calls when the next run resumes.
     """
     with capture_run_messages() as run_messages:
         try:
             yield
         except BaseException:
-            finished = [m for m in run_messages if not (isinstance(m, ModelResponse) and m.state == "interrupted")]
-            if on_messages_snapshot is not None and finished:
-                on_messages_snapshot(finished)
+            if on_messages_snapshot is not None and run_messages:
+                on_messages_snapshot(list(run_messages))
             raise
