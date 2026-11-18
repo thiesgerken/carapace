@@ -79,6 +79,7 @@ class SkillActivationRunner:
         get_activation_inputs: Callable[[str, str], Awaitable[SkillActivationInputs]],
         exec_in_session: Callable[..., Awaitable[ExecResult]],
         exec_in_container: Callable[..., Awaitable[ExecResult]],
+        kill_leftover_processes: Callable[..., Awaitable[int]],
         write_context_file_credentials: Callable[..., Awaitable[list[WrittenContextFile]]],
         delete_context_file_credentials: Callable[[str, list[WrittenContextFile]], Awaitable[None]],
     ) -> None:
@@ -87,6 +88,7 @@ class SkillActivationRunner:
         self._get_activation_inputs = get_activation_inputs
         self._exec_in_session = exec_in_session
         self._exec_in_container = exec_in_container
+        self._kill_leftover_processes = kill_leftover_processes
         self._write_context_file_credentials = write_context_file_credentials
         self._delete_context_file_credentials = delete_context_file_credentials
 
@@ -209,6 +211,8 @@ class SkillActivationRunner:
         written_files: list[WrittenContextFile] = []
         try:
             if file_creds:
+                # Skills rerun one after another: the previous activator may have left a process behind.
+                await self._kill_leftover_processes(sc)
                 written_files = await self._write_context_file_credentials(sc, file_creds)
             return await self._exec_in_container(
                 sc,

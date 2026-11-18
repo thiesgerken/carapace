@@ -28,6 +28,31 @@ type WriteContextFileCredentialsCallback = Callable[
 ]
 type DeleteContextFileCredentialsCallback = Callable[[str, list[WrittenContextFile]], Awaitable[None]]
 
+# Kills every process in the sandbox except PID 1 (the container's `sleep infinity`) and
+# prints how many live ones it found. Only bash builtins, since a fork would count itself.
+# kill(-1) signals everything but PID 1 and the caller in one kernel pass, so a forking
+# process cannot slip through. Zombies are not counted: `sleep infinity` never reaps them.
+# The killer must be the top process of its exec, or kill(-1) would take its wrapper down.
+KILL_LEFTOVER_PROCESSES_SCRIPT = """\
+if [[ $PPID != 0 ]]; then
+    echo "process killer must not run below another process in the sandbox (parent $PPID)" >&2
+    exit 1
+fi
+leftover=0
+for proc in /proc/[0-9]*; do
+    pid=${proc#/proc/}
+    [[ $pid == 1 || $pid == $$ ]] && continue
+    read -r stat 2>/dev/null < "$proc/stat" || continue
+    state=${stat##*) }
+    [[ ${state%% *} == Z ]] || leftover=$((leftover + 1))
+done
+# As root, kill(-1) only fails with ESRCH: everything counted has exited by itself meanwhile.
+kill -9 -1 2>/dev/null || true
+echo "$leftover"
+"""
+# Absolute path: /workspace/.carapace/bin comes first in PATH and holds skill shims.
+KILL_LEFTOVER_PROCESSES_COMMAND = ["/bin/bash", "-c", KILL_LEFTOVER_PROCESSES_SCRIPT]
+
 
 @dataclass
 class SandboxExecState:
@@ -66,6 +91,8 @@ class SandboxExecCoordinator:
         extra_env: dict[str, str] | None = None,
     ) -> ExecResult:
         """Run *command* in *sc* without acquiring the exec lock."""
+        if bypass_proxy:
+            await self.kill_leftover_processes(sc)
         # A bypassed install (e.g. skill re-activation after a sandbox restart) opens
         # one connection per package; without a dedupe set each one becomes a UI entry.
         # An enclosing exec() already owns a set, so only create (and drop) our own.
@@ -116,66 +143,51 @@ class SandboxExecCoordinator:
         context_file_creds: list[ContextFileCredential] | None = None,
         after_exec_credential_notify: AfterExecCredentialNotify | None = None,
     ) -> ExecResult:
-        """Run a command in the sandbox and return the raw ExecResult."""
+        """Run a command in the sandbox and return the raw ExecResult.
+
+        Leftover processes are killed before anything is granted to the session, so
+        only processes started by this call see its contexts, domains and credentials.
+        """
         contexts = contexts or []
         written_files: list[WrittenContextFile] = []
         sc: SessionContainer | None = None
         tunnels_prepared = False
 
+        async def run_in(container: SessionContainer) -> ExecResult:
+            nonlocal written_files, tunnels_prepared
+            leftover_processes_killed = await self.kill_leftover_processes(container)
+            self._grant_exec_scope(session_id, command, contexts, context_domains, bypass_proxy=bypass_proxy)
+            if context_tunnels:
+                await prepare_context_tunnels(container, context_tunnels)
+                tunnels_prepared = True
+            if context_file_creds:
+                written_files = await write_context_file_credentials(container, context_file_creds)
+            result = await exec_in_container(
+                container,
+                command,
+                timeout,
+                workdir=workdir,
+                bypass_proxy=False,
+                extra_env=extra_env,
+            )
+            return result.model_copy(update={"leftover_processes_killed": leftover_processes_killed})
+
         async with self.get_exec_lock(session_id):
-            if bypass_proxy:
-                self._state.proxy_bypass_sessions.add(session_id)
-                logger.info(f"Proxy bypass ENABLED for session {session_id}")
             try:
                 sc = await ensure_session(session_id)
                 sc.last_used = time.time()
                 logger.debug(f"Exec in session {session_id}: {command}")
 
-                self._state.session_current_command[session_id] = command
-                self._state.session_current_contexts[session_id] = contexts
-                self._state.exec_temp_domains[session_id] = set()
-                self._state.exec_context_skill_domains[session_id] = set()
-                self._state.exec_notified_domains[session_id] = set()
-                self._state.exec_notified_credentials[session_id] = set()
-
-                if context_domains:
-                    self._state.exec_temp_domains[session_id].update(context_domains)
-                    self._state.exec_context_skill_domains[session_id].update(context_domains)
-
                 try:
-                    if context_tunnels:
-                        await prepare_context_tunnels(sc, context_tunnels)
-                        tunnels_prepared = True
-                    if context_file_creds:
-                        written_files = await write_context_file_credentials(sc, context_file_creds)
-                    exec_result = await exec_in_container(
-                        sc,
-                        command,
-                        timeout,
-                        workdir=workdir,
-                        bypass_proxy=False,
-                        extra_env=extra_env,
-                    )
+                    exec_result = await run_in(sc)
                 except ContainerGoneError:
                     logger.warning(f"Container gone for session {session_id}, recreating sandbox")
+                    self._revoke_exec_scope(session_id, bypass_proxy=bypass_proxy)
                     tunnels_prepared = False
+                    written_files.clear()
                     await log_container_tail(sc.container_id, session_id)
                     sc = await recreate_session(session_id)
-
-                    written_files.clear()
-                    if context_tunnels:
-                        await prepare_context_tunnels(sc, context_tunnels)
-                        tunnels_prepared = True
-                    if context_file_creds:
-                        written_files = await write_context_file_credentials(sc, context_file_creds)
-                    exec_result = await exec_in_container(
-                        sc,
-                        command,
-                        timeout,
-                        workdir=workdir,
-                        bypass_proxy=False,
-                        extra_env=extra_env,
-                    )
+                    exec_result = await run_in(sc)
 
                 if after_exec_credential_notify is not None:
                     after_exec_credential_notify()
@@ -183,15 +195,7 @@ class SandboxExecCoordinator:
             finally:
                 original_exc = sys.exc_info()[1]
                 cleanup_exc: Exception | None = None
-                if bypass_proxy:
-                    self._state.proxy_bypass_sessions.discard(session_id)
-                    logger.info(f"Proxy bypass DISABLED for session {session_id}")
-                self._state.session_current_command.pop(session_id, None)
-                self._state.session_current_contexts.pop(session_id, None)
-                self._state.exec_temp_domains.pop(session_id, None)
-                self._state.exec_context_skill_domains.pop(session_id, None)
-                self._state.exec_notified_domains.pop(session_id, None)
-                self._state.exec_notified_credentials.pop(session_id, None)
+                self._revoke_exec_scope(session_id, bypass_proxy=bypass_proxy)
 
                 if sc is not None and tunnels_prepared and context_tunnels:
                     try:
@@ -207,6 +211,46 @@ class SandboxExecCoordinator:
 
                 if cleanup_exc is not None and original_exc is None:
                     raise cleanup_exc
+
+    async def kill_leftover_processes(self, sc: SessionContainer) -> int:
+        """Kill every process in *sc* except PID 1 and return how many were alive."""
+        result = await self._runtime.exec(sc.container_id, KILL_LEFTOVER_PROCESSES_COMMAND, timeout=30)
+        if result.exit_code != 0:
+            raise RuntimeError(f"Failed to kill leftover processes in session {sc.session_id}: {result.output}")
+        killed = int(result.stdout)
+        if killed:
+            logger.info(f"Killed {killed} leftover process(es) in session {sc.session_id}")
+        return killed
+
+    def _grant_exec_scope(
+        self,
+        session_id: str,
+        command: str,
+        contexts: list[str],
+        context_domains: set[str] | None,
+        *,
+        bypass_proxy: bool,
+    ) -> None:
+        self._state.session_current_command[session_id] = command
+        self._state.session_current_contexts[session_id] = contexts
+        self._state.exec_temp_domains[session_id] = set(context_domains or ())
+        self._state.exec_context_skill_domains[session_id] = set(context_domains or ())
+        self._state.exec_notified_domains[session_id] = set()
+        self._state.exec_notified_credentials[session_id] = set()
+        if bypass_proxy:
+            self._state.proxy_bypass_sessions.add(session_id)
+            logger.info(f"Proxy bypass ENABLED for session {session_id}")
+
+    def _revoke_exec_scope(self, session_id: str, *, bypass_proxy: bool) -> None:
+        if bypass_proxy and session_id in self._state.proxy_bypass_sessions:
+            self._state.proxy_bypass_sessions.discard(session_id)
+            logger.info(f"Proxy bypass DISABLED for session {session_id}")
+        self._state.session_current_command.pop(session_id, None)
+        self._state.session_current_contexts.pop(session_id, None)
+        self._state.exec_temp_domains.pop(session_id, None)
+        self._state.exec_context_skill_domains.pop(session_id, None)
+        self._state.exec_notified_domains.pop(session_id, None)
+        self._state.exec_notified_credentials.pop(session_id, None)
 
     def allow_domains(self, session_id: str, domains: set[str]) -> None:
         existing = self._state.allowed_domains.setdefault(session_id, set())

@@ -37,6 +37,19 @@ flowchart LR
 - **Skills**: Activated skills are available in the cloned knowledge repo; the image-provided activator prepares their runtimes
 - **Workspace files**: `SOUL.md`, `USER.md`, `SECURITY.md` etc. live in the knowledge repo at `/workspace/`. Changes are persisted via `git commit` and `git push`.
 
+### Process model
+
+Grants are scoped to a session, not to a process: while a command runs with a skill's context, its domains and credentials, sentinel-approved domains or the proxy bypass of a skill activation, every process in the sandbox could use them. So carapace keeps one invariant: **whenever it grants anything, no process from an earlier call is still alive in the sandbox.**
+
+- Every `exec` (the agent's commands, but also file reads and writes, uploads, downloads and stdio MCP calls, which all run through it) starts by killing every process in the container except PID 1 (the container's `sleep infinity`). Only then does carapace grant the call's contexts, start its tunnels and write its file credentials. A bypassed setup command (skill activation, restoring command shims) kills the same way before the bypass opens.
+- If processes were killed, the agent's `exec` result ends with `Killed N leftover process(es) from earlier commands.`
+- Background processes therefore do not survive their own `exec`. Within one command they work as usual (`./server & sleep 2; curl localhost:8000; kill %1`); across commands they don't.
+- Container operations of a session run one at a time under its exec lock, so the kill never hits another operation midway. Sandbox startup runs under the startup lock instead, which every exec waits for before it kills. Pull and push from the web UI take the lock too and wait while a command runs. A few operations stay outside the lock: the web UI's git status (its read-only commands run alongside a command, a kill only fails that one refresh, and it fetches only when no command runs), reapplying the git identity after a settings change (it holds the knowledge git lock that an agent's `git push` also takes, so waiting here could deadlock; a kill only fails the settings save) and measuring workspace usage on Kubernetes (a killed `df` keeps the previous measurement).
+
+The killer is a bash script run by absolute path (`/bin/bash`, not via `PATH`, whose first entry holds the skill command shims; the runtimes' own `bash -c` wrapper for every exec uses `/bin/bash` too). It counts the live processes, skips zombies (PID 1 never reaps them) and sends `SIGKILL` to all of them in one `kill(-1)` call, which a forking process cannot outrun. It refuses to run if another process in the sandbox is its parent, because `kill(-1)` would take that wrapper down with it.
+
+This guarantees that processes left behind by earlier calls, whether by accident or by a naive script that daemonizes itself, never see a later grant. It is not tamper-proof: the agent is root in the sandbox and can write anywhere, so it can replace `/bin/bash` (the killer's interpreter, and on Kubernetes also the wrapper of every exec) or preload a library through `/etc/ld.so.preload`. An agent that deliberately sets this up can neuter the kill. The planned fix is a static killer binary on a read-only mount, executed by absolute path without a shell ([#538](https://github.com/thiesgerken/carapace/issues/538)).
+
 ## Mounts
 
 When a session container is created, the following mounts are configured:

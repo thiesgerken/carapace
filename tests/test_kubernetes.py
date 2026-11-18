@@ -508,9 +508,9 @@ async def test_exec_with_env_uses_non_login_shell(exit_code: int) -> None:
         assert result.stdout == "ok"
     pod.exec.assert_awaited_once_with(
         [
-            "bash",
+            "/bin/bash",
             "-c",
-            "env HA_ACCESS_TOKEN=secret bash -c 'cd /workspace && weather --daily'",
+            "/usr/bin/env HA_ACCESS_TOKEN=secret /bin/bash -c 'cd /workspace && weather --daily'",
         ],
         container="sandbox",
         check=False,

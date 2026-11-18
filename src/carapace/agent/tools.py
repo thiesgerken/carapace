@@ -1514,6 +1514,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
     ) -> str | ToolDenied:
         """Run a shell command (typically bash) and return its output. Runs in a Docker sandbox.
 
+        Background processes do not survive their own exec: every exec starts by killing all
+        processes left over from earlier commands. Start a server and its client in the same command.
+
         Args:
             title: Optional short label (a few words) describing the purpose of this command,
                 e.g. "clean up temp files and commit".
@@ -1580,6 +1583,10 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                 call.attrs["exit_code"] = exec_result.exit_code
             result = exec_result.output
             exit_code = exec_result.exit_code
+            if exec_result.leftover_processes_killed:
+                result += (
+                    f"\n\nKilled {exec_result.leftover_processes_killed} leftover process(es) from earlier commands."
+                )
         except Exception as exc:
             _log_sandbox_tool_exception("exec", session_id)
             result = f"Error: {exc}"
