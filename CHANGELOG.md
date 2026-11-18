@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v0.186.3 (2026-11-18)
+
+### 🐛 Fix a bug
+
+- fix: address review of the leftover process kill
+
+### 🔒️ Fix security or privacy issues
+
+- fix: kill leftover sandbox processes before every exec
+
 ## v0.186.2 (2026-11-18)
 
 ### 🐛 Fix a bug
