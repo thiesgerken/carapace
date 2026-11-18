@@ -1372,6 +1372,7 @@
         }
     },
     "message": {
+        "traceback": "Traceback",
         "copy": "Copy message",
         "copied": "Copied",
         "codeBlock": {

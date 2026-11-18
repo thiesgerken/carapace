@@ -1372,6 +1372,7 @@
         }
     },
     "message": {
+        "traceback": "Traceback",
         "copy": "Nachricht kopieren",
         "copied": "Kopiert",
         "codeBlock": {

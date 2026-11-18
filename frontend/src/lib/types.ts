@@ -36,12 +36,7 @@ export interface NotificationSubscriptionRecord {
 
 export type SandboxRuntimeKind = "docker" | "kubernetes";
 export type SandboxStatus =
-  | "running"
-  | "scaled_down"
-  | "stopped"
-  | "missing"
-  | "pending"
-  | "error";
+  "running" | "scaled_down" | "stopped" | "missing" | "pending" | "error";
 
 export interface SessionSandboxSnapshot {
   exists: boolean;
@@ -98,7 +93,9 @@ export interface SessionBudgetSettings {
 }
 
 /** Limits as `/budget` accepts them ("100k", "2.50"); `null` clears one, an omitted key keeps it. */
-export type SessionBudgetPatch = Partial<Record<keyof SessionBudgetSettings, string | null>>;
+export type SessionBudgetPatch = Partial<
+  Record<keyof SessionBudgetSettings, string | null>
+>;
 
 export interface SessionInfo {
   session_id: string;
@@ -212,6 +209,8 @@ export type ApprovalVerdict = "allow" | "revise" | "deny" | "escalate";
 export interface HistoryMessage {
   role: string;
   content: string;
+  /** On the error event of a turn that stopped on an unexpected error. */
+  traceback?: string;
   attachments?: Attachment[];
   final_status?: "success" | "warning";
   event_index?: number;
@@ -313,7 +312,8 @@ export interface ThinkingChunk {
   content: string;
 }
 
-export type LlmActivityPhase = "processing_prompt" | "thinking" | "generating" | "tool_call";
+export type LlmActivityPhase =
+  "processing_prompt" | "thinking" | "generating" | "tool_call";
 
 export interface LlmActivity {
   request_id: string;
@@ -459,7 +459,8 @@ export interface TurnUsageBreakdownPct {
 }
 
 export interface BudgetGauge {
-  key: "input" | "output" | "cost" | "equivalent_cost" | "tool_calls" | "autonomy";
+  key:
+    "input" | "output" | "cost" | "equivalent_cost" | "tool_calls" | "autonomy";
   label: string;
   current_value: string;
   current_amount?: number | null;
@@ -513,6 +514,8 @@ export interface ErrorMessage {
   turn_terminal?: boolean;
   /** Set on the error that ended a turn. */
   turn_id?: string;
+  /** On an unexpected error: the server-side traceback, shown collapsed under the short detail. */
+  traceback?: string | null;
 }
 
 export interface Cancelled {
@@ -762,13 +765,17 @@ export type ChatMessage =
       turnTerminal?: boolean;
       /** On the error that ended a turn with a timeline; links it to the debug view. */
       turnId?: string;
+      /** On an unexpected error: the server-side traceback, shown collapsed. */
+      traceback?: string;
     };
 
 // Memory (/api/memory). Mirrors src/carapace/memory/models.py.
 // Decimal amounts arrive as strings, datetimes and dates as ISO strings.
 
-export type MemoryTaskKind = "session_extract" | "week_digest" | "month_digest" | "mirror";
-export type MemoryTaskStatus = "pending" | "queued" | "running" | "done" | "failed" | "cancelled";
+export type MemoryTaskKind =
+  "session_extract" | "week_digest" | "month_digest" | "mirror";
+export type MemoryTaskStatus =
+  "pending" | "queued" | "running" | "done" | "failed" | "cancelled";
 /** "activity": last change first. "period": newest target period first, the order "run newest N" picks. */
 export type MemoryTaskSort = "activity" | "period";
 export type MemoryBlockedReason = "budget" | "dependencies";
@@ -779,7 +786,8 @@ export type MemoryFactCategory = "user" | "social" | "surroundings";
 export type MemoryFactSourceKind = "user_said" | "observed";
 export type MemoryConfidence = "low" | "medium" | "high";
 export type MemoryDurability = "durable" | "dated";
-export type MemoryOutdatedReason = "prompt_version" | "model" | "input_format_version";
+export type MemoryOutdatedReason =
+  "prompt_version" | "model" | "input_format_version";
 export type MemoryExtractionState = "missing" | "current" | "outdated";
 
 export interface MemoryFact {
@@ -1175,9 +1183,15 @@ export interface MemoryFactListResponse {
 }
 
 /** The agent roles with a per-session LLM context (memory is not bound to a session). */
-export const DEBUG_ROLES = ["agent", "sentinel", "titler", "compaction"] as const;
+export const DEBUG_ROLES = [
+  "agent",
+  "sentinel",
+  "titler",
+  "compaction",
+] as const;
 export type DebugRole = (typeof DEBUG_ROLES)[number];
-export type LlmContextStatus = "running" | "completed" | "failed" | "interrupted";
+export type LlmContextStatus =
+  "running" | "completed" | "failed" | "interrupted";
 /** The debug view's tabs: the turn timeline, then one per role. */
 export const DEBUG_TABS = ["timeline", ...DEBUG_ROLES] as const;
 export type DebugTab = (typeof DEBUG_TABS)[number];
@@ -1247,7 +1261,14 @@ export interface LlmRequestRecord {
   input_shape: InputShape | null;
 }
 
-export const INPUT_SHAPE_KINDS = ["system", "user", "assistant", "tool_calls", "tool_returns", "other"] as const;
+export const INPUT_SHAPE_KINDS = [
+  "system",
+  "user",
+  "assistant",
+  "tool_calls",
+  "tool_returns",
+  "other",
+] as const;
 export type InputShape = Record<(typeof INPUT_SHAPE_KINDS)[number], number>;
 
 export interface LlmInstructionPart {
@@ -1324,7 +1345,15 @@ export interface TurnTimeline {
   spans: Span[];
 }
 
-export const PROMPT_ROLES = ["agent", "sentinel", "titler", "compaction", "session_extract", "week_digest", "month_digest"] as const;
+export const PROMPT_ROLES = [
+  "agent",
+  "sentinel",
+  "titler",
+  "compaction",
+  "session_extract",
+  "week_digest",
+  "month_digest",
+] as const;
 export type PromptRole = (typeof PROMPT_ROLES)[number];
 
 export interface PromptSection {
@@ -1375,7 +1404,12 @@ export interface HomeNotices {
   failed_memory_tasks: number;
   outdated_memory_records: number;
   /** Only set when a memory budget is close to its limit. Amounts are decimal strings. */
-  memory_budget: { metric: "cost" | "equivalent_cost"; used_usd: string; limit_usd: string; window: "day" | "month" } | null;
+  memory_budget: {
+    metric: "cost" | "equivalent_cost";
+    used_usd: string;
+    limit_usd: string;
+    window: "day" | "month";
+  } | null;
 }
 
 export interface HomeData {

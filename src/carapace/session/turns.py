@@ -60,12 +60,11 @@ from .types import ActiveSession, SessionSubscriber, TurnExecutionResult
 _TURN_CANCELLED_TOOL_MESSAGE = "Tool call was canceled because the turn ended before it completed."
 
 
-def _turn_error_tool_message(exc: Exception) -> str:
-    # The agent continues from this history: naming the error keeps it from blindly repeating the call.
-    # Only the first line, capped: the history is re-sent with every later request and the full
-    # message may carry server internals.
-    summary = str(exc).splitlines()[0][:200] if str(exc) else ""
-    return f"The turn stopped on an unexpected error before this tool call completed: {type(exc).__name__}: {summary}"
+def _error_summary(exc: Exception) -> str:
+    # Only the first line, capped: it lands in the model history, which is re-sent with every later
+    # request, and the full message may carry server internals (the traceback goes to the UI only).
+    first_line = str(exc).splitlines()[0][:200] if str(exc) else ""
+    return f"{type(exc).__name__}: {first_line}"
 
 
 def _non_slash_user_message_count(events: list[dict[str, Any]]) -> int:
@@ -483,6 +482,9 @@ class SessionTurnMixin(SessionTurnHost):
             return "error"
         except Exception as exc:
             logger.exception(f"Agent error session={session_id} prompt={_truncate_for_log(user_input)}")
+            summary = _error_summary(exc)
+            error_traceback = traceback.format_exc()
+            terminal_message = f"The turn stopped on an unexpected error: {summary}"
             await self._finalize_failed_turn(
                 active,
                 session_id,
@@ -490,10 +492,12 @@ class SessionTurnMixin(SessionTurnHost):
                 turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
-                terminal_message="The previous turn failed before completion.",
-                pending_tool_message=_turn_error_tool_message(exc),
+                terminal_message=terminal_message,
+                # Naming the error keeps the agent from blindly repeating the call when it continues.
+                pending_tool_message=f"The turn stopped on an unexpected error before this call completed: {summary}",
+                error_traceback=error_traceback,
             )
-            await self._broadcast(active, "on_error", traceback.format_exc(), turn_id=turn_id)
+            await self._broadcast(active, "on_error", terminal_message, turn_id=turn_id, traceback=error_traceback)
             return "error"
         finally:
             if active.security:
@@ -772,13 +776,14 @@ class SessionTurnMixin(SessionTurnHost):
         terminal_message: str | None = None,
         save_progress: bool = False,
         pending_tool_message: str = _TURN_CANCELLED_TOOL_MESSAGE,
+        error_traceback: str | None = None,
     ) -> None:
         self._close_turn_approvals(active, session_id)
         active.llm_request_thinking.clear()
         if save_progress:
             self._save_turn_progress(session_id, active)
         await self._clear_llm_request_state(active)
-        self._save_user_message_on_failure(
+        closed_tool_results = self._save_user_message_on_failure(
             session_id,
             user_input,
             turn_id=turn_id,
@@ -786,7 +791,20 @@ class SessionTurnMixin(SessionTurnHost):
             latest_messages=latest_messages,
             terminal_message=terminal_message,
             pending_tool_message=pending_tool_message,
+            error_traceback=error_traceback,
         )
+        # Without this a live client keeps showing the calls the turn left open as running.
+        for event in closed_tool_results:
+            await self._broadcast(
+                active,
+                "on_tool_result",
+                ToolResult(
+                    tool=event["tool"],
+                    output=event["result"],
+                    exit_code=event["exit_code"],
+                    tool_id=event.get("tool_id"),
+                ),
+            )
         if self._notification_router is not None and terminal_message and active.state.attributes.unattended:
             terminal_event_index = len(self._session_mgr.load_events(session_id)) - 1
             delivered = await self._notification_router.dispatch_turn_outcome(
@@ -838,11 +856,13 @@ class SessionTurnMixin(SessionTurnHost):
         latest_messages: list[ModelMessage] | None = None,
         terminal_message: str | None = None,
         pending_tool_message: str,
-    ) -> None:
+        error_traceback: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Persist the user message to history even when the agent turn fails.
 
         Without this the next turn would load stale history and the agent would
-        have no memory of what the user said before the error.
+        have no memory of what the user said before the error. Returns the ``tool_result``
+        events that closed the tool calls the turn left open.
         """
         if latest_messages is not None:
             history = list(latest_messages)
@@ -854,19 +874,21 @@ class SessionTurnMixin(SessionTurnHost):
             history.append(ModelResponse(parts=[TextPart(content=terminal_message)]))
         self._session_mgr.save_history(session_id, history)
 
-        events = self._complete_cancelled_events(
-            self._session_mgr.load_events(session_id), turn_event_start, pending_tool_message
-        )
+        saved_events = self._session_mgr.load_events(session_id)
+        events = self._complete_cancelled_events(saved_events, turn_event_start, pending_tool_message)
+        closed_tool_results = events[len(saved_events) :]
         if terminal_message:
-            events.append(
-                {
-                    "role": "error",
-                    "content": terminal_message,
-                    "turn_id": turn_id,
-                    "timestamp": datetime.now(tz=UTC).isoformat(),
-                }
-            )
+            error_event: dict[str, Any] = {
+                "role": "error",
+                "content": terminal_message,
+                "turn_id": turn_id,
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+            }
+            if error_traceback:
+                error_event["traceback"] = error_traceback
+            events.append(error_event)
         self._session_mgr.save_events(session_id, events)
+        return closed_tool_results
 
     def _complete_cancelled_model_history(
         self, messages: list[ModelMessage], pending_tool_message: str

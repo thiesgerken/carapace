@@ -840,7 +840,8 @@ def test_failed_turn_keeps_finished_steps_and_continue_builds_on_them(tmp_path: 
     async def _run() -> None:
         engine = _make_engine(tmp_path, session_factory=db_factory)
         sid = engine.session_mgr.create_session(user="thies").session_id
-        engine.subscribe(sid, _FakeSubscriber())
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
 
         async def _crashing_turn(user_input: str, *_args: Any, on_messages_snapshot: Any, **_kwargs: Any) -> Any:
             engine.session_mgr.append_events(sid, [{"role": "tool_call", "tool": "exec", "args": {}, "tool_id": "t-2"}])
@@ -865,12 +866,21 @@ def test_failed_turn_keeps_finished_steps_and_continue_builds_on_them(tmp_path: 
         failed = _pending_return(seen_history)
         assert failed.outcome == "failed"
         assert failed.content == (
-            "The turn stopped on an unexpected error before this tool call completed: "
+            "The turn stopped on an unexpected error before this call completed: "
             "RuntimeError: URL component 'query' too long"
         )
         [tool_result] = [e for e in engine.session_mgr.load_events(sid) if e["role"] == "tool_result"]
         assert tool_result["tool_id"] == "t-2"
         assert tool_result["result"] == failed.content
+        [error] = [e for e in engine.session_mgr.load_events(sid) if e["role"] == "error"]
+        assert error["content"] == (
+            "The turn stopped on an unexpected error: RuntimeError: URL component 'query' too long"
+        )
+        assert "Traceback" in error["traceback"]
+        # A live client sees the same: the open call closed, the short error, the traceback beside it.
+        assert [(r.tool_id, r.output) for r in sub.tool_results] == [("t-2", failed.content)]
+        assert sub.errors == [error["content"]]
+        assert sub.tracebacks == [error["traceback"]]
 
     with _patch_sentinel():
         asyncio.run(_run())

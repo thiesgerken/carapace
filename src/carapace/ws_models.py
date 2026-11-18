@@ -314,6 +314,8 @@ class ErrorMessage(BaseModel):
     turn_terminal: bool = False
     # Set on the error that ended a turn, linking it to its timeline in the debug view.
     turn_id: str | None = None
+    # On an unexpected error: the server-side traceback, shown collapsed under the short ``detail``.
+    traceback: str | None = None
 
 
 class Cancelled(BaseModel):

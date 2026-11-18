@@ -4,14 +4,46 @@ import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Bot, Brain, Check, Copy, ExternalLink, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Bot,
+  Brain,
+  Check,
+  Copy,
+  ExternalLink,
+  Globe,
+  Link2,
+  Link2Off,
+  Loader2,
+  Lock,
+  MessageSquare,
+  Pin,
+  Play,
+  RotateCcw,
+  Save,
+  Settings2,
+  Square,
+  Star,
+  Terminal,
+  Trash2,
+} from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
 import { ChatMemorySection } from "@/components/chat-memory-section";
-import { ChatUsageSection, useSessionUsage } from "@/components/chat-usage-section";
+import {
+  ChatUsageSection,
+  useSessionUsage,
+} from "@/components/chat-usage-section";
 import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { SandboxGitControls } from "@/components/git-sync";
-import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
-import { SessionBudgetSection, type SessionBudgetField } from "@/components/session-budget-section";
+import {
+  ModelPicker,
+  withSelectedModelOption,
+} from "@/components/model-picker";
+import {
+  SessionBudgetSection,
+  type SessionBudgetField,
+} from "@/components/session-budget-section";
 import { SessionOptionTiles } from "@/components/session-option-tiles";
 import { WaitingIndicator } from "@/components/waiting-indicator";
 import { useAppLocale } from "@/components/locale-provider";
@@ -63,7 +95,17 @@ import {
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
 import { applySpanToToolCall } from "@/lib/tool-call-status";
-import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall, streamingCallIndex } from "@/lib/live-tool-calls";
+import {
+  appendStreamedArgs,
+  completeStreamedCall,
+  dropOpenCalls,
+  endStreamedCall,
+  keepUnrunCalls,
+  markUnrunCalls,
+  replaceStreamedCall,
+  startStreamedCall,
+  streamingCallIndex,
+} from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 import { ChatInput } from "./chat-input";
@@ -81,14 +123,24 @@ interface ChatViewProps {
   onSandboxUpdate?: (sandbox: SessionSandboxSnapshot) => void;
   onForkSession?: (session: SessionInfo) => void;
   onOpenJobSettings?: (jobId: string) => void;
-  onUpdateSessionAttributes?: (sessionId: string, attributes: SessionAttributesPatch) => Promise<SessionInfo>;
+  onUpdateSessionAttributes?: (
+    sessionId: string,
+    attributes: SessionAttributesPatch,
+  ) => Promise<SessionInfo>;
   onDeleteSession?: () => Promise<void>;
   /** Sent once the session is connected and its history loaded, e.g. typed into the home composer. */
   initialMessage?: string;
   onInitialMessageSent?: () => void;
 }
 
-const SANDBOX_STARTUP_TOOL_NAMES = new Set(["use_skill", "read", "write", "str_replace", "exec", "send_file"]);
+const SANDBOX_STARTUP_TOOL_NAMES = new Set([
+  "use_skill",
+  "read",
+  "write",
+  "str_replace",
+  "exec",
+  "send_file",
+]);
 // Sent as a plain user message: the history already holds the failed turn's tool calls, so the
 // agent picks up from there. English on purpose, every model follows it whatever the UI language.
 const CONTINUE_PROMPT = "Continue.";
@@ -101,20 +153,30 @@ function sandboxStorageLabel(
   if (snapshot.status === "missing" && !snapshot.storage_present) return "";
   const details: string[] = [];
   if (typeof snapshot.last_measured_used_bytes === "number") {
-    details.push(t("sandbox.storage.used", { size: formatBytes(snapshot.last_measured_used_bytes) }));
+    details.push(
+      t("sandbox.storage.used", {
+        size: formatBytes(snapshot.last_measured_used_bytes),
+      }),
+    );
   } else if (!snapshot.storage_present) {
     details.push(t("sandbox.storage.none"));
   }
   if (
-    snapshot.runtime === "kubernetes"
-    && typeof snapshot.provisioned_bytes === "number"
+    snapshot.runtime === "kubernetes" &&
+    typeof snapshot.provisioned_bytes === "number"
   ) {
-    details.push(t("sandbox.storage.allocated", { size: formatBytes(snapshot.provisioned_bytes) }));
+    details.push(
+      t("sandbox.storage.allocated", {
+        size: formatBytes(snapshot.provisioned_bytes),
+      }),
+    );
   }
   return details.join(" · ");
 }
 
-function sandboxIdentifier(snapshot: SessionSandboxSnapshot | null): string | null {
+function sandboxIdentifier(
+  snapshot: SessionSandboxSnapshot | null,
+): string | null {
   const sandboxId = snapshot?.sandbox_id?.trim();
   return sandboxId ? sandboxId : null;
 }
@@ -136,7 +198,9 @@ function thinkingUsageMeta(usage?: TurnUsage | null): {
   return meta;
 }
 
-function normalizedDecisionMessage(message?: string | null): string | undefined {
+function normalizedDecisionMessage(
+  message?: string | null,
+): string | undefined {
   if (message == null) return undefined;
   const trimmed = message.trim();
   return trimmed.length > 0 ? trimmed : undefined;
@@ -206,7 +270,9 @@ function formatJobTriggerKind(
   return t("jobRun.trigger.manual");
 }
 
-function formatSessionJobData(data?: string | null): { value: string; isJson: boolean } | null {
+function formatSessionJobData(
+  data?: string | null,
+): { value: string; isJson: boolean } | null {
   if (typeof data !== "string") return null;
   if (data.trim().length === 0) return null;
   try {
@@ -222,7 +288,8 @@ function knowledgeStatusBadge(
   t: (key: string, values?: Record<string, string | number | Date>) => string,
 ): { label: string; className: string; icon: typeof Archive } {
   const isInKnowledgeRepo = Boolean(
-    session?.knowledge_last_committed_at || session?.knowledge_last_archive_path,
+    session?.knowledge_last_committed_at ||
+    session?.knowledge_last_archive_path,
   );
 
   if (session?.attributes.private && !isInKnowledgeRepo) {
@@ -314,12 +381,16 @@ function shouldOptimisticallyShowPendingSandbox(
   return snapshot?.status !== "running" && snapshot?.status !== "pending";
 }
 
-function shouldShowStartSandbox(snapshot: SessionSandboxSnapshot | null): boolean {
+function shouldShowStartSandbox(
+  snapshot: SessionSandboxSnapshot | null,
+): boolean {
   if (!snapshot) return true;
-  return snapshot.status === "missing"
-    || snapshot.status === "scaled_down"
-    || snapshot.status === "stopped"
-    || snapshot.status === "error";
+  return (
+    snapshot.status === "missing" ||
+    snapshot.status === "scaled_down" ||
+    snapshot.status === "stopped" ||
+    snapshot.status === "error"
+  );
 }
 
 function argsMatch(
@@ -358,7 +429,9 @@ function applyDeniedApprovalToMessages(
         ...entry,
         approvalSource: "user",
         approvalVerdict: "deny",
-        approvalExplanation: decisionMessage ? entry.approvalExplanation : undefined,
+        approvalExplanation: decisionMessage
+          ? entry.approvalExplanation
+          : undefined,
         decisionMessage,
         loading: false,
       };
@@ -397,15 +470,16 @@ function applyApprovedApprovalToMessages(
 function isUserApprovedReplay(
   tool: string,
   detail: string | undefined,
-  approvalSource: ChatMessage extends never ? never :
-    | "safe-list"
-    | "sentinel"
-    | "user"
-    | "skill"
-    | "bypass"
-    | "autonomy"
-    | "unknown"
-    | undefined,
+  approvalSource: ChatMessage extends never
+    ? never
+    : | "safe-list"
+      | "sentinel"
+      | "user"
+      | "skill"
+      | "bypass"
+      | "autonomy"
+      | "unknown"
+      | undefined,
   approvalVerdict: ApprovalVerdict | undefined,
 ): boolean {
   return (
@@ -432,11 +506,7 @@ function isToolCallLoading(
   approvalVerdict?: ApprovalVerdict,
 ): boolean {
   const isGitPush = tool === "git_push";
-  if (
-    tool === "proxy_domain" ||
-    tool === "credential_access" ||
-    isGitPush
-  ) {
+  if (tool === "proxy_domain" || tool === "credential_access" || isGitPush) {
     return false;
   }
   if (approvalSource === "sentinel" && approvalVerdict == null) {
@@ -448,9 +518,9 @@ function isToolCallLoading(
 function updateToolCallMessageById(
   messages: ChatMessage[],
   toolId: string,
-  updater: (message: ToolCallMessage | ToolCallChildMessage) =>
-    | ToolCallMessage
-    | ToolCallChildMessage,
+  updater: (
+    message: ToolCallMessage | ToolCallChildMessage,
+  ) => ToolCallMessage | ToolCallChildMessage,
 ): { messages: ChatMessage[]; found: boolean } {
   let found = false;
   const updated = messages.map((entry) => {
@@ -494,8 +564,8 @@ function updateToolResultById(
     exitCode: result.exitCode,
     loading: false,
     compaction:
-      result.compaction
-      ?? (entry as { compaction?: CompactionAnnotation }).compaction,
+      result.compaction ??
+      (entry as { compaction?: CompactionAnnotation }).compaction,
   }));
 }
 
@@ -512,7 +582,9 @@ function normalizeToolArgs(args: unknown): Record<string, unknown> {
   return isRecord(args) ? args : {};
 }
 
-function normalizeHistoryContexts(message: HistoryMessage): string[] | undefined {
+function normalizeHistoryContexts(
+  message: HistoryMessage,
+): string[] | undefined {
   const directContexts = normalizeStringList(message.contexts);
   if (directContexts) return directContexts;
   return normalizeStringList(normalizeToolArgs(message.args).contexts);
@@ -537,8 +609,8 @@ function isTurnTerminalMessage(message: ChatMessage): boolean {
   // A turn ends at its final assistant answer, never at intermediate narration (partial), so
   // reset/fork/retry stay anchored to real turn boundaries (matching the backend event log).
   return (
-    (message.kind === "assistant" && !message.partial)
-    || (message.kind === "error" && message.turnTerminal === true)
+    (message.kind === "assistant" && !message.partial) ||
+    (message.kind === "error" && message.turnTerminal === true)
   );
 }
 
@@ -558,7 +630,9 @@ function enclosingTurnTerminalMessageIndex(
 }
 
 function completedTurnMessageIndices(messages: ChatMessage[]): number[] {
-  return messages.flatMap((message, index) => (isTurnTerminalMessage(message) ? [index] : []));
+  return messages.flatMap((message, index) =>
+    isTurnTerminalMessage(message) ? [index] : [],
+  );
 }
 
 function latestCompletedTurnStartMessageIndex(messages: ChatMessage[]): number {
@@ -579,19 +653,31 @@ function latestCompletedTurnStartMessageIndex(messages: ChatMessage[]): number {
 
 /** Messages that carry retry/reset/fork: user prompts, assistant answers, and turn-ending errors. */
 export function isTurnActionMessage(message: ChatMessage): boolean {
-  return message.kind === "user" || message.kind === "assistant" || isTurnTerminalMessage(message);
+  return (
+    message.kind === "user" ||
+    message.kind === "assistant" ||
+    isTurnTerminalMessage(message)
+  );
 }
 
 function eventIndexForMessage(message: ChatMessage): number | undefined {
-  if (message.kind === "assistant" || message.kind === "error" || message.kind === "user") {
-    return typeof message.eventIndex === "number" ? message.eventIndex : undefined;
+  if (
+    message.kind === "assistant" ||
+    message.kind === "error" ||
+    message.kind === "user"
+  ) {
+    return typeof message.eventIndex === "number"
+      ? message.eventIndex
+      : undefined;
   }
   return undefined;
 }
 
 /** Any persisted message's event, for deep-link anchors (wider than the fork/reset targets above). */
 function anchorEventIndex(message: ChatMessage): number | undefined {
-  return "eventIndex" in message && typeof message.eventIndex === "number" ? message.eventIndex : undefined;
+  return "eventIndex" in message && typeof message.eventIndex === "number"
+    ? message.eventIndex
+    : undefined;
 }
 
 function groupChildToolCalls(messages: ChatMessage[]): ChatMessage[] {
@@ -626,22 +712,24 @@ function groupChildToolCalls(messages: ChatMessage[]): ChatMessage[] {
 
 function foldNodeOf(message: ChatMessage): string | undefined {
   if (
-    message.kind === "user"
-    || message.kind === "assistant"
-    || message.kind === "tool_call"
-    || message.kind === "error"
+    message.kind === "user" ||
+    message.kind === "assistant" ||
+    message.kind === "tool_call" ||
+    message.kind === "error"
   ) {
     return message.compaction?.folded_into;
   }
   return undefined;
 }
 
-function foldAnnotationOf(message: ChatMessage): CompactionAnnotation | undefined {
+function foldAnnotationOf(
+  message: ChatMessage,
+): CompactionAnnotation | undefined {
   if (
-    message.kind === "user"
-    || message.kind === "assistant"
-    || message.kind === "tool_call"
-    || message.kind === "error"
+    message.kind === "user" ||
+    message.kind === "assistant" ||
+    message.kind === "tool_call" ||
+    message.kind === "error"
   ) {
     return message.compaction;
   }
@@ -683,7 +771,9 @@ function groupFoldedMessages(messages: ChatMessage[]): ChatMessage[] {
   return out;
 }
 
-export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
+export function projectHistoryToMessages(
+  history: HistoryMessage[],
+): ChatMessage[] {
   const messages: ChatMessage[] = [];
   const pendingToolCallIndices = new Map<string, number[]>();
   // Turn = one submitted (non-slash) user prompt plus the agent work that follows it.
@@ -705,7 +795,8 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         compaction: entry.compaction,
         timestamp: entry.timestamp,
         turnIndex: turn,
-        eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
+        eventIndex:
+          typeof entry.event_index === "number" ? entry.event_index : undefined,
       });
       continue;
     }
@@ -729,8 +820,10 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
           entry.detail,
           entry.approval_source,
           entry.approval_verdict,
+        ) &&
+        messages.some((message) =>
+          isEscalatedToolCallFor(message, { tool, args }),
         )
-        && messages.some((message) => isEscalatedToolCallFor(message, { tool, args }))
       ) {
         const patched = applyApprovedApprovalToMessages(
           messages,
@@ -755,7 +848,8 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         toolId: normalizeOptionalString(entry.tool_id),
         parentToolId: normalizeOptionalString(entry.parent_tool_id),
         compaction: entry.compaction,
-        eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
+        eventIndex:
+          typeof entry.event_index === "number" ? entry.event_index : undefined,
       });
 
       const queue = pendingToolCallIndices.get(tool) ?? [];
@@ -815,8 +909,8 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
       };
       const response = history.find(
         (candidate) =>
-          candidate.role === "approval_response"
-          && candidate.tool_call_id === entry.tool_call_id,
+          candidate.role === "approval_response" &&
+          candidate.tool_call_id === entry.tool_call_id,
       );
       if (!response) {
         messages.push({ kind: "approval", request });
@@ -837,9 +931,9 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
     }
 
     if (
-      (entry.role === "domain_access_approval"
-        || entry.role === "proxy_approval")
-      && entry.request_id
+      (entry.role === "domain_access_approval" ||
+        entry.role === "proxy_approval") &&
+      entry.request_id
     ) {
       if (!entry.decision) {
         const decision = findLaterEscalationDecision(
@@ -928,13 +1022,20 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         approvalExplanation: entry.approval_explanation,
         toolId: normalizeOptionalString(entry.tool_id),
         parentToolId: normalizeOptionalString(entry.parent_tool_id),
-        eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
+        eventIndex:
+          typeof entry.event_index === "number" ? entry.event_index : undefined,
       });
       continue;
     }
 
     if (entry.role === "compaction") {
-      messages.push({ kind: "provider_compaction", provider: entry.provider, summary: entry.summary, failed: entry.failed, rejected: entry.rejected });
+      messages.push({
+        kind: "provider_compaction",
+        provider: entry.provider,
+        summary: entry.summary,
+        failed: entry.failed,
+        rejected: entry.rejected,
+      });
       continue;
     }
 
@@ -951,10 +1052,12 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
       messages.push({
         kind: "error",
         detail: entry.content,
-        eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
+        eventIndex:
+          typeof entry.event_index === "number" ? entry.event_index : undefined,
         compaction: entry.compaction,
         turnTerminal: true,
         turnId: entry.turn_id,
+        traceback: entry.traceback,
       });
       continue;
     }
@@ -978,20 +1081,25 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
       kind: "assistant",
       content: entry.content,
       finalStatus: entry.final_status,
-      eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
+      eventIndex:
+        typeof entry.event_index === "number" ? entry.event_index : undefined,
       compaction: entry.compaction,
       timestamp: entry.timestamp,
       turnIndex: turn,
       partial: isPartial || undefined,
       // Whole-turn stats belong on the final answer, not on intermediate narration.
       turnDurationMs:
-        !isPartial && typeof durationMs === "number" && durationMs >= 0 ? durationMs : undefined,
+        !isPartial && typeof durationMs === "number" && durationMs >= 0
+          ? durationMs
+          : undefined,
       toolCount: !isPartial ? turnToolCount || undefined : undefined,
       model: !isPartial ? (entry.usage?.model ?? undefined) : undefined,
       inputTokens: !isPartial ? entry.usage?.input_tokens : undefined,
       outputTokens: !isPartial ? entry.usage?.output_tokens : undefined,
       ttftMs: !isPartial ? (entry.usage?.ttft_ms ?? undefined) : undefined,
-      generationMs: !isPartial ? (entry.usage?.generation_ms ?? undefined) : undefined,
+      generationMs: !isPartial
+        ? (entry.usage?.generation_ms ?? undefined)
+        : undefined,
       turnId: entry.turn_id,
     });
   }
@@ -1020,20 +1128,28 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
 
 type EscalationCard = Extract<
   ChatMessage,
-  { kind: "approval" | "domain_access_approval" | "git_push_approval" | "credential_approval" }
+  {
+    kind:
+      | "approval"
+      | "domain_access_approval"
+      | "git_push_approval"
+      | "credential_approval";
+  }
 >;
 
 function isEscalationCard(message: ChatMessage): message is EscalationCard {
   return (
-    message.kind === "approval"
-    || message.kind === "domain_access_approval"
-    || message.kind === "git_push_approval"
-    || message.kind === "credential_approval"
+    message.kind === "approval" ||
+    message.kind === "domain_access_approval" ||
+    message.kind === "git_push_approval" ||
+    message.kind === "credential_approval"
   );
 }
 
 function escalationRequestId(card: EscalationCard): string {
-  return card.kind === "approval" ? card.request.tool_call_id : card.request.request_id;
+  return card.kind === "approval"
+    ? card.request.tool_call_id
+    : card.request.request_id;
 }
 
 // The server re-sends every pending escalation when a WebSocket subscribes, and the history
@@ -1045,7 +1161,9 @@ export function appendEscalationCard(
   const id = escalationRequestId(card);
   const alreadyShown = messages.some(
     (message) =>
-      isEscalationCard(message) && message.kind === card.kind && escalationRequestId(message) === id,
+      isEscalationCard(message) &&
+      message.kind === card.kind &&
+      escalationRequestId(message) === id,
   );
   return alreadyShown ? messages : [...messages, card];
 }
@@ -1130,25 +1248,38 @@ export function ChatView({
     initialSandbox ?? null,
   );
   const [sandboxLoading, setSandboxLoading] = useState(false);
-  const [sandboxPowerAction, setSandboxPowerAction] = useState<"starting" | "stopping" | null>(null);
+  const [sandboxPowerAction, setSandboxPowerAction] = useState<
+    "starting" | "stopping" | null
+  >(null);
   const [wipingSandbox, setWipingSandbox] = useState(false);
   const [deletingSession, setDeletingSession] = useState(false);
   const [savingKnowledge, setSavingKnowledge] = useState(false);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
   const [sessionIdCopied, setSessionIdCopied] = useState(false);
-  const [updatingSessionAttribute, setUpdatingSessionAttribute] = useState<"archived" | "private" | "pinned" | "favorite" | "mode" | null>(null);
-  const [showDelayedSessionAttributeStatus, setShowDelayedSessionAttributeStatus] = useState(false);
-  const [updatingSessionModel, setUpdatingSessionModel] = useState<"agent" | "sentinel" | null>(null);
+  const [updatingSessionAttribute, setUpdatingSessionAttribute] = useState<
+    "archived" | "private" | "pinned" | "favorite" | "mode" | null
+  >(null);
+  const [
+    showDelayedSessionAttributeStatus,
+    setShowDelayedSessionAttributeStatus,
+  ] = useState(false);
+  const [updatingSessionModel, setUpdatingSessionModel] = useState<
+    "agent" | "sentinel" | null
+  >(null);
   const [modelsUnlocked, setModelsUnlocked] = useState(false);
   const [modelUpdateError, setModelUpdateError] = useState<string | null>(null);
-  const [turnActionBusyIndex, setTurnActionBusyIndex] = useState<number | null>(null);
+  const [turnActionBusyIndex, setTurnActionBusyIndex] = useState<number | null>(
+    null,
+  );
   const [knowledgeNotice, setKnowledgeNotice] = useState<{
     tone: "neutral" | "success" | "error";
     message: string;
   } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const mobileInspectorTouchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const mobileInspectorTouchStartRef = useRef<{ x: number; y: number } | null>(
+    null,
+  );
   const isAtBottomRef = useRef(true);
   const targetEvent = useSearchParams().get("event");
   const scrolledToEventRef = useRef<string | null>(null);
@@ -1159,12 +1290,24 @@ export function ChatView({
   // The open usage breakdown refetches on every live usage update, and mid-turn whenever an LLM
   // request starts or ends (turn usage only arrives with the turn's end).
   const llmRequestId = llmActivity?.request_id ?? null;
-  const usageRefreshKey = useMemo(() => ({ usage, llmRequestId }), [usage, llmRequestId]);
-  const usageState = useSessionUsage(server, token, sessionId, usageOpen, usageRefreshKey);
+  const usageRefreshKey = useMemo(
+    () => ({ usage, llmRequestId }),
+    [usage, llmRequestId],
+  );
+  const usageState = useSessionUsage(
+    server,
+    token,
+    sessionId,
+    usageOpen,
+    usageRefreshKey,
+  );
   // The open usage card refetches mid-turn while turn usage only arrives at turn ends: show its
   // newer gauges, so the Budget and Usage cards never disagree. Only while open, since a closed
   // card's last fetch goes stale.
-  const budgetGauges = (usageOpen ? usageState.data?.budget_gauges : undefined) ?? usage?.budget_gauges ?? [];
+  const budgetGauges =
+    (usageOpen ? usageState.data?.budget_gauges : undefined) ??
+    usage?.budget_gauges ??
+    [];
   const lastThinkingStartedAtRef = useRef<string | null>(null);
   const queueRef = useRef<string | null>(null);
   const queuedAttachmentsRef = useRef<Attachment[]>([]);
@@ -1176,7 +1319,9 @@ export function ChatView({
   const onSandboxUpdateRef = useRef(onSandboxUpdate);
   const sandboxRef = useRef(sandbox);
   const previousSessionIdRef = useRef(sessionId);
-  const previousSessionUnattendedRef = useRef(session?.attributes.unattended ?? false);
+  const previousSessionUnattendedRef = useRef(
+    session?.attributes.unattended ?? false,
+  );
   const unattendedInputLockBaselineRef = useRef<number | null>(
     session?.attributes.unattended ? 0 : null,
   );
@@ -1205,14 +1350,19 @@ export function ChatView({
     onSandboxUpdateRef.current = onSandboxUpdate;
   }, [onSandboxUpdate]);
 
-  const markSessionKnowledgeChanged = useCallback((hasNewMessage = false) => {
-    if (!session) return;
-    onSessionUpdate?.({
-      ...session,
-      last_active: new Date().toISOString(),
-      message_count: hasNewMessage ? Math.max(session.message_count, 1) : session.message_count,
-    });
-  }, [onSessionUpdate, session]);
+  const markSessionKnowledgeChanged = useCallback(
+    (hasNewMessage = false) => {
+      if (!session) return;
+      onSessionUpdate?.({
+        ...session,
+        last_active: new Date().toISOString(),
+        message_count: hasNewMessage
+          ? Math.max(session.message_count, 1)
+          : session.message_count,
+      });
+    },
+    [onSessionUpdate, session],
+  );
 
   useEffect(() => {
     sandboxRef.current = sandbox;
@@ -1235,24 +1385,33 @@ export function ChatView({
     setModelsUnlocked(false);
   }, [sessionId]);
 
-  const handleMobileInspectorTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    const touch = event.touches[0];
-    mobileInspectorTouchStartRef.current = { x: touch.clientX, y: touch.clientY };
-  }, []);
+  const handleMobileInspectorTouchStart = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      const touch = event.touches[0];
+      mobileInspectorTouchStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+      };
+    },
+    [],
+  );
 
-  const handleMobileInspectorTouchEnd = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    const start = mobileInspectorTouchStartRef.current;
-    if (!start) return;
+  const handleMobileInspectorTouchEnd = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      const start = mobileInspectorTouchStartRef.current;
+      if (!start) return;
 
-    mobileInspectorTouchStartRef.current = null;
-    const touch = event.changedTouches[0];
-    const dx = Math.abs(touch.clientX - start.x);
-    const dy = touch.clientY - start.y;
+      mobileInspectorTouchStartRef.current = null;
+      const touch = event.changedTouches[0];
+      const dx = Math.abs(touch.clientX - start.x);
+      const dy = touch.clientY - start.y;
 
-    if (dy > 48 && dy > dx) {
-      setMobileInspectorOpen(false);
-    }
-  }, []);
+      if (dy > 48 && dy > dx) {
+        setMobileInspectorOpen(false);
+      }
+    },
+    [],
+  );
 
   // Fetch available slash commands and models on mount
   useEffect(() => {
@@ -1260,10 +1419,13 @@ export function ChatView({
     fetchModels(server, token).then(setAvailableModelEntries);
   }, [server, token]);
 
-  const applySandboxSnapshot = useCallback((nextSandbox: SessionSandboxSnapshot) => {
-    setSandbox(nextSandbox);
-    onSandboxUpdateRef.current?.(nextSandbox);
-  }, []);
+  const applySandboxSnapshot = useCallback(
+    (nextSandbox: SessionSandboxSnapshot) => {
+      setSandbox(nextSandbox);
+      onSandboxUpdateRef.current?.(nextSandbox);
+    },
+    [],
+  );
 
   const refreshSandbox = useCallback(async () => {
     sandboxRefreshPendingRef.current = true;
@@ -1282,7 +1444,11 @@ export function ChatView({
 
         setSandboxLoading(true);
         try {
-          const nextSandbox = await fetchSandbox(currentServer, currentToken, currentSessionId);
+          const nextSandbox = await fetchSandbox(
+            currentServer,
+            currentToken,
+            currentSessionId,
+          );
           if (refreshEpoch !== sandboxRefreshEpochRef.current) {
             continue;
           }
@@ -1292,7 +1458,10 @@ export function ChatView({
             console.error("Failed to refresh sandbox", error);
           }
         } finally {
-          if (refreshEpoch === sandboxRefreshEpochRef.current && !sandboxRefreshPendingRef.current) {
+          if (
+            refreshEpoch === sandboxRefreshEpochRef.current &&
+            !sandboxRefreshPendingRef.current
+          ) {
             setSandboxLoading(false);
           }
         }
@@ -1375,21 +1544,29 @@ export function ChatView({
     return Math.max(0, Date.now() - parsed);
   }, []);
 
-  const finalizeThinkingMessages = useCallback((messages: ChatMessage[]): ChatMessage[] => {
-    const updated = [...messages];
-    const thinkIdx = updated.findIndex((m) => m.kind === "thinking_streaming");
-    if (thinkIdx !== -1) {
-      const thinking = updated[thinkIdx] as Extract<ChatMessage, { kind: "thinking_streaming" }>;
-      updated[thinkIdx] = {
-        kind: "thinking",
-        content: thinking.content,
-        reasoningDurationMs:
-          thinking.reasoningDurationMs ?? snapshotThinkingDurationMs(),
-        reasoningTokens: thinking.reasoningTokens,
-      };
-    }
-    return updated;
-  }, [snapshotThinkingDurationMs]);
+  const finalizeThinkingMessages = useCallback(
+    (messages: ChatMessage[]): ChatMessage[] => {
+      const updated = [...messages];
+      const thinkIdx = updated.findIndex(
+        (m) => m.kind === "thinking_streaming",
+      );
+      if (thinkIdx !== -1) {
+        const thinking = updated[thinkIdx] as Extract<
+          ChatMessage,
+          { kind: "thinking_streaming" }
+        >;
+        updated[thinkIdx] = {
+          kind: "thinking",
+          content: thinking.content,
+          reasoningDurationMs:
+            thinking.reasoningDurationMs ?? snapshotThinkingDurationMs(),
+          reasoningTokens: thinking.reasoningTokens,
+        };
+      }
+      return updated;
+    },
+    [snapshotThinkingDurationMs],
+  );
 
   const onMessage = useCallback(
     (msg: ServerMessage) => {
@@ -1400,24 +1577,36 @@ export function ChatView({
           setMessages((prev) => {
             const updated = [...prev];
             const thinkingMeta = thinkingUsageMeta(msg.usage);
-            const currentStreamIdx = updated.findLastIndex((m) => m.kind === "streaming");
+            const currentStreamIdx = updated.findLastIndex(
+              (m) => m.kind === "streaming",
+            );
             // Finalize thinking: update thinking_streaming or existing thinking with authoritative content
-            const thinkStreamIdx = updated.findIndex((m) => m.kind === "thinking_streaming");
+            const thinkStreamIdx = updated.findIndex(
+              (m) => m.kind === "thinking_streaming",
+            );
             if (thinkStreamIdx !== -1) {
               updated[thinkStreamIdx] = {
                 kind: "thinking",
-                content: msg.thinking ?? (updated[thinkStreamIdx] as { content: string }).content,
+                content:
+                  msg.thinking ??
+                  (updated[thinkStreamIdx] as { content: string }).content,
                 ...thinkingMeta,
               };
             } else if (msg.thinking) {
               const thinkIdx =
-                currentStreamIdx > 0 && updated[currentStreamIdx - 1].kind === "thinking"
+                currentStreamIdx > 0 &&
+                updated[currentStreamIdx - 1].kind === "thinking"
                   ? currentStreamIdx - 1
-                  : updated.length > 0 && updated[updated.length - 1].kind === "thinking"
+                  : updated.length > 0 &&
+                      updated[updated.length - 1].kind === "thinking"
                     ? updated.length - 1
                     : -1;
               if (thinkIdx !== -1) {
-                updated[thinkIdx] = { kind: "thinking", content: msg.thinking, ...thinkingMeta };
+                updated[thinkIdx] = {
+                  kind: "thinking",
+                  content: msg.thinking,
+                  ...thinkingMeta,
+                };
               } else if (currentStreamIdx !== -1) {
                 updated.splice(currentStreamIdx, 0, {
                   kind: "thinking",
@@ -1425,7 +1614,11 @@ export function ChatView({
                   ...thinkingMeta,
                 });
               } else {
-                updated.push({ kind: "thinking", content: msg.thinking, ...thinkingMeta });
+                updated.push({
+                  kind: "thinking",
+                  content: msg.thinking,
+                  ...thinkingMeta,
+                });
               }
             }
             // Finalize every streaming bubble (intermediate text emitted before a tool call) into a
@@ -1434,21 +1627,39 @@ export function ChatView({
             // done payload (e.g. a structured/unattended output that never streamed tokens); the
             // streamed bubbles are all narration, so append the answer as its own message. Matches
             // what reload rebuilds from events.
-            const lastStreamIdx = updated.findLastIndex((m) => m.kind === "streaming");
+            const lastStreamIdx = updated.findLastIndex(
+              (m) => m.kind === "streaming",
+            );
             const finalWasStreamed =
-              lastStreamIdx !== -1
-              && !updated.slice(lastStreamIdx + 1).some((m) => m.kind === "tool_call");
+              lastStreamIdx !== -1 &&
+              !updated
+                .slice(lastStreamIdx + 1)
+                .some((m) => m.kind === "tool_call");
             for (let i = 0; i < updated.length; i++) {
               if (updated[i].kind !== "streaming") continue;
               updated[i] =
                 finalWasStreamed && i === lastStreamIdx
-                  ? { kind: "assistant", content: msg.content, finalStatus: msg.final_status, turnId: msg.turn_id }
-                  : { kind: "assistant", content: (updated[i] as { content: string }).content, partial: true };
+                  ? {
+                      kind: "assistant",
+                      content: msg.content,
+                      finalStatus: msg.final_status,
+                      turnId: msg.turn_id,
+                    }
+                  : {
+                      kind: "assistant",
+                      content: (updated[i] as { content: string }).content,
+                      partial: true,
+                    };
             }
             if (!finalWasStreamed) {
               // The backend always persists a final assistant event (even empty), so append it
               // unconditionally to keep the live transcript in step with the reloaded event log.
-              updated.push({ kind: "assistant", content: msg.content, finalStatus: msg.final_status, turnId: msg.turn_id });
+              updated.push({
+                kind: "assistant",
+                content: msg.content,
+                finalStatus: msg.final_status,
+                turnId: msg.turn_id,
+              });
             }
             doneBaselineLen = updated.length;
             return updated;
@@ -1462,7 +1673,10 @@ export function ChatView({
             .then((history) => {
               if (refetchSeq !== doneRefetchSeqRef.current) return;
               setMessages((prev) => [
-                ...keepUnrunCalls(prev.slice(0, doneBaselineLen), projectHistoryToMessages(history)),
+                ...keepUnrunCalls(
+                  prev.slice(0, doneBaselineLen),
+                  projectHistoryToMessages(history),
+                ),
                 ...prev.slice(doneBaselineLen),
               ]);
             })
@@ -1480,7 +1694,9 @@ export function ChatView({
           const isGitPush = msg.tool === "git_push";
           if (!isGitPush) setWaiting(true); // agent is active (may restore after reconnect)
           const currentSandbox = sandboxRef.current;
-          if (shouldOptimisticallyShowPendingSandbox(msg.tool, currentSandbox)) {
+          if (
+            shouldOptimisticallyShowPendingSandbox(msg.tool, currentSandbox)
+          ) {
             applySandboxSnapshot(optimisticPendingSandbox(currentSandbox));
           }
           const isLoading = isToolCallLoading(
@@ -1508,8 +1724,11 @@ export function ChatView({
             ...(msg.tool_call_id && { toolCallId: msg.tool_call_id }),
           };
           // The card the call's streamed args opened becomes this call; without one, it is placed as before.
-          const intoStreamedCard = (place: (prev: ChatMessage[]) => ChatMessage[]) => (prev: ChatMessage[]) =>
-            replaceStreamedCall(prev, msg.tool_call_id, newMsg) ?? place(prev);
+          const intoStreamedCard =
+            (place: (prev: ChatMessage[]) => ChatMessage[]) =>
+            (prev: ChatMessage[]) =>
+              replaceStreamedCall(prev, msg.tool_call_id, newMsg) ??
+              place(prev);
           if (
             isUserApprovedReplay(
               msg.tool,
@@ -1528,30 +1747,39 @@ export function ChatView({
             break;
           }
           if (msg.tool_id) {
-            setMessages(intoStreamedCard((prev) => {
-              const withThinkingFinalized = finalizeThinkingMessages(prev);
-              const updated = updateToolCallMessageById(withThinkingFinalized, msg.tool_id!, (entry) => ({
-                ...entry,
-                ...newMsg,
-              }));
-              if (updated.found) return updated.messages;
+            setMessages(
+              intoStreamedCard((prev) => {
+                const withThinkingFinalized = finalizeThinkingMessages(prev);
+                const updated = updateToolCallMessageById(
+                  withThinkingFinalized,
+                  msg.tool_id!,
+                  (entry) => ({
+                    ...entry,
+                    ...newMsg,
+                  }),
+                );
+                if (updated.found) return updated.messages;
 
-              if (msg.parent_tool_id) {
-                for (let i = withThinkingFinalized.length - 1; i >= 0; i--) {
-                  const m = withThinkingFinalized[i];
-                  if (m.kind === "tool_call" && m.toolId === msg.parent_tool_id) {
-                    const next = [...withThinkingFinalized];
-                    next[i] = {
-                      ...m,
-                      children: [...(m.children ?? []), newMsg],
-                    };
-                    return next;
+                if (msg.parent_tool_id) {
+                  for (let i = withThinkingFinalized.length - 1; i >= 0; i--) {
+                    const m = withThinkingFinalized[i];
+                    if (
+                      m.kind === "tool_call" &&
+                      m.toolId === msg.parent_tool_id
+                    ) {
+                      const next = [...withThinkingFinalized];
+                      next[i] = {
+                        ...m,
+                        children: [...(m.children ?? []), newMsg],
+                      };
+                      return next;
+                    }
                   }
                 }
-              }
 
-              return [...withThinkingFinalized, newMsg];
-            }));
+                return [...withThinkingFinalized, newMsg];
+              }),
+            );
             if (isGitPush) finishWaiting();
             break;
           }
@@ -1573,7 +1801,12 @@ export function ChatView({
               return [...updated, newMsg];
             });
           } else {
-            setMessages(intoStreamedCard((prev) => [...finalizeThinkingMessages(prev), newMsg]));
+            setMessages(
+              intoStreamedCard((prev) => [
+                ...finalizeThinkingMessages(prev),
+                newMsg,
+              ]),
+            );
           }
           if (isGitPush) finishWaiting();
           break;
@@ -1581,7 +1814,12 @@ export function ChatView({
         case "tool_result":
           setWaiting(true);
           setMessages((prev) => {
-            const completed = completeStreamedCall(prev, msg.tool_call_id, { result: msg.result, files: msg.files, exitCode: msg.exit_code, toolId: msg.tool_id });
+            const completed = completeStreamedCall(prev, msg.tool_call_id, {
+              result: msg.result,
+              files: msg.files,
+              exitCode: msg.exit_code,
+              toolId: msg.tool_id,
+            });
             if (completed) return completed;
             if (msg.tool_id) {
               const updatedById = updateToolResultById(prev, msg.tool_id, {
@@ -1614,37 +1852,59 @@ export function ChatView({
           break;
         case "tool_call_start":
           setWaiting(true);
-          setMessages((prev) => startStreamedCall(finalizeThinkingMessages(prev), msg.tool_call_id, msg.tool));
+          setMessages((prev) =>
+            startStreamedCall(
+              finalizeThinkingMessages(prev),
+              msg.tool_call_id,
+              msg.tool,
+            ),
+          );
           break;
         case "tool_call_delta":
-          setMessages((prev) => appendStreamedArgs(prev, msg.tool_call_id, msg.args_delta));
+          setMessages((prev) =>
+            appendStreamedArgs(prev, msg.tool_call_id, msg.args_delta),
+          );
           break;
         case "tool_call_end":
-          setMessages((prev) => endStreamedCall(prev, msg.tool_call_id, msg.aborted));
+          setMessages((prev) =>
+            endStreamedCall(prev, msg.tool_call_id, msg.aborted),
+          );
           break;
         case "approval_request":
           setWaiting(true);
           setMessages((prev) => {
             const card = { kind: "approval", request: msg } as const;
-            return replaceStreamedCall(prev, msg.tool_call_id, card) ?? appendEscalationCard(prev, card);
+            return (
+              replaceStreamedCall(prev, msg.tool_call_id, card) ??
+              appendEscalationCard(prev, card)
+            );
           });
           break;
         case "domain_access_approval_request":
           setWaiting(true);
           setMessages((prev) =>
-            appendEscalationCard(prev, { kind: "domain_access_approval", request: msg }),
+            appendEscalationCard(prev, {
+              kind: "domain_access_approval",
+              request: msg,
+            }),
           );
           break;
         case "git_push_approval_request":
           setWaiting(true);
           setMessages((prev) =>
-            appendEscalationCard(prev, { kind: "git_push_approval", request: msg }),
+            appendEscalationCard(prev, {
+              kind: "git_push_approval",
+              request: msg,
+            }),
           );
           break;
         case "credential_approval_request":
           setWaiting(true);
           setMessages((prev) =>
-            appendEscalationCard(prev, { kind: "credential_approval", request: msg }),
+            appendEscalationCard(prev, {
+              kind: "credential_approval",
+              request: msg,
+            }),
           );
           break;
         case "command_result":
@@ -1656,7 +1916,12 @@ export function ChatView({
           setMessages((prev) => {
             const next: ChatMessage[] = [
               ...prev,
-              { kind: "command", command: msg.command, data: msg.data, live: true },
+              {
+                kind: "command",
+                command: msg.command,
+                data: msg.data,
+                live: true,
+              },
             ];
             compactBaselineLen = next.length;
             return next;
@@ -1669,7 +1934,10 @@ export function ChatView({
             fetchHistory(server, token, sessionId)
               .then((history) =>
                 setMessages((prev) => [
-                  ...keepUnrunCalls(prev.slice(0, compactBaselineLen), projectHistoryToMessages(history)),
+                  ...keepUnrunCalls(
+                    prev.slice(0, compactBaselineLen),
+                    projectHistoryToMessages(history),
+                  ),
                   ...prev.slice(compactBaselineLen),
                 ]),
               )
@@ -1692,12 +1960,24 @@ export function ChatView({
             if (rollback !== null) {
               return [
                 ...rollback,
-                { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true, turnId: msg.turn_id },
+                {
+                  kind: "error",
+                  detail: msg.detail,
+                  turnTerminal: msg.turn_terminal === true,
+                  turnId: msg.turn_id,
+                  traceback: msg.traceback ?? undefined,
+                },
               ];
             }
             return [
               ...prev,
-              { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true, turnId: msg.turn_id },
+              {
+                kind: "error",
+                detail: msg.detail,
+                turnTerminal: msg.turn_terminal === true,
+                turnId: msg.turn_id,
+                traceback: msg.traceback ?? undefined,
+              },
             ];
           });
           setLlmActivity(null);
@@ -1708,7 +1988,12 @@ export function ChatView({
           resetRollbackRef.current = null;
           setMessages((prev) => [
             ...prev,
-            { kind: "error", detail: msg.detail, turnTerminal: true, turnId: msg.turn_id },
+            {
+              kind: "error",
+              detail: msg.detail,
+              turnTerminal: true,
+              turnId: msg.turn_id,
+            },
           ]);
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
@@ -1735,7 +2020,8 @@ export function ChatView({
           onBudgetUpdate?.(msg.budget);
           setLlmActivity(msg.llm_activity ?? null);
           if (typeof msg.llm_activity?.first_thinking_at === "string") {
-            lastThinkingStartedAtRef.current = msg.llm_activity.first_thinking_at;
+            lastThinkingStartedAtRef.current =
+              msg.llm_activity.first_thinking_at;
           } else if (msg.llm_activity?.phase === "processing_prompt") {
             lastThinkingStartedAtRef.current = null;
           }
@@ -1749,7 +2035,11 @@ export function ChatView({
           }
           setMessages((prev) => [
             ...prev,
-            { kind: "user", content: msg.content, attachments: msg.attachments },
+            {
+              kind: "user",
+              content: msg.content,
+              attachments: msg.attachments,
+            },
           ]);
           break;
         case "token":
@@ -1760,7 +2050,9 @@ export function ChatView({
             if (lastIdx >= 0 && updated[lastIdx].kind === "streaming") {
               updated[lastIdx] = {
                 kind: "streaming",
-                content: (updated[lastIdx] as { content: string }).content + msg.content,
+                content:
+                  (updated[lastIdx] as { content: string }).content +
+                  msg.content,
               };
             } else {
               updated.push({ kind: "streaming", content: msg.content });
@@ -1771,7 +2063,10 @@ export function ChatView({
         case "thinking":
           setWaiting(true);
           setMessages((prev) => {
-            if (prev.length > 0 && prev[prev.length - 1].kind === "thinking_streaming") {
+            if (
+              prev.length > 0 &&
+              prev[prev.length - 1].kind === "thinking_streaming"
+            ) {
               const last = prev[prev.length - 1] as {
                 kind: "thinking_streaming";
                 content: string;
@@ -1788,12 +2083,27 @@ export function ChatView({
                 },
               ];
             }
-            return [...prev, { kind: "thinking_streaming", content: msg.content }];
+            return [
+              ...prev,
+              { kind: "thinking_streaming", content: msg.content },
+            ];
           });
           break;
       }
     },
-    [applySandboxSnapshot, endTurn, finalizeThinkingMessages, finishWaiting, onBudgetUpdate, onTitleUpdate, refreshSandbox, server, token, sessionId, t],
+    [
+      applySandboxSnapshot,
+      endTurn,
+      finalizeThinkingMessages,
+      finishWaiting,
+      onBudgetUpdate,
+      onTitleUpdate,
+      refreshSandbox,
+      server,
+      token,
+      sessionId,
+      t,
+    ],
   );
 
   const onWsDisconnect = useCallback(() => {
@@ -1809,7 +2119,9 @@ export function ChatView({
   }, [clearToolLoading]);
   const presenceClientId = useRef(getPresenceClientId()).current;
   const webSocketTicket = useWebSocketTicket(server, token);
-  const url = webSocketTicket ? wsUrl(server, sessionId, token, presenceClientId, webSocketTicket) : null;
+  const url = webSocketTicket
+    ? wsUrl(server, sessionId, token, presenceClientId, webSocketTicket)
+    : null;
   const { status, send } = useWebSocket(url, onMessage, onWsDisconnect);
   useSessionPresence(server, token, sessionId, status, presenceClientId);
   useEffect(() => {
@@ -1817,17 +2129,34 @@ export function ChatView({
   }, [send]);
 
   const terminalIndices = completedTurnMessageIndices(messages);
-  const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
+  const latestTerminalIndex =
+    terminalIndices.length > 0
+      ? terminalIndices[terminalIndices.length - 1]
+      : -1;
   // The card being written carries the request's counter; the waiting line covers the other phases.
-  const streamingCall = waiting ? streamingCallIndex(messages, llmActivity) : -1;
-  const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
+  const streamingCall = waiting
+    ? streamingCallIndex(messages, llmActivity)
+    : -1;
+  const turnActionsDisabled =
+    waiting ||
+    loadingHistory ||
+    status !== "connected" ||
+    turnActionBusyIndex !== null;
 
-  function showInspectorSection(selector: string, block: ScrollLogicalPosition): void {
-    if (!window.matchMedia("(min-width: 64rem)").matches) setMobileInspectorOpen(true);
+  function showInspectorSection(
+    selector: string,
+    block: ScrollLogicalPosition,
+  ): void {
+    if (!window.matchMedia("(min-width: 64rem)").matches)
+      setMobileInspectorOpen(true);
     // The section renders in the desktop column and in the mobile sheet; scroll to the visible one once open.
     requestAnimationFrame(() => {
-      const sections = Array.from(document.querySelectorAll<HTMLElement>(selector));
-      sections.find((section) => section.offsetParent !== null)?.scrollIntoView({ block, behavior: "smooth" });
+      const sections = Array.from(
+        document.querySelectorAll<HTMLElement>(selector),
+      );
+      sections
+        .find((section) => section.offsetParent !== null)
+        ?.scrollIntoView({ block, behavior: "smooth" });
     });
   }
 
@@ -1846,16 +2175,35 @@ export function ChatView({
   // renders (approvals, collapsed tool groups), so land on the nearest rendered anchor at or
   // before the seq. Align it to the top: a notification points at a turn start, read downward.
   useEffect(() => {
-    if (targetEvent === null || loadingHistory || targetEvent === scrolledToEventRef.current) return;
+    if (
+      targetEvent === null ||
+      loadingHistory ||
+      targetEvent === scrolledToEventRef.current
+    )
+      return;
     const target = Number(targetEvent);
-    const anchors = Array.from(scrollRef.current?.querySelectorAll<HTMLElement>("[data-event-index]") ?? []);
+    const anchors = Array.from(
+      scrollRef.current?.querySelectorAll<HTMLElement>("[data-event-index]") ??
+        [],
+    );
     // DOM order is event order, so the last anchor at or before the target is the closest.
-    const anchor = anchors.filter((element) => Number(element.dataset.eventIndex) <= target).at(-1);
+    const anchor = anchors
+      .filter((element) => Number(element.dataset.eventIndex) <= target)
+      .at(-1);
     if (!anchor) return;
     scrolledToEventRef.current = targetEvent;
     isAtBottomRef.current = false;
     anchor.scrollIntoView({ block: "start" });
-    anchor.animate?.([{ backgroundColor: "color-mix(in oklch, var(--accent) 80%, transparent)" }, { backgroundColor: "transparent" }], { duration: 2000 });
+    anchor.animate?.(
+      [
+        {
+          backgroundColor:
+            "color-mix(in oklch, var(--accent) 80%, transparent)",
+        },
+        { backgroundColor: "transparent" },
+      ],
+      { duration: 2000 },
+    );
   }, [targetEvent, loadingHistory, messages]);
 
   // Auto-scroll only when already at bottom
@@ -1890,9 +2238,7 @@ export function ChatView({
       queuedAttachmentsRef.current = attachments;
       // Surface the queued state even for attachment-only sends so the banner shows and
       // the composer's submit guard blocks a second send from silently overwriting it.
-      setQueuedMessage(
-        content || attachments.map((a) => a.name).join(", "),
-      );
+      setQueuedMessage(content || attachments.map((a) => a.name).join(", "));
     } else {
       lastThinkingStartedAtRef.current = null;
       send({ type: "message", content, attachments });
@@ -1903,7 +2249,13 @@ export function ChatView({
 
   const initialMessageSentRef = useRef(false);
   useEffect(() => {
-    if (!initialMessage || initialMessageSentRef.current || status !== "connected" || loadingHistory) return;
+    if (
+      !initialMessage ||
+      initialMessageSentRef.current ||
+      status !== "connected" ||
+      loadingHistory
+    )
+      return;
     initialMessageSentRef.current = true;
     handleSend(initialMessage);
     onInitialMessageSent?.();
@@ -1941,7 +2293,9 @@ export function ChatView({
     handleSend(CONTINUE_PROMPT);
   }
 
-  async function resolveTurnTargetEventIndex(messageIndex: number): Promise<number | undefined> {
+  async function resolveTurnTargetEventIndex(
+    messageIndex: number,
+  ): Promise<number | undefined> {
     const currentMessages = messages;
     // Event-granular: each message carries its own event index, so reset/fork cut exactly here
     // (the backend keeps the older turns compacted and rebuilds the cut turn verbatim).
@@ -1953,7 +2307,10 @@ export function ChatView({
     const history = await fetchHistory(server, token, sessionId);
     const canonicalMessages = projectHistoryToMessages(history);
     const candidate = canonicalMessages[messageIndex];
-    if (candidate != null && candidate.kind === currentMessages[messageIndex].kind) {
+    if (
+      candidate != null &&
+      candidate.kind === currentMessages[messageIndex].kind
+    ) {
       return eventIndexForMessage(candidate);
     }
     return undefined;
@@ -2005,14 +2362,18 @@ export function ChatView({
       });
       onForkSession(forked);
     } catch (error) {
-      setMessages((prev) => [...prev, { kind: "error", detail: errorDetail(error, t) }]);
+      setMessages((prev) => [
+        ...prev,
+        { kind: "error", detail: errorDetail(error, t) },
+      ]);
     } finally {
       setTurnActionBusyIndex(null);
     }
   }
 
   async function handleWipeSandbox() {
-    if (waiting || sandboxPowerAction || wipingSandbox || deletingSession) return;
+    if (waiting || sandboxPowerAction || wipingSandbox || deletingSession)
+      return;
     if (!window.confirm(t("confirm.wipeSandbox"))) {
       return;
     }
@@ -2022,14 +2383,18 @@ export function ChatView({
       applySandboxSnapshot(nextSandbox);
     } catch (error) {
       console.error("Failed to wipe sandbox", error);
-      setMessages((prev) => [...prev, { kind: "error", detail: errorDetail(error, t) }]);
+      setMessages((prev) => [
+        ...prev,
+        { kind: "error", detail: errorDetail(error, t) },
+      ]);
     } finally {
       setWipingSandbox(false);
     }
   }
 
   async function handleSandboxPowerAction() {
-    if (waiting || sandboxPowerAction || wipingSandbox || deletingSession) return;
+    if (waiting || sandboxPowerAction || wipingSandbox || deletingSession)
+      return;
 
     const currentSandbox = sandboxRef.current;
     const shouldStart = shouldShowStartSandbox(currentSandbox);
@@ -2048,8 +2413,14 @@ export function ChatView({
         applySandboxSnapshot(nextSandbox);
       }
     } catch (error) {
-      console.error(`Failed to ${shouldStart ? "start" : "scale down"} sandbox`, error);
-      setMessages((prev) => [...prev, { kind: "error", detail: errorDetail(error, t) }]);
+      console.error(
+        `Failed to ${shouldStart ? "start" : "scale down"} sandbox`,
+        error,
+      );
+      setMessages((prev) => [
+        ...prev,
+        { kind: "error", detail: errorDetail(error, t) },
+      ]);
       void refreshSandbox();
     } finally {
       setSandboxPowerAction(null);
@@ -2057,10 +2428,17 @@ export function ChatView({
   }
 
   async function handleDeleteSession() {
-    if (waiting || sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession) return;
     if (
-      (session?.message_count ?? 0) > 0
-      && !window.confirm(t("confirm.deleteSession"))
+      waiting ||
+      sandboxPowerAction ||
+      wipingSandbox ||
+      deletingSession ||
+      !onDeleteSession
+    )
+      return;
+    if (
+      (session?.message_count ?? 0) > 0 &&
+      !window.confirm(t("confirm.deleteSession"))
     ) {
       return;
     }
@@ -2073,14 +2451,23 @@ export function ChatView({
   }
 
   async function handleToggleArchived() {
-    if (!session || updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes) return;
+    if (
+      !session ||
+      updatingSessionAttribute ||
+      deletingSession ||
+      !onUpdateSessionAttributes
+    )
+      return;
 
     const nextArchived = !session.attributes.archived;
     if (nextArchived && !canArchiveSession(session)) {
       return;
     }
     if (nextArchived) {
-      if (shouldConfirmArchiveSession(session) && !window.confirm(t("confirm.archiveSession"))) {
+      if (
+        shouldConfirmArchiveSession(session) &&
+        !window.confirm(t("confirm.archiveSession"))
+      ) {
         return;
       }
     } else if (!window.confirm(t("confirm.unarchiveSession"))) {
@@ -2089,7 +2476,9 @@ export function ChatView({
 
     setUpdatingSessionAttribute("archived");
     try {
-      const updated = await onUpdateSessionAttributes(sessionId, { archived: nextArchived });
+      const updated = await onUpdateSessionAttributes(sessionId, {
+        archived: nextArchived,
+      });
       onSessionUpdate?.(updated);
     } finally {
       setUpdatingSessionAttribute(null);
@@ -2097,7 +2486,15 @@ export function ChatView({
   }
 
   async function handleCommitKnowledge() {
-    if (!session || session.attributes.private || session.attributes.archived || waiting || savingKnowledge || deletingSession) return;
+    if (
+      !session ||
+      session.attributes.private ||
+      session.attributes.archived ||
+      waiting ||
+      savingKnowledge ||
+      deletingSession
+    )
+      return;
 
     setSavingKnowledge(true);
     setKnowledgeNotice(null);
@@ -2107,8 +2504,10 @@ export function ChatView({
       setKnowledgeNotice({
         tone: result.committed ? "success" : "neutral",
         message:
-          result.reason
-          ?? (result.committed_at ? formatArchiveTimestamp(result.committed_at, locale, t) : t("knowledge.committedToRepo")),
+          result.reason ??
+          (result.committed_at
+            ? formatArchiveTimestamp(result.committed_at, locale, t)
+            : t("knowledge.committedToRepo")),
       });
     } catch (error) {
       setKnowledgeNotice({ tone: "error", message: errorDetail(error, t) });
@@ -2122,9 +2521,9 @@ export function ChatView({
 
     const nextPrivate = !session.attributes.private;
     if (
-      nextPrivate
-      && session.knowledge_last_committed_at
-      && !window.confirm(t("confirm.makePrivate"))
+      nextPrivate &&
+      session.knowledge_last_committed_at &&
+      !window.confirm(t("confirm.makePrivate"))
     ) {
       return;
     }
@@ -2134,7 +2533,9 @@ export function ChatView({
     try {
       const updated = onUpdateSessionAttributes
         ? await onUpdateSessionAttributes(sessionId, { private: nextPrivate })
-        : await updateSession(server, token, sessionId, { attributes: { private: nextPrivate } });
+        : await updateSession(server, token, sessionId, {
+            attributes: { private: nextPrivate },
+          });
       onSessionUpdate?.(updated);
       setKnowledgeNotice({
         tone: "neutral",
@@ -2152,11 +2553,19 @@ export function ChatView({
   }
 
   async function handleTogglePinned() {
-    if (!session || updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes) return;
+    if (
+      !session ||
+      updatingSessionAttribute ||
+      deletingSession ||
+      !onUpdateSessionAttributes
+    )
+      return;
 
     setUpdatingSessionAttribute("pinned");
     try {
-      const updated = await onUpdateSessionAttributes(sessionId, { pinned: !session.attributes.pinned });
+      const updated = await onUpdateSessionAttributes(sessionId, {
+        pinned: !session.attributes.pinned,
+      });
       onSessionUpdate?.(updated);
     } finally {
       setUpdatingSessionAttribute(null);
@@ -2164,11 +2573,19 @@ export function ChatView({
   }
 
   async function handleToggleFavorite() {
-    if (!session || updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes) return;
+    if (
+      !session ||
+      updatingSessionAttribute ||
+      deletingSession ||
+      !onUpdateSessionAttributes
+    )
+      return;
 
     setUpdatingSessionAttribute("favorite");
     try {
-      const updated = await onUpdateSessionAttributes(sessionId, { favorite: !session.attributes.favorite });
+      const updated = await onUpdateSessionAttributes(sessionId, {
+        favorite: !session.attributes.favorite,
+      });
       onSessionUpdate?.(updated);
     } finally {
       setUpdatingSessionAttribute(null);
@@ -2176,41 +2593,72 @@ export function ChatView({
   }
 
   async function handleToggleSessionMode(mode: "ask" | "yolo" | "unattended") {
-    if (!session || updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes) return;
+    if (
+      !session ||
+      updatingSessionAttribute ||
+      deletingSession ||
+      !onUpdateSessionAttributes
+    )
+      return;
 
-    const nextAttributes: SessionAttributesPatch = mode === "ask"
-      ? session.attributes.ask_mode
-        ? { ask_mode: false }
-        : { ask_mode: true, yolo_mode: false }
-      : mode === "yolo"
-        ? session.attributes.yolo_mode
-          ? { yolo_mode: false }
-          : { yolo_mode: true, ask_mode: false }
-        : { unattended: !session.attributes.unattended };
+    const nextAttributes: SessionAttributesPatch =
+      mode === "ask"
+        ? session.attributes.ask_mode
+          ? { ask_mode: false }
+          : { ask_mode: true, yolo_mode: false }
+        : mode === "yolo"
+          ? session.attributes.yolo_mode
+            ? { yolo_mode: false }
+            : { yolo_mode: true, ask_mode: false }
+          : { unattended: !session.attributes.unattended };
 
-    if (Object.entries(nextAttributes).every(([key, value]) => session.attributes[key as keyof SessionAttributesPatch] === value)) {
+    if (
+      Object.entries(nextAttributes).every(
+        ([key, value]) =>
+          session.attributes[key as keyof SessionAttributesPatch] === value,
+      )
+    ) {
       return;
     }
 
     setUpdatingSessionAttribute("mode");
     try {
-      const updated = await onUpdateSessionAttributes(sessionId, nextAttributes);
+      const updated = await onUpdateSessionAttributes(
+        sessionId,
+        nextAttributes,
+      );
       onSessionUpdate?.(updated);
     } finally {
       setUpdatingSessionAttribute(null);
     }
   }
 
-  async function handleUpdateSessionModel(modelType: "agent" | "sentinel", value: string | null) {
-    if (!session || updatingSessionModel || waiting || deletingSession || sessionArchived) {
+  async function handleUpdateSessionModel(
+    modelType: "agent" | "sentinel",
+    value: string | null,
+  ) {
+    if (
+      !session ||
+      updatingSessionModel ||
+      waiting ||
+      deletingSession ||
+      sessionArchived
+    ) {
       return;
     }
 
     const currentAgentValue = session.agent_model_name ?? null;
     const currentSentinelValue = session.sentinel_model_name ?? null;
-    const nextAgentValue = !modelsUnlocked || modelType === "agent" ? value : currentAgentValue;
-    const nextSentinelValue = !modelsUnlocked || modelType === "sentinel" ? value : currentSentinelValue;
-    const patch: { agent_model_name?: string | null; sentinel_model_name?: string | null } = {};
+    const nextAgentValue =
+      !modelsUnlocked || modelType === "agent" ? value : currentAgentValue;
+    const nextSentinelValue =
+      !modelsUnlocked || modelType === "sentinel"
+        ? value
+        : currentSentinelValue;
+    const patch: {
+      agent_model_name?: string | null;
+      sentinel_model_name?: string | null;
+    } = {};
 
     if (nextAgentValue !== currentAgentValue) {
       patch.agent_model_name = nextAgentValue;
@@ -2234,8 +2682,13 @@ export function ChatView({
     }
   }
 
-  async function handleUpdateSessionBudget(field: SessionBudgetField, value: string | null) {
-    const updated = await updateSession(server, token, sessionId, { budget: { [field]: value } });
+  async function handleUpdateSessionBudget(
+    field: SessionBudgetField,
+    value: string | null,
+  ) {
+    const updated = await updateSession(server, token, sessionId, {
+      budget: { [field]: value },
+    });
     onSessionUpdate?.(updated);
   }
 
@@ -2253,26 +2706,30 @@ export function ChatView({
     });
     markSessionKnowledgeChanged();
     setMessages((prev) => {
-        let request: { tool: string; args: Record<string, unknown> } | null = null;
-        const withoutApproval = prev.filter((entry) => {
-          if (entry.kind === "approval" && entry.request.tool_call_id === toolCallId) {
-            request = { tool: entry.request.tool, args: entry.request.args };
-            return false;
-          }
-          return true;
-        });
-        if (!approved && request) {
-          return applyDeniedApprovalToMessages(
-            withoutApproval,
-            request,
-            normalizedMessage,
-          );
+      let request: { tool: string; args: Record<string, unknown> } | null =
+        null;
+      const withoutApproval = prev.filter((entry) => {
+        if (
+          entry.kind === "approval" &&
+          entry.request.tool_call_id === toolCallId
+        ) {
+          request = { tool: entry.request.tool, args: entry.request.args };
+          return false;
         }
-        if (approved && request) {
-          return applyApprovedApprovalToMessages(withoutApproval, request);
-        }
-        return withoutApproval;
+        return true;
       });
+      if (!approved && request) {
+        return applyDeniedApprovalToMessages(
+          withoutApproval,
+          request,
+          normalizedMessage,
+        );
+      }
+      if (approved && request) {
+        return applyApprovedApprovalToMessages(withoutApproval, request);
+      }
+      return withoutApproval;
+    });
   }
 
   function handleEscalation(
@@ -2365,44 +2822,61 @@ export function ChatView({
   const inputDisabledPlaceholder = sessionArchived
     ? t("inputDisabled.archived")
     : t("inputDisabled.unattended");
-  const canCommitKnowledge = !!session && !sessionPrivate && !sessionArchived && hasKnowledgeContent && hasKnowledgeChanges;
-    const showsStartSandbox = shouldShowStartSandbox(sandbox);
-    const sandboxActionDisabled = waiting
-      || sandboxLoading
-      || !!sandboxPowerAction
-      || wipingSandbox
-      || deletingSession
-      || sandbox?.status === "pending";
-    const sandboxPowerButtonLabel = sandboxPowerAction === "starting"
+  const canCommitKnowledge =
+    !!session &&
+    !sessionPrivate &&
+    !sessionArchived &&
+    hasKnowledgeContent &&
+    hasKnowledgeChanges;
+  const showsStartSandbox = shouldShowStartSandbox(sandbox);
+  const sandboxActionDisabled =
+    waiting ||
+    sandboxLoading ||
+    !!sandboxPowerAction ||
+    wipingSandbox ||
+    deletingSession ||
+    sandbox?.status === "pending";
+  const sandboxPowerButtonLabel =
+    sandboxPowerAction === "starting"
       ? t("sandbox.actions.starting")
       : sandboxPowerAction === "stopping"
         ? t("sandbox.actions.scalingDown")
         : sandbox?.status === "pending"
           ? t("sandbox.actions.starting")
-        : showsStartSandbox
-          ? t("sandbox.actions.start")
-          : t("sandbox.actions.scaleDown");
-    const archiveStatusLabel = formatArchiveTimestamp(session?.knowledge_last_committed_at, locale, t);
-    const knowledgeBadge = knowledgeStatusBadge(session, hasKnowledgeChanges, t);
-    const archiveButtonDisabled = !canCommitKnowledge || waiting || savingKnowledge || deletingSession;
-    const commitButtonTitle = !hasKnowledgeContent
-      ? t("knowledge.commitDisabledNoHistory")
-      : session?.knowledge_last_committed_at
-        ? hasKnowledgeChanges
-          ? archiveStatusLabel
-          : t("knowledge.noNewChanges", { status: archiveStatusLabel })
-        : undefined;
+          : showsStartSandbox
+            ? t("sandbox.actions.start")
+            : t("sandbox.actions.scaleDown");
+  const archiveStatusLabel = formatArchiveTimestamp(
+    session?.knowledge_last_committed_at,
+    locale,
+    t,
+  );
+  const knowledgeBadge = knowledgeStatusBadge(session, hasKnowledgeChanges, t);
+  const archiveButtonDisabled =
+    !canCommitKnowledge || waiting || savingKnowledge || deletingSession;
+  const commitButtonTitle = !hasKnowledgeContent
+    ? t("knowledge.commitDisabledNoHistory")
+    : session?.knowledge_last_committed_at
+      ? hasKnowledgeChanges
+        ? archiveStatusLabel
+        : t("knowledge.noNewChanges", { status: archiveStatusLabel })
+      : undefined;
   const sessionDisplayTitle = session?.title?.trim() || sessionId;
   const source = localizedSessionSourceInfo(session, t);
-    const defaultModelLabel = tRoot("commandResult.models.default");
-    const agentModelOptions = useMemo(
-      () => withSelectedModelOption(availableModelEntries, session?.agent_model_name),
-      [availableModelEntries, session?.agent_model_name],
-    );
-    const sentinelModelOptions = useMemo(
-      () => withSelectedModelOption(availableModelEntries, session?.sentinel_model_name),
-      [availableModelEntries, session?.sentinel_model_name],
-    );
+  const defaultModelLabel = tRoot("commandResult.models.default");
+  const agentModelOptions = useMemo(
+    () =>
+      withSelectedModelOption(availableModelEntries, session?.agent_model_name),
+    [availableModelEntries, session?.agent_model_name],
+  );
+  const sentinelModelOptions = useMemo(
+    () =>
+      withSelectedModelOption(
+        availableModelEntries,
+        session?.sentinel_model_name,
+      ),
+    [availableModelEntries, session?.sentinel_model_name],
+  );
   const sourceJobId = sessionSourceJobId(session);
   const latestJobRun = session?.latest_job_run ?? null;
   const latestJobData = formatSessionJobData(latestJobRun?.data);
@@ -2410,8 +2884,11 @@ export function ChatView({
   const totalCostUsd = session?.total_cost_usd ?? 0;
   const totalEquivalentCostUsd = session?.total_equivalent_cost_usd ?? 0;
   // The equivalent total follows its gauge: shown with a limit or when the session used a subscription.
-  const showEquivalentCost = usage?.budget_gauges?.some((gauge) => gauge.key === "equivalent_cost") ?? false;
-  const jobLinkClass = "-mx-1 inline-flex items-center gap-1 rounded px-1 font-mono text-xs leading-5 text-foreground transition-colors hover:bg-muted";
+  const showEquivalentCost =
+    usage?.budget_gauges?.some((gauge) => gauge.key === "equivalent_cost") ??
+    false;
+  const jobLinkClass =
+    "-mx-1 inline-flex items-center gap-1 rounded px-1 font-mono text-xs leading-5 text-foreground transition-colors hover:bg-muted";
   useEffect(() => {
     previousSessionIdRef.current = sessionId;
     previousSessionUnattendedRef.current = sessionUnattended;
@@ -2436,16 +2913,34 @@ export function ChatView({
   };
   const sessionDetailBadges = [
     sessionArchived
-      ? { label: t("badges.archived"), icon: Archive, className: "border-violet-200 bg-violet-50 text-violet-800" }
+      ? {
+          label: t("badges.archived"),
+          icon: Archive,
+          className: "border-violet-200 bg-violet-50 text-violet-800",
+        }
       : null,
     sessionPinned
-      ? { label: t("badges.pinned"), icon: Pin, className: "border-sky-200 bg-sky-50 text-sky-800" }
+      ? {
+          label: t("badges.pinned"),
+          icon: Pin,
+          className: "border-sky-200 bg-sky-50 text-sky-800",
+        }
       : null,
     sessionFavorite
-      ? { label: t("badges.favorite"), icon: Star, className: "border-amber-200 bg-amber-50 text-amber-800" }
+      ? {
+          label: t("badges.favorite"),
+          icon: Star,
+          className: "border-amber-200 bg-amber-50 text-amber-800",
+        }
       : null,
-  ].filter((value): value is { label: string; icon: typeof Archive; className: string } => value !== null);
-  const inspectorBadgeClass = "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium";
+  ].filter(
+    (
+      value,
+    ): value is { label: string; icon: typeof Archive; className: string } =>
+      value !== null,
+  );
+  const inspectorBadgeClass =
+    "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium";
   const inspectorContent = (
     <div className="space-y-3">
       <section className="rounded-2xl border border-border/70 bg-muted/25 px-3 py-2 shadow-sm">
@@ -2454,58 +2949,87 @@ export function ChatView({
             {t("inspector.actions")}
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1">
-          <button
-            onClick={() => void handleTogglePinned()}
-            disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
-            title={sessionPinned ? t("actions.unpin") : t("actions.pin")}
-            className="rounded-md p-1.5 text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {updatingSessionAttribute === "pinned" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Pin className="h-3.5 w-3.5" />
-            )}
-          </button>
-          <button
-            onClick={() => void handleToggleFavorite()}
-            disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
-            title={sessionFavorite ? t("actions.unfavorite") : t("actions.favorite")}
-            className="rounded-md p-1.5 text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {updatingSessionAttribute === "favorite" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Star className="h-3.5 w-3.5" />
-            )}
-          </button>
-          {sessionArchived || sessionCanArchive ? (
             <button
-              onClick={() => void handleToggleArchived()}
-              disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
-              title={sessionArchived ? t("actions.unarchive") : t("actions.archive")}
-              className="rounded-md p-1.5 text-violet-900 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => void handleTogglePinned()}
+              disabled={
+                !session ||
+                !!updatingSessionAttribute ||
+                deletingSession ||
+                !onUpdateSessionAttributes
+              }
+              title={sessionPinned ? t("actions.unpin") : t("actions.pin")}
+              className="rounded-md p-1.5 text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {updatingSessionAttribute === "archived" ? (
+              {updatingSessionAttribute === "pinned" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : sessionArchived ? (
-                <ArchiveRestore className="h-3.5 w-3.5" />
               ) : (
-                <Archive className="h-3.5 w-3.5" />
+                <Pin className="h-3.5 w-3.5" />
               )}
             </button>
-          ) : null}
-          <button
-            onClick={() => void handleDeleteSession()}
-            disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession}
-            title={t("actions.delete")}
-            className="rounded-md p-1.5 text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {deletingSession ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Trash2 className="h-3.5 w-3.5" />
-            )}
-          </button>
+            <button
+              onClick={() => void handleToggleFavorite()}
+              disabled={
+                !session ||
+                !!updatingSessionAttribute ||
+                deletingSession ||
+                !onUpdateSessionAttributes
+              }
+              title={
+                sessionFavorite
+                  ? t("actions.unfavorite")
+                  : t("actions.favorite")
+              }
+              className="rounded-md p-1.5 text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {updatingSessionAttribute === "favorite" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Star className="h-3.5 w-3.5" />
+              )}
+            </button>
+            {sessionArchived || sessionCanArchive ? (
+              <button
+                onClick={() => void handleToggleArchived()}
+                disabled={
+                  !session ||
+                  !!updatingSessionAttribute ||
+                  deletingSession ||
+                  !onUpdateSessionAttributes
+                }
+                title={
+                  sessionArchived
+                    ? t("actions.unarchive")
+                    : t("actions.archive")
+                }
+                className="rounded-md p-1.5 text-violet-900 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {updatingSessionAttribute === "archived" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : sessionArchived ? (
+                  <ArchiveRestore className="h-3.5 w-3.5" />
+                ) : (
+                  <Archive className="h-3.5 w-3.5" />
+                )}
+              </button>
+            ) : null}
+            <button
+              onClick={() => void handleDeleteSession()}
+              disabled={
+                waiting ||
+                !!sandboxPowerAction ||
+                wipingSandbox ||
+                deletingSession ||
+                !onDeleteSession
+              }
+              title={t("actions.delete")}
+              className="rounded-md p-1.5 text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {deletingSession ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+            </button>
           </div>
         </div>
       </section>
@@ -2518,18 +3042,30 @@ export function ChatView({
         <dl className="mt-3 grid grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 text-sm">
           <dt className="text-muted-foreground">{t("session.title")}</dt>
           <dd className="break-words font-semibold text-foreground">
-            {session?.title?.trim() ? <EmojiText text={sessionDisplayTitle} /> : sessionDisplayTitle}
+            {session?.title?.trim() ? (
+              <EmojiText text={sessionDisplayTitle} />
+            ) : (
+              sessionDisplayTitle
+            )}
           </dd>
 
           <dt className="text-muted-foreground">{t("session.id")}</dt>
           <dd className="flex items-center gap-2">
-            <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">{sessionId}</span>
+            <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">
+              {sessionId}
+            </span>
             <button
               type="button"
               onClick={() => void handleCopySessionId()}
               className="shrink-0 rounded-md border border-border/70 p-1 text-muted-foreground transition-colors hover:bg-muted"
-              aria-label={sessionIdCopied ? t("session.idCopied") : t("session.copyId")}
-              title={sessionIdCopied ? t("session.idCopiedShort") : t("session.copyId")}
+              aria-label={
+                sessionIdCopied ? t("session.idCopied") : t("session.copyId")
+              }
+              title={
+                sessionIdCopied
+                  ? t("session.idCopiedShort")
+                  : t("session.copyId")
+              }
             >
               {sessionIdCopied ? (
                 <Check className="h-3 w-3" strokeWidth={2} />
@@ -2546,46 +3082,64 @@ export function ChatView({
           </dd>
 
           <dt className="text-muted-foreground">{t("session.created")}</dt>
-          <dd className="text-foreground">{formatSessionTimestamp(session?.created_at, locale, t)}</dd>
+          <dd className="text-foreground">
+            {formatSessionTimestamp(session?.created_at, locale, t)}
+          </dd>
 
           <dt className="text-muted-foreground">{t("session.lastActive")}</dt>
-          <dd className="text-foreground">{formatSessionTimestamp(session?.last_active, locale, t)}</dd>
+          <dd className="text-foreground">
+            {formatSessionTimestamp(session?.last_active, locale, t)}
+          </dd>
 
           <dt className="text-muted-foreground">{t("session.messages")}</dt>
           <dd className="text-foreground">{session?.message_count ?? 0}</dd>
 
           {totalCostUsd > 0 ? (
             <>
-              <dt className="text-muted-foreground">{t("session.totalCost")}</dt>
-              <dd className="text-foreground">{formatUsd(totalCostUsd, locale)}</dd>
+              <dt className="text-muted-foreground">
+                {t("session.totalCost")}
+              </dt>
+              <dd className="text-foreground">
+                {formatUsd(totalCostUsd, locale)}
+              </dd>
             </>
           ) : null}
 
           {showEquivalentCost && totalEquivalentCostUsd > 0 ? (
             <>
-              <dt className="text-muted-foreground" title={t("budget.equivalentCostHint")}>
+              <dt
+                className="text-muted-foreground"
+                title={t("budget.equivalentCostHint")}
+              >
                 {t("session.totalEquivalentCost")}
               </dt>
-              <dd className="text-foreground">≈ {formatUsd(totalEquivalentCostUsd, locale)}</dd>
+              <dd className="text-foreground">
+                ≈ {formatUsd(totalEquivalentCostUsd, locale)}
+              </dd>
             </>
           ) : null}
 
           {fallbackSourceJobId ? (
             <>
               <dt className="text-muted-foreground">{t("session.job")}</dt>
-              <dd className="break-all">{renderJobSettingsLink(fallbackSourceJobId)}</dd>
+              <dd className="break-all">
+                {renderJobSettingsLink(fallbackSourceJobId)}
+              </dd>
             </>
           ) : null}
 
           {session?.channel_ref && !fallbackSourceJobId ? (
             <>
-              <dt className="text-muted-foreground">{t("session.reference")}</dt>
+              <dt className="text-muted-foreground">
+                {t("session.reference")}
+              </dt>
               <dd className="break-all">
-                {sourceJobId ? renderJobSettingsLink(sourceJobId) : session.channel_ref}
+                {sourceJobId
+                  ? renderJobSettingsLink(sourceJobId)
+                  : session.channel_ref}
               </dd>
             </>
           ) : null}
-
         </dl>
 
         <div className="mt-4 border-t border-border/60 pt-4">
@@ -2594,38 +3148,55 @@ export function ChatView({
               {
                 key: "private",
                 active: sessionPrivate,
-                disabled: !session || deletingSession || updatingSessionAttribute !== null,
+                disabled:
+                  !session ||
+                  deletingSession ||
+                  updatingSessionAttribute !== null,
                 onClick: () => void handleTogglePrivacy(),
               },
               {
                 key: "ask_mode",
                 active: sessionAskMode,
-                disabled: !session || deletingSession || !onUpdateSessionAttributes || updatingSessionAttribute !== null,
+                disabled:
+                  !session ||
+                  deletingSession ||
+                  !onUpdateSessionAttributes ||
+                  updatingSessionAttribute !== null,
                 onClick: () => void handleToggleSessionMode("ask"),
               },
               {
                 key: "yolo_mode",
                 active: sessionYoloMode,
-                disabled: !session || deletingSession || !onUpdateSessionAttributes || updatingSessionAttribute !== null,
+                disabled:
+                  !session ||
+                  deletingSession ||
+                  !onUpdateSessionAttributes ||
+                  updatingSessionAttribute !== null,
                 onClick: () => void handleToggleSessionMode("yolo"),
               },
               {
                 key: "unattended",
                 active: sessionUnattended,
-                disabled: !session || deletingSession || !onUpdateSessionAttributes || updatingSessionAttribute !== null,
+                disabled:
+                  !session ||
+                  deletingSession ||
+                  !onUpdateSessionAttributes ||
+                  updatingSessionAttribute !== null,
                 onClick: () => void handleToggleSessionMode("unattended"),
               },
             ]}
           />
 
-          {showDelayedSessionAttributeStatus && updatingSessionAttribute === "private" ? (
+          {showDelayedSessionAttributeStatus &&
+          updatingSessionAttribute === "private" ? (
             <div className="inline-flex items-center gap-2 pt-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               <span>{t("session.savingPrivate")}</span>
             </div>
           ) : null}
 
-          {showDelayedSessionAttributeStatus && updatingSessionAttribute === "mode" ? (
+          {showDelayedSessionAttributeStatus &&
+          updatingSessionAttribute === "mode" ? (
             <div className="inline-flex items-center gap-2 pt-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               <span>{t("session.updatingMode")}</span>
@@ -2663,43 +3234,79 @@ export function ChatView({
             type="button"
             onClick={() => setModelsUnlocked((current) => !current)}
             aria-pressed={modelsUnlocked}
-            aria-label={modelsUnlocked ? tRoot("jobs.fields.modelsUnlinked") : tRoot("jobs.fields.modelsLinked")}
-            title={modelsUnlocked ? tRoot("jobs.fields.modelsUnlinkedHelp") : tRoot("jobs.fields.modelsLinkedHelp")}
+            aria-label={
+              modelsUnlocked
+                ? tRoot("jobs.fields.modelsUnlinked")
+                : tRoot("jobs.fields.modelsLinked")
+            }
+            title={
+              modelsUnlocked
+                ? tRoot("jobs.fields.modelsUnlinkedHelp")
+                : tRoot("jobs.fields.modelsLinkedHelp")
+            }
             className={cn(
               "inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 text-muted-foreground transition-colors",
-              modelsUnlocked ? "hover:bg-muted" : "bg-accent/60 text-accent-foreground hover:bg-accent",
+              modelsUnlocked
+                ? "hover:bg-muted"
+                : "bg-accent/60 text-accent-foreground hover:bg-accent",
             )}
           >
-            {modelsUnlocked ? <Link2Off className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
+            {modelsUnlocked ? (
+              <Link2Off className="h-3.5 w-3.5" />
+            ) : (
+              <Link2 className="h-3.5 w-3.5" />
+            )}
           </button>
         </div>
 
         <div className="mt-3 space-y-3">
           <label className="space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{tRoot("jobs.fields.agentModel")}</span>
+            <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              {tRoot("jobs.fields.agentModel")}
+            </span>
             <ModelPicker
               value={session?.agent_model_name}
               entries={agentModelOptions}
-              onChange={(value) => void handleUpdateSessionModel("agent", value)}
-              disabled={!session || waiting || deletingSession || sessionArchived || updatingSessionModel !== null}
+              onChange={(value) =>
+                void handleUpdateSessionModel("agent", value)
+              }
+              disabled={
+                !session ||
+                waiting ||
+                deletingSession ||
+                sessionArchived ||
+                updatingSessionModel !== null
+              }
               defaultLabel={defaultModelLabel}
             />
           </label>
 
           <label className="space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{tRoot("jobs.fields.sentinelModel")}</span>
+            <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              {tRoot("jobs.fields.sentinelModel")}
+            </span>
             <ModelPicker
               value={session?.sentinel_model_name}
               entries={sentinelModelOptions}
-              onChange={(value) => void handleUpdateSessionModel("sentinel", value)}
-              disabled={!session || waiting || deletingSession || sessionArchived || updatingSessionModel !== null}
+              onChange={(value) =>
+                void handleUpdateSessionModel("sentinel", value)
+              }
+              disabled={
+                !session ||
+                waiting ||
+                deletingSession ||
+                sessionArchived ||
+                updatingSessionModel !== null
+              }
               defaultLabel={defaultModelLabel}
             />
           </label>
         </div>
 
         {modelUpdateError ? (
-          <div className="mt-3 text-xs text-destructive">{modelUpdateError}</div>
+          <div className="mt-3 text-xs text-destructive">
+            {modelUpdateError}
+          </div>
         ) : null}
       </section>
 
@@ -2712,7 +3319,8 @@ export function ChatView({
           token,
           sessionId,
           disabled: !connected || waiting || sessionArchived,
-          onCompact: (focus) => handleSend(focus ? `/compact ${focus}` : "/compact"),
+          onCompact: (focus) =>
+            handleSend(focus ? `/compact ${focus}` : "/compact"),
           onUncompact: () => handleSend("/uncompact"),
         }}
       />
@@ -2734,18 +3342,30 @@ export function ChatView({
 
           <dl className="mt-3 grid grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 text-sm">
             <dt className="text-muted-foreground">{t("jobRun.job")}</dt>
-            <dd className="break-all">{renderJobSettingsLink(latestJobRun.job_id)}</dd>
+            <dd className="break-all">
+              {renderJobSettingsLink(latestJobRun.job_id)}
+            </dd>
 
-            <dt className="text-muted-foreground">{t("jobRun.trigger.label")}</dt>
-            <dd className="text-foreground">{formatJobTriggerKind(latestJobRun.trigger_kind, t)}</dd>
+            <dt className="text-muted-foreground">
+              {t("jobRun.trigger.label")}
+            </dt>
+            <dd className="text-foreground">
+              {formatJobTriggerKind(latestJobRun.trigger_kind, t)}
+            </dd>
 
             <dt className="text-muted-foreground">{t("jobRun.ranAt")}</dt>
-            <dd className="text-foreground">{formatSessionTimestamp(latestJobRun.triggered_at, locale, t)}</dd>
+            <dd className="text-foreground">
+              {formatSessionTimestamp(latestJobRun.triggered_at, locale, t)}
+            </dd>
 
             {latestJobRun.cron_expression ? (
               <>
-                <dt className="text-muted-foreground">{t("jobRun.schedule")}</dt>
-                <dd className="break-all font-mono text-xs text-foreground">{latestJobRun.cron_expression}</dd>
+                <dt className="text-muted-foreground">
+                  {t("jobRun.schedule")}
+                </dt>
+                <dd className="break-all font-mono text-xs text-foreground">
+                  {latestJobRun.cron_expression}
+                </dd>
               </>
             ) : null}
           </dl>
@@ -2785,7 +3405,13 @@ export function ChatView({
             </button>
             <button
               onClick={() => void handleWipeSandbox()}
-              disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || sessionArchived}
+              disabled={
+                waiting ||
+                !!sandboxPowerAction ||
+                wipingSandbox ||
+                deletingSession ||
+                sessionArchived
+              }
               title={t("sandbox.actions.reset")}
               className="rounded-md p-1.5 text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -2817,11 +3443,15 @@ export function ChatView({
                   : t("sandbox.checking")}
             </span>
           </div>
-          <div className="text-xs text-muted-foreground">{sandboxStorageLabel(sandbox, t)}</div>
+          <div className="text-xs text-muted-foreground">
+            {sandboxStorageLabel(sandbox, t)}
+          </div>
           {sandboxIdentifier(sandbox) ? (
             <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
               <span>{t("sandbox.fields.id")}</span>
-              <span className="break-all font-mono text-foreground">{sandboxIdentifier(sandbox)}</span>
+              <span className="break-all font-mono text-foreground">
+                {sandboxIdentifier(sandbox)}
+              </span>
             </div>
           ) : null}
         </div>
@@ -2830,7 +3460,12 @@ export function ChatView({
             server={server}
             token={token}
             sessionId={sessionId}
-            disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession}
+            disabled={
+              waiting ||
+              !!sandboxPowerAction ||
+              wipingSandbox ||
+              deletingSession
+            }
             refreshKey={sandbox?.status}
           />
         </div>
@@ -2903,7 +3538,9 @@ export function ChatView({
           <span
             className={`h-1.5 w-1.5 rounded-full ${status === "connecting" ? "bg-warning animate-pulse" : "bg-destructive"}`}
           />
-          {status === "connecting" ? t("status.connecting") : t("status.disconnected")}
+          {status === "connecting"
+            ? t("status.connecting")
+            : t("status.disconnected")}
         </div>
       )}
 
@@ -2913,16 +3550,18 @@ export function ChatView({
             sessionId={sessionId}
             title={session?.title}
             view="chat"
-            titleAccessory={hasMemory ? (
-              <button
-                type="button"
-                onClick={showMemorySection}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground transition-colors hover:bg-accent/70"
-              >
-                <Brain className="h-3 w-3" />
-                {t("memoryChip")}
-              </button>
-            ) : null}
+            titleAccessory={
+              hasMemory ? (
+                <button
+                  type="button"
+                  onClick={showMemorySection}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground transition-colors hover:bg-accent/70"
+                >
+                  <Brain className="h-3 w-3" />
+                  {t("memoryChip")}
+                </button>
+              ) : null
+            }
           >
             <button
               type="button"
@@ -2947,7 +3586,9 @@ export function ChatView({
               )}
               {!loadingHistory && messages.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <p className="text-lg font-medium text-foreground/80">{agentName}</p>
+                  <p className="text-lg font-medium text-foreground/80">
+                    {agentName}
+                  </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {connected
                       ? t("empty.start")
@@ -2961,27 +3602,38 @@ export function ChatView({
                   // Event-granular: fork/reset cut exactly at this message (mid-turn included).
                   // Retry still re-runs the latest turn.
                   const actionable = isTurnActionMessage(msg);
-                  const enclosingTerminal = enclosingTurnTerminalMessageIndex(messages, i);
+                  const enclosingTerminal = enclosingTurnTerminalMessageIndex(
+                    messages,
+                    i,
+                  );
                   // A persisted/completed message can be a cut target; its event index is resolved
                   // (refetched if a freshly-finished turn hasn't been reprojected) when acted on.
                   const inHistory =
-                    typeof eventIndexForMessage(msg) === "number" || enclosingTerminal != null;
+                    typeof eventIndexForMessage(msg) === "number" ||
+                    enclosingTerminal != null;
                   const canFork = actionable && inHistory;
                   // Resetting the very last bubble removes nothing — offer it only with a tail to drop.
                   const canReset = canFork && i < messages.length - 1;
-                  const inLatestTurn = actionable && enclosingTerminal === latestTerminalIndex;
+                  const inLatestTurn =
+                    actionable && enclosingTerminal === latestTerminalIndex;
                   // A failed turn keeps its tool calls in the history, so its error row continues from
                   // there; rerunning it from scratch stays available as Retry on its user bubble.
                   const canContinue = inLatestTurn && msg.kind === "error";
                   const canRetry = inLatestTurn && !canContinue;
                   return (
-                    <div key={i} data-event-index={anchorEventIndex(msg)} className="rounded-lg">
+                    <div
+                      key={i}
+                      data-event-index={anchorEventIndex(msg)}
+                      className="rounded-lg"
+                    >
                       <Message
                         message={msg}
                         server={server}
                         sessionId={sessionId}
                         activeLlmActivity={llmActivity}
-                        streamingActivity={i === streamingCall ? llmActivity : null}
+                        streamingActivity={
+                          i === streamingCall ? llmActivity : null
+                        }
                         canFork={canFork}
                         canRetry={canRetry}
                         canContinue={canContinue}
@@ -2993,7 +3645,9 @@ export function ChatView({
                         onFork={canFork ? () => void handleFork(i) : undefined}
                         onRetry={canRetry ? handleRetry : undefined}
                         onContinue={canContinue ? handleContinue : undefined}
-                        onReset={canReset ? () => void handleReset(i) : undefined}
+                        onReset={
+                          canReset ? () => void handleReset(i) : undefined
+                        }
                       />
                     </div>
                   );
@@ -3002,7 +3656,11 @@ export function ChatView({
                   item.type === "message" ? (
                     renderMessage(item.index)
                   ) : (
-                    <div key={`g-${item.start}`} data-event-index={anchorEventIndex(messages[item.start])} className="rounded-lg">
+                    <div
+                      key={`g-${item.start}`}
+                      data-event-index={anchorEventIndex(messages[item.start])}
+                      className="rounded-lg"
+                    >
                       <ToolCallGroup
                         items={item.indices.map((j) => messages[j])}
                         inProgress={item.inProgress}
@@ -3013,7 +3671,9 @@ export function ChatView({
                   ),
                 );
               })()}
-              {waiting && streamingCall === -1 && <WaitingIndicator activity={llmActivity} />}
+              {waiting && streamingCall === -1 && (
+                <WaitingIndicator activity={llmActivity} />
+              )}
               <div ref={bottomRef} />
             </div>
           </div>
@@ -3060,9 +3720,15 @@ export function ChatView({
               </div>
               <div className="flex items-start justify-between gap-3 px-4 py-2.5">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold text-foreground">{t("mobile.details")}</div>
+                  <div className="text-sm font-semibold text-foreground">
+                    {t("mobile.details")}
+                  </div>
                   <div className="truncate text-xs text-muted-foreground">
-                    {session?.title?.trim() ? <EmojiText text={sessionDisplayTitle} /> : sessionDisplayTitle}
+                    {session?.title?.trim() ? (
+                      <EmojiText text={sessionDisplayTitle} />
+                    ) : (
+                      sessionDisplayTitle
+                    )}
                   </div>
                 </div>
                 <button
@@ -3080,7 +3746,6 @@ export function ChatView({
           </div>
         </div>
       ) : null}
-
     </div>
   );
 }

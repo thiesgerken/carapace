@@ -53,6 +53,7 @@ UI PRs show the pages they change: before and after, light and dark, plus phone 
 | `demo-change-request` | Fixing The Pancake Ingredients | a call the sentinel sent back for changes (`revise`), then the split call and its push |
 | `demo-pending-approval` | Cleaning Up NAS Backups | a pending approval card |
 | `demo-budget-stop` | Triage Open Issues | a budget stop with the error box |
+| `demo-unexpected-error` | LED Controller Pinout | a turn that stopped on an unexpected error: the failed call and the error box with its traceback |
 | `demo-autonomy-limit` | Checking Outdated Dependencies | an autonomy-limit approval card |
 | `demo-subscription` | Refactoring Date Parsing | a Codex (subscription) agent with a paid sentinel, actual and equivalent cost limits |
 
