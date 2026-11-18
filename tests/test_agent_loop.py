@@ -5,13 +5,23 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pydantic_ai.messages import PartStartEvent, TextPart, ToolCallPart
+from pydantic_ai import Agent
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    PartStartEvent,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models import Model
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RunUsage
 
 from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps, TaskDone, TaskFailed
-from carapace.agent.loop import run_agent_turn
+from carapace.agent.loop import _snapshot_on_failure, run_agent_turn
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models.config import Config
@@ -143,3 +153,31 @@ async def test_run_agent_turn_flushes_intermediate_text_before_tool_calls(tmp_pa
         "Let me check the file. ",
         "All done.",
     ]
+
+
+@pytest.mark.anyio
+async def test_failed_run_snapshots_its_finished_steps() -> None:
+    def model(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        step = sum(isinstance(m, ModelResponse) for m in messages)
+        tool = "ok_tool" if step == 0 else "crash_tool"
+        return ModelResponse(parts=[ToolCallPart(tool_name=tool, args={}, tool_call_id=f"call-{step}")])
+
+    agent = Agent(FunctionModel(model))
+
+    @agent.tool_plain
+    def ok_tool() -> str:
+        return "fetched"
+
+    @agent.tool_plain
+    def crash_tool() -> str:
+        raise RuntimeError("boom")
+
+    snapshots: list[list[Any]] = []
+    with pytest.raises(RuntimeError, match="boom"), _snapshot_on_failure(snapshots.append):
+        await agent.run("go")
+
+    [snapshot] = snapshots
+    returns = [p for m in snapshot if isinstance(m, ModelRequest) for p in m.parts if isinstance(p, ToolReturnPart)]
+    calls = [p.tool_call_id for m in snapshot if isinstance(m, ModelResponse) for p in m.parts]
+    assert [r.content for r in returns] == ["fetched"]
+    assert calls == ["call-0", "call-1"]

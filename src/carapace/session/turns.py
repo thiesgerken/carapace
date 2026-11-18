@@ -60,6 +60,11 @@ from .types import ActiveSession, SessionSubscriber, TurnExecutionResult
 _TURN_CANCELLED_TOOL_MESSAGE = "Tool call was canceled because the turn ended before it completed."
 
 
+def _turn_error_tool_message(exc: Exception) -> str:
+    # The agent continues from this history: naming the error keeps it from blindly repeating the call.
+    return f"The turn stopped on an unexpected error before this tool call completed: {type(exc).__name__}: {exc}"
+
+
 def _non_slash_user_message_count(events: list[dict[str, Any]]) -> int:
     """Count user lines that were routed to the agent, not command-result echoes."""
     count = 0
@@ -473,7 +478,7 @@ class SessionTurnMixin(SessionTurnHost):
             )
             await self._broadcast(active, "on_error", request_limit_message or str(exc), turn_id=turn_id)
             return "error"
-        except Exception:
+        except Exception as exc:
             logger.exception(f"Agent error session={session_id} prompt={_truncate_for_log(user_input)}")
             await self._finalize_failed_turn(
                 active,
@@ -483,6 +488,7 @@ class SessionTurnMixin(SessionTurnHost):
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message="The previous turn failed before completion.",
+                pending_tool_message=_turn_error_tool_message(exc),
             )
             await self._broadcast(active, "on_error", traceback.format_exc(), turn_id=turn_id)
             return "error"
@@ -762,6 +768,7 @@ class SessionTurnMixin(SessionTurnHost):
         latest_messages: list[ModelMessage] | None = None,
         terminal_message: str | None = None,
         save_progress: bool = False,
+        pending_tool_message: str = _TURN_CANCELLED_TOOL_MESSAGE,
     ) -> None:
         self._close_turn_approvals(active, session_id)
         active.llm_request_thinking.clear()
@@ -775,6 +782,7 @@ class SessionTurnMixin(SessionTurnHost):
             turn_event_start=turn_event_start,
             latest_messages=latest_messages,
             terminal_message=terminal_message,
+            pending_tool_message=pending_tool_message,
         )
         if self._notification_router is not None and terminal_message and active.state.attributes.unattended:
             terminal_event_index = len(self._session_mgr.load_events(session_id)) - 1
@@ -826,6 +834,7 @@ class SessionTurnMixin(SessionTurnHost):
         turn_event_start: int,
         latest_messages: list[ModelMessage] | None = None,
         terminal_message: str | None = None,
+        pending_tool_message: str,
     ) -> None:
         """Persist the user message to history even when the agent turn fails.
 
@@ -837,12 +846,14 @@ class SessionTurnMixin(SessionTurnHost):
         else:
             history = self._session_mgr.load_history(session_id)
             history.append(ModelRequest(parts=[UserPromptPart(content=user_input)]))
-        history = self._complete_cancelled_model_history(history)
+        history = self._complete_cancelled_model_history(history, pending_tool_message)
         if terminal_message:
             history.append(ModelResponse(parts=[TextPart(content=terminal_message)]))
         self._session_mgr.save_history(session_id, history)
 
-        events = self._complete_cancelled_events(self._session_mgr.load_events(session_id), turn_event_start)
+        events = self._complete_cancelled_events(
+            self._session_mgr.load_events(session_id), turn_event_start, pending_tool_message
+        )
         if terminal_message:
             events.append(
                 {
@@ -854,7 +865,9 @@ class SessionTurnMixin(SessionTurnHost):
             )
         self._session_mgr.save_events(session_id, events)
 
-    def _complete_cancelled_model_history(self, messages: list[ModelMessage]) -> list[ModelMessage]:
+    def _complete_cancelled_model_history(
+        self, messages: list[ModelMessage], pending_tool_message: str
+    ) -> list[ModelMessage]:
         completed = list(messages)
         pending_parts = []
         pending_index_by_id: dict[str, int] = {}
@@ -887,7 +900,7 @@ class SessionTurnMixin(SessionTurnHost):
                 synthetic_returns.append(
                     NativeToolReturnPart(
                         tool_name=pending_part.tool_name,
-                        content=_TURN_CANCELLED_TOOL_MESSAGE,
+                        content=pending_tool_message,
                         tool_call_id=pending_part.tool_call_id,
                         outcome="failed",
                         provider_name=pending_part.provider_name,
@@ -898,7 +911,7 @@ class SessionTurnMixin(SessionTurnHost):
                 synthetic_returns.append(
                     ToolReturnPart(
                         tool_name=pending_part.tool_name,
-                        content=_TURN_CANCELLED_TOOL_MESSAGE,
+                        content=pending_tool_message,
                         tool_call_id=pending_part.tool_call_id,
                         outcome="failed",
                     )
@@ -934,8 +947,11 @@ class SessionTurnMixin(SessionTurnHost):
 
         return messages[:safe_prefix_end]
 
-    def _complete_cancelled_events(self, events: list[dict[str, Any]], turn_event_start: int) -> list[dict[str, Any]]:
-        """Append a canceled ``tool_result`` for every tool call the turn starting at *turn_event_start* left open.
+    def _complete_cancelled_events(
+        self, events: list[dict[str, Any]], turn_event_start: int, pending_tool_message: str
+    ) -> list[dict[str, Any]]:
+        """Append a ``tool_result`` saying *pending_tool_message* for every tool call the turn starting at
+        *turn_event_start* left open.
 
         Earlier turns are out of scope: whatever they left without a result (a crash, imported
         sessions) is not this turn's to cancel.
@@ -981,7 +997,7 @@ class SessionTurnMixin(SessionTurnHost):
             synthetic_result: dict[str, Any] = {
                 "role": "tool_result",
                 "tool": pending_call.get("tool"),
-                "result": _TURN_CANCELLED_TOOL_MESSAGE,
+                "result": pending_tool_message,
                 "exit_code": 130,
                 "timestamp": datetime.now(tz=UTC).isoformat(),
             }

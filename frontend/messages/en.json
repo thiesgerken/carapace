@@ -1399,7 +1399,7 @@
         "actions": {
             "fork": "Fork session from here",
             "retry": "Retry turn",
-            "continue": "Continue turn",
+            "continue": "Continue from the finished steps",
             "reset": "Reset conversation to after this turn",
             "timeline": "Show this turn's timeline"
         },

@@ -13,11 +13,13 @@ Separates the core agent/approval loop from transport-specific code
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
-from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
+from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied, capture_run_messages
 from pydantic_ai.messages import (
+    ModelResponse,
     PartDeltaEvent,
     PartStartEvent,
     TextPart,
@@ -130,14 +132,15 @@ async def run_agent_turn(
     current_text_parts.clear()
     usage_limits = get_usage_limits() if get_usage_limits is not None else None
     provider_cost = ProviderCostCapability()
-    result = await agent.run(
-        user_input,
-        deps=deps,
-        message_history=message_history or None,
-        event_stream_handler=_stream_handler,
-        usage_limits=usage_limits,
-        capabilities=[provider_cost],
-    )
+    with _snapshot_on_failure(on_messages_snapshot):
+        result = await agent.run(
+            user_input,
+            deps=deps,
+            message_history=message_history or None,
+            event_stream_handler=_stream_handler,
+            usage_limits=usage_limits,
+            capabilities=[provider_cost],
+        )
     last_thinking = "".join(current_thinking_parts)
     _record_usage(deps, result.usage, provider_cost)
     messages = result.all_messages()
@@ -213,14 +216,15 @@ async def run_agent_turn(
         await _flush_text_segment()
         usage_limits = get_usage_limits() if get_usage_limits is not None else None
         provider_cost = ProviderCostCapability()
-        result = await agent.run(
-            deps=deps,
-            message_history=messages,
-            deferred_tool_results=deferred_results,
-            event_stream_handler=_stream_handler,
-            usage_limits=usage_limits,
-            capabilities=[provider_cost],
-        )
+        with _snapshot_on_failure(on_messages_snapshot):
+            result = await agent.run(
+                deps=deps,
+                message_history=messages,
+                deferred_tool_results=deferred_results,
+                event_stream_handler=_stream_handler,
+                usage_limits=usage_limits,
+                capabilities=[provider_cost],
+            )
         last_thinking = "".join(current_thinking_parts)
         _record_usage(deps, result.usage, provider_cost)
         messages = result.all_messages()
@@ -252,3 +256,21 @@ def _record_usage(deps: Deps, usage: RunUsage, provider_cost: ProviderCostCapabi
     deps.usage_tracker.record(deps.agent_model_id, "agent", own, cost_usd=provider_cost.total_usd)
     if compaction is not None:
         deps.usage_tracker.record(deps.agent_model_id, "compaction", compaction)
+
+
+@contextmanager
+def _snapshot_on_failure(on_messages_snapshot: Callable[[list[Any]], None] | None) -> Iterator[None]:
+    """Hand the run's finished steps to *on_messages_snapshot* when the run raises or is cancelled.
+
+    Without this the steps a run completed before failing (model responses, tool results) are lost
+    with it, and the next turn cannot continue from them. A response cut off mid-stream is dropped:
+    its tool calls may carry truncated arguments that would break the next request.
+    """
+    with capture_run_messages() as run_messages:
+        try:
+            yield
+        except BaseException:
+            finished = [m for m in run_messages if not (isinstance(m, ModelResponse) and m.state == "interrupted")]
+            if on_messages_snapshot is not None and finished:
+                on_messages_snapshot(finished)
+            raise
