@@ -1,6 +1,13 @@
 # CHANGELOG
 
 
+## v0.186.1 (2026-11-18)
+
+### 🐛 Fix a bug
+
+- fix: size exec chunks for the binary url-encoding worst case
+- fix: keep sandbox exec payloads under the k8s exec URL limit
+
 ## v0.186.0 (2026-11-17)
 
 ### ✨ Introduce new features
