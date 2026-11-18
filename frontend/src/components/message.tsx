@@ -1,20 +1,6 @@
 "use client";
 
-import {
-  AlertTriangle,
-  Archive,
-  Brain,
-  Bug,
-  Check,
-  ChevronRight,
-  Copy,
-  GitBranch,
-  Info,
-  Paperclip,
-  Play,
-  RotateCcw,
-  Undo2,
-} from "lucide-react";
+import { AlertTriangle, Archive, Brain, Bug, Check, ChevronRight, Copy, GitBranch, Info, Paperclip, Play, RotateCcw, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
@@ -115,24 +101,18 @@ function TurnMeta({
     : "";
   const turnLabel = turnIndex != null ? t("turn", { n: turnIndex }) : "";
   const posLabel =
-    messageIndexInTurn != null &&
-    turnMessageCount != null &&
-    turnMessageCount > 1
+    messageIndexInTurn != null && turnMessageCount != null && turnMessageCount > 1
       ? t("messageInTurn", { i: messageIndexInTurn, n: turnMessageCount })
       : "";
   // tok/s = provider output tokens / generation seconds (tool waits excluded) — shown inline.
   const tps =
-    typeof outputTokens === "number" &&
-    typeof generationMs === "number" &&
-    generationMs > 0
+    typeof outputTokens === "number" && typeof generationMs === "number" && generationMs > 0
       ? Math.round((outputTokens / generationMs) * 1000)
       : undefined;
 
   const tipParts = [posLabel, turnLabel, abs];
-  if (typeof turnDurationMs === "number")
-    tipParts.push(formatDuration(turnDurationMs, locale, false));
-  if (typeof toolCount === "number" && toolCount > 0)
-    tipParts.push(t("tools", { count: toolCount }));
+  if (typeof turnDurationMs === "number") tipParts.push(formatDuration(turnDurationMs, locale, false));
+  if (typeof toolCount === "number" && toolCount > 0) tipParts.push(t("tools", { count: toolCount }));
   if (model) tipParts.push(shortModel(model));
   if (typeof inputTokens === "number" && typeof outputTokens === "number") {
     tipParts.push(
@@ -142,13 +122,10 @@ function TurnMeta({
       }),
     );
   }
-  if (typeof ttftMs === "number")
-    tipParts.push(t("ttft", { value: formatDuration(ttftMs, locale, true) }));
+  if (typeof ttftMs === "number") tipParts.push(t("ttft", { value: formatDuration(ttftMs, locale, true) }));
   const tip = tipParts.filter(Boolean).join(" · ");
 
-  const visible = [rel || turnLabel, tps != null ? t("tps", { n: tps }) : ""]
-    .filter(Boolean)
-    .join(" · ");
+  const visible = [rel || turnLabel, tps != null ? t("tps", { n: tps }) : ""].filter(Boolean).join(" · ");
   return (
     <span
       title={tip}
@@ -257,8 +234,7 @@ function ThinkingBadge({
   }, [liveThinkingStartedAt]);
 
   const shownDurationMs =
-    liveThinkingStartedAt &&
-    liveReasoningDuration?.startedAt === liveThinkingStartedAt
+    liveThinkingStartedAt && liveReasoningDuration?.startedAt === liveThinkingStartedAt
       ? liveReasoningDuration.durationMs
       : reasoningDurationMs;
   const meta: string[] = [];
@@ -273,9 +249,7 @@ function ThinkingBadge({
     );
   }
   if (typeof reasoningTokens === "number" && reasoningTokens > 0) {
-    meta.push(
-      t("thinkingMeta.reasoning", { count: reasoningTokens.toLocaleString() }),
-    );
+    meta.push(t("thinkingMeta.reasoning", { count: reasoningTokens.toLocaleString() }));
   }
 
   return (
@@ -405,24 +379,12 @@ function MessageActions({
   const t = useTranslations("message");
   const hasCopy = typeof copyText === "string" && copyText.length > 0;
   const hasMeta = Boolean(timestamp) || turnIndex != null;
-  if (
-    !hasCopy &&
-    !canFork &&
-    !canRetry &&
-    !canContinue &&
-    !canReset &&
-    !hasMeta &&
-    !debugHref
-  )
-    return null;
+  if (!hasCopy && !canFork && !canRetry && !canContinue && !canReset && !hasMeta && !debugHref) return null;
 
   // Controls first, then the meta pushed to the far end of the row (spacer between spans the width).
   return (
     <div className={cn("mt-2 flex items-center gap-2", className)}>
-      <MessageCopyButton
-        text={copyText ?? ""}
-        className="border border-border/70 p-1.5"
-      />
+      <MessageCopyButton text={copyText ?? ""} className="border border-border/70 p-1.5" />
       <MessageActionButton
         label={t("actions.fork")}
         icon={<GitBranch className="size-3.5" />}
@@ -500,7 +462,9 @@ function FinalStatusNotice({ status }: { status: "success" | "warning" }) {
         ) : (
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
         )}
-        <p>{t("finalStatus.notice", { status: statusLabel })}</p>
+        <p>
+          {t("finalStatus.notice", { status: statusLabel })}
+        </p>
       </div>
     </div>
   );
@@ -522,26 +486,13 @@ function ProviderCompactionMarker({
         onClick={() => setOpen(!open)}
         className={cn(
           "flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] text-left",
-          message.failed
-            ? "text-destructive hover:bg-destructive/10"
-            : "text-muted-foreground/80 hover:bg-accent",
+          message.failed ? "text-destructive hover:bg-destructive/10" : "text-muted-foreground/80 hover:bg-accent",
           "transition-colors",
         )}
-        title={
-          message.rejected
-            ? t("providerRejectedTitle")
-            : message.failed
-              ? t("providerFailedTitle")
-              : t("providerTitle")
-        }
+        title={message.rejected ? t("providerRejectedTitle") : message.failed ? t("providerFailedTitle") : t("providerTitle")}
         aria-expanded={open}
       >
-        <Archive
-          className={cn(
-            "h-3 w-3 shrink-0",
-            message.failed ? "text-destructive" : "text-amber-600/70",
-          )}
-        />
+        <Archive className={cn("h-3 w-3 shrink-0", message.failed ? "text-destructive" : "text-amber-600/70")} />
         <span className="font-medium">
           {message.rejected
             ? t("providerRejected", { provider })
@@ -549,34 +500,21 @@ function ProviderCompactionMarker({
               ? t("providerFailed", { provider })
               : t("providerMarker", { provider })}
         </span>
-        <ChevronRight
-          className={cn(
-            "ml-auto h-3 w-3 shrink-0 transition-transform",
-            open && "rotate-90",
-          )}
-        />
+        <ChevronRight className={cn("ml-auto h-3 w-3 shrink-0 transition-transform", open && "rotate-90")} />
       </button>
       {open ? (
         <div
           className={cn(
             "mb-1.5 ml-5 mt-1 rounded-md border p-2 text-[11px] text-muted-foreground",
-            message.failed
-              ? "border-destructive/30 bg-destructive/5"
-              : "border-amber-500/30 bg-amber-500/5",
+            message.failed ? "border-destructive/30 bg-destructive/5" : "border-amber-500/30 bg-amber-500/5",
           )}
         >
           {message.failed ? (
-            <p className="whitespace-pre-wrap break-words text-destructive">
-              {message.failed}
-            </p>
+            <p className="whitespace-pre-wrap break-words text-destructive">{message.failed}</p>
           ) : message.summary ? (
             <>
-              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-70">
-                {t("modelSummaryLabel")}
-              </p>
-              <div className="whitespace-pre-wrap break-words">
-                {message.summary}
-              </div>
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-70">{t("modelSummaryLabel")}</p>
+              <div className="whitespace-pre-wrap break-words">{message.summary}</div>
             </>
           ) : (
             <p>{t("providerOpaque")}</p>
@@ -638,9 +576,7 @@ function CompactionSummaryBlock({
           <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-70">
             {t("modelSummaryLabel")}
           </p>
-          <div className="whitespace-pre-wrap break-words">
-            {message.summary}
-          </div>
+          <div className="whitespace-pre-wrap break-words">{message.summary}</div>
         </div>
       ) : null}
       <div className="space-y-1">
@@ -692,11 +628,7 @@ interface MessageProps {
   canContinue?: boolean;
   canReset?: boolean;
   actionDisabled?: boolean;
-  onApproval?: (
-    toolCallId: string,
-    approved: boolean,
-    message?: string,
-  ) => void;
+  onApproval?: (toolCallId: string, approved: boolean, message?: string) => void;
   onEscalation?: (
     requestId: string,
     decision: EscalationDecision,
@@ -738,61 +670,59 @@ export function Message({
       return (
         <div className="group flex flex-col items-end">
           <div className="flex w-fit max-w-full flex-col items-end md:max-w-[85%]">
-            <div
-              className={cn(
-                "chat-copy-serif max-w-full rounded-2xl rounded-br-md border border-border/60 bg-muted/30 px-3.5 py-2 text-sm text-foreground",
-              )}
-            >
-              {message.content ? (
-                <MarkdownContent content={message.content} />
-              ) : null}
-              {message.attachments && message.attachments.length > 0 ? (
-                <div
-                  className={cn(
-                    "flex flex-col items-end gap-1.5",
-                    message.content ? "mt-2" : "",
-                  )}
-                >
-                  {message.attachments.map((att) =>
-                    att.file_id ? (
-                      <FilePreview
-                        key={att.file_id}
-                        fileId={att.file_id}
-                        name={att.name}
-                        path={att.path}
-                        mime={att.mime}
-                        size={att.size}
-                        server={server}
-                        sessionId={sessionId}
-                        className="w-full max-w-sm text-left"
-                      />
-                    ) : (
-                      <span
-                        key={att.path}
-                        title={att.path}
-                        className="flex items-center gap-1.5 rounded-lg border border-border bg-background/50 px-2 py-1 text-xs"
-                      >
-                        <Paperclip className="h-3 w-3 shrink-0" />
-                        <span className="max-w-40 truncate">{att.name}</span>
-                      </span>
-                    ),
-                  )}
-                </div>
-              ) : null}
-            </div>
-            <MessageActions
-              copyText={message.content}
-              canFork={canFork}
-              canRetry={canRetry}
-              canReset={canReset}
-              disabled={actionDisabled}
-              onFork={onFork}
-              onRetry={onRetry}
-              onReset={onReset}
-              timestamp={message.timestamp}
-              turnIndex={message.turnIndex}
-              className="w-full"
-            />
+          <div
+            className={cn(
+              "chat-copy-serif max-w-full rounded-2xl rounded-br-md border border-border/60 bg-muted/30 px-3.5 py-2 text-sm text-foreground",
+            )}
+          >
+            {message.content ? <MarkdownContent content={message.content} /> : null}
+            {message.attachments && message.attachments.length > 0 ? (
+              <div
+                className={cn(
+                  "flex flex-col items-end gap-1.5",
+                  message.content ? "mt-2" : "",
+                )}
+              >
+                {message.attachments.map((att) =>
+                  att.file_id ? (
+                    <FilePreview
+                      key={att.file_id}
+                      fileId={att.file_id}
+                      name={att.name}
+                      path={att.path}
+                      mime={att.mime}
+                      size={att.size}
+                      server={server}
+                      sessionId={sessionId}
+                      className="w-full max-w-sm text-left"
+                    />
+                  ) : (
+                    <span
+                      key={att.path}
+                      title={att.path}
+                      className="flex items-center gap-1.5 rounded-lg border border-border bg-background/50 px-2 py-1 text-xs"
+                    >
+                      <Paperclip className="h-3 w-3 shrink-0" />
+                      <span className="max-w-40 truncate">{att.name}</span>
+                    </span>
+                  ),
+                )}
+              </div>
+            ) : null}
+          </div>
+          <MessageActions
+            copyText={message.content}
+            canFork={canFork}
+            canRetry={canRetry}
+            canReset={canReset}
+            disabled={actionDisabled}
+            onFork={onFork}
+            onRetry={onRetry}
+            onReset={onReset}
+            timestamp={message.timestamp}
+            turnIndex={message.turnIndex}
+            className="w-full"
+          />
           </div>
         </div>
       );
@@ -802,9 +732,7 @@ export function Message({
         <div className="group max-w-full text-sm md:max-w-[85%]">
           <div className="chat-copy-serif min-w-0 flex-1">
             <MarkdownContent content={message.content} />
-            {message.finalStatus ? (
-              <FinalStatusNotice status={message.finalStatus} />
-            ) : null}
+            {message.finalStatus ? <FinalStatusNotice status={message.finalStatus} /> : null}
           </div>
           <MessageActions
             copyText={message.content}
@@ -826,11 +754,7 @@ export function Message({
             outputTokens={message.outputTokens}
             ttftMs={message.ttftMs}
             generationMs={message.generationMs}
-            debugHref={
-              message.turnId && sessionId
-                ? turnTimelineHref(sessionId, message.turnId)
-                : undefined
-            }
+            debugHref={message.turnId && sessionId ? turnTimelineHref(sessionId, message.turnId) : undefined}
           />
         </div>
       );
@@ -911,11 +835,7 @@ export function Message({
         <ApprovalCard
           request={message.request}
           onRespond={(approved, responseMessage) =>
-            onApproval?.(
-              message.request.tool_call_id,
-              approved,
-              responseMessage,
-            )
+            onApproval?.(message.request.tool_call_id, approved, responseMessage)
           }
         />
       );
@@ -926,11 +846,7 @@ export function Message({
           request={message.request}
           decision={message.decision}
           onRespond={(decision, responseMessage) =>
-            onEscalation?.(
-              message.request.request_id,
-              decision,
-              responseMessage,
-            )
+            onEscalation?.(message.request.request_id, decision, responseMessage)
           }
         />
       );
@@ -941,11 +857,7 @@ export function Message({
           request={message.request}
           decision={message.decision}
           onRespond={(decision, responseMessage) =>
-            onEscalation?.(
-              message.request.request_id,
-              decision,
-              responseMessage,
-            )
+            onEscalation?.(message.request.request_id, decision, responseMessage)
           }
         />
       );
@@ -990,17 +902,11 @@ export function Message({
     case "error":
       return (
         <div className="my-1 max-w-full rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive md:max-w-[85%]">
-          <pre className="whitespace-pre-wrap font-mono text-xs">
-            {message.detail}
-          </pre>
+          <pre className="whitespace-pre-wrap font-mono text-xs">{message.detail}</pre>
           {message.traceback ? (
             <details className="mt-1">
-              <summary className="cursor-pointer text-xs">
-                {t("traceback")}
-              </summary>
-              <pre className="mt-1 max-h-96 overflow-auto whitespace-pre font-mono text-xs">
-                {message.traceback}
-              </pre>
+              <summary className="cursor-pointer text-xs">{t("traceback")}</summary>
+              <pre className="mt-1 max-h-96 overflow-auto whitespace-pre font-mono text-xs">{message.traceback}</pre>
             </details>
           ) : null}
           <MessageActions
@@ -1015,11 +921,7 @@ export function Message({
             onRetry={onRetry}
             onReset={onReset}
             onContinue={onContinue}
-            debugHref={
-              message.turnId && sessionId
-                ? turnTimelineHref(sessionId, message.turnId)
-                : undefined
-            }
+            debugHref={message.turnId && sessionId ? turnTimelineHref(sessionId, message.turnId) : undefined}
           />
         </div>
       );

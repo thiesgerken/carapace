@@ -262,8 +262,8 @@ def _snapshot_on_failure(on_messages_snapshot: Callable[[list[Any]], None] | Non
     """Hand the run's messages so far to *on_messages_snapshot* when the run raises or is cancelled.
 
     Without this the steps a run completed before failing (model responses, tool results) are lost
-    with it, and the next turn cannot continue from them. pydantic-ai keeps a response cut off
-    mid-stream as ``state="interrupted"`` and closes out its calls when the next run resumes.
+    with it, and the next turn cannot continue from them. A response cut off mid-stream stays in, as
+    ``state="interrupted"``; the turn's failure handling closes its open calls with synthetic results.
     """
     with capture_run_messages() as run_messages:
         try:
