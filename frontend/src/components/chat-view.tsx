@@ -955,6 +955,7 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         compaction: entry.compaction,
         turnTerminal: true,
         turnId: entry.turn_id,
+        traceback: entry.traceback,
       });
       continue;
     }
@@ -1692,12 +1693,24 @@ export function ChatView({
             if (rollback !== null) {
               return [
                 ...rollback,
-                { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true, turnId: msg.turn_id },
+                {
+                  kind: "error",
+                  detail: msg.detail,
+                  turnTerminal: msg.turn_terminal === true,
+                  turnId: msg.turn_id,
+                  traceback: msg.traceback ?? undefined,
+                },
               ];
             }
             return [
               ...prev,
-              { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true, turnId: msg.turn_id },
+              {
+                kind: "error",
+                detail: msg.detail,
+                turnTerminal: msg.turn_terminal === true,
+                turnId: msg.turn_id,
+                traceback: msg.traceback ?? undefined,
+              },
             ];
           });
           setLlmActivity(null);

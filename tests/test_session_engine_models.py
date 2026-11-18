@@ -973,6 +973,7 @@ def test_save_user_message_on_failure_appends_cancelled_parallel_tool_returns(tm
         turn_event_start=0,
         latest_messages=latest_messages,
         terminal_message="The previous turn was interrupted before completion.",
+        pending_tool_message="Tool call was canceled because the turn ended before it completed.",
     )
 
     history = engine.session_mgr.load_history(sid)
@@ -1033,6 +1034,7 @@ def test_save_user_message_on_failure_appends_cancelled_parallel_tool_results(tm
         turn_event_start=0,
         latest_messages=[ModelRequest(parts=[UserPromptPart(content="hello")])],
         terminal_message="The previous turn was interrupted before completion.",
+        pending_tool_message="Tool call was canceled because the turn ended before it completed.",
     )
 
     events = engine.session_mgr.load_events(sid)

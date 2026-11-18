@@ -664,6 +664,7 @@ export function Message({
   onContinue,
   onReset,
 }: MessageProps) {
+  const t = useTranslations("message");
   switch (message.kind) {
     case "user":
       return (
@@ -902,6 +903,12 @@ export function Message({
       return (
         <div className="my-1 max-w-full rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive md:max-w-[85%]">
           <pre className="whitespace-pre-wrap font-mono text-xs">{message.detail}</pre>
+          {message.traceback ? (
+            <details className="mt-1">
+              <summary className="cursor-pointer text-xs">{t("traceback")}</summary>
+              <pre className="mt-1 max-h-96 overflow-auto whitespace-pre font-mono text-xs">{message.traceback}</pre>
+            </details>
+          ) : null}
           <MessageActions
             copyText={message.detail}
             canFork={canFork}

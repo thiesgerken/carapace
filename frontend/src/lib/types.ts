@@ -212,6 +212,8 @@ export type ApprovalVerdict = "allow" | "revise" | "deny" | "escalate";
 export interface HistoryMessage {
   role: string;
   content: string;
+  /** On the error event of a turn that stopped on an unexpected error. */
+  traceback?: string;
   attachments?: Attachment[];
   final_status?: "success" | "warning";
   event_index?: number;
@@ -513,6 +515,8 @@ export interface ErrorMessage {
   turn_terminal?: boolean;
   /** Set on the error that ended a turn. */
   turn_id?: string;
+  /** On an unexpected error: the server-side traceback, shown collapsed under the short detail. */
+  traceback?: string | null;
 }
 
 export interface Cancelled {
@@ -762,6 +766,8 @@ export type ChatMessage =
       turnTerminal?: boolean;
       /** On the error that ended a turn with a timeline; links it to the debug view. */
       turnId?: string;
+      /** On an unexpected error: the server-side traceback, shown collapsed. */
+      traceback?: string;
     };
 
 // Memory (/api/memory). Mirrors src/carapace/memory/models.py.

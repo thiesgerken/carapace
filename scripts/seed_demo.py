@@ -122,8 +122,11 @@ class Transcript:
             event["turn_id"] = turn_id
         self.events.append(event)
 
-    def error(self, content: str) -> None:
-        self.events.append({"role": "error", "content": content, "timestamp": self._stamp(1)})
+    def error(self, content: str, *, traceback: str | None = None) -> None:
+        event: dict[str, Any] = {"role": "error", "content": content, "timestamp": self._stamp(1)}
+        if traceback is not None:
+            event["traceback"] = traceback
+        self.events.append(event)
 
     def call(
         self,
@@ -450,6 +453,28 @@ def _budget_stop(start: datetime, usage: UsageTracker, budget: SessionBudget) ->
     error = usage_budget_exceeded_error(usage, budget)
     assert error is not None, "the demo usage must exceed the demo cost limit"
     t.error(str(error))
+    return t
+
+
+def _unexpected_error(start: datetime) -> Transcript:
+    t = Transcript(start)
+    t.user("Collect the wiring and pinout docs of the LED controller into one page.")
+    t.run("curl -s https://example.com/controller/", "<html>… 412 KB …</html>", title="load the product page")
+    summary = "InvalidURL: URL component 'query' too long"
+    pinout = {"command": "curl -s https://example.com/controller/pinout", "title": "load the pinout page"}
+    failed = t.call("exec", pinout)
+    t.result(failed, "exec", f"The turn stopped on an unexpected error before this call completed: {summary}", 130)
+    t.error(
+        f"The turn stopped on an unexpected error: {summary}",
+        traceback=(
+            "Traceback (most recent call last):\n"
+            '  File "/app/carapace/agent/tools.py", line 1602, in exec\n'
+            "    result = await _prepare_exec_tool_result(ctx, result)\n"
+            '  File "/app/httpx/_urlparse.py", line 269, in urlparse\n'
+            "    raise InvalidURL(f\"URL component '{key}' too long\")\n"
+            f"httpx.{summary}\n"
+        ),
+    )
     return t
 
 
@@ -893,6 +918,12 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
             _budget_stop(now - timedelta(minutes=30), budget_usage, budget_stop_budget),
             budget=budget_stop_budget,
             usage=budget_usage,
+        ),
+        DemoSession(
+            "demo-unexpected-error",
+            "🔌 LED Controller Pinout",
+            _unexpected_error(now - timedelta(minutes=20)),
+            usage=_usage(3_200, 410),
         ),
         DemoSession(
             "demo-autonomy-limit",

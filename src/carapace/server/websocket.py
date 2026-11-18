@@ -220,8 +220,10 @@ class WebSocketSubscriber:
             Done(content=content, thinking=thinking, usage=usage, final_status=final_status, turn_id=turn_id)
         )
 
-    async def on_error(self, detail: str, *, turn_id: str | None = None) -> None:
-        await self._safe_send(ErrorMessage(detail=detail, turn_terminal=turn_id is not None, turn_id=turn_id))
+    async def on_error(self, detail: str, *, turn_id: str | None = None, traceback: str | None = None) -> None:
+        await self._safe_send(
+            ErrorMessage(detail=detail, turn_terminal=turn_id is not None, turn_id=turn_id, traceback=traceback)
+        )
 
     async def on_cancelled(self, *, turn_id: str) -> None:
         await self._safe_send(Cancelled(turn_id=turn_id))

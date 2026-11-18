@@ -52,6 +52,8 @@ class _FakeSubscriber(SessionSubscriber):
         self.token_chunks: list[str] = []
         self.thinking_chunks: list[str] = []
         self.errors: list[str] = []
+        self.tracebacks: list[str | None] = []
+        self.tool_results: list[ToolResult] = []
         self.error_events: list[tuple[str, bool]] = []
         self.cancelled: int = 0
         self.done_messages: list[tuple[str, TurnUsage]] = []
@@ -81,7 +83,7 @@ class _FakeSubscriber(SessionSubscriber):
         self.tool_calls.append((tool, tool_call_id))
 
     async def on_tool_result(self, result: ToolResult) -> None:
-        pass
+        self.tool_results.append(result)
 
     async def on_tool_call_stream(self, msg: ToolCallStream) -> None:
         self.tool_call_stream.append(msg)
@@ -103,9 +105,10 @@ class _FakeSubscriber(SessionSubscriber):
     ) -> None:
         self.done_messages.append((content, usage))
 
-    async def on_error(self, detail: str, *, turn_id: str | None = None) -> None:
+    async def on_error(self, detail: str, *, turn_id: str | None = None, traceback: str | None = None) -> None:
         self.errors.append(detail)
         self.error_events.append((detail, turn_id is not None))
+        self.tracebacks.append(traceback)
 
     async def on_cancelled(self, *, turn_id: str) -> None:
         self.cancelled += 1

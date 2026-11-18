@@ -92,7 +92,20 @@ test("a failed turn's persisted error renders as a turn-terminal error after rel
     compaction: undefined,
     turnTerminal: true,
     turnId: undefined,
+    traceback: undefined,
   });
+});
+
+test("an unexpected error keeps its traceback after reload", () => {
+  const [error] = projectHistoryToMessages([
+    {
+      role: "error",
+      content: "The turn stopped on an unexpected error: InvalidURL: too long",
+      traceback: "Traceback …",
+      event_index: 0,
+    },
+  ]);
+  assert.equal(error.kind === "error" && error.traceback, "Traceback …");
 });
 
 test("turn-ending errors carry turn actions, other errors do not", () => {

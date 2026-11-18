@@ -1372,6 +1372,7 @@
         }
     },
     "message": {
+        "traceback": "Traceback",
         "copy": "Nachricht kopieren",
         "copied": "Kopiert",
         "codeBlock": {
@@ -1399,7 +1400,7 @@
         "actions": {
             "fork": "Sitzung von hier forken",
             "retry": "Turn erneut ausführen",
-            "continue": "Turn fortsetzen",
+            "continue": "Ab den erledigten Schritten fortsetzen",
             "reset": "Unterhaltung zu diesem Turn zurücksetzen",
             "timeline": "Zeitleiste dieses Turns zeigen"
         },
