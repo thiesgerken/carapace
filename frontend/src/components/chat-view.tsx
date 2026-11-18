@@ -1705,12 +1705,12 @@ export function ChatView({
             return [
               ...prev,
               {
-                  kind: "error",
-                  detail: msg.detail,
-                  turnTerminal: msg.turn_terminal === true,
-                  turnId: msg.turn_id,
-                  traceback: msg.traceback ?? undefined,
-                },
+                kind: "error",
+                detail: msg.detail,
+                turnTerminal: msg.turn_terminal === true,
+                turnId: msg.turn_id,
+                traceback: msg.traceback ?? undefined,
+              },
             ];
           });
           setLlmActivity(null);
