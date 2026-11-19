@@ -1857,7 +1857,8 @@ export function ChatView({
 
   // Deep link (?event=<seq>) from memory fact sources and push notifications. Not every event
   // renders (approvals, collapsed tool groups), so land on the nearest rendered anchor at or
-  // before the seq. Align it to the top: a notification points at a turn start, read downward.
+  // before the seq. Align it to the top: a notification points at the start of a turn (a job's at
+  // its first agent event, past the invocation prompt), read downward.
   useEffect(() => {
     if (targetEvent === null || loadingHistory || targetEvent === scrolledToEventRef.current) return;
     const target = Number(targetEvent);

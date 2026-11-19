@@ -121,6 +121,9 @@ class NotificationRouter:
         body: str,
     ) -> NotificationDeliveryResult:
         notif_id = build_turn_outcome_notification_id(session_id, assistant_event_index, kind)
+        # The turn opens with its user event. An attended turn's user wrote it and wants it as
+        # context; a job's invocation prompt is boilerplate, so link past it to the agent's first event.
+        event_index = turn_event_start if kind == "attended_turn_completed" else turn_event_start + 1
         return await self._dispatch(
             session_id=session_id,
             kind=kind,
@@ -130,7 +133,7 @@ class NotificationRouter:
                 title=title,
                 body=body,
                 session_id=session_id,
-                event_index=turn_event_start,
+                event_index=event_index,
                 actions=[{"action": "open", "title": "Open session"}],
             ),
             suppress_when_active=True,
