@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v0.186.4 (2026-11-19)
+
+### 🐛 Fix a bug
+
+- fix: open job notifications at the agent's first event
+
+### 📝 Add or update documentation
+
+- docs: describe where job notifications open
+
 ## v0.186.3 (2026-11-18)
 
 ### 🐛 Fix a bug
