@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v0.186.5 (2026-11-19)
+
+### 🔒️ Fix security or privacy issues
+
+- fix: give the sandbox no DNS
+
+### 📝 Add or update documentation
+
+- docs: the NetworkPolicy blocks sandbox DNS, dnsPolicy only fails fast
+
 ## v0.186.4 (2026-11-19)
 
 ### 🐛 Fix a bug
