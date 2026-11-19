@@ -206,11 +206,8 @@ export interface SentFile {
   size: number;
 }
 
-/**
- * The verdict of the sentinel or the user on an action; `revise` sends it back to the agent for changes,
- * `allow_with_comment` lets it run and hands the agent the sentinel's advice.
- */
-export type ApprovalVerdict = "allow" | "allow_with_comment" | "revise" | "deny" | "escalate";
+/** The verdict of the sentinel or the user on an action; `revise` sends it back to the agent for changes. */
+export type ApprovalVerdict = "allow" | "revise" | "deny" | "escalate";
 
 export interface HistoryMessage {
   role: string;
@@ -247,6 +244,8 @@ export interface HistoryMessage {
     | "unknown";
   approval_verdict?: ApprovalVerdict;
   approval_explanation?: string;
+  /** What the sentinel told the agent about an operation it allowed. */
+  approval_comment?: string;
   result?: string;
   files?: SentFile[];
   exit_code?: number;
@@ -382,6 +381,8 @@ export interface ToolCallInfo {
     | "unknown";
   approval_verdict?: ApprovalVerdict;
   approval_explanation?: string;
+  /** What the sentinel told the agent about an operation it allowed. */
+  approval_comment?: string;
   tool_id?: string;
   parent_tool_id?: string;
   /** The provider's id of a model-issued call: links it to the card its streamed args opened. */
@@ -699,6 +700,7 @@ export type ChatMessage =
         | "unknown";
       approvalVerdict?: ApprovalVerdict;
       approvalExplanation?: string;
+      approvalComment?: string;
       decisionMessage?: string;
       result?: string;
       files?: SentFile[];
@@ -734,6 +736,7 @@ export type ChatMessage =
           | "unknown";
         approvalVerdict?: ApprovalVerdict;
         approvalExplanation?: string;
+        approvalComment?: string;
         decisionMessage?: string;
         result?: string;
         files?: SentFile[];

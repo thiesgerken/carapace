@@ -24,7 +24,7 @@ def sentinel_endpoint() -> Iterator[tuple[int, list[bytes]]]:
             requests.append(self.rfile.read(int(self.headers["Content-Length"])))
             self.send_response(200)
             self.end_headers()
-            self.wfile.write(b'{"verdict":"allow","reason":""}')
+            self.wfile.write(b'{"verdict":"allow"}')
 
         def log_message(self, format: str, *args: object) -> None:
             pass

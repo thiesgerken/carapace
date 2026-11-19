@@ -324,12 +324,11 @@ async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> 
     """Delegate to the security module for tool call evaluation.
 
     Returns ``ToolDenied`` when the sentinel denies the call or requests changes (the caller must
-    return it to pydantic-ai), or ``None`` when the call is allowed. A comment the sentinel allows the call
-    with is left for ``SentinelCommentCapability`` to attach to the call's result.
+    return it to pydantic-ai), or ``None`` when the call is allowed.
     """
     with span("gate", tool_name) as gate:
         try:
-            comment = await security.evaluate_with(
+            await security.evaluate_with(
                 ctx.deps.security,
                 ctx.deps.sentinel,
                 tool_name,
@@ -343,9 +342,6 @@ async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> 
         except (security.SecurityDeniedError, security.ChangesRequestedError) as exc:
             gate.attrs["denied"] = True
             return ToolDenied(str(exc))
-    if comment is not None:
-        assert ctx.tool_call_id is not None, "pydantic-ai runs every tool call with its id"
-        ctx.deps.sentinel_comments[ctx.tool_call_id] = comment
     return None
 
 
@@ -360,6 +356,7 @@ def _notify_approved_start(ctx: RunContext[Deps], tool_name: str, args: dict[str
             "allow",
             "user approved",
             ctx.tool_call_id,
+            None,
         )
 
 
@@ -1336,6 +1333,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                     "deny",
                     "skill not activated",
                     ctx.tool_call_id,
+                    None,
                 )
             return _emit_tool_result(ctx, "read", denied_message, exit_code=1)
 
@@ -1411,6 +1409,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                     "deny",
                     "skill not activated",
                     ctx.tool_call_id,
+                    None,
                 )
             return _emit_tool_result(ctx, "send_file", denied_message, exit_code=1)
 

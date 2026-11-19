@@ -159,7 +159,7 @@ async def _sentinel(inputs: PreviewInputs) -> PromptPreview:
     state = _fresh_session(inputs)
     sentinel = _sentinel_for(inputs, state)
     model = state.sentinel_model_name or inputs.config.agent.sentinel_model
-    request = await _record(sentinel.agent, deps=SentinelDeps(sentinel.skills_dir, explanation_reaches_agent=True))
+    request = await _record(sentinel.agent, deps=SentinelDeps(sentinel.skills_dir, agent_reads_verdict=True))
     sections = [
         *_tool_sections(request, model),
         _section("role_instructions", "Sentinel instructions", SENTINEL_INSTRUCTIONS, model),

@@ -103,7 +103,7 @@ def test_sentinel_requests_take_an_llm_slot(tmp_path: Path) -> None:
 
         await slots.acquire()
         run = asyncio.create_task(
-            sentinel.agent.run("review", deps=SentinelDeps(tmp_path / "skills", explanation_reaches_agent=True))
+            sentinel.agent.run("review", deps=SentinelDeps(tmp_path / "skills", agent_reads_verdict=True))
         )
         await asyncio.sleep(0.01)
         assert not run.done()

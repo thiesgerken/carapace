@@ -75,7 +75,7 @@ Each message is one JSON object with a `type` field.
 | `tool_call_start`                | Agent model started writing a tool call             | `tool_call_id`, `tool` (see [Streaming tool calls](#streaming-tool-calls))                       |
 | `tool_call_delta`                | Next piece of that call's args                      | `tool_call_id`, `args_delta` (raw JSON text, append in order)                                    |
 | `tool_call_end`                  | Model stopped writing the call                      | `tool_call_id`, `aborted`                                                                        |
-| `tool_call`                      | Tool started / security notification                | `tool`, `args`, `detail`; optional `approval_source`, `approval_verdict`, `approval_explanation` |
+| `tool_call`                      | Tool started / security notification                | `tool`, `args`, `detail`; optional `approval_source`, `approval_verdict`, `approval_explanation`, `approval_comment` |
 | `tool_result`                    | Tool finished                                       | `tool`, `result`, `exit_code`                                                                    |
 | `approval_request`               | Sentinel escalated a **tool** to the user           | `tool_call_id`, `tool`, `args`, `explanation`, `risk_level`                                      |
 | `domain_access_approval_request` | Sentinel escalated **proxy domain** access          | `request_id`, `domain`, `command`                                                                |
@@ -173,7 +173,8 @@ long args stay cheap.
 When present:
 
 - `approval_source`: `safe-list` \| `sentinel` \| `user` \| `skill` \| `bypass` \| `unknown`
-- `approval_verdict`: `allow` \| `allow_with_comment` \| `revise` \| `deny` \| `escalate`
+- `approval_verdict`: `allow` \| `revise` \| `deny` \| `escalate`
+- `approval_comment`: what the sentinel told the agent about a tool call or git push it allowed (see [Sentinel comments](security.md#sentinel-comments))
 
 **`skill`** — the action was allowed because it's covered by a context grant from an activated skill (e.g., domain access or credential fetch within a matching `contexts` exec).
 

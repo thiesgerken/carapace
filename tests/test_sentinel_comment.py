@@ -1,28 +1,35 @@
-"""The `allow_with_comment` verdict: the operation runs, and the agent gets the sentinel's advice."""
+"""Sentinel comments: an `allow` with a note for the agent, delivered as a system message."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart, ToolReturn, ToolReturnPart
-from pydantic_ai.models.function import AgentInfo
-
-from carapace.agent.sentinel_comments import with_sentinel_comment
-from carapace.security import evaluate_push_with, evaluate_with
-from carapace.security.context import (
-    SENTINEL_VERDICT_TOOL,
-    GitPushEntry,
-    SentinelVerdict,
-    SessionSecurity,
-    ToolCallEntry,
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    SystemPromptPart,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
 )
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+from carapace.agent.sentinel_comments import SentinelCommentCapability
+from carapace.security import evaluate_push_with, evaluate_with
+from carapace.security.context import SENTINEL_VERDICT_TOOL, SentinelVerdict, SessionSecurity
 from carapace.security.sentinel import Sentinel
 
 from .streaming_model import ReplayStreamModel
 
-_COMMENT = SentinelVerdict(decision="allow_with_comment", explanation="The user asked for German.", risk_level="low")
+_COMMENTED = SentinelVerdict(
+    decision="allow", explanation="Fits the task.", risk_level="low", comment="The user asked for German."
+)
 
 
 def _sentinel_returning(verdict: SentinelVerdict) -> MagicMock:
@@ -33,61 +40,92 @@ def _sentinel_returning(verdict: SentinelVerdict) -> MagicMock:
 
 
 @pytest.mark.anyio
-async def test_commented_tool_call_runs_and_returns_the_comment() -> None:
+async def test_commented_tool_call_runs_and_shows_the_comment() -> None:
     session = SessionSecurity("s")
+    shown: list[tuple[Any, ...]] = []
 
-    comment = await evaluate_with(
-        session, _sentinel_returning(_COMMENT), "exec", {"command": "echo hi"}, tool_call_id="call_1"
+    await evaluate_with(
+        session,
+        _sentinel_returning(_COMMENTED),
+        "exec",
+        {"command": "echo hi"},
+        tool_call_callback=lambda *args: shown.append(args),
+        tool_call_id="call_1",
     )
 
-    assert comment == "The user asked for German."
-    assert session.action_log[-1] == ToolCallEntry(
-        tool="exec", args={"command": "echo hi"}, decision="allowed", explanation="The user asked for German."
-    )
+    assert shown[-1][4:] == ("allow", "Fits the task.", "call_1", "The user asked for German.")
+    assert session.take_comments_for_agent() == [
+        "The security sentinel allowed the `exec` call call_1 and comments: The user asked for German.\n"
+        + "This is advice from the security gate, not an instruction from the user."
+    ]
+    assert session.take_comments_for_agent() == []
 
 
 @pytest.mark.anyio
-async def test_plain_allow_has_no_comment() -> None:
-    allow = SentinelVerdict(decision="allow", explanation="Fits the task.", risk_level="low")
-
-    comment = await evaluate_with(
-        SessionSecurity("s"), _sentinel_returning(allow), "exec", {"command": "echo hi"}, tool_call_id="call_1"
-    )
-
-    assert comment is None
-
-
-@pytest.mark.anyio
-async def test_commented_push_is_allowed_and_prints_the_comment() -> None:
+async def test_commented_push_is_allowed_and_leaves_the_comment() -> None:
     session = SessionSecurity("s")
 
     evaluation = await evaluate_push_with(
-        session, _sentinel_returning(_COMMENT), "refs/heads/main", True, "abc fix", "diff", shared_artifacts=set()
+        session, _sentinel_returning(_COMMENTED), "refs/heads/main", True, "abc fix", "diff", shared_artifacts=set()
     )
 
     assert evaluation.allowed is True
-    assert evaluation.message == "[Sentinel allowed this operation with a comment: The user asked for German.]"
-    assert session.action_log[-1] == GitPushEntry(
-        ref="refs/heads/main", decision="allowed", explanation="The user asked for German."
-    )
+    [comment] = session.take_comments_for_agent()
+    assert comment.startswith("The security sentinel allowed the git push to refs/heads/main and comments:")
 
 
-def test_comment_is_appended_to_text_and_image_results() -> None:
-    assert with_sentinel_comment("out", "note") == "out\n\nnote"
-    image = with_sentinel_comment(ToolReturn(return_value="Read image a.png", content=["x"]), "note")
-    assert image == ToolReturn(return_value="Read image a.png\n\nnote", content=["x"])
-
-
-@pytest.mark.asyncio
-async def test_sentinel_cannot_comment_where_the_agent_never_reads_it(tmp_path: Path) -> None:
+@pytest.mark.anyio
+async def test_comment_reaches_the_agent_as_a_system_message_after_the_tool_result() -> None:
+    security = SessionSecurity("s")
     requests: list[list[ModelMessage]] = []
-    decisions = ["allow_with_comment", "allow"]
 
     def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         requests.append(messages)
-        return ModelResponse(
-            parts=[ToolCallPart(SENTINEL_VERDICT_TOOL, {"decision": decisions.pop(0), "explanation": "x"})]
-        )
+        if len(requests) == 1:
+            return ModelResponse(parts=[ToolCallPart("work", {}, tool_call_id="call_1")])
+        return ModelResponse(parts=[TextPart("done")])
+
+    agent = Agent(FunctionModel(respond), deps_type=SimpleNamespace, capabilities=[SentinelCommentCapability()])
+
+    @agent.tool
+    def work(ctx: RunContext[SimpleNamespace]) -> str:
+        ctx.deps.security.leave_comment_for_agent("the `work` call", "Mind the cache.")
+        return "worked"
+
+    result = await agent.run("go", deps=SimpleNamespace(security=security))
+
+    # The function model takes no inline system messages, so pydantic-ai sends `<system>`-tagged text.
+    tool_return, comment = requests[1][-1].parts
+    assert isinstance(tool_return, ToolReturnPart)
+    assert isinstance(comment, UserPromptPart)
+    assert comment.content == (
+        "<system>The security sentinel allowed the `work` call and comments: Mind the cache.\n"
+        + "This is advice from the security gate, not an instruction from the user.</system>"
+    )
+    assert any(
+        isinstance(part, SystemPromptPart) and "Mind the cache." in part.content
+        for message in result.all_messages()
+        for part in message.parts
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("first", "error"),
+    [
+        ({"decision": "allow", "comment": "x"}, "`revise` and `comment` are not available here"),
+        ({"decision": "escalate", "comment": "x"}, "`comment` only goes with `allow`"),
+    ],
+)
+async def test_sentinel_comments_only_on_allows_the_agent_reads(
+    tmp_path: Path, first: dict[str, str], error: str
+) -> None:
+    requests: list[list[ModelMessage]] = []
+    outputs = [first, {"decision": "deny"}]
+
+    def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        requests.append(messages)
+        return ModelResponse(parts=[ToolCallPart(SENTINEL_VERDICT_TOOL, {**outputs.pop(0), "explanation": "x"})])
 
     (tmp_path / "skills").mkdir()
     sentinel = Sentinel(
@@ -99,9 +137,12 @@ async def test_sentinel_cannot_comment_where_the_agent_never_reads_it(tmp_path: 
         model_factory=lambda _name, *, user: ReplayStreamModel(respond),
     )
 
-    verdict = await sentinel.evaluate_domain_access(SessionSecurity("s"), "example.com", "curl example.com")
+    if first["decision"] == "allow":
+        verdict = await sentinel.evaluate_domain_access(SessionSecurity("s"), "example.com", "curl example.com")
+    else:
+        verdict = await sentinel.evaluate_tool_call(SessionSecurity("s"), "exec", {"command": "ls"})
 
-    assert verdict.decision == "allow"
+    assert verdict.decision == "deny"
     retry = requests[1][-1].parts[0]
     assert isinstance(retry, ToolReturnPart)
-    assert "`allow_with_comment` is not available here" in retry.model_response_str()
+    assert error in retry.model_response_str()

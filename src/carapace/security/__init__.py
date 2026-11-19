@@ -27,7 +27,6 @@ from .context import (
     ToolCallEntry,
     format_changes_requested_message,
     format_denial_message,
-    format_sentinel_comment,
     normalize_optional_message,
 )
 from .context import CredentialAccessEntry as CredentialAccessEntry
@@ -66,10 +65,9 @@ async def evaluate_with(
     usage_limits: UsageLimits | None = None,
     tool_call_callback: Any = None,
     tool_call_id: str | None,
-) -> str | None:
+) -> None:
     """Main security gate. Auto-allows safe tools; asks the sentinel for everything else.
 
-    Returns the sentinel's comment for the agent when it allows the call with one.
     Raises ApprovalRequired if the sentinel escalates, ChangesRequestedError if it wants the agent
     to change its approach, or SecurityDeniedError if denied.
     """
@@ -96,7 +94,7 @@ async def evaluate_with(
             approval_verdict="allow",
             approval_explanation=explanation,
         )
-        return None
+        return
 
     if tool_name in SAFE_TOOLS:
         entry = ToolCallEntry(tool=tool_name, args=args, decision="auto_allowed")
@@ -119,7 +117,7 @@ async def evaluate_with(
             approval_verdict="allow",
             approval_explanation="auto-allowed",
         )
-        return None
+        return
 
     if tool_name == "exec":
         matched_exec = match_auto_allowed_exec(args)
@@ -146,7 +144,7 @@ async def evaluate_with(
                 approval_verdict="allow",
                 approval_explanation=explanation,
             )
-            return None
+            return
 
     _log_tool_call(
         tool_name,
@@ -199,6 +197,7 @@ async def evaluate_with(
         approval_source="sentinel",
         approval_verdict=verdict.decision,
         approval_explanation=verdict.explanation,
+        approval_comment=verdict.comment or None,
     )
 
     if verdict.decision == "deny":
@@ -239,6 +238,7 @@ async def evaluate_with(
             }
         )
 
+    # allow
     session.write_audit(
         AuditEntry.now(
             kind="tool_call",
@@ -249,7 +249,9 @@ async def evaluate_with(
             explanation=verdict.explanation,
         )
     )
-    return verdict.explanation if verdict.decision == "allow_with_comment" else None
+    if verdict.comment:
+        subject = f"the `{tool_name}` call {tool_call_id}" if tool_call_id else f"the `{tool_name}` call"
+        session.leave_comment_for_agent(subject, verdict.comment)
 
 
 async def evaluate_domain_with(
@@ -479,8 +481,8 @@ async def _decision_from_verdict(
             user_message = user_decision.message
             final_decision = "allowed" if allowed else "denied"
             detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
-        case "revise" | "allow_with_comment":
-            raise _verdict_not_offered(verdict, "domain access")
+        case "revise":
+            raise _revise_not_offered("domain access")
 
     source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
     approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
@@ -652,9 +654,8 @@ async def _run_domain_batch_worker(
 @dataclass(frozen=True, slots=True)
 class PushEvaluation:
     allowed: bool
-    # What the pushing agent reads in git's output: why the push was rejected, or the sentinel's comment on an
-    # allowed push. Empty when there is nothing to say.
-    message: str
+    # What the pushing agent reads in git's output when the push is rejected; empty when allowed.
+    rejection: str
 
 
 async def evaluate_push_with(
@@ -693,7 +694,7 @@ async def evaluate_push_with(
                 explanation=explanation,
             )
         )
-        return PushEvaluation(allowed=True, message="")
+        return PushEvaluation(allowed=True, rejection="")
 
     if session.ask_mode:
         explanation = "Ask mode blocks git push because it writes outside the sandbox."
@@ -714,7 +715,7 @@ async def evaluate_push_with(
                 explanation=explanation,
             )
         )
-        return PushEvaluation(allowed=False, message=format_denial_message("sentinel", explanation))
+        return PushEvaluation(allowed=False, rejection=format_denial_message("sentinel", explanation))
 
     await session.notify_push_decision(ref, "reviewing", "[sentinel] reviewing", approval_source="sentinel")
 
@@ -748,19 +749,15 @@ async def evaluate_push_with(
     if verdict.decision == "allow":
         allowed = True
         detail = f"[sentinel: allow] {verdict.explanation}"
-        message = ""
-    elif verdict.decision == "allow_with_comment":
-        allowed = True
-        detail = f"[sentinel: allow_with_comment] {verdict.explanation}"
-        message = format_sentinel_comment(verdict.explanation)
+        rejection = ""
     elif verdict.decision == "deny":
         allowed = False
         detail = f"[sentinel: deny] {verdict.explanation}"
-        message = format_denial_message("sentinel", verdict.explanation)
+        rejection = format_denial_message("sentinel", verdict.explanation)
     elif verdict.decision == "revise":
         allowed = False
         detail = f"[sentinel: revise] {verdict.explanation}"
-        message = format_changes_requested_message(verdict.explanation)
+        rejection = format_changes_requested_message(verdict.explanation)
     else:
         changed_files = sorted(touched_paths(diff))
         user_decision = await session.escalate_to_user(
@@ -776,13 +773,15 @@ async def evaluate_push_with(
         allowed = user_decision.allowed
         user_message = user_decision.message
         decision = "allowed" if allowed else "denied"
-        message = "" if allowed else format_denial_message("user", user_message)
-        detail = message or "[user: allow]"
+        rejection = "" if allowed else format_denial_message("user", user_message)
+        detail = rejection or "[user: allow]"
         source = "user"
         approval_verdict = "allow" if allowed else "deny"
 
     entry = GitPushEntry(ref=ref, decision=decision, explanation=verdict.explanation)
     session.append(entry)
+    if verdict.comment:
+        session.leave_comment_for_agent(f"the git push to {ref}", verdict.comment)
     await session.notify_push_decision(
         ref,
         decision,
@@ -790,6 +789,7 @@ async def evaluate_push_with(
         approval_source=source,
         approval_verdict=approval_verdict,
         approval_explanation=verdict.explanation if source == "sentinel" else normalize_optional_message(user_message),
+        approval_comment=verdict.comment or None,
     )
 
     session.write_audit(
@@ -801,7 +801,7 @@ async def evaluate_push_with(
         )
     )
 
-    return PushEvaluation(allowed=allowed, message=message)
+    return PushEvaluation(allowed=allowed, rejection=rejection)
 
 
 @dataclass(frozen=True, slots=True)
@@ -906,8 +906,8 @@ async def evaluate_credential_with(
             allowed = user_decision.allowed
             user_message = user_decision.message
             detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
-        case "revise" | "allow_with_comment":
-            raise _verdict_not_offered(verdict, "credential access")
+        case "revise":
+            raise _revise_not_offered("credential access")
 
     source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
     approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
@@ -935,7 +935,7 @@ async def evaluate_credential_with(
 
 def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "changes_requested", "escalated", "denied"]:
     match verdict.decision:
-        case "allow" | "allow_with_comment":
+        case "allow":
             return "allowed"
         case "revise":
             return "changes_requested"
@@ -945,9 +945,9 @@ def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "change
             return "denied"
 
 
-def _verdict_not_offered(verdict: SentinelVerdict, kind: str) -> RuntimeError:
-    # The sentinel's output validator rejects verdicts addressed to the agent where it never reads the explanation.
-    return RuntimeError(f"Sentinel returned `{verdict.decision}` for {kind}, where it is not offered.")
+def _revise_not_offered(kind: str) -> RuntimeError:
+    # The sentinel's output validator rejects `revise` where the agent never reads the explanation.
+    return RuntimeError(f"Sentinel returned `revise` for {kind}, where it is not offered.")
 
 
 def _log_tool_call(
@@ -960,6 +960,7 @@ def _log_tool_call(
     approval_explanation: str | None = None,
     *,
     tool_call_id: str | None,
+    approval_comment: str | None = None,
 ) -> None:
     args_parts = []
     for k, v in args.items():
@@ -972,6 +973,15 @@ def _log_tool_call(
         args_str = args_str[:197] + "..."
 
     if callback:
-        callback(tool_name, args, detail, approval_source, approval_verdict, approval_explanation, tool_call_id)
+        callback(
+            tool_name,
+            args,
+            detail,
+            approval_source,
+            approval_verdict,
+            approval_explanation,
+            tool_call_id,
+            approval_comment,
+        )
     else:
         print(f"  \033[2m{tool_name}({args_str}) {detail}\033[0m")

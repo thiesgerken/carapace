@@ -41,7 +41,7 @@ async def test_ask_mode_denies_git_push_without_sentinel_review(tmp_path) -> Non
     )
 
     assert evaluation.allowed is False
-    assert evaluation.message == (
+    assert evaluation.rejection == (
         "Sentinel denied this operation. Ask mode blocks git push because it writes outside the sandbox."
     )
     sentinel.evaluate_push.assert_not_awaited()

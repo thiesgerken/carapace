@@ -799,6 +799,7 @@ export function Message({
           approvalSource={message.approvalSource}
           approvalVerdict={message.approvalVerdict}
           approvalExplanation={message.approvalExplanation}
+          approvalComment={message.approvalComment}
           decisionMessage={message.decisionMessage}
           result={message.result}
           files={message.files}
@@ -820,6 +821,7 @@ export function Message({
             approvalSource: c.approvalSource,
             approvalVerdict: c.approvalVerdict,
             approvalExplanation: c.approvalExplanation,
+            approvalComment: c.approvalComment,
             decisionMessage: c.decisionMessage,
             result: c.result,
             files: c.files,

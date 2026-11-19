@@ -54,6 +54,8 @@ interface ToolCallBadgeProps {
   approvalSource?: ApprovalSource;
   approvalVerdict?: ApprovalVerdict;
   approvalExplanation?: string;
+  /** What the sentinel told the agent about the operation it allowed. */
+  approvalComment?: string;
   decisionMessage?: string;
   result?: string;
   files?: SentFile[];
@@ -470,16 +472,6 @@ function ApprovalBadge({
         </span>
       );
     }
-    if (verdict === "allow_with_comment") {
-      return (
-        <span
-          className="inline-flex shrink-0 items-center text-green-600 dark:text-green-400"
-          title={tooltip || undefined}
-        >
-          <MessageSquareText className="h-3 w-3" />
-        </span>
-      );
-    }
     const colorClass =
       verdict === "allow"
         ? "text-green-600 dark:text-green-400"
@@ -567,6 +559,7 @@ export function ToolCallBadge({
   approvalSource,
   approvalVerdict,
   approvalExplanation,
+  approvalComment,
   decisionMessage,
   result,
   files,
@@ -817,6 +810,11 @@ export function ToolCallBadge({
         );
       })()}
       {source && <ApprovalBadge source={source} verdict={verdict} tooltip={finalDecisionMessage || sentinelExplanation || undefined} />}
+      {approvalComment && (
+        <span className="inline-flex shrink-0 items-center text-green-600 dark:text-green-400" title={approvalComment}>
+          <MessageSquareText className="h-3 w-3" />
+        </span>
+      )}
       {/* A folded tool row is outside the model's context entirely; the fold rail tells that story. */}
       {compaction?.orig_tokens != null && compaction.folded_into == null && (
         <span
@@ -970,12 +968,17 @@ export function ToolCallBadge({
                   {t("details.sentinelRequestsChanges")}{" "}
                 </span>
               )}
-              {verdict === "allow_with_comment" && (
-                <span className="font-medium text-green-600 dark:text-green-400">
-                  {t("details.sentinelComments")}{" "}
-                </span>
-              )}
               {sentinelExplanation}
+            </div>
+          )}
+
+          {approvalComment && (
+            <div className="text-[11px] text-muted-foreground leading-relaxed">
+              <span className="font-medium text-green-600 dark:text-green-400">
+                <MessageSquareText className="inline h-3 w-3 -translate-y-px mr-1" />
+                {t("details.commentForAgent")}
+              </span>{" "}
+              {approvalComment}
             </div>
           )}
 

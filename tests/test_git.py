@@ -136,7 +136,7 @@ class SentinelStub:
 @pytest.fixture
 async def sentinel_api() -> AsyncIterator[SentinelStub]:
     requests: list[dict[str, object]] = []
-    responses = [(200, b'{"verdict": "allow", "reason": ""}')]
+    responses = [(200, b'{"verdict": "allow"}')]
 
     async def respond(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         headers = (await reader.readuntil(b"\r\n\r\n")).decode()

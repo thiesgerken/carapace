@@ -1047,7 +1047,7 @@
             "sentinelLabel": "Sentinel:",
             "sentinelReviewing": "Reviewing this tool call.",
             "sentinelRequestsChanges": "Requests changes:",
-            "sentinelComments": "Allowed, with a comment for the agent:",
+            "commentForAgent": "Sentinel to the agent:",
             "userLabel": "User:",
             "deniedByUser": "Denied by user.",
             "contexts": "Contexts:",

@@ -156,6 +156,8 @@ class ToolCallInfo(BaseModel):
     approval_source: ApprovalSource | None = None
     approval_verdict: ApprovalVerdict | None = None
     approval_explanation: str | None = None
+    # What the sentinel told the agent about an operation it allowed.
+    approval_comment: str | None = None
     tool_id: str | None = None
     parent_tool_id: str | None = None
     # The model's id for the call (``ToolCallStart.tool_call_id``); ``None`` for calls the model

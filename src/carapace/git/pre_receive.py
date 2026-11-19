@@ -89,8 +89,6 @@ def main() -> int:
         if result["verdict"] != "allow":
             print(f"Push rejected: {result['reason']}", file=sys.stderr)
             return 1
-        if result["reason"]:
-            print(result["reason"], file=sys.stderr)
 
     if not evaluated:
         print("DENIED: no refs received for evaluation", file=sys.stderr)

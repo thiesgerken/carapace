@@ -93,6 +93,7 @@ class SessionApprovalMixin:
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        approval_comment: str | None = None,
         parent_tool_id: str | None = None,
         match_args: dict[str, Any] | None = None,
     ) -> str:
@@ -110,6 +111,8 @@ class SessionApprovalMixin:
         }
         if parent_tool_id is not None:
             event["parent_tool_id"] = parent_tool_id
+        if approval_comment is not None:
+            event["approval_comment"] = approval_comment
         if isinstance(contexts_raw, list):
             event["contexts"] = list(contexts_raw)
 
@@ -357,6 +360,7 @@ class SessionApprovalMixin:
             ApprovalSource | None,
             ApprovalVerdict | None,
             str | None,
+            str | None,
         ],
         Awaitable[None],
     ]:
@@ -370,6 +374,7 @@ class SessionApprovalMixin:
             approval_source: ApprovalSource | None = None,
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
+            approval_comment: str | None = None,
         ) -> None:
             parent_id = active.security.current_parent_tool_id if active.security else None
             tool_id = self._record_tool_call_event(
@@ -380,6 +385,7 @@ class SessionApprovalMixin:
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
+                approval_comment=approval_comment,
                 parent_tool_id=parent_id,
                 match_args={"ref": ref},
             )
@@ -394,6 +400,7 @@ class SessionApprovalMixin:
                 approval_explanation,
                 tool_id,
                 parent_id,
+                approval_comment=approval_comment,
             )
 
         return _notify
