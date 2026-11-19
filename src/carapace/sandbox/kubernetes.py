@@ -54,6 +54,15 @@ _QUANTITY_SUFFIXES: dict[str, int] = {
 }
 
 
+# The sandbox resolves no names itself: it reaches the server by IP, proxy-aware tools
+# leave resolution to the proxy, and tunnels shadow their hosts in /etc/hosts. The
+# NetworkPolicy blocks kube-dns, since cluster DNS would forward `$(secret).evil.tld`
+# past the proxy. This only rewrites resolv.conf, so lookups fail fast instead of timing
+# out against the blocked kube-dns; it stops no deliberate query to another resolver.
+# Kubernetes requires a nameserver, and nothing listens on 127.0.0.1:53 in the sandbox.
+_NO_DNS_POD_SPEC = {"dnsPolicy": "None", "dnsConfig": {"nameservers": ["127.0.0.1"]}}
+
+
 def _sanitize_pod_name(name: str) -> str:
     """Ensure a name is a valid Kubernetes pod name (lowercase alphanumeric + hyphens, max 63 chars)."""
     sanitized = name.lower().replace("_", "-")
@@ -363,6 +372,7 @@ class KubernetesRuntime(ContainerRuntime):
                     }
                 ],
                 "restartPolicy": "Always",
+                **_NO_DNS_POD_SPEC,
                 **({"serviceAccountName": self._service_account} if self._service_account else {}),
                 "automountServiceAccountToken": False,
                 **({"priorityClassName": self._priority_class} if self._priority_class else {}),
@@ -473,6 +483,7 @@ class KubernetesRuntime(ContainerRuntime):
                             }
                         ],
                         "restartPolicy": "Always",
+                        **_NO_DNS_POD_SPEC,
                         **({"serviceAccountName": self._service_account} if self._service_account else {}),
                         "automountServiceAccountToken": False,
                         **({"priorityClassName": self._priority_class} if self._priority_class else {}),
