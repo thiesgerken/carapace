@@ -49,6 +49,10 @@ def format_changes_requested_message(explanation: str) -> str:
     return f"Sentinel requests changes (no threat detected): {explanation}"
 
 
+def format_sentinel_comment(explanation: str) -> str:
+    return f"[Sentinel allowed this operation with a comment: {explanation}]"
+
+
 # --- Action Log Entry Types ---
 
 
@@ -152,19 +156,19 @@ SENTINEL_VERDICT_TOOL = "judge"
 
 
 class SentinelVerdict(BaseModel):
-    decision: Literal["allow", "revise", "escalate", "deny"]
+    decision: Literal["allow", "allow_with_comment", "revise", "escalate", "deny"]
     explanation: str = ""
     risk_level: Literal["low", "medium", "high"] = "medium"
 
 
 class UnattendedSentinelVerdict(BaseModel):
-    decision: Literal["allow", "revise", "deny"]
+    decision: Literal["allow", "allow_with_comment", "revise", "deny"]
     explanation: str = ""
     risk_level: Literal["low", "medium", "high"] = "medium"
 
 
 ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "autonomy", "unknown"]
-ApprovalVerdict = Literal["allow", "revise", "deny", "escalate"]
+ApprovalVerdict = Literal["allow", "allow_with_comment", "revise", "deny", "escalate"]
 type FinalDecision = Literal["auto_allowed", "allowed", "changes_requested", "escalated", "denied"]
 
 

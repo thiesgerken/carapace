@@ -15,6 +15,7 @@ import {
   History,
   Hourglass,
   KeyRound,
+  MessageSquareText,
   Plug,
   Puzzle,
   Replace,
@@ -466,6 +467,16 @@ function ApprovalBadge({
           title={tooltip || undefined}
         >
           <ShieldEllipsis className="h-3 w-3" />
+        </span>
+      );
+    }
+    if (verdict === "allow_with_comment") {
+      return (
+        <span
+          className="inline-flex shrink-0 items-center text-green-600 dark:text-green-400"
+          title={tooltip || undefined}
+        >
+          <MessageSquareText className="h-3 w-3" />
         </span>
       );
     }
@@ -957,6 +968,11 @@ export function ToolCallBadge({
               {verdict === "revise" && (
                 <span className="font-medium text-orange-600 dark:text-orange-400">
                   {t("details.sentinelRequestsChanges")}{" "}
+                </span>
+              )}
+              {verdict === "allow_with_comment" && (
+                <span className="font-medium text-green-600 dark:text-green-400">
+                  {t("details.sentinelComments")}{" "}
                 </span>
               )}
               {sentinelExplanation}

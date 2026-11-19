@@ -411,7 +411,9 @@ def _change_request(start: datetime) -> Transcript:
         "[stderr] To http://carapace:8322/git/knowledge\n   3f2a9c1..5be71d2  main -> main",
         title="commit and push the fix",
         source="sentinel",
-        explanation="Commits and pushes the fix the user asked for.",
+        verdict="allow_with_comment",
+        explanation="Commits and pushes the fix the user asked for. `-a` stages every modified tracked file: "
+        "add the skill file by path next time, so nothing else slips into the commit.",
     )
     t.call(
         "git_push",

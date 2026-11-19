@@ -206,8 +206,11 @@ export interface SentFile {
   size: number;
 }
 
-/** The verdict of the sentinel or the user on an action; `revise` sends it back to the agent for changes. */
-export type ApprovalVerdict = "allow" | "revise" | "deny" | "escalate";
+/**
+ * The verdict of the sentinel or the user on an action; `revise` sends it back to the agent for changes,
+ * `allow_with_comment` lets it run and hands the agent the sentinel's advice.
+ */
+export type ApprovalVerdict = "allow" | "allow_with_comment" | "revise" | "deny" | "escalate";
 
 export interface HistoryMessage {
   role: string;

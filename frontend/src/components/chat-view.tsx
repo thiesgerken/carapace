@@ -442,7 +442,7 @@ function isToolCallLoading(
   if (approvalSource === "sentinel" && approvalVerdict == null) {
     return true;
   }
-  return approvalVerdict === "allow";
+  return approvalVerdict === "allow" || approvalVerdict === "allow_with_comment";
 }
 
 function updateToolCallMessageById(

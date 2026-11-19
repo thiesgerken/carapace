@@ -58,6 +58,9 @@ class Deps(BaseModel):
     # reuses connections instead of re-handshaking every step.
     mcp_toolsets: dict[str, Any] = {}
 
+    # The sentinel's comments on allowed tool calls, by tool call id, until the call's result goes to the model.
+    sentinel_comments: dict[str, str] = {}
+
     tool_call_callback: ToolCallCallback | None = None
     tool_result_callback: Callable[[ToolResult], None] | None = None
     append_session_events: Callable[[list[dict[str, Any]]], None] | None = None

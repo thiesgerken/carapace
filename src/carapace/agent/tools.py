@@ -54,6 +54,7 @@ from ..usage import LlmRequestLogCapability
 from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, AutonomyLimitCapability
 from .deps import Deps, TaskDone, TaskFailed
 from .history_compaction import HistoryCompactionCapability, ProviderCompactionMarkerCapability
+from .sentinel_comments import SentinelCommentCapability
 
 SEND_FILE_MAX_BYTES = 50 * 1024 * 1024
 
@@ -323,11 +324,12 @@ async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> 
     """Delegate to the security module for tool call evaluation.
 
     Returns ``ToolDenied`` when the sentinel denies the call or requests changes (the caller must
-    return it to pydantic-ai), or ``None`` when the call is allowed.
+    return it to pydantic-ai), or ``None`` when the call is allowed. A comment the sentinel allows the call
+    with is left for ``SentinelCommentCapability`` to attach to the call's result.
     """
     with span("gate", tool_name) as gate:
         try:
-            await security.evaluate_with(
+            comment = await security.evaluate_with(
                 ctx.deps.security,
                 ctx.deps.sentinel,
                 tool_name,
@@ -341,6 +343,9 @@ async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> 
         except (security.SecurityDeniedError, security.ChangesRequestedError) as exc:
             gate.attrs["denied"] = True
             return ToolDenied(str(exc))
+    if comment is not None:
+        assert ctx.tool_call_id is not None, "pydantic-ai runs every tool call with its id"
+        ctx.deps.sentinel_comments[ctx.tool_call_id] = comment
     return None
 
 
@@ -1133,6 +1138,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             LlmRequestLogCapability(source="agent", model_id=deps.agent_model_id),
             # Before the autonomy limit, so a call it holds back still shows as a (deferred) tool span.
             ToolSpanCapability(),
+            SentinelCommentCapability(),
             AutonomyLimitCapability(
                 streak=deps.autonomy,
                 session_state=deps.session_state,

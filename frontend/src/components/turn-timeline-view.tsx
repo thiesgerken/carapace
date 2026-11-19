@@ -88,7 +88,7 @@ const FACT_CLASS: Record<Fact["tone"], string> = {
   bad: "rounded bg-red-500/15 px-1 text-red-700 dark:text-red-300",
 };
 
-const VERDICT_TONE: Record<string, Fact["tone"]> = { allow: "good", revise: "warn", escalate: "warn", deny: "bad" };
+const VERDICT_TONE: Record<string, Fact["tone"]> = { allow: "good", allow_with_comment: "good", revise: "warn", escalate: "warn", deny: "bad" };
 
 export const CATEGORY_CLASS: Record<TimeCategory, string> = {
   preparation: "bg-yellow-300 dark:bg-yellow-200",

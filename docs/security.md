@@ -8,8 +8,9 @@ Every tool call and skill invocation passes through the security module before e
 
 1. **Safe-list check.** A hardcoded set of tool names is auto-allowed without any LLM call. carapace also applies a narrow read-only `exec` heuristic and a narrow exact-domain proxy heuristic for obviously harmless cases.
 2. **Sentinel evaluation.** All other operations are sent to the sentinel agent -- an LLM that receives the action log, the tool name and arguments, and makes a contextual decision.
-3. **Verdict.** The sentinel returns one of four decisions:
+3. **Verdict.** The sentinel is a guard rail, not a reviewer of the agent's work: it stops the agent from going haywire, changing what it should not, exfiltrating data, or following injected instructions, and lets everything else through. It returns one of five decisions:
    - **allow** -- proceed without interruption.
+   - **allow_with_comment** -- proceed, and hand the agent the sentinel's explanation as advice. For tool calls the agent reads "[Sentinel allowed this operation with a comment: <explanation>]" after the tool's result; for git pushes the pre-receive hook prints it into git's output. Like `revise`, only offered for tool calls and git pushes.
    - **revise** -- no threat, but the agent should change its approach first (split a bundled call, narrow its scope, drop an unrequested extra, ask the user in chat, or explain how the step follows from the user's request before retrying it). The operation does not run; the agent receives "Sentinel requests changes (no threat detected): <explanation>" and continues. Only offered for tool calls and git pushes, the two places where the explanation reaches the agent. For proxy domain and credential requests an output validator makes the sentinel choose another verdict.
    - **escalate** -- pause the operation and ask the user for approval.
    - **deny** -- block the operation outright.
@@ -32,7 +33,7 @@ flowchart TD
     ToolCall --> SafeList
     SafeList -->|yes| Proceed
     SafeList -->|no| Sentinel
-    Sentinel -->|allow| Proceed
+    Sentinel -->|allow / allow_with_comment| Proceed
     Sentinel -->|revise| Revise
     Sentinel -->|escalate| Gate
     Sentinel -->|deny| Blocked
@@ -46,8 +47,8 @@ The security policy lives in each user's Git-backed knowledge repo as `SECURITY.
 
 The shipped default policy (see `src/carapace/assets/SECURITY.md`) covers:
 
-- **Default stance** -- assume the agent is usually doing the right thing; escalate for genuine ambiguity or risk, not routine work; deny when listed threats clearly apply; the user may instruct the sentinel how to treat a specific next step (within hard safety limits).
-- **Verdicts** -- when to allow, revise, escalate or deny. Scope creep and bundling an unrequested extra into a call get `revise`, not a question to the user; a second `revise` for the same intent becomes `escalate`, or `deny` in unattended sessions (the sentinel sees its earlier verdicts in the action log, there is no counter in code).
+- **Default stance** -- assume the agent is usually doing the right thing; judge safety and scope, never the quality of the agent's work (advice goes into `allow_with_comment`); escalate for genuine ambiguity or risk, not routine work; deny when listed threats clearly apply; the user may instruct the sentinel how to treat a specific next step (within hard safety limits).
+- **Verdicts** -- when to allow (with or without comment), revise, escalate or deny. Scope creep and bundling an unrequested extra into a call get `revise`, not a question to the user; a second `revise` for the same intent becomes `escalate`, or `deny` in unattended sessions (the sentinel sees its earlier verdicts in the action log, there is no counter in code).
 - **Threats** -- prompt injection, destructive or absurd approaches, task drift, unsafe handling of passwords.
 - **Sandbox and layered defense** -- local `exec` is judged in context; network and Git push provide a second line of defense, but obviously malicious commands should still be stopped early.
 - **Network (proxy)** -- TLS hides everything except the domain; higher bar for outbound than inbound; judge plausibility from the triggering command and conversation.
@@ -187,9 +188,9 @@ The sentinel's system prompt explicitly tells it that the tool call itself was a
 
 When the agent pushes changes from a sandbox container back to the knowledge repository, the push is gated by a **pre-receive hook** that routes each ref update through the sentinel. The sentinel sees the branch, commit log, and diff, and decides whether to allow the push.
 
-Like tool calls and proxy domains, the sentinel can escalate a git push to the user for approval. Push evaluation results (allow, revise, deny, escalate) are broadcast to all session subscribers (WebSocket, Matrix) and recorded in both the action log (`GitPushEntry`) and the audit log.
+Like tool calls and proxy domains, the sentinel can escalate a git push to the user for approval. Push evaluation results (allow, allow_with_comment, revise, deny, escalate) are broadcast to all session subscribers (WebSocket, Matrix) and recorded in both the action log (`GitPushEntry`) and the audit log.
 
-If a push is denied or the sentinel requests changes, `git push` fails in the sandbox and the pre-receive hook prints the reason (`Push rejected: Sentinel requests changes (no threat detected): ...`), which the agent reads in git's output.
+If a push is denied or the sentinel requests changes, `git push` fails in the sandbox and the pre-receive hook prints the reason (`Push rejected: Sentinel requests changes (no threat detected): ...`), which the agent reads in git's output. A comment on an allowed push is printed the same way, without the `Push rejected:` prefix.
 
 If an external remote is configured (`config.git.remote` in the owning user record), a successful push from the sandbox is automatically forwarded to the remote. Users can also trigger this manually with the `/push` slash command.
 

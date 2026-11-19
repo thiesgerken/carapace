@@ -274,7 +274,7 @@ class SessionTurnMixin(SessionTurnHost):
             approval_explanation: str | None = None,
             tool_call_id: str | None = None,
         ) -> None:
-            if approval_verdict == "allow":
+            if approval_verdict in ("allow", "allow_with_comment"):
                 budget = active.state.budget
                 if budget.tool_calls is not None and active.usage_tracker.tool_calls >= budget.tool_calls:
                     raise SessionBudgetExceededError(self._budget_gauges(active))

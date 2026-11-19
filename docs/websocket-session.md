@@ -173,7 +173,7 @@ long args stay cheap.
 When present:
 
 - `approval_source`: `safe-list` \| `sentinel` \| `user` \| `skill` \| `bypass` \| `unknown`
-- `approval_verdict`: `allow` \| `revise` \| `deny` \| `escalate`
+- `approval_verdict`: `allow` \| `allow_with_comment` \| `revise` \| `deny` \| `escalate`
 
 **`skill`** — the action was allowed because it's covered by a context grant from an activated skill (e.g., domain access or credential fetch within a matching `contexts` exec).
 

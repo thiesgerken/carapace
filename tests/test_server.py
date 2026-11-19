@@ -4651,7 +4651,7 @@ def test_internal_push_review_uses_live_owner_scoped_sharing(
             },
         )
         assert response.status_code == 200
-        assert response.json() == {"verdict": "allow"}
+        assert response.json() == {"verdict": "allow", "reason": ""}
         assert ("this push is a publication." in prompts[-1]) is expected
 
 

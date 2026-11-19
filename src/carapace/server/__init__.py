@@ -840,9 +840,7 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
             return {"verdict": "deny", "reason": str(exc)}
         except UsageLimitExceeded as exc:
             return {"verdict": "deny", "reason": str(exc)}
-    if evaluation.allowed:
-        return {"verdict": "allow"}
-    return {"verdict": "deny", "reason": evaluation.rejection}
+    return {"verdict": "allow" if evaluation.allowed else "deny", "reason": evaluation.message}
 
 
 router.include_router(sessions_router)

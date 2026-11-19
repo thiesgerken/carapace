@@ -69,7 +69,7 @@ async def test_revised_push_is_rejected_with_the_change_request() -> None:
     )
 
     assert evaluation.allowed is False
-    assert evaluation.rejection == "Sentinel requests changes (no threat detected): Split the commit from the cleanup."
+    assert evaluation.message == "Sentinel requests changes (no threat detected): Split the commit from the cleanup."
     assert session.action_log[-1] == GitPushEntry(
         ref="refs/heads/main", decision="changes_requested", explanation="Split the commit from the cleanup."
     )
