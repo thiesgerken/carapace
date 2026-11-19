@@ -245,7 +245,10 @@ def test_agent_requests_cache_the_stable_instructions_but_not_the_session_info(t
 
     deps, request = _capture_agent_request(tmp_path, "anthropic:claude-sonnet-4-6", anthropic)
     breakpoint_ = {"type": "ephemeral", "ttl": "5m"}
-    assert request["system"] == [
+    # pydantic-ai's note on `<system>` tags (sentinel comments) leads, fixed from the first request on.
+    announcement, *instructions = request["system"]
+    assert announcement["text"].startswith("Mid-conversation system messages")
+    assert instructions == [
         {"type": "text", "text": build_system_prompt(deps), "cache_control": breakpoint_},
         {"type": "text", "text": build_session_info(deps)},
     ]
