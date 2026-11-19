@@ -301,7 +301,7 @@ The **internal API** (port 8320) is bound to `127.0.0.1` only and hosts the sent
 
 The included `networkpolicy.yaml` restricts sandbox pods:
 
-- **Egress**: only to the server on ports 3128 (proxy) and 8322 (sandbox API). No DNS: sandbox pods also run with `dnsPolicy: None` (see [No DNS from the sandbox](sandbox.md#no-dns-from-the-sandbox))
+- **Egress**: only to the server on ports 3128 (proxy) and 8322 (sandbox API). No DNS; sandbox pods also run with `dnsPolicy: None` so lookups fail fast (see [No DNS from the sandbox](sandbox.md#no-dns-from-the-sandbox))
 - **Ingress**: only from the server pod (for exec)
 
 This mirrors the Docker setup where sandbox containers are on an internal network with no direct internet access.

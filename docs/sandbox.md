@@ -154,7 +154,7 @@ A resolver that forwards external names is a channel past the proxy: `getent hos
 
 How each runtime enforces it:
 
-- **Kubernetes**: sandbox pods get `dnsPolicy: None` with `127.0.0.1` as their only nameserver. Nothing listens there, so lookups fail immediately. The NetworkPolicy no longer allows egress to kube-dns either. The pod setting also holds where no NetworkPolicy is enforced.
+- **Kubernetes**: the NetworkPolicy blocks DNS along with all other egress except the proxy and the sandbox API. That is the barrier. On top, sandbox pods get `dnsPolicy: None` with `127.0.0.1` as their only nameserver. Nothing listens there, so lookups fail immediately instead of hanging until the blocked kube-dns times out. That setting only rewrites `/etc/resolv.conf`, so it does not stop a query sent straight to a resolver's IP. Without a CNI that enforces the NetworkPolicy the sandbox has direct egress, DNS included (see [kubernetes.md](kubernetes.md#networkpolicy)).
 - **Docker**: Docker's embedded DNS (`127.0.0.11`) answers only names on the network itself (other containers) for containers on an `internal` network such as `carapace-sandbox`. It does not forward other queries upstream (verified with a packet capture on Docker Engine 29), so carapace configures nothing extra. On another engine version, check that `getent hosts example.com` fails inside a sandbox.
 
 Tools that insist on resolving a hostname locally before they connect fail in the sandbox. Proxy-aware clients are unaffected.
