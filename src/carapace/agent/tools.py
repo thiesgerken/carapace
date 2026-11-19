@@ -1143,7 +1143,15 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             ),
         ],
         model_settings=with_prompt_cache(
-            model_settings_for_config(deps.config, deps.agent_model_id, default_thinking=True), conversation=True
+            {
+                **(model_settings_for_config(deps.config, deps.agent_model_id, default_thinking=True) or {}),
+                # Sentinel comments are mid-conversation system messages. Models without inline system
+                # messages get them as `<system>` text, plus a sentence about that tag at the start of the
+                # standing prompt. "always" keeps that sentence fixed instead of adding it with the first
+                # comment and dropping it once compaction folds the comments away: either would miss the cache.
+                "framing_announcement": "always",
+            },
+            conversation=True,
         ),
         retries={"tools": 1, "output": 3},
     )

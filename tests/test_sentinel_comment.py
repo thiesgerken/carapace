@@ -18,12 +18,22 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from carapace.agent.autonomy import AutonomyStreak
+from carapace.agent.deps import Deps
 from carapace.agent.sentinel_comments import SentinelCommentCapability
+from carapace.agent.tools import create_agent
+from carapace.credentials import CredentialRegistry
+from carapace.git.store import GitStore
+from carapace.models.config import Config
+from carapace.models.session import SessionState
+from carapace.sandbox.manager import SandboxManager
 from carapace.security import evaluate_push_with, evaluate_with
 from carapace.security.context import SENTINEL_VERDICT_TOOL, SentinelVerdict, SessionSecurity
 from carapace.security.sentinel import Sentinel
+from carapace.usage import UsageTracker
 
 from .streaming_model import ReplayStreamModel
 
@@ -146,3 +156,28 @@ async def test_sentinel_comments_only_on_allows_the_agent_reads(
     retry = requests[1][-1].parts[0]
     assert isinstance(retry, ToolReturnPart)
     assert error in retry.model_response_str()
+
+
+def test_agent_announces_the_system_tag_from_the_first_request(tmp_path: Path) -> None:
+    # pydantic-ai's default adds the announcement with the first comment and drops it once compaction
+    # folds the comments away; both would re-write the whole cached prompt.
+    deps = Deps(
+        config=Config(),
+        data_dir=tmp_path,
+        knowledge_dir=tmp_path,
+        session_state=SessionState.now(session_id="s1"),
+        sandbox=MagicMock(spec=SandboxManager),
+        security=SessionSecurity("s1"),
+        sentinel=MagicMock(spec=Sentinel),
+        git_store=MagicMock(spec=GitStore),
+        agent_model=MagicMock(spec=Model),
+        agent_model_id="anthropic:claude-sonnet-4-6",
+        usage_tracker=UsageTracker(),
+        autonomy=AutonomyStreak(),
+        credential_registry=CredentialRegistry(),
+        load_session_events=list,
+    )
+
+    settings = create_agent(deps).model_settings
+
+    assert settings is not None and settings.get("framing_announcement") == "always"
