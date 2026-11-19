@@ -233,6 +233,18 @@ def test_build_statefulset_dict():
     assert {"name": "session-data", "mountPath": "/tmp", "subPath": "tmp"} in container["volumeMounts"]
 
 
+def test_sandbox_pods_resolve_no_names():
+    rt = _make_runtime()
+    pod = rt._build_pod_dict(ContainerConfig(image="sandbox:latest", name="test", network=None))
+    sts = rt._build_statefulset_dict(
+        SandboxConfig(name="carapace-sandbox-abc", sandbox_id="abc", session_id="abc", image="sandbox:latest")
+    )
+
+    for pod_spec in (pod["spec"], sts["spec"]["template"]["spec"]):
+        assert pod_spec["dnsPolicy"] == "None"
+        assert pod_spec["dnsConfig"] == {"nameservers": ["127.0.0.1"]}
+
+
 # --- create ---
 
 
