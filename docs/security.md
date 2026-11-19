@@ -183,6 +183,8 @@ When a sandboxed container makes a network request, the proxy intercepts it and 
 
 The sentinel's system prompt explicitly tells it that the tool call itself was already approved -- domain checks are a plausibility/safety-net layer, not a second full evaluation.
 
+The sandbox cannot resolve names itself, so a DNS lookup cannot carry data past the proxy and its domain checks; see [No DNS from the sandbox](sandbox.md#no-dns-from-the-sandbox).
+
 ## Git push evaluation
 
 When the agent pushes changes from a sandbox container back to the knowledge repository, the push is gated by a **pre-receive hook** that routes each ref update through the sentinel. The sentinel sees the branch, commit log, and diff, and decides whether to allow the push.
