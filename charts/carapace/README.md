@@ -48,13 +48,15 @@ kubectl create secret generic carapace-secrets -n carapace \
 helm install carapace oci://ghcr.io/thiesgerken/charts/carapace \
   --namespace carapace \
   --set ingress.hostname=carapace.example.com \
-  --set 'envFrom[0].secretRef.name=carapace-secrets'
+  --set 'envFrom[0].secretRef.name=carapace-secrets' \
+  --set postgres.image.tag=19-alpine
 
 # Or install from a local checkout
 helm install carapace ./charts/carapace \
   --namespace carapace \
   --set ingress.hostname=carapace.example.com \
-  --set 'envFrom[0].secretRef.name=carapace-secrets'
+  --set 'envFrom[0].secretRef.name=carapace-secrets' \
+  --set postgres.image.tag=19-alpine
 ```
 
 For Kustomize-based GitOps:
@@ -79,7 +81,8 @@ helm install carapace oci://ghcr.io/thiesgerken/charts/carapace \
   --namespace carapace \
   --version 0.28.0-pr.99 \
   --set ingress.hostname=carapace.example.com \
-  --set 'envFrom[0].secretRef.name=carapace-secrets'
+  --set 'envFrom[0].secretRef.name=carapace-secrets' \
+  --set postgres.image.tag=19-alpine
 ```
 
 The chart version stays tied to the chart's current base version. If `Chart.yaml` moves to `0.29.0`, the preview for PR 99 becomes `0.29.0-pr.99`.
@@ -109,6 +112,11 @@ Three options:
   Postgres (its own `<release>-postgres` PVC, Recreate strategy) and wires the server to
   it. With plain Helm the password is auto-generated into the `<release>-postgres` Secret
   and reused across upgrades via a `lookup`.
+
+  > **`postgres.image.tag` is required.** The chart ships no default, so a chart upgrade
+  > never changes your Postgres major. A new major refuses to start on the old data
+  > directory, so move between majors with `pg_dump`/restore into a fresh data directory,
+  > not by bumping the tag alone.
 
   > **GitOps (Argo CD / Flux): use `postgres.auth.existingSecret`.** The auto-generate
   > path relies on Helm `lookup`, which returns nothing when manifests are rendered with
@@ -291,6 +299,7 @@ The Bitwarden CLI binds to the fixed localhost-only internal port `8088` inside 
 | `redis.image.tag`                                      | `8-alpine`                       | Redis image tag                                                     |
 | `redis.resources`                                      | requests: 25m/64Mi, limit: 128Mi | Redis resource requests/limits                                      |
 | `postgres.enabled`                                     | `true`                           | Deploy the bundled in-cluster PostgreSQL                            |
+| `postgres.image.tag`                                   | **required**                     | Postgres image tag; pins the major (see Database)                   |
 | `postgres.auth.password`                               | `""` (auto-generated)            | DB password; empty auto-generates into the `<release>-postgres` Secret (Helm `lookup`, **not** GitOps-safe) |
 | `postgres.auth.existingSecret`                         | `""`                             | Externally managed Secret (needs `passwordKey` + `urlKey`); **recommended for GitOps** |
 | `postgres.persistence.size`                            | `8Gi`                            | Postgres data PVC size                                              |
@@ -316,10 +325,11 @@ The `Sandboxes` CR is currently used only as an ownership/metadata anchor. The c
 
 ```bash
 # Lint the chart
-helm lint charts/carapace
+helm lint charts/carapace --set postgres.image.tag=19-alpine
 
 # Render templates locally (dry-run)
 helm template carapace charts/carapace \
   --namespace carapace \
-  --set 'envFrom[0].secretRef.name=carapace-secrets'
+  --set 'envFrom[0].secretRef.name=carapace-secrets' \
+  --set postgres.image.tag=19-alpine
 ```

@@ -60,7 +60,7 @@ Sandbox owner name. Nil means use the release default, empty string means Deploy
 Postgres image with tag.
 */}}
 {{- define "carapace.postgresImage" -}}
-{{ .Values.postgres.image.registry }}/{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}
+{{ .Values.postgres.image.registry }}/{{ .Values.postgres.image.repository }}:{{ required "postgres.image.tag is required: pin the Postgres major (e.g. 19-alpine), the chart cannot migrate data between majors" .Values.postgres.image.tag }}
 {{- end }}
 
 {{/*

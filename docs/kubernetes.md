@@ -31,7 +31,8 @@ helm install carapace oci://ghcr.io/thiesgerken/charts/carapace \
   --namespace carapace \
   --set ingress.hostname=carapace.example.com \
   --set 'envFrom[0].secretRef.name=carapace-secrets' \
-  --set postgres.auth.existingSecret=carapace-postgres
+  --set postgres.auth.existingSecret=carapace-postgres \
+  --set postgres.image.tag=19-alpine
 
 # 4. Upgrade to a new version
 helm upgrade carapace oci://ghcr.io/thiesgerken/charts/carapace -n carapace
@@ -267,6 +268,10 @@ subscriptions) lives in a SQL database; schema migrations run automatically on s
 startup. The chart deploys a bundled in-cluster PostgreSQL by default (`postgres.enabled`),
 with an external-URL (`database.url`) or SQLite-on-the-data-PVC option. See the
 [chart README — Database](../charts/carapace/README.md#database) for backend selection.
+
+> **Always set `postgres.image.tag`.** The chart has no default for it, so the Postgres major
+> only changes when you change it. A new major does not start on the old data directory:
+> upgrade with `pg_dump`/restore into a fresh data directory.
 
 > **GitOps (Argo CD / Flux): set `postgres.auth.existingSecret`.** When `postgres.auth`
 > has no password, the chart auto-generates one and reuses it across upgrades via a Helm

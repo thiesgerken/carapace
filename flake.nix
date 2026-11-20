@@ -133,8 +133,8 @@
                 src = ./charts/carapace;
               }
               ''
-                helm lint "$src"
-                helm template carapace "$src" > "$out"
+                helm lint "$src" --set postgres.image.tag=19-alpine
+                helm template carapace "$src" --set postgres.image.tag=19-alpine > "$out"
               '';
         }
       );
