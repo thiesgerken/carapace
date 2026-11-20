@@ -240,7 +240,7 @@ postgres:
   image:
     registry: docker.io
     repository: library/postgres
-    tag: "18-alpine"
+    tag: "19-alpine"
     pullPolicy: IfNotPresent
   auth:
     database: carapace
