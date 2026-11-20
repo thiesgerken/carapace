@@ -240,7 +240,10 @@ postgres:
   image:
     registry: docker.io
     repository: library/postgres
-    tag: "18-alpine"
+    # -- Required. Pin the Postgres major yourself (e.g. "19-alpine"): a new major refuses to
+    # start on the old data directory, and the chart does not migrate between majors. Move to
+    # a new major with a dump/restore, never by bumping this tag alone.
+    tag: ""
     pullPolicy: IfNotPresent
   auth:
     database: carapace
