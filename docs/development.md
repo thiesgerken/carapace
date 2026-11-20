@@ -50,7 +50,7 @@ UI PRs show the pages they change: before and after, light and dark, plus phone 
 | `demo-pancake-recipe` | Classic Fluffy Pancake Recipe | skill activation, sentinel-reviewed tool calls with domain access and a credential released by the user, the debug view (`&view=debug`) with the turn's timeline and a request timeline per role |
 | `demo-recipe-skill` | Creating A Recipe Skill | file read and write, a git push, code blocks |
 | `demo-blocked-post` | HTTP POST Blocked In Ask Mode | ask mode, a call denied by the sentinel |
-| `demo-change-request` | Fixing The Pancake Ingredients | a call the sentinel sent back for changes (`revise`), then the split call and its push |
+| `demo-change-request` | Fixing The Pancake Ingredients | a call the sentinel sent back for changes (`revise`), then the split call (allowed with a comment for the agent) and its push |
 | `demo-pending-approval` | Cleaning Up NAS Backups | a pending approval card |
 | `demo-budget-stop` | Triage Open Issues | a budget stop with the error box |
 | `demo-unexpected-error` | LED Controller Pinout | a turn that stopped on an unexpected error: the failed call and the error box with its traceback |

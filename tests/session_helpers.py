@@ -79,6 +79,7 @@ class _FakeSubscriber(SessionSubscriber):
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
         tool_call_id: str | None = None,
+        approval_comment: str | None = None,
     ) -> None:
         self.tool_calls.append((tool, tool_call_id))
 
@@ -172,6 +173,7 @@ class _FakeSubscriber(SessionSubscriber):
         approval_explanation: str | None = None,
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
+        approval_comment: str | None = None,
     ) -> None:
         pass
 

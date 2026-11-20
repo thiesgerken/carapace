@@ -173,6 +173,7 @@ class SessionTurnHost(Protocol):
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        approval_comment: str | None = None,
         parent_tool_id: str | None = None,
         match_args: dict[str, Any] | None = None,
     ) -> str: ...
@@ -273,6 +274,7 @@ class SessionTurnMixin(SessionTurnHost):
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
             tool_call_id: str | None = None,
+            approval_comment: str | None = None,
         ) -> None:
             if approval_verdict == "allow":
                 budget = active.state.budget
@@ -287,6 +289,7 @@ class SessionTurnMixin(SessionTurnHost):
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
+                approval_comment=approval_comment,
             )
             if active.security:
                 active.security.current_parent_tool_id = tool_id
@@ -307,6 +310,7 @@ class SessionTurnMixin(SessionTurnHost):
                     approval_explanation,
                     tool_id,
                     tool_call_id=tool_call_id,
+                    approval_comment=approval_comment,
                 )
             )
             active._pending_sends.add(task)

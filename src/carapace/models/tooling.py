@@ -35,8 +35,10 @@ class ToolResult:
 
 # The last argument is the model's id for the call (``tool_call_id``), ``None`` for calls the model
 # did not make. Deps is a pydantic model, so this stays a Callable rather than a Protocol.
+# (tool, args, detail, approval_source, approval_verdict, approval_explanation, tool_call_id, approval_comment)
 type ToolCallCallback = Callable[
-    [str, dict[str, Any], str, ApprovalSource | None, ApprovalVerdict | None, str | None, str | None], None
+    [str, dict[str, Any], str, ApprovalSource | None, ApprovalVerdict | None, str | None, str | None, str | None],
+    None,
 ]
 
 

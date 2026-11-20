@@ -42,6 +42,7 @@ class SessionSubscriber(Protocol):
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
         tool_call_id: str | None = None,
+        approval_comment: str | None = None,
     ) -> None: ...
     async def on_tool_result(self, result: ToolResult) -> None: ...
     async def on_tool_call_stream(self, msg: ToolCallStream) -> None: ...
@@ -96,6 +97,7 @@ class SessionSubscriber(Protocol):
         approval_explanation: str | None = None,
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
+        approval_comment: str | None = None,
     ) -> None: ...
     async def on_credential_info(
         self,

@@ -55,8 +55,8 @@ async def test_revised_tool_call_tells_the_agent_what_to_change() -> None:
         decision="changes_requested",
         explanation="Split the commit from the cleanup.",
     )
-    _tool, _args, _detail, source, verdict, explanation, tool_call_id = shown[-1]
-    assert (source, verdict, explanation) == ("sentinel", "revise", "Split the commit from the cleanup.")
+    _tool, _args, _detail, source, verdict, explanation, tool_call_id, comment = shown[-1]
+    assert (source, verdict, explanation, comment) == ("sentinel", "revise", "Split the commit from the cleanup.", None)
     assert tool_call_id == "call_1"
 
 
@@ -106,7 +106,7 @@ async def test_sentinel_cannot_revise_requests_whose_explanation_never_reaches_t
     retry = requests[1][-1].parts[0]
     assert isinstance(retry, ToolReturnPart)
     assert retry.outcome == "retried"
-    assert "`revise` is not available here" in retry.model_response_str()
+    assert "`revise` and `comment` are not available here" in retry.model_response_str()
 
 
 @pytest.mark.asyncio

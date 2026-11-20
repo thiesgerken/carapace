@@ -141,6 +141,7 @@ class WebSocketSubscriber:
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
         tool_call_id: str | None = None,
+        approval_comment: str | None = None,
     ) -> None:
         normalized_args = normalize_tool_call_args(tool, args)
         contexts_raw = normalized_args.get("contexts")
@@ -154,6 +155,7 @@ class WebSocketSubscriber:
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
+                approval_comment=approval_comment,
                 tool_id=tool_id,
                 parent_tool_id=parent_tool_id,
                 tool_call_id=tool_call_id,
@@ -277,6 +279,7 @@ class WebSocketSubscriber:
         approval_explanation: str | None = None,
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
+        approval_comment: str | None = None,
     ) -> None:
         await self._safe_send(
             ToolCallInfo(
@@ -286,6 +289,7 @@ class WebSocketSubscriber:
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
+                approval_comment=approval_comment,
                 tool_id=tool_id,
                 parent_tool_id=parent_tool_id,
             )

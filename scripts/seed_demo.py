@@ -136,6 +136,7 @@ class Transcript:
         source: str = "safe-list",
         verdict: str = "allow",
         explanation: str = "auto-allowed",
+        comment: str | None = None,
         parent: str | None = None,
     ) -> str:
         self._next_tool += 1
@@ -154,6 +155,8 @@ class Transcript:
         }
         if parent is not None:
             event["parent_tool_id"] = parent
+        if comment is not None:
+            event["approval_comment"] = comment
         if isinstance(args.get("contexts"), list):
             event["contexts"] = args["contexts"]
         self.events.append(event)
@@ -412,6 +415,8 @@ def _change_request(start: datetime) -> Transcript:
         title="commit and push the fix",
         source="sentinel",
         explanation="Commits and pushes the fix the user asked for.",
+        comment="`-a` stages every modified tracked file. Add the skill file by path next time, so nothing else "
+        "slips into the commit.",
     )
     t.call(
         "git_push",

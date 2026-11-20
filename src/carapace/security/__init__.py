@@ -197,6 +197,7 @@ async def evaluate_with(
         approval_source="sentinel",
         approval_verdict=verdict.decision,
         approval_explanation=verdict.explanation,
+        approval_comment=verdict.comment or None,
     )
 
     if verdict.decision == "deny":
@@ -248,6 +249,9 @@ async def evaluate_with(
             explanation=verdict.explanation,
         )
     )
+    if verdict.comment:
+        subject = f"the `{tool_name}` call {tool_call_id}" if tool_call_id else f"the `{tool_name}` call"
+        session.leave_comment_for_agent(subject, verdict.comment)
 
 
 async def evaluate_domain_with(
@@ -776,6 +780,8 @@ async def evaluate_push_with(
 
     entry = GitPushEntry(ref=ref, decision=decision, explanation=verdict.explanation)
     session.append(entry)
+    if verdict.comment:
+        session.leave_comment_for_agent(f"the git push to {ref}", verdict.comment)
     await session.notify_push_decision(
         ref,
         decision,
@@ -783,6 +789,7 @@ async def evaluate_push_with(
         approval_source=source,
         approval_verdict=approval_verdict,
         approval_explanation=verdict.explanation if source == "sentinel" else normalize_optional_message(user_message),
+        approval_comment=verdict.comment or None,
     )
 
     session.write_audit(
@@ -953,6 +960,7 @@ def _log_tool_call(
     approval_explanation: str | None = None,
     *,
     tool_call_id: str | None,
+    approval_comment: str | None = None,
 ) -> None:
     args_parts = []
     for k, v in args.items():
@@ -965,6 +973,15 @@ def _log_tool_call(
         args_str = args_str[:197] + "..."
 
     if callback:
-        callback(tool_name, args, detail, approval_source, approval_verdict, approval_explanation, tool_call_id)
+        callback(
+            tool_name,
+            args,
+            detail,
+            approval_source,
+            approval_verdict,
+            approval_explanation,
+            tool_call_id,
+            approval_comment,
+        )
     else:
         print(f"  \033[2m{tool_name}({args_str}) {detail}\033[0m")

@@ -152,5 +152,6 @@ class AutonomyLimitCapability(AbstractCapability[AgentDepsT]):
                 "deny",
                 reason,
                 call.tool_call_id,
+                None,
             )
         return ToolDenied(AUTONOMY_WRAP_UP)

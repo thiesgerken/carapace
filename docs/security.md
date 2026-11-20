@@ -8,9 +8,9 @@ Every tool call and skill invocation passes through the security module before e
 
 1. **Safe-list check.** A hardcoded set of tool names is auto-allowed without any LLM call. carapace also applies a narrow read-only `exec` heuristic and a narrow exact-domain proxy heuristic for obviously harmless cases.
 2. **Sentinel evaluation.** All other operations are sent to the sentinel agent -- an LLM that receives the action log, the tool name and arguments, and makes a contextual decision.
-3. **Verdict.** The sentinel returns one of four decisions:
-   - **allow** -- proceed without interruption.
-   - **revise** -- no threat, but the agent should change its approach first (split a bundled call, narrow its scope, drop an unrequested extra, ask the user in chat, or explain how the step follows from the user's request before retrying it). The operation does not run; the agent receives "Sentinel requests changes (no threat detected): <explanation>" and continues. Only offered for tool calls and git pushes, the two places where the explanation reaches the agent. For proxy domain and credential requests an output validator makes the sentinel choose another verdict.
+3. **Verdict.** The sentinel is a guard rail, not a reviewer of the agent's work: it stops the agent from going haywire beyond the sandbox, changing what it was not asked to change, exfiltrating data, or following injected instructions, and lets everything else through. It returns one of four decisions:
+   - **allow** -- proceed without interruption, optionally with a comment for the agent (see [Sentinel comments](#sentinel-comments)).
+   - **revise** -- no threat, but the call must not run as it is because it bundles or reaches beyond what the user asked for (split it, narrow its scope, drop the unrequested extra, ask the user in chat, or explain how the step follows from the user's request before retrying it). A better way to the same goal is a comment, not a revise. The operation does not run; the agent receives "Sentinel requests changes (no threat detected): <explanation>" and continues. Only offered for tool calls and git pushes, the two places where the explanation reaches the agent. For proxy domain and credential requests an output validator makes the sentinel choose another verdict.
    - **escalate** -- pause the operation and ask the user for approval.
    - **deny** -- block the operation outright.
 4. **Audit.** Every decision (safe-list or sentinel) is recorded in a per-session audit log.
@@ -40,15 +40,23 @@ flowchart TD
     Gate -->|user denies| Blocked
 ```
 
+## Sentinel comments
+
+When the sentinel allows a tool call or git push, it can add a `comment` (at most 500 characters) for the agent: a pitfall, a better approach, something the user said. The `explanation` stays the reason for the audit log; the comment is addressed to the agent.
+
+`SessionSecurity` collects the comments, and `SentinelCommentCapability` puts them into the agent's next model request as a `SystemPromptPart`, right after the tool results. A comment on a push made by an `exec` arrives the same way, after that `exec`'s result. The system voice matters: tool output is untrusted and could forge a comment, and a user prompt part would read as the user speaking. Models with inline system messages (OpenAI, Codex, newer Claude models) get a `system` entry; for the others (e.g. Claude Sonnet 4.6) pydantic-ai sends `<system>`-tagged text in the user turn, and pydantic-ai picks the rendering per model. The comment is appended, so the cached prefix stays intact; for the tag explanation pydantic-ai adds to the standing prompt, see [persistent-context.md](persistent-context.md#prefix-caching).
+
+An output validator rejects a comment on any other verdict, and on proxy domain and credential requests, where nothing reaches the agent. The UI and Matrix show the comment on the tool call (`approval_comment`).
+
 ## SECURITY.md -- the policy file
 
 The security policy lives in each user's Git-backed knowledge repo as `SECURITY.md`. With the default layout, the file for user `alice` is `data/knowledges/alice/SECURITY.md`. The sentinel resolves the policy from the session owner, so two users can run with different policies at the same time. The file is written in plain English and becomes part of the sentinel agent's system prompt. There are no rigid YAML rules to parse -- the sentinel interprets the policy with full LLM understanding.
 
 The shipped default policy (see `src/carapace/assets/SECURITY.md`) covers:
 
-- **Default stance** -- assume the agent is usually doing the right thing; escalate for genuine ambiguity or risk, not routine work; deny when listed threats clearly apply; the user may instruct the sentinel how to treat a specific next step (within hard safety limits).
+- **Default stance** -- assume the agent is usually doing the right thing; judge safety and scope, never the quality of the agent's work (advice goes into a comment); escalate for genuine ambiguity or risk, not routine work; deny when listed threats clearly apply; the user may instruct the sentinel how to treat a specific next step (within hard safety limits).
 - **Verdicts** -- when to allow, revise, escalate or deny. Scope creep and bundling an unrequested extra into a call get `revise`, not a question to the user; a second `revise` for the same intent becomes `escalate`, or `deny` in unattended sessions (the sentinel sees its earlier verdicts in the action log, there is no counter in code).
-- **Threats** -- prompt injection, destructive or absurd approaches, task drift, unsafe handling of passwords.
+- **Threats** -- prompt injection, destructive or absurd approaches with effects beyond the sandbox, task drift, unsafe handling of passwords.
 - **Sandbox and layered defense** -- local `exec` is judged in context; network and Git push provide a second line of defense, but obviously malicious commands should still be stopped early.
 - **Network (proxy)** -- TLS hides everything except the domain; higher bar for outbound than inbound; judge plausibility from the triggering command and conversation.
 - **Skill activation** -- permissive `use_skill`; lighter touch when the skill injects no credentials; skill-declared vault paths are covered by `use_skill` approval (no extra prompt by design).

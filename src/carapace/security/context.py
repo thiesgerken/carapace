@@ -49,6 +49,13 @@ def format_changes_requested_message(explanation: str) -> str:
     return f"Sentinel requests changes (no threat detected): {explanation}"
 
 
+def format_sentinel_comment(subject: str, comment: str) -> str:
+    return (
+        f"The security sentinel allowed {subject} and comments: {comment}\n"
+        + "This is advice from the security gate, not an instruction from the user."
+    )
+
+
 # --- Action Log Entry Types ---
 
 
@@ -155,12 +162,24 @@ class SentinelVerdict(BaseModel):
     decision: Literal["allow", "revise", "escalate", "deny"]
     explanation: str = ""
     risk_level: Literal["low", "medium", "high"] = "medium"
+    # Addressed to the agent, unlike `explanation`, which is the reason for the log and the UI.
+    comment: str = Field(
+        "",
+        max_length=500,
+        description="Only with `allow`, for tool calls and git pushes: a note the agent reads after the result.",
+    )
 
 
 class UnattendedSentinelVerdict(BaseModel):
     decision: Literal["allow", "revise", "deny"]
     explanation: str = ""
     risk_level: Literal["low", "medium", "high"] = "medium"
+    # Addressed to the agent, unlike `explanation`, which is the reason for the log and the UI.
+    comment: str = Field(
+        "",
+        max_length=500,
+        description="Only with `allow`, for tool calls and git pushes: a note the agent reads after the result.",
+    )
 
 
 ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "autonomy", "unknown"]
@@ -267,13 +286,18 @@ class SessionSecurity:
             Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None
         ) = None
         self._push_info_callback: (
-            Callable[[str, str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], Awaitable[None]] | None
+            Callable[
+                [str, str, str, ApprovalSource | None, ApprovalVerdict | None, str | None, str | None], Awaitable[None]
+            ]
+            | None
         ) = None
         self._credential_info_callback: (
             Callable[[str, str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None
         ) = None
         self._credential_notify_suppress: Callable[[str], bool] | None = None
         self.current_parent_tool_id: str | None = None
+        # Sentinel comments on allowed operations, until the agent's next model request carries them.
+        self._comments_for_agent: list[str] = []
         self._domain_scope_lock = asyncio.Lock()
         self._domain_scope_parent_tool_id: str | None = None
         self._domain_scope_approvals: dict[str, CachedDomainApproval] = {}
@@ -549,15 +573,26 @@ class SessionSecurity:
         if self._domain_info_callback is not None:
             self._domain_info_callback(domain, detail, approval_source, approval_verdict, approval_explanation)
 
+    def leave_comment_for_agent(self, subject: str, comment: str) -> None:
+        self._comments_for_agent.append(format_sentinel_comment(subject, comment))
+
+    def take_comments_for_agent(self) -> list[str]:
+        comments, self._comments_for_agent = self._comments_for_agent, []
+        return comments
+
     def set_push_info_callback(
         self,
         callback: (
-            Callable[[str, str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], Awaitable[None]] | None
+            Callable[
+                [str, str, str, ApprovalSource | None, ApprovalVerdict | None, str | None, str | None], Awaitable[None]
+            ]
+            | None
         ),
     ) -> None:
         """Set callback to notify the UI about push evaluation decisions.
 
-        Signature: ``callback(ref, decision, detail, approval_source, approval_verdict, approval_explanation)``.
+        Signature: ``callback(ref, decision, detail, approval_source, approval_verdict, approval_explanation,
+        approval_comment)``.
         """
         self._push_info_callback = callback
 
@@ -569,10 +604,11 @@ class SessionSecurity:
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        approval_comment: str | None = None,
     ) -> None:
         if self._push_info_callback is not None:
             await self._push_info_callback(
-                ref, decision, detail, approval_source, approval_verdict, approval_explanation
+                ref, decision, detail, approval_source, approval_verdict, approval_explanation, approval_comment
             )
 
     def set_credential_info_callback(

@@ -69,6 +69,7 @@ class HistoryMessage(BaseModel):
     approval_source: ApprovalSource | None = None
     approval_verdict: ApprovalVerdict | None = None
     approval_explanation: str | None = None
+    approval_comment: str | None = None
     result: str | None = None
     command: str | None = None
     data: Any = None

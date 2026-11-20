@@ -89,11 +89,14 @@ class MatrixSubscriber:
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
         tool_call_id: str | None = None,
+        approval_comment: str | None = None,
     ) -> None:
         logger.debug(f"Matrix [{self._room_id}] tool call: {tool}({args}) — {detail}")
         if self._channel._verbose.get(self._room_id, True):
             args_brief = json.dumps(args, default=str)
             notice = f"🔧 `{tool}({args_brief})`" + (f" {detail}" if detail else "")
+            if approval_comment:
+                notice += f"\n💬 Sentinel to the agent: {approval_comment}"
             await self._channel._send_notice(self._room_id, notice)
 
     async def on_tool_result(self, result: ToolResult) -> None:
@@ -291,8 +294,11 @@ class MatrixSubscriber:
         approval_explanation: str | None = None,
         tool_id: str | None = None,
         parent_tool_id: str | None = None,
+        approval_comment: str | None = None,
     ) -> None:
         logger.debug(f"Matrix [{self._room_id}] git_push: {ref} {decision} {detail}")
         if self._channel._verbose.get(self._room_id, True):
             notice = f"📦 `{ref}` {detail}"
+            if approval_comment:
+                notice += f"\n💬 Sentinel to the agent: {approval_comment}"
             await self._channel._send_notice(self._room_id, notice)

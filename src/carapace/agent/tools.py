@@ -54,6 +54,7 @@ from ..usage import LlmRequestLogCapability
 from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, AutonomyLimitCapability
 from .deps import Deps, TaskDone, TaskFailed
 from .history_compaction import HistoryCompactionCapability, ProviderCompactionMarkerCapability
+from .sentinel_comments import SentinelCommentCapability
 
 SEND_FILE_MAX_BYTES = 50 * 1024 * 1024
 
@@ -355,6 +356,7 @@ def _notify_approved_start(ctx: RunContext[Deps], tool_name: str, args: dict[str
             "allow",
             "user approved",
             ctx.tool_call_id,
+            None,
         )
 
 
@@ -1133,6 +1135,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             LlmRequestLogCapability(source="agent", model_id=deps.agent_model_id),
             # Before the autonomy limit, so a call it holds back still shows as a (deferred) tool span.
             ToolSpanCapability(),
+            SentinelCommentCapability(),
             AutonomyLimitCapability(
                 streak=deps.autonomy,
                 session_state=deps.session_state,
@@ -1140,7 +1143,15 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             ),
         ],
         model_settings=with_prompt_cache(
-            model_settings_for_config(deps.config, deps.agent_model_id, default_thinking=True), conversation=True
+            {
+                **(model_settings_for_config(deps.config, deps.agent_model_id, default_thinking=True) or {}),
+                # Sentinel comments are mid-conversation system messages. Models without inline system
+                # messages get them as `<system>` text, plus a sentence about that tag at the start of the
+                # standing prompt. "always" keeps that sentence fixed instead of adding it with the first
+                # comment and dropping it once compaction folds the comments away: either would miss the cache.
+                "framing_announcement": "always",
+            },
+            conversation=True,
         ),
         retries={"tools": 1, "output": 3},
     )
@@ -1330,6 +1341,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                     "deny",
                     "skill not activated",
                     ctx.tool_call_id,
+                    None,
                 )
             return _emit_tool_result(ctx, "read", denied_message, exit_code=1)
 
@@ -1405,6 +1417,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                     "deny",
                     "skill not activated",
                     ctx.tool_call_id,
+                    None,
                 )
             return _emit_tool_result(ctx, "send_file", denied_message, exit_code=1)
 
