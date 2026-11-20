@@ -1,6 +1,12 @@
 # CHANGELOG
 
 
+## v0.186.6 (2026-11-20)
+
+### ⬆️ Upgrade dependencies
+
+- chore: upgrade postgres Docker tag to v19 (#546)
+
 ## v0.186.5 (2026-11-19)
 
 ### 🔒️ Fix security or privacy issues
