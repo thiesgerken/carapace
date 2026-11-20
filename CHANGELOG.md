@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.187.0 (2026-11-20)
+
+### ✨ Introduce new features
+
+- feat: let the sentinel allow with a comment for the agent
+
+### 🐛 Fix a bug
+
+- fix: keep the system-tag announcement fixed so sentinel comments don't break the prompt cache
+
+### ♻️ Refactor code
+
+- refactor: sentinel comments as an optional field on allow, sent as system messages
+
+### ✅ Add, update, or pass tests
+
+- test: the system-tag announcement leads the agent's cached system blocks
+
 ## v0.186.6 (2026-11-20)
 
 ### ⬆️ Upgrade dependencies
