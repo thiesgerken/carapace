@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.188.0 (2026-11-22)
+
+### ✨ Introduce new features
+
+- feat: the titler's second run keeps the first title unless the topic changed
+
+### 🐛 Fix a bug
+
+- fix: titler names the conversation's main topic, not the latest follow-up
+
+### ♻️ Refactor code
+
+- refactor: neutral title anchor, test which title run gets it
+
 ## v0.187.0 (2026-11-20)
 
 ### ✨ Introduce new features
