@@ -4,21 +4,28 @@ from __future__ import annotations
 
 import json
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from carapace.sandbox.file_ops import SandboxFileOps, _file_write_command
 from carapace.sandbox.runtime import ExecResult
 
+# The Nix build sandbox has no /bin/bash; take bash from PATH.
+BASH = shutil.which("bash")
+needs_bash = pytest.mark.skipif(BASH is None, reason="bash not on PATH")
+
 
 def _run_write(path: Path, data: bytes, *, mode: int | None = None) -> subprocess.CompletedProcess[bytes]:
     cmd = _file_write_command(str(path), mode=mode, quote=True)
-    return subprocess.run(["/bin/bash", "-c", cmd], input=data, capture_output=True, check=False)
+    return subprocess.run([cast(str, BASH), "-c", cmd], input=data, capture_output=True, check=False)
 
 
+@needs_bash
 def test_write_creates_parent_dir_and_writes_stdin(tmp_path: Path) -> None:
     target = tmp_path / "a" / "b" / "out.bin"
     data = bytes(range(256)) * 4096
@@ -26,6 +33,7 @@ def test_write_creates_parent_dir_and_writes_stdin(tmp_path: Path) -> None:
     assert target.read_bytes() == data
 
 
+@needs_bash
 def test_write_replaces_read_only_file_and_applies_mode(tmp_path: Path) -> None:
     target = tmp_path / "cred"
     target.write_text("old")
@@ -35,6 +43,7 @@ def test_write_replaces_read_only_file_and_applies_mode(tmp_path: Path) -> None:
     assert target.stat().st_mode & 0o777 == 0o400
 
 
+@needs_bash
 def test_empty_write_truncates(tmp_path: Path) -> None:
     target = tmp_path / "f"
     target.write_text("old")
@@ -65,6 +74,7 @@ async def test_run_file_write_reports_failure() -> None:
     assert result.output == "Error: cannot write /tmp/f (exit 1)."
 
 
+@needs_bash
 @pytest.mark.asyncio
 async def test_str_replace_sends_payload_on_stdin(tmp_path: Path) -> None:
     target = tmp_path / "big.txt"
@@ -77,7 +87,7 @@ async def test_str_replace_sends_payload_on_stdin(tmp_path: Path) -> None:
         assert json.loads(stdin)["old"] == old
         # Swap the sandbox's python3 for this interpreter and run the script for real.
         local_cmd = cmd.replace("python3 -c", f"{shlex.quote(sys.executable)} -c", 1)
-        done = subprocess.run(["/bin/bash", "-c", local_cmd], input=stdin, capture_output=True, check=False)
+        done = subprocess.run([cast(str, BASH), "-c", local_cmd], input=stdin, capture_output=True, check=False)
         return ExecResult(stdout=done.stdout.decode(), exit_code=done.returncode, output=done.stdout.decode())
 
     ops = SandboxFileOps(exec_in_session=exec_in_session, exec_in_container=exec_in_session, get_session=lambda _: None)
