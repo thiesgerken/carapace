@@ -22,7 +22,8 @@ yourself.
 
 ## Browsing and chat references
 
-The knowledge browser marks artifact directories with an artifact icon and uses
+The knowledge browser marks artifact directories with the artifact icon (lucide
+`AppWindow`, the same one the chat, the session sidebar and the viewer use) and uses
 `index.html`'s `<title>` as their label beside the slug. Only the artifact's
 `index.html` renders in a sandboxed iframe, with controls to inspect its source or
 open it in a new tab. Other HTML files browse normally. The normal knowledge

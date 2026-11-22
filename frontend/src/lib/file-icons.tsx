@@ -13,7 +13,6 @@ import {
   Folder,
   FolderClock,
   FolderCog,
-  FolderCode,
   GitBranch,
   Hammer,
   Image,
@@ -31,6 +30,8 @@ import {
   User,
 } from "lucide-react";
 import type { ReactNode } from "react";
+
+import { ArtifactIcon } from "@/lib/artifacts";
 
 /** Files whose meaning comes from their exact name, not their extension. */
 const NAME_ICONS: Record<string, LucideIcon> = {
@@ -151,7 +152,7 @@ function lookup({ name, type, kind }: EntryIconTarget): LucideIcon {
   if (type === "dir") {
     if (kind === "session") return FolderClock;
     if (kind === "skill") return FolderCog;
-    if (kind === "artifact") return FolderCode;
+    if (kind === "artifact") return ArtifactIcon;
     return Folder;
   }
   const lower = name.toLowerCase();

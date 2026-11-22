@@ -7,7 +7,7 @@ import { useCallback } from "react";
 import { useKeyedFetch } from "@/hooks/use-keyed-fetch";
 import { useNow } from "@/hooks/use-now";
 import { getSessionArtifacts } from "@/lib/api";
-import { artifactViewerHref } from "@/lib/artifacts";
+import { ArtifactIcon, artifactViewerHref } from "@/lib/artifacts";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format-time";
 
 /** The session artifacts, reloaded whenever *refreshKey* changes. Hidden while there are none. */
@@ -25,7 +25,7 @@ export function SessionArtifactsSection({ server, sessionId, refreshKey }: { ser
 
   return (
     <section className="rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm">
-      <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{t("title")}</div>
+      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground"><ArtifactIcon className="h-3.5 w-3.5" />{t("title")}</div>
       {"error" in current ? (
         <p role="alert" className="mt-2 text-xs text-destructive">{t("loadError")}</p>
       ) : (

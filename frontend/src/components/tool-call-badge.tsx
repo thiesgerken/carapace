@@ -9,7 +9,6 @@ import {
   ExternalLink,
   FileText,
   FilePen,
-  FolderCode,
   GitBranch,
   Globe,
   History,
@@ -44,7 +43,7 @@ import type { ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, S
 import { toolCallStatus } from "@/lib/tool-call-status";
 import { cn } from "@/lib/utils";
 import { getArtifact, knowledgeArtifactUrl, knowledgeRawUrl } from "@/lib/api";
-import { artifactViewerHref, type ArtifactReference } from "@/lib/artifacts";
+import { ArtifactIcon, artifactViewerHref, type ArtifactReference } from "@/lib/artifacts";
 import { useKeyedFetch } from "@/hooks/use-keyed-fetch";
 import { parseStreamingArgs } from "@/lib/live-tool-calls";
 
@@ -93,7 +92,7 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   proxy_domain: Globe,
   git_push: GitBranch,
   send_file: Send,
-  show_artifact: FolderCode,
+  show_artifact: ArtifactIcon,
   read_tool_output: History,
 };
 
@@ -863,7 +862,7 @@ export function ToolCallBadge({
             )}
           />
           {(() => {
-            const ToolIcon = artifactSlug !== null ? FolderCode : TOOL_ICONS[tool] ?? (isMcpTool ? Plug : undefined);
+            const ToolIcon = artifactSlug !== null ? ArtifactIcon : TOOL_ICONS[tool] ?? (isMcpTool ? Plug : undefined);
             return ToolIcon ? (
               <ToolIcon className="h-3 w-3 shrink-0 text-foreground/65 dark:text-foreground/70" />
             ) : null;
