@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic_ai import ModelMessage
 from pydantic_ai.messages import (
+    BinaryContent,
     ModelRequest,
     ModelResponse,
     RetryFeedbackPart,
@@ -18,6 +19,7 @@ from carapace.usage import (
     LlmRequestLog,
     LlmRequestRecord,
     aggregate_turn_generation,
+    count_message_tokens,
     gauge_breakdown_pct_dict,
     input_shape_ratios_from_messages,
     last_record_for_source,
@@ -126,6 +128,19 @@ def test_input_shape_ratios_includes_assistant_response() -> None:
     assert r.assistant > 0
     total = r.system + r.user + r.assistant + r.tool_calls + r.tool_returns + r.other
     assert abs(total - 1.0) < 1e-5
+
+
+def test_image_counts_as_flat_estimate_under_other() -> None:
+    """An image's base64 is not tokenized: ~100 KB counts as one flat media estimate, booked as other."""
+    image = BinaryContent(data=bytes(range(256)) * 400, media_type="image/png")
+    messages: list[ModelMessage] = [
+        ModelRequest(parts=[UserPromptPart(["Image file: chart.png (102400 bytes)", image])]),
+    ]
+    assert 1_600 <= count_message_tokens(messages, model_name="gpt-4o") < 1_700
+    r = input_shape_ratios_from_messages(messages, model_name="gpt-4o")
+    assert r is not None
+    assert r.other > 0.95
+    assert r.user > 0
 
 
 def test_input_shape_ratios_empty_returns_none() -> None:

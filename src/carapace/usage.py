@@ -6,7 +6,7 @@ import secrets
 from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from functools import partial
@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import AgentRunResult
 from pydantic_ai.capabilities.abstract import AbstractCapability, WrapModelRequestHandler
 from pydantic_ai.messages import (
+    MULTI_MODAL_CONTENT_TYPES,
     AgentStreamEvent,
     CompactionPart,
     FilePart,
@@ -856,6 +857,32 @@ def _blob(x: Any) -> str:
         return str(x)
 
 
+# ponytail: flat per-item estimate instead of tokenizing the (base64) payload. 1,600 is about
+# Claude's ceiling for one image after resizing; Gemini bills less. Parse dimensions or go per
+# provider if this estimate ever needs to be precise.
+_MEDIA_ITEM_TOKENS = 1_600
+
+_BUCKET_KEYS = ("system", "user", "assistant", "tool_calls", "tool_returns", "other")
+
+
+@dataclass
+class _MessageBuckets:
+    """Message text per bucket, tokenized later, plus the media items that count as a flat estimate."""
+
+    text: dict[str, str] = field(default_factory=lambda: dict.fromkeys(_BUCKET_KEYS, ""))
+    media_items: int = 0
+
+
+def _split_media(content: Any) -> tuple[Any, int]:
+    """``content`` without its multimodal items, and how many there were."""
+    if isinstance(content, MULTI_MODAL_CONTENT_TYPES):
+        return "", 1
+    if isinstance(content, list | tuple):
+        text_items = [item for item in content if not isinstance(item, MULTI_MODAL_CONTENT_TYPES)]
+        return text_items, len(content) - len(text_items)
+    return content, 0
+
+
 def _user_prompt_blob(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -878,15 +905,20 @@ def _file_part_blob(part: FilePart) -> str:
         return "<file>"
 
 
-def _accumulate_request_part(part: ModelRequestPart, buckets: dict[str, str]) -> None:
+def _accumulate_request_part(part: ModelRequestPart, buckets: _MessageBuckets) -> None:
+    text = buckets.text
     if isinstance(part, SystemPromptPart):
-        buckets["system"] += part.content + "\n"
+        text["system"] += part.content + "\n"
     elif isinstance(part, UserPromptPart):
-        buckets["user"] += _user_prompt_blob(part.content) + "\n"
+        content, media_items = _split_media(part.content)
+        text["user"] += _user_prompt_blob(content) + "\n"
+        buckets.media_items += media_items
     elif isinstance(part, ToolReturnPart):
-        buckets["tool_returns"] += f"{part.tool_name}\n{_tool_return_blob(part.content)}\n"
+        content, media_items = _split_media(part.content)
+        text["tool_returns"] += f"{part.tool_name}\n{_tool_return_blob(content)}\n"
+        buckets.media_items += media_items
     elif isinstance(part, RetryFeedbackPart):
-        buckets["user"] += part.model_response() + "\n"
+        text["user"] += part.model_response() + "\n"
 
 
 def _accumulate_response_part(part: ModelResponsePart, buckets: dict[str, str]) -> None:
@@ -907,18 +939,27 @@ def _accumulate_response_part(part: ModelResponsePart, buckets: dict[str, str]) 
         assert_never(part)
 
 
-def _message_text_buckets(messages: list[ModelMessage]) -> dict[str, str]:
-    buckets = {k: "" for k in ("system", "user", "assistant", "tool_calls", "tool_returns", "other")}
+def _message_buckets(messages: list[ModelMessage]) -> _MessageBuckets:
+    buckets = _MessageBuckets()
     for msg in messages:
         if isinstance(msg, ModelRequest):
             for p in msg.parts:
                 _accumulate_request_part(p, buckets)
-            if not buckets["system"] and msg.instructions:
-                buckets["system"] += msg.instructions + "\n"
+            if not buckets.text["system"] and msg.instructions:
+                buckets.text["system"] += msg.instructions + "\n"
         elif isinstance(msg, ModelResponse):
             for p in msg.parts:
-                _accumulate_response_part(p, buckets)
+                _accumulate_response_part(p, buckets.text)
     return buckets
+
+
+def _bucket_token_counts(messages: list[ModelMessage], model_name: str | None) -> dict[str, int]:
+    """Estimated tokens per bucket; media items land in ``other`` at their flat estimate."""
+    buckets = _message_buckets(messages)
+    enc = _encoding_for_model(model_name)
+    counts = {k: _count_text(enc, v) for k, v in buckets.text.items()}
+    counts["other"] += buckets.media_items * _MEDIA_ITEM_TOKENS
+    return counts
 
 
 def count_text_tokens(text: str, *, model_name: str | None = None) -> int:
@@ -928,8 +969,7 @@ def count_text_tokens(text: str, *, model_name: str | None = None) -> int:
 
 def count_message_tokens(messages: list[ModelMessage], *, model_name: str | None = None) -> int:
     """Token estimate for a slice of pydantic-ai history (approximate; tiktoken-based)."""
-    enc = _encoding_for_model(model_name)
-    return sum(_count_text(enc, v) for v in _message_text_buckets(messages).values())
+    return sum(_bucket_token_counts(messages, model_name).values())
 
 
 def input_shape_ratios_from_messages(
@@ -937,9 +977,7 @@ def input_shape_ratios_from_messages(
     *,
     model_name: str | None,
 ) -> InputShapeRatios | None:
-    buckets = _message_text_buckets(messages)
-    enc = _encoding_for_model(model_name)
-    counts = {k: _count_text(enc, v) for k, v in buckets.items()}
+    counts = _bucket_token_counts(messages, model_name)
     total = sum(counts.values())
     if total <= 0:
         return None
