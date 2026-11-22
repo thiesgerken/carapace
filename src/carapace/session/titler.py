@@ -16,10 +16,16 @@ from ..usage import LlmRequestLogCapability, UsageTracker, provider_cost_usd_fro
 
 TITLE_INSTRUCTIONS = """\
 Generate a very short title (3-8 words) for a chat conversation.
+The title names the main topic of the whole conversation, which is usually set by the first request.
+Later messages are mostly follow-ups, corrections or confirmations: they only change the title
+if the conversation has clearly moved on to a different topic.
 The title MUST start with a single emoji that captures the topic.
 Do NOT use quotes around the title.
 Reply with ONLY the title, nothing else.
 """
+
+MAX_MESSAGE_CHARS = 1500
+MAX_PROMPT_CHARS = 5000
 
 
 def title_agent(model: Model | None, *, model_id: str, model_settings: ModelSettings | None) -> Agent[None, str]:
@@ -48,8 +54,8 @@ async def generate_title(
     """Build a short emoji-prefixed title from conversation events.
 
     Only user and assistant messages are included. User lines followed by a
-    command-result event are skipped. Each line is truncated to 300 characters.
-    The joined prompt is capped at ~2000 characters.
+    command-result event are skipped. Each message and the joined prompt are capped
+    (``MAX_MESSAGE_CHARS``, ``MAX_PROMPT_CHARS``, roughly 1.5k tokens in total).
     """
     lines: list[str] = []
     for index, e in enumerate(events):
@@ -61,17 +67,17 @@ async def generate_title(
             next_event = events[index + 1] if index + 1 < len(events) else None
             if content.startswith("/") and isinstance(next_event, dict) and next_event.get("role") == "command":
                 continue
-            lines.append(f"User: {content[:300]}")
+            lines.append(f"User: {content[:MAX_MESSAGE_CHARS]}")
         elif role == "assistant":
             if not isinstance(content, str):
                 content = str(content)
-            lines.append(f"Assistant: {content[:300]}")
+            lines.append(f"Assistant: {content[:MAX_MESSAGE_CHARS]}")
 
     if not lines:
         return ""
 
-    # Keep the prompt compact — at most ~2000 chars from the conversation
-    prompt = "\n".join(lines)[:2000]
+    # Cutting the tail keeps the opening request, which sets the topic, and the prompt prefix stable.
+    prompt = "\n".join(lines)[:MAX_PROMPT_CHARS]
 
     resolved = model_factory(model, user=user) if model_factory is not None else infer_model(model)
     agent = title_agent(resolved, model_id=model, model_settings=model_settings)
