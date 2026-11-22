@@ -67,6 +67,7 @@ import { applySpanToToolCall } from "@/lib/tool-call-status";
 import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall, streamingCallIndex } from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
+import { SessionArtifactsSection } from "./session-artifacts-section";
 import { ChatInput } from "./chat-input";
 import { SessionHeader } from "./session-header";
 
@@ -2895,6 +2896,8 @@ export function ChatView({
           </Link>
         ) : null}
       </section>
+
+      <SessionArtifactsSection server={server} sessionId={sessionId} refreshKey={latestTerminalIndex} />
 
       {knowledgeNotice ? (
         <div

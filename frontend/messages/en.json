@@ -1337,6 +1337,13 @@
             },
             "openInBrowser": "Open in the knowledge browser"
         },
+        "artifacts": {
+            "title": "Artifacts",
+            "created": "created {time}",
+            "updated": "updated {time}",
+            "deleted": "No longer exists",
+            "loadError": "Failed to load the artifacts."
+        },
         "mobile": {
             "details": "Details",
             "done": "Done"
