@@ -863,7 +863,12 @@ class SessionEngine(
         self._save_rewound_transcript(active, truncated_events, truncated_history, tree)
 
     async def _generate_title(
-        self, active: ActiveSession, events: list[dict[str, Any]], *, track_activity: bool = True
+        self,
+        active: ActiveSession,
+        events: list[dict[str, Any]],
+        *,
+        track_activity: bool = True,
+        previous_title: str | None = None,
     ) -> str:
         session_id = active.state.session_id
         try:
@@ -872,6 +877,7 @@ class SessionEngine(
                     self._assert_llm_budget_available(active)
                     title = await generate_title(
                         events,
+                        previous_title=previous_title,
                         model=active.title_model_name or self._config.agent.title_model,
                         usage_tracker=active.usage_tracker,
                         before_llm_call=lambda: self._assert_llm_budget_available(active),
