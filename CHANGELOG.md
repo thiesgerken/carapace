@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v0.189.0 (2026-11-22)
+
+### ✨ Introduce new features
+
+- feat: show artifacts in chat as live references
+
+### 🐛 Fix a bug
+
+- fix: show missing artifacts in the collapsed row, tighten send_file refusal
+
 ## v0.188.2 (2026-11-22)
 
 ### 🐛 Fix a bug
