@@ -47,6 +47,7 @@ from .state import (
 )
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+_READ_ERROR_TAIL_CHARS = 2000
 FILE_READ_SCRIPT = file_ops.FILE_READ_SCRIPT
 MAX_READ_OUTPUT_CHARS = file_ops.MAX_READ_OUTPUT_CHARS
 SANDBOX_READ_BODY_SEPARATOR = file_ops.SANDBOX_READ_BODY_SEPARATOR
@@ -816,6 +817,10 @@ class SandboxManager:
 
     # Same argv/URL-length bound as file writes (see SANDBOX_EXEC_CHUNK_BYTES).
     _UPLOAD_CHUNK_BYTES = file_ops.SANDBOX_EXEC_CHUNK_BYTES
+    # Downloads return their data on stdout, not in the command, so that bound doesn't
+    # apply. Every chunk is a full exec round trip (~0.3 s per chunk through send_file on
+    # Kubernetes), so they stay large.
+    _DOWNLOAD_CHUNK_BYTES = 4 * 1024 * 1024
 
     async def upload_tmp_file(
         self,
@@ -884,14 +889,15 @@ class SandboxManager:
         if size > max_bytes:
             raise UploadTooLargeError(f"File exceeds {max_bytes} bytes")
 
-        chunk = self._UPLOAD_CHUNK_BYTES
+        chunk = self._DOWNLOAD_CHUNK_BYTES
         offset = 0
         with open(dest, "wb") as fh:
             while offset < size:
                 cmd = f"tail -c +{offset + 1} {qpath} | head -c {chunk} | base64"
                 result = await self.exec_command(session_id, cmd, timeout=120)
                 if result.exit_code != 0 or "[stderr]" in result.output:
-                    raise UploadError(f"Failed to read file from sandbox: {result.output}")
+                    # The output can hold megabytes of base64 ahead of the stderr that explains the failure.
+                    raise UploadError(f"Failed to read file from sandbox: {result.output[-_READ_ERROR_TAIL_CHARS:]}")
                 data = base64.b64decode(result.output)
                 if not data:
                     break
