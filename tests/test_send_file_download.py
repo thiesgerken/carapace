@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -15,13 +16,15 @@ from carapace.session import sent_files
 
 
 def _fake_manager(size: int, payload: bytes) -> SimpleNamespace:
+    """Reports *size* from ``stat`` and serves *payload* honouring each read's offset and length."""
+
     async def exec_command(_sid, command, **_kw):
         if "stat -c %s" in command:
             return ExecResult(stdout=f"{size}\n", exit_code=0, output=f"{size}\n")
-        if "tail -c" in command:
-            return ExecResult(
-                stdout=base64.b64encode(payload).decode(), exit_code=0, output=base64.b64encode(payload).decode()
-            )
+        if read := re.search(r"tail -c \+(\d+) .* head -c (\d+)", command):
+            start = int(read[1]) - 1
+            encoded = base64.b64encode(payload[start : start + int(read[2])]).decode()
+            return ExecResult(stdout=encoded, exit_code=0, output=encoded)
         return ExecResult(stdout="", exit_code=0, output="")
 
     fake = SimpleNamespace()
@@ -38,6 +41,23 @@ async def test_download_streams_bytes_to_dest(tmp_path: Path) -> None:
     size = await SandboxManager.download_tmp_file(fake, "s1", "/tmp/out.txt", dest, max_bytes=1000)
     assert size == len(payload)
     assert dest.read_bytes() == payload
+
+
+@pytest.mark.asyncio
+async def test_download_reads_several_chunks(tmp_path: Path) -> None:
+    payload = bytes(range(256)) * 10
+    fake = _fake_manager(len(payload), payload)
+    dest = tmp_path / "out.bin"
+    assert await SandboxManager.download_tmp_file(fake, "s1", "/tmp/out.bin", dest, max_bytes=10_000) == len(payload)
+    assert dest.read_bytes() == payload
+    assert sum("tail -c" in call.args[1] for call in fake.exec_command.await_args_list) == 3
+
+
+@pytest.mark.asyncio
+async def test_download_short_read_raises(tmp_path: Path) -> None:
+    fake = _fake_manager(2000, b"x" * 1500)
+    with pytest.raises(UploadError, match="Short read"):
+        await SandboxManager.download_tmp_file(fake, "s1", "/tmp/out.bin", tmp_path / "x", max_bytes=10_000)
 
 
 @pytest.mark.asyncio
