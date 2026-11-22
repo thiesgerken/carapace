@@ -1,6 +1,12 @@
 # CHANGELOG
 
 
+## v0.190.1 (2026-11-22)
+
+### 🔧 Add or update configuration files
+
+- chore: drop digest pins from docker-compose images
+
 ## v0.190.0 (2026-11-22)
 
 ### ✨ Introduce new features
