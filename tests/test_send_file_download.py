@@ -26,7 +26,7 @@ def _fake_manager(size: int, payload: bytes) -> SimpleNamespace:
 
     fake = SimpleNamespace()
     fake.exec_command = AsyncMock(side_effect=exec_command)
-    fake._UPLOAD_CHUNK_BYTES = 1024
+    fake._DOWNLOAD_CHUNK_BYTES = 1024
     return fake
 
 
@@ -45,7 +45,7 @@ async def test_download_missing_file_raises(tmp_path: Path) -> None:
     async def exec_command(_sid, command, **_kw):
         return ExecResult(stdout="MISSING", exit_code=0, output="MISSING")
 
-    fake = SimpleNamespace(exec_command=AsyncMock(side_effect=exec_command), _UPLOAD_CHUNK_BYTES=1024)
+    fake = SimpleNamespace(exec_command=AsyncMock(side_effect=exec_command), _DOWNLOAD_CHUNK_BYTES=1024)
     with pytest.raises(UploadError):
         await SandboxManager.download_tmp_file(fake, "s1", "/tmp/nope", tmp_path / "x", max_bytes=1000)
 

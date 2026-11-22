@@ -816,6 +816,9 @@ class SandboxManager:
 
     # Same argv/URL-length bound as file writes (see SANDBOX_EXEC_CHUNK_BYTES).
     _UPLOAD_CHUNK_BYTES = file_ops.SANDBOX_EXEC_CHUNK_BYTES
+    # Downloads return their data on stdout, not in the command, so that bound doesn't
+    # apply. Every chunk is a full exec round trip (~0.3 s on Kubernetes), so they stay large.
+    _DOWNLOAD_CHUNK_BYTES = 4 * 1024 * 1024
 
     async def upload_tmp_file(
         self,
@@ -884,7 +887,7 @@ class SandboxManager:
         if size > max_bytes:
             raise UploadTooLargeError(f"File exceeds {max_bytes} bytes")
 
-        chunk = self._UPLOAD_CHUNK_BYTES
+        chunk = self._DOWNLOAD_CHUNK_BYTES
         offset = 0
         with open(dest, "wb") as fh:
             while offset < size:
