@@ -10,8 +10,8 @@ description: >-
 # Artifacts
 
 Build one self-contained page at `/workspace/artifacts/<slug>/index.html`.
-The knowledge browser shows the current pushed version; `send_file` shows a
-snapshot in chat. The user can share the live page from the knowledge browser.
+Chat, the knowledge browser, and shared links always show the current pushed
+version. The user can share the live page from the knowledge browser.
 
 ## Choose the smallest useful format
 
@@ -98,13 +98,15 @@ Otherwise, keep it as a standalone Mermaid block in the chat reply.
    A push updates the knowledge browser **and any existing shared link**. Treat
    every revision as potentially public. If the sentinel denies the push, address
    the reason; do not bypass it.
-5. After the push succeeds, call `send_file` with
-   `path="/workspace/artifacts/release-readiness/index.html"` (using your slug).
-   This displays the HTML snapshot in chat. Put source links and any necessary
+5. After the push succeeds, call `show_artifact` with `slug="release-readiness"`
+   (using your slug). This shows the pushed page in chat; it fails for a slug the
+   server does not have yet, so push first. Never `send_file` an artifact: it is
+   refused. Put source links and any necessary
    caveats in the surrounding chat reply, not inside navigable artifact links.
    Report the checks you actually ran. Ask the user to inspect the rendered page
    at a narrow width, in light/dark mode, and with keyboard controls.
-6. To update the same artifact, edit the **same path**, commit, push, and
-   `send_file` the entry point again. Old chat cards keep their snapshots; the
-   knowledge browser and shared link show the latest pushed content. Renaming the
-   slug creates a different identity and breaks the old shared URL.
+6. To update the same artifact, edit the **same path**, commit, push, and call
+   `show_artifact` again. Chat shows it as an update, and every earlier chat
+   entry, the knowledge browser, and the shared link show the latest pushed
+   content. Renaming the slug creates a different identity: earlier chat entries
+   say it no longer exists and the old shared URL breaks.

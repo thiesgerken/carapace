@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -14,9 +13,11 @@ from loguru import logger
 from pydantic import BaseModel
 
 from ..api_keys import Access, Scope
+from ..artifacts import artifact_index, artifact_title, is_artifact_slug
 from ..auth import UserIdentity
 from ..credentials import UnknownBackendError
 from ..git.store import GitStore
+from ..knowledge import contained_target
 from ..models.credentials import CredentialRegistryProtocol
 from ..models.git import FileCommit
 from ..models.skills import SkillCarapaceConfig
@@ -157,26 +158,6 @@ class KnowledgeFileInfo(BaseModel):
     artifact: KnowledgeArtifact | None = None
 
 
-def contained_target(child: Path, root: Path) -> Path | None:
-    """Resolve *child*, or return None if it is unreadable or out of bounds.
-
-    Listing a directory means reading through its entries (a SKILL.md, a README, a
-    session's conversation.json), and a symlink committed into the repo can point
-    anywhere. Every such read resolves through here first, so the guards that
-    ``resolve_target`` applies to the browsed path also cover the reads the listing
-    does on its own: outside the repo, and inside ``.git`` (which holds the remote
-    URL with its access token).
-    """
-    try:
-        target = child.resolve(strict=True)
-    except (OSError, RuntimeError):
-        # Broken symlink, symlink loop, or an unreadable parent: nothing to read.
-        return None
-    if not target.is_relative_to(root):
-        return None
-    return None if ".git" in target.relative_to(root).parts else target
-
-
 def resolve_target(root: Path, raw_path: str) -> Path:
     """Resolve *raw_path* inside an already-resolved *root*, rejecting traversal and ``.git``."""
     target = contained_target(root / raw_path, root) if raw_path else root
@@ -186,50 +167,15 @@ def resolve_target(root: Path, raw_path: str) -> Path:
 
 
 def validate_artifact_slug(slug: str) -> None:
-    if not slug or slug in {".", ".."} or "/" in slug or "\\" in slug:
+    if not is_artifact_slug(slug):
         raise HTTPException(status_code=404, detail="Not found")
 
 
 def resolve_artifact_index(root: Path, slug: str) -> Path:
-    validate_artifact_slug(slug)
-    directory = resolve_target(root, f"artifacts/{slug}")
-    if directory != root / "artifacts" / slug or not directory.is_dir():
-        raise HTTPException(status_code=404, detail="Not found")
-    target = resolve_target(directory, "index.html")
-    if not target.is_file():
+    target = artifact_index(root, slug)
+    if target is None:
         raise HTTPException(status_code=404, detail="Not found")
     return target
-
-
-class _ArtifactTitleParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.in_title = False
-        self.finished = False
-        self.parts: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag == "title" and not self.finished:
-            self.in_title = True
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in {"title", "head"}:
-            self.in_title = False
-            self.finished = True
-
-    def handle_data(self, data: str) -> None:
-        if self.in_title:
-            self.parts.append(data)
-
-
-def artifact_title(index: Path) -> str | None:
-    parser = _ArtifactTitleParser()
-    with index.open(encoding="utf-8", errors="replace") as document:
-        while chunk := document.read(4096):
-            parser.feed(chunk)
-            if parser.finished:
-                break
-    return " ".join("".join(parser.parts).split()) or None
 
 
 def artifact_info(target: Path, root: Path) -> KnowledgeArtifact | None:
@@ -467,4 +413,6 @@ async def render_artifact(
 ) -> FileResponse:
     handle = server._knowledge_repo_registry.get_for_user(user.username)
     target = resolve_artifact_index(handle.knowledge_dir.resolve(), slug)
-    return FileResponse(target, media_type="text/html", headers=artifact_headers())
+    # Chat references reload this route after every push; revalidating keeps them on the current version.
+    headers = {**artifact_headers(), "Cache-Control": "no-cache"}
+    return FileResponse(target, media_type="text/html", headers=headers)

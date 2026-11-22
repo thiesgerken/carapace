@@ -14,14 +14,12 @@ export function ArtifactPreview({
   title,
   fullScreen = false,
   artifact,
-  snapshot = false,
 }: {
   src: string;
   sourceUrl: string;
   title: string;
   fullScreen?: boolean;
   artifact?: LiveArtifact;
-  snapshot?: boolean;
 }) {
   const t = useTranslations("artifacts");
   const [showSource, setShowSource] = useState(false);
@@ -52,7 +50,7 @@ export function ArtifactPreview({
 
   return (
     <section className={cn("overflow-hidden", fullScreen ? "flex min-h-0 flex-1 flex-col" : "rounded-lg border border-border")}>
-      {!snapshot && <ArtifactToolbar artifact={artifact} title={title} src={src} fullScreen={fullScreen} showSource={showSource} onToggleSource={() => setShowSource((shown) => !shown)} />}
+      <ArtifactToolbar artifact={artifact} title={title} src={src} fullScreen={fullScreen} showSource={showSource} onToggleSource={() => setShowSource((shown) => !shown)} />
       {showSource ? (
         error ? <p role="alert" className="p-4 text-sm text-destructive">{error}</p> : (
           <pre className={cn("overflow-auto bg-muted/20 p-4 font-mono text-xs leading-relaxed", fullScreen ? "min-h-0 flex-1" : "h-[32rem]")}>

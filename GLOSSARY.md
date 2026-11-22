@@ -75,6 +75,33 @@ _Avoid_: Soft deny, revision
 A user approving or denying an action that the sentinel escalated.
 _Avoid_: Approval (ambiguous with sentinel allows)
 
+## Artifacts
+
+**Artifact**:
+A self-contained HTML page in the knowledge repository, identified by its slug. The knowledge
+repository's history is its version history; a renamed slug is a new artifact.
+_Avoid_: Report, page, document
+
+**Artifact Reference**:
+A transcript entry that points at an artifact by slug and always shows its current state, never a
+copy from the time it was made. Only an artifact already in the knowledge repository can be
+referenced.
+_Avoid_: Sent artifact, artifact snapshot
+
+**Artifact Update**:
+Any artifact reference after the first one to the same artifact within a session.
+_Avoid_: Resend
+
+**Session Artifact**:
+An artifact that a session changed through its own commits. Merely referencing an artifact does not
+make it a session artifact.
+_Avoid_: Used artifact, touched artifact
+
+**Sent File**:
+A copy of a sandbox file that the agent hands to the user in a session. It keeps the content it had
+when sent. Artifacts are referenced, not sent.
+_Avoid_: Attachment, upload
+
 ## Debugging
 
 **LLM Context**:

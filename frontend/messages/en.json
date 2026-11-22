@@ -23,7 +23,6 @@
         "source": "Show source",
         "preview": "Show preview",
         "openInNewTab": "Open in new tab",
-        "openLive": "Open current version",
         "openLiveInNewTab": "Open current version in new tab",
         "fullScreen": "Full screen",
         "openKnowledge": "Open in knowledge browser",
@@ -33,6 +32,7 @@
         "invalidSlug": "Open an artifact from chat or the knowledge browser.",
         "shared": "Shared",
         "loadError": "Failed to load artifact.",
+        "missing": "This artifact no longer exists.",
         "loadingArtifact": "Loading artifact…",
         "loading": "Loading source…",
         "sourceError": "Failed to load artifact source.",
@@ -1030,6 +1030,7 @@
             "replace": "replace",
             "sentFile": "sent file",
             "artifact": "Artifact · {title}",
+            "artifactUpdated": "Artifact updated · {title}",
             "sendFile": "send file"
         },
         "summaries": {

@@ -23,7 +23,7 @@ export type RenderItem =
 
 function isToolish(m: ChatMessage): boolean {
   // Deliveries must stay visible when the surrounding activity collapses.
-  return (m.kind === "tool_call" && m.tool !== "send_file") || m.kind === "thinking" || m.kind === "thinking_streaming";
+  return (m.kind === "tool_call" && m.tool !== "send_file" && m.tool !== "show_artifact") || m.kind === "thinking" || m.kind === "thinking_streaming";
 }
 
 /**

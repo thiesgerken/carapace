@@ -40,6 +40,8 @@ SAFE_TOOLS: frozenset[str] = frozenset(
         "str_replace",
         "list_skills",
         "send_file",
+        # Shows an already pushed artifact (the push itself was gated) and sends nothing out.
+        "show_artifact",
         # Only returns tool output this session's agent has already seen.
         "read_tool_output",
     }

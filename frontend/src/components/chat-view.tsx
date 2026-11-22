@@ -52,6 +52,7 @@ import type {
 } from "@/lib/types";
 import { isRecord } from "@/lib/decoding";
 import { knowledgeBrowseHref } from "@/lib/knowledge-links";
+import { artifactReferences } from "@/lib/artifacts";
 import { getPresenceClientId } from "@/lib/storage";
 import {
   canArchiveSession,
@@ -2973,6 +2974,7 @@ export function ChatView({
                 </div>
               )}
               {(() => {
+                const references = artifactReferences(messages);
                 const renderMessage = (i: number) => {
                   const msg = messages[i];
                   // Event-granular: fork/reset cut exactly at this message (mid-turn included).
@@ -2999,6 +3001,7 @@ export function ChatView({
                         sessionId={sessionId}
                         activeLlmActivity={llmActivity}
                         streamingActivity={i === streamingCall ? llmActivity : null}
+                        artifactReference={references.get(i)}
                         canFork={canFork}
                         canRetry={canRetry}
                         canContinue={canContinue}

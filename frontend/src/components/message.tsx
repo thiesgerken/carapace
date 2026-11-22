@@ -18,6 +18,7 @@ import { DomainAccessApprovalCard } from "./domain-access-approval-card";
 import { GitPushApprovalCard } from "./git-push-approval-card";
 import { CommandResultView } from "./command-result";
 import { cn } from "@/lib/utils";
+import type { ArtifactReference } from "@/lib/artifacts";
 
 function formatDuration(ms: number, locale: string, precise = true): string {
   // Decimals/ms only matter while the timer is live (responsive feel);
@@ -623,6 +624,7 @@ interface MessageProps {
   activeLlmActivity?: LlmActivity | null;
   /** The agent request writing this tool call right now, for the card's counter. */
   streamingActivity?: LlmActivity | null;
+  artifactReference?: ArtifactReference;
   canFork?: boolean;
   canRetry?: boolean;
   canContinue?: boolean;
@@ -651,6 +653,7 @@ export function Message({
   sessionId,
   activeLlmActivity,
   streamingActivity,
+  artifactReference,
   canFork,
   canRetry,
   canContinue,
@@ -813,6 +816,7 @@ export function Message({
           notRun={message.notRun}
           runningSpans={message.runningSpans}
           streamingActivity={streamingActivity}
+          artifactReference={artifactReference}
           childCalls={message.children?.map((c) => ({
             tool: c.tool,
             args: c.args,

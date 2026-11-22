@@ -9,14 +9,18 @@ Changes use the normal sentinel-reviewed Git push workflow.
 ## Agent workflow
 
 The agent writes `/workspace/artifacts/<slug>/index.html`, commits and pushes it,
-then uses `send_file` to show a snapshot in chat. Every push updates the live
-knowledge view and any existing shared link; old chat snapshots stay unchanged.
+then calls `show_artifact(slug)` to reference it in chat. Every push updates the
+live knowledge view, every chat reference, and any existing shared link.
+`show_artifact` only accepts slugs that exist in the server's knowledge working tree,
+so the agent has to push first. It is safe-listed: the push was already reviewed, and
+showing sends nothing out. `send_file` refuses paths under `artifacts/` and points the
+agent to `show_artifact`.
 See the bundled [artifacts skill](../src/carapace/assets/skills/artifacts/SKILL.md)
 for the authoring contract and checks. The sandbox ships no browser, so inspect
 the rendered page's narrow layout, light/dark appearance, and keyboard controls
 yourself.
 
-## Browsing and chat snapshots
+## Browsing and chat references
 
 The knowledge browser marks artifact directories with an artifact icon and uses
 `index.html`'s `<title>` as their label beside the slug. Only the artifact's
@@ -24,26 +28,28 @@ The knowledge browser marks artifact directories with an artifact icon and uses
 open it in a new tab. Other HTML files browse normally. The normal knowledge
 download remains available.
 
-The agent uses the existing `send_file` tool to show an HTML page in chat. Its
-preview renders the persisted sent-file copy, so history keeps that snapshot even
-when the repository changes. The knowledge browser renders the current working
-tree. Both views require self-contained HTML; adjacent files are not served by the
-artifact renderer. Opaque-origin subresource requests do not carry the app's
-`SameSite=Lax` session cookie.
+A `show_artifact` call is an artifact reference: a plain tool call and result in
+the session's events that name the slug, with no copy of the page. The chat never
+shows a snapshot of an artifact. Every reference loads the artifact's current title
+from the knowledge browse route and, when expanded, renders `GET /api/artifacts/<slug>`
+with the live `ArtifactToolbar`. The live route sends `Cache-Control: no-cache`, so a
+reload revalidates instead of showing a cached revision. Opaque-origin subresource
+requests do not carry the app's `SameSite=Lax` session cookie, so the page must be
+self-contained.
 
-Sent files render outside collapsed tool-activity groups, including images and
-downloads. A chat snapshot sent from `/workspace/artifacts/<slug>/index.html`
-offers **Open current version** and **Download** in one row below the preview,
-without a filename/size row or sharing controls. The download uses `<slug>.html`
-as its suggested snapshot filename.
-The delivery uses the artifact icon and **Artifact · &lt;title&gt;**, taking the title
-from the persisted HTML snapshot with client-side `DOMParser` (slug fallback).
-Artifact badges start collapsed and offer a separate icon directly after the title
-to open the current version in a new tab, including its sharing controls, without
-expanding the snapshot. The rest of the row toggles the snapshot, with the approval
-indicator on the right.
-Other sent files retain the normal sent-file label.
-Other sent HTML files retain their inline snapshot without a live-view link.
+The first reference to a slug in a session renders as **Artifact · &lt;title&gt;**,
+later ones as **Artifact updated · &lt;title&gt;**. Both start collapsed and render
+outside collapsed tool-activity groups, with a separate icon after the title that
+opens the current version in a new tab. When a new reference to a slug arrives, every
+reference to that slug in the open chat reloads its title and preview. There is no
+server push: changes pushed without a new reference show on the next page load. A
+renamed or deleted artifact renders **This artifact no longer exists** without an
+iframe.
+
+`send_file` copies a sandbox file into the session as a sent file, which keeps the
+content it had when sent. Sent HTML files render their inline snapshot without a
+live-view link. Older sessions that sent an artifact's `index.html` this way keep it
+as such an ordinary sent file.
 
 Opening an artifact directory or its `index.html` shows the live artifact directly.
 Both use the same `ArtifactToolbar` as the sidebar-free `/artifacts?slug=<slug>`
@@ -65,7 +71,7 @@ no session references. History is read once per artifact view, not for listing r
 
 `GET /api/artifacts/<slug>` serves only `artifacts/<slug>/index.html`.
 Authentication and knowledge read access are required. Invalid slug segments,
-escaping symlinks, and `.git` paths return 404. Sent HTML uses
+escaping symlinks, and `.git` paths return 404. Sent HTML files use
 `GET /api/sessions/<session_id>/files/<file_id>?artifact=1`, with the normal session
 ownership check.
 
@@ -134,7 +140,7 @@ The route is under `/api` so existing production routing sends it to the backend
 The Helm HTTPRoute sends `/api` to the server and other paths to static frontend
 nginx; a top-level `/a/...` URL would reach the static server instead.
 
-Shared links serve the current knowledge working tree, not a chat snapshot.
+Shared links serve the current knowledge working tree, like chat references.
 Renaming or deleting the directory makes its link return 404; the link does not
 follow renames. A push touching a currently shared artifact adds a notice to the
 sentinel context that the artifact is publicly reachable without authentication

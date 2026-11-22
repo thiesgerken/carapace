@@ -1951,6 +1951,14 @@ export async function browseKnowledge(
   return (await res.json()) as KnowledgeBrowseResult;
 }
 
+/** The artifact's current metadata, or null once it no longer exists (deleted or renamed). */
+export async function getArtifact(server: string, slug: string): Promise<KnowledgeArtifact | null> {
+  const res = await fetch(`${server}${knowledgeBrowsePath(`artifacts/${slug}`)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load artifact"));
+  return ((await res.json()) as KnowledgeBrowseResult).artifact;
+}
+
 export function knowledgeRawUrl(
   server: string,
   path: string,
