@@ -199,6 +199,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | -------------- | --------------------------------------------------------------------------------------------- |
 | `__init__.py`  | Package version helper (`get_version`).                                                       |
 | `__main__.py`  | `python -m carapace` entry point; delegates to the server CLI entry point.                    |
+| `artifacts.py` | Artifact lookup in a knowledge repo: slug validation, `index.html` resolution, and its title. |
 | `auth.py`      | File-backed users, password hashing, signed session cookies, and bootstrap admin handling.    |
 | `bootstrap.py` | First-run data and knowledge directory seeding, including bundled knowledge files and skills. |
 | `cache.py`     | In-memory cache for paginated session-list responses.                                         |
@@ -206,6 +207,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `codex_auth.py` | Per-user ChatGPT subscription credentials, login flow, and `openai-codex` providers.         |
 | `config.py`    | Configuration path resolution, YAML loading, and workspace-file loading helpers.              |
 | `jobs.py`      | Job file persistence, cron scheduling, and job-run prompt construction.                       |
+| `knowledge.py` | Per-user knowledge repo registry and `contained_target`, the guard for reads inside a repo.   |
 | `llm.py`       | Pydantic AI model factory and model settings helpers.                                         |
 | `payloads.py`  | Defensive helpers for coercing untrusted payload shapes.                                      |
 | `prompt_prefix.py` | System prompt prefix shared by the agent, compaction and memory tasks (see [persistent context](persistent-context.md#system-prompt-loading)). |

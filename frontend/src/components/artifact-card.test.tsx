@@ -90,22 +90,27 @@ test("a new reference to the slug reloads the preview on the artifact's current 
   }
 });
 
-test("a deleted or renamed artifact says so instead of framing the error", async () => {
+test("a deleted or renamed artifact says so in its collapsed row and has nothing to expand", async () => {
   const restore = installDom();
   const originalFetch = globalThis.fetch;
   serveArtifact(null);
   try {
-    const view = await renderReact(
-      <NextIntlClientProvider locale="de" messages={german} timeZone="UTC">
-        {reference({ slug: "report", update: false, revision: 1 })}
-      </NextIntlClientProvider>,
-    );
-    await runInAct(() => setTimeout(0));
-    await click(view.container.querySelector("button")!);
-    assert.equal(view.container.querySelector("iframe"), null);
-    assert.equal(view.container.querySelector('a[target="_blank"]'), null);
-    assert.ok(view.container.textContent?.includes(german.artifacts.missing));
-    await view.unmount();
+    for (const [update, expected] of [[false, "Artefakt · report · existiert nicht mehr"], [true, "Artefakt aktualisiert · report · existiert nicht mehr"]] as const) {
+      const view = await renderReact(
+        <NextIntlClientProvider locale="de" messages={german} timeZone="UTC">
+          {reference({ slug: "report", update, revision: 1 })}
+        </NextIntlClientProvider>,
+      );
+      await runInAct(() => setTimeout(0));
+      assert.equal(view.container.querySelector("button > span.font-medium")?.textContent, expected);
+      const toggle = view.container.querySelector("button");
+      assert.ok(toggle?.disabled);
+      assert.equal(toggle.getAttribute("aria-expanded"), null);
+      await click(toggle);
+      assert.equal(view.container.querySelector("iframe"), null);
+      assert.equal(view.container.querySelector('a[target="_blank"]'), null);
+      await view.unmount();
+    }
   } finally {
     globalThis.fetch = originalFetch;
     restore();

@@ -32,7 +32,6 @@
         "invalidSlug": "Öffne ein Artefakt im Chat oder im Wissensbrowser.",
         "shared": "Geteilt",
         "loadError": "Artefakt konnte nicht geladen werden.",
-        "missing": "Artefakt existiert nicht mehr.",
         "loadingArtifact": "Artefakt wird geladen…",
         "loading": "Quelltext wird geladen…",
         "sourceError": "Artefakt-Quelltext konnte nicht geladen werden.",
@@ -1031,6 +1030,7 @@
             "sentFile": "Datei gesendet",
             "artifact": "Artefakt · {title}",
             "artifactUpdated": "Artefakt aktualisiert · {title}",
+            "noLongerExists": "existiert nicht mehr",
             "sendFile": "Datei senden"
         },
         "summaries": {

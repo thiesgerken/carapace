@@ -596,6 +596,9 @@ export function ToolCallBadge({
     loadArtifact,
   );
   const liveArtifactValue = liveArtifact && "value" in liveArtifact ? liveArtifact.value : undefined;
+  // A deleted or renamed artifact has nothing to expand; the row itself says so.
+  const artifactMissing = liveArtifactValue === null;
+  const expanded = open && !artifactMissing;
   void _detail;
   const source = approvalSource;
   const verdict = approvalVerdict;
@@ -672,7 +675,10 @@ export function ToolCallBadge({
   const isCompleted =
     !loading && (result != null || exitCode != null || isAuxiliaryTool);
   const toolLabel = artifactReference
-    ? t(artifactReference.update ? "labels.artifactUpdated" : "labels.artifact", { title: liveArtifactValue?.title ?? artifactReference.slug })
+    ? [
+        t(artifactReference.update ? "labels.artifactUpdated" : "labels.artifact", { title: liveArtifactValue?.title ?? artifactReference.slug }),
+        ...(artifactMissing ? [t("labels.noLongerExists")] : []),
+      ].join(" · ")
     : isMcpTool
     ? mcpServer
       ? `${mcpServer} · ${mcpTool}`
@@ -834,24 +840,26 @@ export function ToolCallBadge({
     <div className="my-1 w-full min-w-0">
       <div className={cn(
         artifactSlug !== null && "flex items-stretch rounded-md text-muted-foreground hover:bg-accent transition-colors",
-        artifactSlug !== null && open && "bg-accent",
+        artifactSlug !== null && expanded && "bg-accent",
       )}>
         <button
           type="button"
           onClick={() => setOpen(!open)}
-          aria-expanded={open}
+          disabled={artifactMissing}
+          aria-expanded={artifactMissing ? undefined : expanded}
           className={cn(
             "flex min-w-0 gap-1.5 rounded-md px-2 py-1 text-xs text-left",
             artifactSlug === null ? "w-full" : "pr-0",
             shouldClampSummary ? "items-start" : "items-center",
-            "text-muted-foreground hover:bg-accent transition-colors",
-            open && "bg-accent",
+            "text-muted-foreground hover:bg-accent transition-colors disabled:hover:bg-transparent",
+            expanded && "bg-accent",
           )}
         >
           <ChevronRight
             className={cn(
               "h-3 w-3 shrink-0 transition-transform",
-              open && "rotate-90",
+              expanded && "rotate-90",
+              artifactMissing && "invisible",
             )}
           />
           {(() => {
@@ -860,7 +868,7 @@ export function ToolCallBadge({
               <ToolIcon className="h-3 w-3 shrink-0 text-foreground/65 dark:text-foreground/70" />
             ) : null;
           })()}
-          <span className={cn("font-medium text-foreground/85 dark:text-foreground/90", artifactSlug !== null ? "min-w-0 truncate" : "shrink-0")} title={artifactSlug !== null ? toolLabel : undefined}>
+          <span className={cn("font-medium", artifactMissing ? "text-muted-foreground" : "text-foreground/85 dark:text-foreground/90", artifactSlug !== null ? "min-w-0 truncate" : "shrink-0")} title={artifactSlug !== null ? toolLabel : undefined}>
             {toolLabel}
           </span>
           {argsSummary ? (
@@ -880,7 +888,7 @@ export function ToolCallBadge({
         </button>
         {artifactSlug !== null && (
           <>
-            {liveArtifactValue !== null && <a
+            {!artifactMissing && <a
               href={artifactViewerHref(artifactSlug)}
               target="_blank"
               rel="noopener noreferrer"
@@ -895,6 +903,7 @@ export function ToolCallBadge({
               tabIndex={-1}
               aria-hidden="true"
               onClick={() => setOpen(!open)}
+              disabled={artifactMissing}
               className="flex flex-1 items-center justify-end rounded-md py-1 pl-1.5 pr-2"
             >
               {indicators}
@@ -911,7 +920,7 @@ export function ToolCallBadge({
 
       {argsStreaming && !open && <StreamingArgs text={streamingPreview(tool, args, argsText ?? "")} />}
 
-      {open && (
+      {expanded && (
         <div className="tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2 text-xs">
           {compaction?.model_text && (
             <details className="rounded-md border border-amber-500/30 bg-amber-500/5">
@@ -1221,9 +1230,7 @@ export function ToolCallBadge({
               <div className="text-muted-foreground">{ta("loadingArtifact")}</div>
             ) : "error" in liveArtifact ? (
               <p role="alert" className="text-destructive">{ta("loadError")}</p>
-            ) : liveArtifact.value === null ? (
-              <div className="text-muted-foreground">{ta("missing")}</div>
-            ) : (
+            ) : liveArtifact.value === null ? null : (
               <ArtifactPreview
                 // A new reference to the slug bumps the revision and remounts the iframe on its current state.
                 key={artifactReference.revision}

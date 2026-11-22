@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import posixpath
 import re
 import secrets
 import shlex
@@ -1426,8 +1427,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         if not _user_approved(ctx) and (denied := await _gate(ctx, "send_file", {"path": path})):
             return denied
 
-        artifact_parts = _normalize_workspace_path(path).parts
-        if len(artifact_parts) >= 2 and artifact_parts[0] == _ARTIFACTS_ROOT:
+        artifact_parts = _normalize_workspace_path(posixpath.normpath(path)).parts
+        if len(artifact_parts) >= 3 and artifact_parts[0] == _ARTIFACTS_ROOT:
             return _emit_tool_result(
                 ctx,
                 "send_file",
