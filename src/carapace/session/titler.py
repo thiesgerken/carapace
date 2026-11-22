@@ -58,8 +58,8 @@ async def generate_title(
     command-result event are skipped. Each message and the joined prompt are capped
     (``MAX_MESSAGE_CHARS``, ``MAX_PROMPT_CHARS``, roughly 1.5k tokens in total).
 
-    *previous_title* is the title the first run gave from the opening message. It goes
-    last, after the cap, as an anchor the model keeps unless the topic has changed.
+    *previous_title* is the session's current title. It goes last, after the cap, as an
+    anchor the model keeps unless the topic has changed.
     """
     lines: list[str] = []
     for index, e in enumerate(events):
@@ -80,13 +80,10 @@ async def generate_title(
     if not lines:
         return ""
 
-    # Cutting the tail keeps the opening request, which sets the topic, and the prompt prefix stable.
+    # Cutting the tail keeps the opening request, which usually sets the topic.
     prompt = "\n".join(lines)[:MAX_PROMPT_CHARS]
     if previous_title:
-        prompt += (
-            f"\n\nCurrent title, given based on the first user message: {previous_title}\n"
-            "Keep it unless the topic is clearly different now."
-        )
+        prompt += f"\n\nCurrent title: {previous_title}\nKeep it unless the topic is clearly different now."
 
     resolved = model_factory(model, user=user) if model_factory is not None else infer_model(model)
     agent = title_agent(resolved, model_id=model, model_settings=model_settings)

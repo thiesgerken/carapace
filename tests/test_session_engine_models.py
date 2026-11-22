@@ -1081,3 +1081,22 @@ def test_disabled_model_override_errors_instead_of_falling_back(tmp_path: Path, 
     persisted = restarted.session_mgr.load_state(state.session_id)
     assert persisted is not None
     assert persisted.agent_model_name == "openai:gpt-4o"
+
+
+def test_only_the_third_message_title_run_gets_the_current_title(tmp_path: Path, db_factory):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        state = engine.session_mgr.create_session(user="thies")
+        active = engine.get_or_activate(state.session_id)
+        active.state.title = "📓 Diary"
+        exchange = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "ok"}]
+
+        with patch.object(engine, "_generate_title", new=AsyncMock(return_value="t")) as mocked:
+            for user_messages in (1, 2, 3):
+                engine._schedule_title_generation_if_needed(active, state.session_id, exchange * user_messages)
+                await asyncio.gather(*active._pending_sends)
+
+        assert [call.kwargs["previous_title"] for call in mocked.await_args_list] == [None, "📓 Diary"]
+
+    with _patch_sentinel():
+        asyncio.run(_run())
