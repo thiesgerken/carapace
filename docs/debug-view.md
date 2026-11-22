@@ -41,9 +41,11 @@ group takes its own line). Each role tab shows the role's **Requests** table and
 - Below it, the latest request. On top: model, start time, duration with its phases, and for
   compaction what was compacted. The status shows only when the request is not completed. Completed
   requests add their usage and cost (see below), and **message text by kind**: the estimated share
-  (by tiktoken) of system, user, assistant, tool call and tool return text in the messages sent,
-  when the request log measured it. It leaves out tool definitions, so it does not split the input
-  token count. Failed and interrupted requests show their error here.
+  (by tiktoken) of system, user, assistant, tool call, tool return and other text in the messages
+  sent, when the request log measured it. Images and other media (in user prompts, tool returns and
+  model output) are not tokenized: each counts as a flat estimate of 1,600 tokens under "other". It
+  leaves out tool definitions, so it does not split the input token count. Failed and interrupted
+  requests show their error here.
 - **Instructions** and the collapsed **tool definitions** with their JSON schemas.
 - **Messages**, formatted part by part: system, user, text, thinking, tool call (arguments as JSON),
   tool return, retry prompt. Any other part (provider-specific ones included) renders as its JSON.

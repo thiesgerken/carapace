@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.189.0 (2026-11-22)
+
+### ✨ Introduce new features
+
+- feat: show artifacts in chat as live references
+
+### 🐛 Fix a bug
+
+- fix: show missing artifacts in the collapsed row, tighten send_file refusal
+
+## v0.188.2 (2026-11-22)
+
+### 🐛 Fix a bug
+
+- fix: count model-generated files as media, list "other" in the docs
+- fix: estimate media as a flat 1,600 tokens instead of tokenizing base64
+
 ## v0.188.1 (2026-11-22)
 
 ### ⚡️ Improve performance
