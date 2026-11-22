@@ -444,7 +444,7 @@ services:
     build: ./frontend
 
   proxy:
-    image: traefik:v3.6
+    image: traefik:v3
     ports:
       - "3001:80"
 ```
