@@ -71,3 +71,23 @@ class KnowledgeRepoRegistry:
 
     def get_for_session(self, session_id: str, resolve_owner: SessionOwnerResolver) -> KnowledgeRepoHandle:
         return self.get_for_user(resolve_owner(session_id))
+
+
+def contained_target(child: Path, root: Path) -> Path | None:
+    """Resolve *child*, or return None if it is unreadable or out of bounds.
+
+    Listing a directory means reading through its entries (a SKILL.md, a README, a
+    session's conversation.json), and a symlink committed into the repo can point
+    anywhere. Every such read resolves through here first, so the guards that
+    ``resolve_target`` applies to the browsed path also cover the reads the listing
+    does on its own: outside the repo, and inside ``.git`` (which holds the remote
+    URL with its access token).
+    """
+    try:
+        target = child.resolve(strict=True)
+    except (OSError, RuntimeError):
+        # Broken symlink, symlink loop, or an unreadable parent: nothing to read.
+        return None
+    if not target.is_relative_to(root):
+        return None
+    return None if ".git" in target.relative_to(root).parts else target

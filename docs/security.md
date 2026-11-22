@@ -77,6 +77,7 @@ The following tools are auto-allowed without consulting the sentinel:
 | `write`       | File writes in the sandbox                |
 | `str_replace` | String replacement edits in sandbox files |
 | `list_skills` | Listing available skills is informational |
+| `show_artifact` | Shows an already pushed artifact; the push itself was reviewed |
 | `read_tool_output` | Only returns tool output this session's agent has already seen |
 
 `use_skill` is **not** safe-listed: activating a skill (copy into sandbox, optional venv sync, credential injection) is evaluated by the sentinel like other gated tools.

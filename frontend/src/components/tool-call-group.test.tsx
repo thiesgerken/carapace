@@ -12,11 +12,11 @@ function tool(tool: string, path: string): ChatMessage {
   return { kind: "tool_call", tool, args: { path }, detail: "" };
 }
 
-test("sent files split completed and active tool groups rather than disappearing inside them", () => {
+test("sent files and artifact references split completed and active tool groups rather than disappearing inside them", () => {
   const messages: ChatMessage[] = [
     { kind: "thinking", content: "Preparing files" },
     tool("write", "/workspace/artifacts/report/index.html"),
-    tool("send_file", "/workspace/artifacts/report/index.html"),
+    { kind: "tool_call", tool: "show_artifact", args: { slug: "report" }, detail: "" },
     tool("send_file", "/workspace/chart.png"),
     tool("send_file", "/workspace/data.csv"),
     tool("exec", "/workspace"),

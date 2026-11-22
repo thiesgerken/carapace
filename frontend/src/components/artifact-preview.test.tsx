@@ -65,38 +65,20 @@ test("artifact source failures use the selected locale rather than raw HTTP erro
   }
 });
 
-test("artifact snapshots show live-view and slug-named download actions together without a file row", async () => {
+test("HTML sent from an artifact path renders as a plain sent file", async () => {
   const restore = installDom();
   try {
-    for (const [path, expected] of [
-      ["/workspace/artifacts/report/index.html", "/artifacts?slug=report"],
-      ["/workspace/reports/index.html", undefined],
-      ["/workspace/artifacts/../index.html", undefined],
-    ] as const) {
-      const view = await renderReact(
-        <NextIntlClientProvider locale="de" messages={germanMessages} timeZone="UTC">
-          <FilePreview fileId="f1" name="index.html" size={5529} path={path} mime="text/html" server={SERVER} sessionId="s1" />
-        </NextIntlClientProvider>,
-      );
-      assert.equal(view.container.querySelector('a[href^="/artifacts?"]')?.getAttribute("href"), expected);
-      const download = view.container.querySelector("a[download]");
-      assert.ok(download);
-      assert.equal(download.getAttribute("href"), `${SERVER}/api/sessions/s1/files/f1?download=1`);
-      if (expected) {
-        const liveLink = view.container.querySelector('a[href^="/artifacts?"]');
-        assert.equal(liveLink?.textContent, germanMessages.artifacts.openLive);
-        assert.ok(liveLink?.parentElement === download.parentElement);
-        assert.ok(liveLink?.nextElementSibling === download);
-        assert.equal(download.getAttribute("download"), "report.html");
-        assert.equal(view.container.textContent?.includes("index.html"), false);
-        assert.equal(view.container.textContent?.includes("5.4 KB"), false);
-      } else {
-        assert.equal(download.getAttribute("download"), "index.html");
-        assert.ok(view.container.textContent?.includes("index.html"));
-        assert.ok(view.container.textContent?.includes("5.4 KB"));
-      }
-      await view.unmount();
-    }
+    const view = await renderReact(
+      <NextIntlClientProvider locale="de" messages={germanMessages} timeZone="UTC">
+        <FilePreview fileId="f1" name="index.html" size={5529} path="/workspace/artifacts/report/index.html" mime="text/html" server={SERVER} sessionId="s1" />
+      </NextIntlClientProvider>,
+    );
+    assert.equal(view.container.querySelector('a[href^="/artifacts?"]'), null);
+    const download = view.container.querySelector("a[download]");
+    assert.equal(download?.getAttribute("href"), `${SERVER}/api/sessions/s1/files/f1?download=1`);
+    assert.equal(download?.getAttribute("download"), "index.html");
+    assert.ok(view.container.textContent?.includes("5.4 KB"));
+    await view.unmount();
   } finally {
     restore();
   }

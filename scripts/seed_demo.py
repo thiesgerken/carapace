@@ -12,6 +12,9 @@ timestamps relative to the seeding time, so the same script gives the same pictu
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field
@@ -36,7 +39,7 @@ from pydantic_ai.usage import RequestUsage, RunUsage
 from sqlalchemy.engine import make_url
 
 from carapace.auth import AuthStore
-from carapace.config import build_config
+from carapace.config import build_config, resolve_user_knowledge_dir
 from carapace.database.engine import SessionFactory, create_engine_and_factory, resolve_database_url, run_migrations
 from carapace.memory.input import INPUT_FORMAT_VERSION
 from carapace.memory.models import (
@@ -75,6 +78,7 @@ DEMO_PASSWORD = "carapace-demo"
 DEMO_MODEL = "anthropic:claude-sonnet-4-6"
 DEMO_SUBSCRIPTION_MODEL = "openai-codex:gpt-5.5"
 PANCAKE_TURN_ID = "5eedf00d"
+ARTIFACT_SESSION = "demo-sales-dashboard"
 # Memory runs on the subscription; an older extraction ran on the paid API model. Today's spend
 # sits close to the day limits, so the home page shows the budget notice.
 DEMO_MEMORY_BUDGET = MemoryBudget(
@@ -867,6 +871,119 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
     return spans, sorted(records, key=lambda record: record.ts)
 
 
+def _artifact_page(title: str, *, trend: bool) -> str:
+    bars = "".join(
+        f'<div class="row"><span>{region}</span><i style="width:{share}%"></i><b>{revenue}</b></div>'
+        for region, share, revenue in (("North", 92, "€1.84M"), ("West", 74, "€1.48M"), ("South", 51, "€1.02M"))
+    )
+    months = (
+        '<h2>Monthly trend</h2><div class="trend"><i style="height:58%"></i><i style="height:71%"></i>'
+        '<i style="height:96%"></i></div><p class="legend">July · August · September</p>'
+        if trend
+        else ""
+    )
+    return (
+        f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{title}</title>'
+        '<meta name="viewport" content="width=device-width, initial-scale=1"><style>'
+        ":root{--bg:#fff;--fg:#1c1917;--muted:#78716c;--bar:#0d9488}"
+        "@media (prefers-color-scheme: dark){:root{--bg:#1c1917;--fg:#f5f5f4;--muted:#a8a29e;--bar:#2dd4bf}}"
+        "body{margin:0;padding:24px;font:15px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg)}"
+        "h1{margin:0 0 4px;font-size:22px}h2{margin:24px 0 8px;font-size:16px}p{margin:0;color:var(--muted)}"
+        ".row{display:grid;grid-template-columns:64px 1fr 72px;gap:12px;align-items:center;margin-top:12px}"
+        ".row i,.trend i{display:block;background:var(--bar);border-radius:4px}.row i{height:14px}"
+        ".row b{text-align:right}.trend{display:flex;align-items:flex-end;gap:16px;height:120px}"
+        ".trend i{flex:1}.legend{margin-top:6px;font-size:13px}"
+        f"</style></head><body><h1>{title}</h1><p>Revenue by region, demo data</p>{bars}{months}</body></html>"
+    )
+
+
+def _artifact_reference(t: Transcript, slug: str, title: str) -> None:
+    tool_id = t.call("show_artifact", {"slug": slug})
+    t.result(tool_id, "show_artifact", json.dumps({"slug": slug, "title": title}))
+
+
+def _sales_dashboard(start: datetime) -> Transcript:
+    t = Transcript(start)
+    t.user("Sketch a quick sales overview I can look at in the chat.")
+    write = t.call(
+        "write",
+        {"path": "/workspace/artifacts/sales-draft/index.html", "content": _artifact_page("Sales draft", trend=False)},
+    )
+    t.result(write, "write", "Wrote 1 line to /workspace/artifacts/sales-draft/index.html")
+    t.run(
+        'git add artifacts/sales-draft && git commit -m "Add sales draft" && git push',
+        "[main 4a1c2e9] Add sales draft\n 1 file changed, 1 insertion(+)",
+        source="sentinel",
+        explanation="A self-contained artifact without scripts or external URLs.",
+    )
+    _artifact_reference(t, "sales-draft", "Sales draft")
+    t.assistant("Here is a first draft with revenue per region.")
+    t.user("Make it a proper Q3 dashboard with a stable name, and drop the draft.")
+    t.run(
+        'git mv artifacts/sales-draft artifacts/q3-sales && git commit -m "Turn the draft into the Q3 dashboard" '
+        "&& git push",
+        "[main 7be03d4] Turn the draft into the Q3 dashboard\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+        source="sentinel",
+        explanation="Renames the user's artifact as requested; no navigation or external resources.",
+    )
+    _artifact_reference(t, "q3-sales", "Q3 sales by region")
+    t.assistant("The dashboard now lives at `q3-sales`. The old draft is gone.")
+    t.user("Add the monthly trend, please.")
+    t.run(
+        'git commit -am "Add the monthly trend" && git push',
+        "[main c91f5b0] Add the monthly trend\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+        source="sentinel",
+        explanation="Adds a static chart to the same artifact.",
+    )
+    _artifact_reference(t, "q3-sales", "Q3 sales by region")
+    t.assistant("Done: the dashboard shows the monthly trend below the regions.")
+    return t
+
+
+def _seed_artifacts(data_dir: Path, start: datetime) -> None:
+    """Commit the sales dashboard's history into the demo user's knowledge repo, as the session pushed it."""
+    repo = resolve_user_knowledge_dir(data_dir, DEMO_USER)
+    repo.mkdir(parents=True, exist_ok=True)
+
+    def git(*args: str, at: datetime | None = None) -> None:
+        dates = {"GIT_AUTHOR_DATE": at.isoformat(), "GIT_COMMITTER_DATE": at.isoformat()} if at else {}
+        subprocess.run(
+            ["git", "-c", "user.name=carapace", "-c", "user.email=carapace@demo", *args],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            env={**os.environ, **dates},
+        )
+
+    def commit(message: str, minutes: int) -> None:
+        git(
+            "commit",
+            "-m",
+            message,
+            "-m",
+            f"carapace-session: {ARTIFACT_SESSION}",
+            at=start + timedelta(minutes=minutes),
+        )
+
+    git("init", "-b", "main")
+    draft = repo / "artifacts" / "sales-draft" / "index.html"
+    draft.parent.mkdir(parents=True)
+    draft.write_text(_artifact_page("Sales draft", trend=False), encoding="utf-8")
+    git("add", "artifacts")
+    commit("Add sales draft", 1)
+    git("mv", "artifacts/sales-draft", "artifacts/q3-sales")
+    (repo / "artifacts" / "q3-sales" / "index.html").write_text(
+        _artifact_page("Q3 sales by region", trend=False), encoding="utf-8"
+    )
+    git("add", "artifacts")
+    commit("Turn the draft into the Q3 dashboard", 3)
+    (repo / "artifacts" / "q3-sales" / "index.html").write_text(
+        _artifact_page("Q3 sales by region", trend=True), encoding="utf-8"
+    )
+    git("add", "artifacts")
+    commit("Add the monthly trend", 5)
+
+
 def demo_sessions(now: datetime) -> list[DemoSession]:
     budget_usage = _usage(180_000, 24_000)
     budget_stop_budget = SessionBudget(cost_usd=Decimal("0.75"))
@@ -936,6 +1053,12 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
             _autonomy_limit(now - timedelta(minutes=10)),
             budget=SessionBudget(autonomous_tool_calls=3),
             usage=_usage(7_200, 600),
+        ),
+        DemoSession(
+            ARTIFACT_SESSION,
+            "📊 Q3 Sales Dashboard",
+            _sales_dashboard(now - timedelta(minutes=15)),
+            usage=_usage(12_400, 2_900),
         ),
         DemoSession(
             "demo-subscription",
@@ -1103,6 +1226,8 @@ def seed(data_dir: Path, now: datetime) -> None:
         for turn_id, spans in demo.turn_spans.items():
             session_mgr.save_turn_spans(session_id, turn_id, spans)
         print(f"{session_id}  {demo.title}")
+    artifact_session = next(demo for demo in sessions if demo.session_id == ARTIFACT_SESSION)
+    _seed_artifacts(data_dir, datetime.fromisoformat(artifact_session.transcript.events[0]["timestamp"]))
     _seed_memory(session_factory, sessions, now)
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import posixpath
 import re
 import secrets
 import shlex
@@ -23,6 +24,7 @@ from pydantic_ai.toolsets import CombinedToolset, FunctionToolset
 from pydantic_ai.toolsets.abstract import AbstractToolset
 
 from .. import security as security
+from ..artifacts import artifact_index, artifact_title
 from ..credentials import CredentialBackendError
 from ..llm import (
     ProviderCompactionRejectionCapability,
@@ -60,6 +62,7 @@ SEND_FILE_MAX_BYTES = 50 * 1024 * 1024
 
 _WORKSPACE_ROOT = PurePosixPath("/workspace")
 _SKILLS_ROOT = PurePosixPath("skills")
+_ARTIFACTS_ROOT = "artifacts"
 _EXEC_OUTPUT_SPILL_ROOT = PurePosixPath("/tmp/carapace-tool-output")
 _SKILL_PATH_PATTERN = re.compile(r"(?<![\w.-])(?:/workspace/)?skills/(?P<skill>[A-Za-z0-9][A-Za-z0-9._-]*)")
 
@@ -1424,6 +1427,16 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         if not _user_approved(ctx) and (denied := await _gate(ctx, "send_file", {"path": path})):
             return denied
 
+        artifact_parts = _normalize_workspace_path(posixpath.normpath(path)).parts
+        if len(artifact_parts) >= 3 and artifact_parts[0] == _ARTIFACTS_ROOT:
+            return _emit_tool_result(
+                ctx,
+                "send_file",
+                f"Error: {path} belongs to the artifact {artifact_parts[1]!r}. Artifacts are not sent: "
+                f"push it, then call show_artifact({artifact_parts[1]!r}).",
+                exit_code=1,
+            )
+
         session_id = ctx.deps.session_state.session_id
         name = PurePosixPath(path).name or "file"
         file_id, dest = sent_files.reserve(ctx.deps.data_dir, session_id, name)
@@ -1445,6 +1458,29 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
 
         info = sent_files.finalize(ctx.deps.data_dir, session_id, file_id, name, size)
         return _emit_tool_result(ctx, "send_file", f"Sent {info.name} to the user.", files=(info,))
+
+    @agent.tool
+    async def show_artifact(ctx: RunContext[Deps], slug: str) -> str | ToolDenied:
+        """Show an artifact to the user in the chat, always in its current pushed version.
+
+        ``slug`` names ``artifacts/<slug>/index.html`` in the knowledge repo. The chat reads
+        the server's copy, so commit and push the artifact first; call this again after
+        pushing changes so the user sees the update.
+        """
+        if not _user_approved(ctx) and (denied := await _gate(ctx, "show_artifact", {"slug": slug})):
+            return denied
+
+        index = artifact_index(ctx.deps.knowledge_dir.resolve(), slug)
+        if index is None:
+            return _emit_tool_result(
+                ctx,
+                "show_artifact",
+                f"Error: the server has no artifact {slug!r}. Commit and push artifacts/{slug}/index.html first.",
+                exit_code=1,
+            )
+        return _emit_tool_result(
+            ctx, "show_artifact", json.dumps({"slug": slug, "title": artifact_title(index) or slug})
+        )
 
     @agent.tool
     async def write(ctx: RunContext[Deps], path: str, content: str) -> str | ToolDenied:

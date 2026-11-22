@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import {
   Archive,
   Ban,
@@ -32,6 +32,7 @@ import type { LucideIcon } from "lucide-react";
 import { diffLines } from "diff";
 import { MarkdownContent } from "./markdown-content";
 import { FilePreview } from "./file-preview";
+import { ArtifactPreview } from "./artifact-preview";
 import { BrailleSpinner } from "./braille-spinner";
 import { ActivityCounter } from "./waiting-indicator";
 import {
@@ -42,8 +43,9 @@ import {
 import type { ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, SentFile } from "@/lib/types";
 import { toolCallStatus } from "@/lib/tool-call-status";
 import { cn } from "@/lib/utils";
-import { sentFileUrl } from "@/lib/api";
-import { artifactSnapshotTitle, artifactViewerHref, sentArtifactSlug } from "@/lib/artifacts";
+import { getArtifact, knowledgeArtifactUrl, knowledgeRawUrl } from "@/lib/api";
+import { artifactViewerHref, type ArtifactReference } from "@/lib/artifacts";
+import { useKeyedFetch } from "@/hooks/use-keyed-fetch";
 import { parseStreamingArgs } from "@/lib/live-tool-calls";
 
 interface ToolCallBadgeProps {
@@ -75,6 +77,8 @@ interface ToolCallBadgeProps {
   runningSpans?: RunningSpan[];
   /** The agent request writing this call right now: the card shows its counter. */
   streamingActivity?: LlmActivity | null;
+  /** Set on a successful `show_artifact` call: the card then shows the artifact live. */
+  artifactReference?: ArtifactReference;
 }
 
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "unknown";
@@ -89,6 +93,7 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   proxy_domain: Globe,
   git_push: GitBranch,
   send_file: Send,
+  show_artifact: FolderCode,
   read_tool_output: History,
 };
 
@@ -574,38 +579,26 @@ export function ToolCallBadge({
   notRun,
   runningSpans,
   streamingActivity,
+  artifactReference,
 }: ToolCallBadgeProps) {
   const t = useTranslations("toolCallBadge");
   const step = loading ? toolCallStatus(runningSpans) : null;
   const tc = useTranslations("compaction");
   const ta = useTranslations("artifacts");
   const isSendFileTool = tool === "send_file";
-  const artifactSlug = isSendFileTool ? sentArtifactSlug(args.path) : null;
-  const [open, setOpen] = useState(isSendFileTool && artifactSlug === null);
+  const artifactSlug = artifactReference?.slug ?? null;
+  const [open, setOpen] = useState(isSendFileTool);
   const [skillInstructionsOpen, setSkillInstructionsOpen] = useState(false);
-  const sentFileId = files?.[0]?.file_id;
-  const artifactSource = artifactSlug !== null && sentFileId && server !== undefined && sessionId !== undefined
-    ? sentFileUrl(server, sessionId, sentFileId)
-    : null;
-  const [snapshotTitle, setSnapshotTitle] = useState<{ source: string; title: string } | null>(null);
-
-  useEffect(() => {
-    if (artifactSlug === null || artifactSource === null) return;
-    const controller = new AbortController();
-    async function loadTitle(source: string, slug: string) {
-      try {
-        const response = await fetch(source, { signal: controller.signal });
-        if (!response.ok) throw new Error(`Failed to load artifact snapshot: ${response.status}`);
-        const html = await response.text();
-        const title = artifactSnapshotTitle(html, slug);
-        if (!controller.signal.aborted) setSnapshotTitle({ source, title });
-      } catch (error) {
-        if (!controller.signal.aborted) console.error("Failed to load artifact snapshot title", error);
-      }
-    }
-    void loadTitle(artifactSource, artifactSlug);
-    return () => controller.abort();
-  }, [artifactSlug, artifactSource]);
+  // ponytail: one metadata fetch per reference; dedupe per slug if long artifact sessions get slow.
+  const loadArtifact = useCallback(() => getArtifact(server!, artifactSlug!), [server, artifactSlug]);
+  const liveArtifact = useKeyedFetch(
+    artifactReference && server !== undefined ? `${server}\n${artifactReference.slug}\n${artifactReference.revision}` : null,
+    loadArtifact,
+  );
+  const liveArtifactValue = liveArtifact && "value" in liveArtifact ? liveArtifact.value : undefined;
+  // A deleted or renamed artifact has nothing to expand; the row itself says so.
+  const artifactMissing = liveArtifactValue === null;
+  const expanded = open && !artifactMissing;
   void _detail;
   const source = approvalSource;
   const verdict = approvalVerdict;
@@ -681,8 +674,11 @@ export function ToolCallBadge({
     (credentialAccessPath.length === 0 || credentialAccessPath === "<list>");
   const isCompleted =
     !loading && (result != null || exitCode != null || isAuxiliaryTool);
-  const toolLabel = artifactSlug !== null
-    ? t("labels.artifact", { title: snapshotTitle?.source === artifactSource ? snapshotTitle.title : artifactSlug })
+  const toolLabel = artifactReference
+    ? [
+        t(artifactReference.update ? "labels.artifactUpdated" : "labels.artifact", { title: liveArtifactValue?.title ?? artifactReference.slug }),
+        ...(artifactMissing ? [t("labels.noLongerExists")] : []),
+      ].join(" · ")
     : isMcpTool
     ? mcpServer
       ? `${mcpServer} · ${mcpTool}`
@@ -844,24 +840,26 @@ export function ToolCallBadge({
     <div className="my-1 w-full min-w-0">
       <div className={cn(
         artifactSlug !== null && "flex items-stretch rounded-md text-muted-foreground hover:bg-accent transition-colors",
-        artifactSlug !== null && open && "bg-accent",
+        artifactSlug !== null && expanded && "bg-accent",
       )}>
         <button
           type="button"
           onClick={() => setOpen(!open)}
-          aria-expanded={open}
+          disabled={artifactMissing}
+          aria-expanded={artifactMissing ? undefined : expanded}
           className={cn(
             "flex min-w-0 gap-1.5 rounded-md px-2 py-1 text-xs text-left",
             artifactSlug === null ? "w-full" : "pr-0",
             shouldClampSummary ? "items-start" : "items-center",
-            "text-muted-foreground hover:bg-accent transition-colors",
-            open && "bg-accent",
+            "text-muted-foreground hover:bg-accent transition-colors disabled:hover:bg-transparent",
+            expanded && "bg-accent",
           )}
         >
           <ChevronRight
             className={cn(
               "h-3 w-3 shrink-0 transition-transform",
-              open && "rotate-90",
+              expanded && "rotate-90",
+              artifactMissing && "invisible",
             )}
           />
           {(() => {
@@ -870,7 +868,7 @@ export function ToolCallBadge({
               <ToolIcon className="h-3 w-3 shrink-0 text-foreground/65 dark:text-foreground/70" />
             ) : null;
           })()}
-          <span className={cn("font-medium text-foreground/85 dark:text-foreground/90", artifactSlug !== null ? "min-w-0 truncate" : "shrink-0")} title={artifactSlug !== null ? toolLabel : undefined}>
+          <span className={cn("font-medium", artifactMissing ? "text-muted-foreground" : "text-foreground/85 dark:text-foreground/90", artifactSlug !== null ? "min-w-0 truncate" : "shrink-0")} title={artifactSlug !== null ? toolLabel : undefined}>
             {toolLabel}
           </span>
           {argsSummary ? (
@@ -890,7 +888,7 @@ export function ToolCallBadge({
         </button>
         {artifactSlug !== null && (
           <>
-            <a
+            {!artifactMissing && <a
               href={artifactViewerHref(artifactSlug)}
               target="_blank"
               rel="noopener noreferrer"
@@ -899,12 +897,13 @@ export function ToolCallBadge({
               className="inline-flex shrink-0 items-center rounded-md p-1.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <ExternalLink className="h-3 w-3" />
-            </a>
+            </a>}
             <button
               type="button"
               tabIndex={-1}
               aria-hidden="true"
               onClick={() => setOpen(!open)}
+              disabled={artifactMissing}
               className="flex flex-1 items-center justify-end rounded-md py-1 pl-1.5 pr-2"
             >
               {indicators}
@@ -921,7 +920,7 @@ export function ToolCallBadge({
 
       {argsStreaming && !open && <StreamingArgs text={streamingPreview(tool, args, argsText ?? "")} />}
 
-      {open && (
+      {expanded && (
         <div className="tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2 text-xs">
           {compaction?.model_text && (
             <details className="rounded-md border border-amber-500/30 bg-amber-500/5">
@@ -1226,6 +1225,21 @@ export function ToolCallBadge({
                 </div>
               )}
             </>
+          ) : artifactReference && server !== undefined ? (
+            liveArtifact === null ? (
+              <div className="text-muted-foreground">{ta("loadingArtifact")}</div>
+            ) : "error" in liveArtifact ? (
+              <p role="alert" className="text-destructive">{ta("loadError")}</p>
+            ) : liveArtifact.value === null ? null : (
+              <ArtifactPreview
+                // A new reference to the slug bumps the revision and remounts the iframe on its current state.
+                key={artifactReference.revision}
+                src={knowledgeArtifactUrl(server, artifactReference.slug)}
+                sourceUrl={knowledgeRawUrl(server, `artifacts/${artifactReference.slug}/index.html`)}
+                title={liveArtifact.value.title}
+                artifact={{ server, ...liveArtifact.value }}
+              />
+            )
           ) : isSendFileTool ? (
             <>
               {files && files.length > 0 ? (

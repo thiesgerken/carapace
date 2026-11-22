@@ -152,6 +152,8 @@ The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives me
 | `write`       | Write content to a file in the sandbox                                    |
 | `str_replace` | Search-and-replace edit of a file in the sandbox                          |
 | `exec`        | Run a shell command in the sandbox (default timeout: 30s)                 |
+| `send_file`   | Copy a sandbox file into the session for the user to view or download     |
+| `show_artifact` | Reference a pushed artifact in chat; the chat always shows its current version |
 | `read_tool_output` | Return the original output of an earlier tool call whose output was compacted |
 
 Persistent writes to workspace files, skills, and archived session snapshots happen via `git commit` + `git push` inside the sandbox. Each push is evaluated by the security sentinel through a pre-receive hook, so persistent knowledge changes do not bypass the sentinel.
@@ -197,6 +199,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | -------------- | --------------------------------------------------------------------------------------------- |
 | `__init__.py`  | Package version helper (`get_version`).                                                       |
 | `__main__.py`  | `python -m carapace` entry point; delegates to the server CLI entry point.                    |
+| `artifacts.py` | Artifact lookup in a knowledge repo: slug validation, `index.html` resolution, and its title. |
 | `auth.py`      | File-backed users, password hashing, signed session cookies, and bootstrap admin handling.    |
 | `bootstrap.py` | First-run data and knowledge directory seeding, including bundled knowledge files and skills. |
 | `cache.py`     | In-memory cache for paginated session-list responses.                                         |
@@ -204,6 +207,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `codex_auth.py` | Per-user ChatGPT subscription credentials, login flow, and `openai-codex` providers.         |
 | `config.py`    | Configuration path resolution, YAML loading, and workspace-file loading helpers.              |
 | `jobs.py`      | Job file persistence, cron scheduling, and job-run prompt construction.                       |
+| `knowledge.py` | Per-user knowledge repo registry and `contained_target`, the guard for reads inside a repo.   |
 | `llm.py`       | Pydantic AI model factory and model settings helpers.                                         |
 | `payloads.py`  | Defensive helpers for coercing untrusted payload shapes.                                      |
 | `prompt_prefix.py` | System prompt prefix shared by the agent, compaction and memory tasks (see [persistent context](persistent-context.md#system-prompt-loading)). |
@@ -218,7 +222,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `agent/__init__.py` | Re-exports agent creation and turn runner APIs.                                                                                        |
 | `agent/deps.py`     | Pydantic AI dependency model injected into agent tools.                                                                                |
 | `agent/loop.py`     | Channel-agnostic single-turn runner, streaming callbacks, and deferred tool approval retry loop.                                       |
-| `agent/tools.py`    | Agent construction, system prompt assembly, and registered tools (`list_skills`, `use_skill`, `read`, `write`, `str_replace`, `exec`, `send_file`, `read_tool_output`). |
+| `agent/tools.py`    | Agent construction, system prompt assembly, and registered tools (`list_skills`, `use_skill`, `read`, `write`, `str_replace`, `exec`, `send_file`, `show_artifact`, `read_tool_output`). |
 
 ### Channels package
 
