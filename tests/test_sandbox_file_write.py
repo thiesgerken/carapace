@@ -1,177 +1,87 @@
-"""Tests for chunked sandbox file writes (avoiding shell "Argument list too long")."""
+"""Tests for sandbox file writes and str_replace, which pass their data on exec stdin."""
 
 from __future__ import annotations
 
-import base64
-import re
+import json
+import shlex
+import subprocess
+import sys
+from pathlib import Path
 
-import httpx
 import pytest
 
-from carapace.sandbox.file_ops import (
-    SANDBOX_EXEC_CHUNK_BYTES,
-    SandboxFileOps,
-    _file_write_commands,
-)
+from carapace.sandbox.file_ops import SandboxFileOps, _file_write_command
 from carapace.sandbox.runtime import ExecResult
 
-# Linux caps a single argv string at MAX_ARG_STRLEN (128 KiB).
-MAX_ARG_STRLEN = 128 * 1024
+
+def _run_write(path: Path, data: bytes, *, mode: int | None = None) -> subprocess.CompletedProcess[bytes]:
+    cmd = _file_write_command(str(path), mode=mode, quote=True)
+    return subprocess.run(["/bin/bash", "-c", cmd], input=data, capture_output=True, check=False)
 
 
-def _reconstruct(commands: list[str]) -> bytes:
-    """Decode the base64 payloads back into the bytes the commands would write."""
-    out = bytearray()
-    for cmd in commands:
-        for b64 in re.findall(r"printf %s (\S+) \| base64 -d", cmd):
-            out += base64.b64decode(b64)
-    return bytes(out)
+def test_write_creates_parent_dir_and_writes_stdin(tmp_path: Path) -> None:
+    target = tmp_path / "a" / "b" / "out.bin"
+    data = bytes(range(256)) * 4096
+    assert _run_write(target, data).returncode == 0
+    assert target.read_bytes() == data
 
 
-def test_small_write_is_single_command() -> None:
-    writes, chmod = _file_write_commands("/tmp/x.txt", "hello", mode=None, quote=True)
-    assert len(writes) == 1
-    assert chmod is None
-    assert writes[0].startswith('mkdir -p "$(dirname')
-    assert _reconstruct(writes) == b"hello"
+def test_write_replaces_read_only_file_and_applies_mode(tmp_path: Path) -> None:
+    target = tmp_path / "cred"
+    target.write_text("old")
+    target.chmod(0o400)
+    assert _run_write(target, b"new", mode=0o400).returncode == 0
+    assert target.read_text() == "new"
+    assert target.stat().st_mode & 0o777 == 0o400
 
 
-def test_mode_folds_into_sole_write() -> None:
-    # Single chunk + mode stays one exec (preserves prior behaviour for credential writes).
-    writes, chmod = _file_write_commands("/tmp/x", "v", mode=0o400, quote=True)
-    assert len(writes) == 1
-    assert chmod is None
-    assert writes[0].endswith("&& chmod 0400 /tmp/x")
-
-
-def test_large_write_chunks_stay_within_arg_limit() -> None:
-    content = "A" * (300 * 1024)
-    writes, chmod = _file_write_commands("/tmp/big.bin", content, mode=0o644, quote=True)
-    assert len(writes) > 1
-    assert all(len(cmd) < MAX_ARG_STRLEN for cmd in writes)
-    # First truncates, the rest append.
-    assert " > /tmp/big.bin" in writes[0]
-    assert all(" >> /tmp/big.bin" in cmd for cmd in writes[1:])
-    # Multi-chunk: chmod is a separate trailing command, not folded into a data write.
-    assert chmod == "chmod 0644 /tmp/big.bin"
-    assert all("chmod" not in cmd for cmd in writes)
-    assert _reconstruct(writes).decode() == content
-
-
-def test_empty_content_truncates_file() -> None:
-    writes, chmod = _file_write_commands("/tmp/x", "", mode=None, quote=True)
-    assert len(writes) == 1
-    assert chmod is None
-    assert " > /tmp/x" in writes[0]
-    assert _reconstruct(writes) == b""
-
-
-def test_chunk_boundary_count() -> None:
-    content = "B" * (SANDBOX_EXEC_CHUNK_BYTES * 2 + 1)
-    writes, chmod = _file_write_commands("/tmp/x", content, mode=None, quote=True)
-    assert len(writes) == 3
-    assert chmod is None
-    assert _reconstruct(writes).decode() == content
-
-
-def _assert_fits_kubernetes_exec_url(cmd: str) -> None:
-    # The Kubernetes runtime sends the command as URL query params; httpx caps a URL
-    # component at 65536 chars and raises InvalidURL beyond that.
-    httpx.URL("https://k8s/api/v1/pods/p/exec", params={"command": ["/bin/bash", "-c", cmd], "container": "sandbox"})
-
-
-# Text whose UTF-8 encodes to bytes heavy in "+/" base64; the exact worst case is
-# binary data, covered by test_binary_upload_chunks_fit_kubernetes_exec_url.
-_LARGE_CONTENT = "\uffff" * SANDBOX_EXEC_CHUNK_BYTES
-
-
-def test_binary_upload_chunks_fit_kubernetes_exec_url() -> None:
-    # b"\xff" base64-encodes to all "/", each url-encoded to "%2F": the worst case.
-    cmd = f"printf %s {base64.b64encode(b'\xff' * SANDBOX_EXEC_CHUNK_BYTES).decode()} | base64 -d >> /tmp/upload.bin"
-    _assert_fits_kubernetes_exec_url(cmd)
-
-
-def test_chunks_fit_kubernetes_exec_url() -> None:
-    writes, _ = _file_write_commands("/workspace/" + "d" * 200 + "/out.txt", _LARGE_CONTENT, mode=0o644, quote=True)
-    for cmd in writes:
-        _assert_fits_kubernetes_exec_url(cmd)
+def test_empty_write_truncates(tmp_path: Path) -> None:
+    target = tmp_path / "f"
+    target.write_text("old")
+    assert _run_write(target, b"").returncode == 0
+    assert target.read_bytes() == b""
 
 
 @pytest.mark.asyncio
-async def test_large_str_replace_fits_kubernetes_exec_url() -> None:
-    calls: list[str] = []
+async def test_run_file_write_passes_content_on_stdin() -> None:
+    calls: list[tuple[str, bytes]] = []
 
-    async def exec_in_session(_session_id: str, cmd: str, **_kwargs: object) -> ExecResult:
-        calls.append(cmd)
-        return ExecResult(stdout="", exit_code=0, output="ok")
-
-    ops = SandboxFileOps(exec_in_session=exec_in_session, exec_in_container=exec_in_session, get_session=lambda _: None)
-    result = await ops.file_str_replace("s", "/workspace/big.txt", _LARGE_CONTENT, _LARGE_CONTENT)
-
-    assert result.exit_code == 0
-    assert len(calls) > 2  # chunked payload writes, then the replace script
-    assert calls[-1].startswith("python3 -c ")
-    for cmd in calls:
-        _assert_fits_kubernetes_exec_url(cmd)
-
-
-async def _run(exec_one, content, *, mode=None, path="/tmp/f") -> tuple[ExecResult, list[str]]:
-    calls: list[str] = []
-
-    async def wrapped(cmd: str) -> ExecResult:
-        calls.append(cmd)
-        return await exec_one(cmd, calls)
-
-    result = await SandboxFileOps._run_file_write(wrapped, path, content, mode=mode, quote=True)
-    return result, calls
-
-
-@pytest.mark.asyncio
-async def test_multichunk_partial_failure_removes_file() -> None:
-    async def exec_one(cmd: str, calls: list[str]) -> ExecResult:
-        # Fail on the first append, after the first command already truncated+wrote.
-        fail = ">>" in cmd and not any(">>" in c for c in calls[:-1])
-        return (
-            ExecResult(stdout="boom", exit_code=1, output="boom")
-            if fail
-            else ExecResult(stdout="", exit_code=0, output="")
-        )
-
-    result, calls = await _run(exec_one, "C" * (SANDBOX_EXEC_CHUNK_BYTES * 2))
-    assert result.exit_code == 1
-    assert any(c.startswith("rm -f /tmp/f") for c in calls)
-
-
-@pytest.mark.asyncio
-async def test_first_command_failure_leaves_existing_file() -> None:
-    # mkdir/truncate fails before any chunk is written — must not delete a pre-existing file.
-    async def exec_one(cmd: str, calls: list[str]) -> ExecResult:
-        return ExecResult(stdout="denied", exit_code=1, output="denied")
-
-    result, calls = await _run(exec_one, "C" * (SANDBOX_EXEC_CHUNK_BYTES * 2))
-    assert result.exit_code == 1
-    assert not any(c.startswith("rm -f") for c in calls)
-
-
-@pytest.mark.asyncio
-async def test_chmod_failure_keeps_written_file() -> None:
-    # All data appended successfully; only the trailing chmod fails — keep the file.
-    async def exec_one(cmd: str, calls: list[str]) -> ExecResult:
-        if cmd.startswith("chmod"):
-            return ExecResult(stdout="chmod denied", exit_code=1, output="chmod denied")
+    async def exec_one(cmd: str, data: bytes) -> ExecResult:
+        calls.append((cmd, data))
         return ExecResult(stdout="", exit_code=0, output="")
 
-    result, calls = await _run(exec_one, "C" * (SANDBOX_EXEC_CHUNK_BYTES * 2), mode=0o644)
-    assert result.exit_code == 1
-    assert any(c.startswith("chmod") for c in calls)
-    assert not any(c.startswith("rm -f") for c in calls)
+    result = await SandboxFileOps._run_file_write(exec_one, "/tmp/f", "a\nb", mode=None, quote=True)
+    assert result.output == "Wrote 2 line(s) to /tmp/f."
+    assert calls == [(_file_write_command("/tmp/f", mode=None, quote=True), b"a\nb")]
 
 
 @pytest.mark.asyncio
-async def test_single_chunk_failure_does_not_remove_file() -> None:
-    async def exec_one(cmd: str, calls: list[str]) -> ExecResult:
-        return ExecResult(stdout="denied", exit_code=1, output="denied")
+async def test_run_file_write_reports_failure() -> None:
+    async def exec_one(_cmd: str, _data: bytes) -> ExecResult:
+        return ExecResult(stdout="", exit_code=1, output="")
 
-    result, calls = await _run(exec_one, "small")
+    result = await SandboxFileOps._run_file_write(exec_one, "/tmp/f", "x", mode=None, quote=True)
     assert result.exit_code == 1
-    assert not any(c.startswith("rm -f") for c in calls)
+    assert result.output == "Error: cannot write /tmp/f (exit 1)."
+
+
+@pytest.mark.asyncio
+async def test_str_replace_sends_payload_on_stdin(tmp_path: Path) -> None:
+    target = tmp_path / "big.txt"
+    old = "￿" * 100_000
+    target.write_text(f"head {old} tail")
+
+    async def exec_in_session(_session_id: str, cmd: str, **kwargs: object) -> ExecResult:
+        stdin = kwargs["stdin"]
+        assert isinstance(stdin, bytes)
+        assert json.loads(stdin)["old"] == old
+        # Swap the sandbox's python3 for this interpreter and run the script for real.
+        local_cmd = cmd.replace("python3 -c", f"{shlex.quote(sys.executable)} -c", 1)
+        done = subprocess.run(["/bin/bash", "-c", local_cmd], input=stdin, capture_output=True, check=False)
+        return ExecResult(stdout=done.stdout.decode(), exit_code=done.returncode, output=done.stdout.decode())
+
+    ops = SandboxFileOps(exec_in_session=exec_in_session, exec_in_container=exec_in_session, get_session=lambda _: None)
+    result = await ops.file_str_replace("s", str(target), old, "new")
+
+    assert result.exit_code == 0, result.output
+    assert target.read_text() == "head new tail"

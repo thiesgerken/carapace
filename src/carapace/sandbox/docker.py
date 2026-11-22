@@ -4,6 +4,7 @@ import asyncio
 import os
 import shlex
 import shutil
+import socket
 from pathlib import Path
 from typing import cast
 
@@ -11,6 +12,7 @@ import docker
 import docker.models.containers
 from docker.errors import APIError, DockerException, ImageNotFound, NotFound
 from docker.types import Mount as DockerMount
+from docker.utils.socket import consume_socket_output, demux_adaptor, frames_iter
 from loguru import logger
 
 from .runtime import (
@@ -401,6 +403,7 @@ class DockerRuntime(ContainerRuntime):
         timeout: int = 30,
         env: dict[str, str] | None = None,
         workdir: str | None = None,
+        stdin: bytes | None = None,
     ) -> ExecResult:
         def _exec() -> ExecResult:
             try:
@@ -411,14 +414,17 @@ class DockerRuntime(ContainerRuntime):
             cmd = ["/bin/bash", "-c", command] if isinstance(command, str) else command
 
             try:
-                result = container.exec_run(cmd, environment=env, workdir=workdir, demux=True)
+                if stdin is None:
+                    result = container.exec_run(cmd, environment=env, workdir=workdir, demux=True)
+                    exit_code = result.exit_code if result.exit_code is not None else -1
+                    stdout_bytes, stderr_bytes = cast(tuple[bytes | None, bytes | None], result.output)
+                else:
+                    exit_code, stdout_bytes, stderr_bytes = self._exec_with_stdin(container, cmd, env, workdir, stdin)
             except APIError as err:
                 if err.status_code == 409:
                     raise ContainerGoneError(f"Container {container_id[:12]} is not running") from err
                 raise
-            exit_code = result.exit_code if result.exit_code is not None else -1
 
-            stdout_bytes, stderr_bytes = cast(tuple[bytes | None, bytes | None], result.output)
             stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
             stderr = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
             output = stdout
@@ -442,6 +448,30 @@ class DockerRuntime(ContainerRuntime):
         if result.exit_code != 0:
             logger.debug(f"Command exited {result.exit_code} in {container_id[:12]}: {cmd_preview}")
         return result
+
+    def _exec_with_stdin(
+        self,
+        container: docker.models.containers.Container,
+        cmd: list[str],
+        env: dict[str, str] | None,
+        workdir: str | None,
+        stdin: bytes,
+    ) -> tuple[int, bytes | None, bytes | None]:
+        """Exec on the hijacked attach socket: write *stdin*, half-close it for EOF, demux the output."""
+        api = self._client.api
+        exec_id = api.exec_create(container.id, cmd, stdin=True, environment=env, workdir=workdir)["Id"]
+        attach = api.exec_start(exec_id, socket=True)
+        # Over the unix socket docker-py hands out a SocketIO; sendall/shutdown live on the socket below.
+        raw = cast(socket.socket, getattr(attach, "_sock", attach))
+        try:
+            raw.sendall(stdin)
+            raw.shutdown(socket.SHUT_WR)
+            frames = (demux_adaptor(*frame) for frame in frames_iter(attach, tty=False))
+            stdout_bytes, stderr_bytes = consume_socket_output(frames, demux=True)
+        finally:
+            raw.close()
+        exit_code = api.exec_inspect(exec_id)["ExitCode"]
+        return (exit_code if exit_code is not None else -1), stdout_bytes, stderr_bytes
 
     async def remove(self, container_id: str) -> None:
         def _remove() -> None:

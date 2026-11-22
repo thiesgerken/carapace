@@ -11,12 +11,8 @@ FILE_READ_BODY_SEPARATOR_TOKEN = "__READ_BODY_SEP__"
 
 SANDBOX_STR_REPLACE_SCRIPT = """\
 import json, os, sys
-p, payload_path = sys.argv[1], sys.argv[2]
-try:
-    with open(payload_path) as f:
-        payload = json.load(f)
-finally:
-    os.remove(payload_path)
+p = sys.argv[1]
+payload = json.loads(sys.stdin.buffer.read())
 old, new, replace_all = payload["old"], payload["new"], payload["replace_all"]
 if not old:
     print("Error: old_string must not be empty.")

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import base64
-import contextlib
 import json
-import secrets
 import shlex
 from collections.abc import Awaitable, Callable
 from typing import Protocol
@@ -46,45 +44,20 @@ def _shell_path(path: str, *, quote: bool) -> str:
     return shlex.quote(path) if quote else f'"{path}"'
 
 
-# Each chunk's base64 is inlined as a single shell argument (``printf %s <b64>``).
-# Linux caps one argv string at MAX_ARG_STRLEN (128 KiB), but the tighter bound is
-# the Kubernetes runtime: it ships the command as ``command=`` URL query params to
-# the pod exec endpoint, and httpx rejects any URL component over 65536 chars
-# (InvalidURL: "URL component 'query' too long"). Worst case (binary data whose
-# base64 is all "/" or "+") every raw byte costs 4/3 * 3 = 4 url-encoded chars:
-# 12 KiB raw -> 48 KiB encoded, leaving headroom for the path and the rest of the command.
-SANDBOX_EXEC_CHUNK_BYTES = 12 * 1024
+def _file_write_command(path: str, *, mode: int | None, quote: bool) -> str:
+    """Return the command that writes its stdin to *path*, creating the parent dir.
 
-
-def _file_write_commands(path: str, content: str, *, mode: int | None, quote: bool) -> tuple[list[str], str | None]:
-    """Return ``(writes, chmod)`` for writing *content* in argv-safe base64 chunks.
-
-    Avoids "Argument list too long": each chunk's base64 is one shell argument. The
-    first write creates the parent dir and truncates; later writes append. ``chmod`` is
-    folded into the sole write when there is exactly one (keeps a credential write a
-    single exec) and returned separately for multi-chunk writes, so a ``chmod`` failure
-    isn't mistaken for a partial write. Empty content truncates the file.
+    The old file is removed first, so a read-only credential file can be replaced. A
+    failed write removes the partial file; a failed ``chmod`` keeps the written content.
     """
     shell_path = _shell_path(path, quote=quote)
-    data = content.encode()
-    writes: list[str] = []
-    for start in range(0, len(data) or 1, SANDBOX_EXEC_CHUNK_BYTES):
-        b64 = base64.b64encode(data[start : start + SANDBOX_EXEC_CHUNK_BYTES]).decode()
-        if not writes:
-            writes.append(
-                f'mkdir -p "$(dirname {shell_path})" && rm -f {shell_path} '
-                f"&& printf %s {b64} | base64 -d > {shell_path}"
-            )
-        else:
-            writes.append(f"printf %s {b64} | base64 -d >> {shell_path}")
-    chmod: str | None = None
+    cmd = (
+        f'mkdir -p "$(dirname {shell_path})" && rm -f {shell_path} '
+        f"&& {{ cat > {shell_path} || {{ rm -f {shell_path}; exit 1; }}; }}"
+    )
     if mode is not None:
-        chmod_cmd = f"chmod {mode:04o} {shell_path}"
-        if len(writes) == 1:
-            writes[0] += f" && {chmod_cmd}"
-        else:
-            chmod = chmod_cmd
-    return writes, chmod
+        cmd += f" && chmod {mode:04o} {shell_path}"
+    return cmd
 
 
 def _line_count(content: str) -> int:
@@ -143,38 +116,18 @@ class SandboxFileOps:
 
     @staticmethod
     async def _run_file_write(
-        exec_one: Callable[[str], Awaitable[ExecResult]],
+        exec_one: Callable[[str, bytes], Awaitable[ExecResult]],
         path: str,
         content: str,
         *,
         mode: int | None,
         quote: bool,
     ) -> ExecResult:
-        """Run the chunked write, cleaning up only a genuinely partial file.
-
-        If a write fails *after* an earlier chunk already truncated and wrote the file,
-        the file holds partial content — remove it (like ``upload_tmp_file``). A failure
-        on the very first command leaves any pre-existing file untouched, and a ``chmod``
-        failure happens after the content is fully written, so neither triggers cleanup.
-        """
-        writes, chmod_cmd = _file_write_commands(path, content, mode=mode, quote=quote)
-        wrote_any = False
-        for cmd in writes:
-            result = await exec_one(cmd)
-            if result.exit_code != 0:
-                if wrote_any:
-                    with contextlib.suppress(Exception):
-                        await exec_one(f"rm -f {_shell_path(path, quote=quote)}")
-                output = result.output or f"Error: cannot write {path} (exit {result.exit_code})."
-                return ExecResult(stdout=result.stdout, exit_code=result.exit_code, output=output)
-            wrote_any = True
-        if chmod_cmd is not None:
-            result = await exec_one(chmod_cmd)
-            if result.exit_code != 0:
-                output = result.output or f"Error: cannot chmod {path} (exit {result.exit_code})."
-                return ExecResult(stdout=result.stdout, exit_code=result.exit_code, output=output)
-        lines = _line_count(content)
-        return ExecResult(stdout="", exit_code=0, output=f"Wrote {lines} line(s) to {path}.")
+        result = await exec_one(_file_write_command(path, mode=mode, quote=quote), content.encode())
+        if result.exit_code != 0:
+            output = result.output or f"Error: cannot write {path} (exit {result.exit_code})."
+            return ExecResult(stdout=result.stdout, exit_code=result.exit_code, output=output)
+        return ExecResult(stdout="", exit_code=0, output=f"Wrote {_line_count(content)} line(s) to {path}.")
 
     async def file_write(
         self,
@@ -188,7 +141,7 @@ class SandboxFileOps:
     ) -> ExecResult:
         """Write content to a file inside the sandbox."""
         return await self._run_file_write(
-            lambda cmd: self._exec_in_session(session_id, cmd, timeout=10, workdir=workdir),
+            lambda cmd, data: self._exec_in_session(session_id, cmd, timeout=10, workdir=workdir, stdin=data),
             path,
             content,
             mode=mode,
@@ -205,15 +158,10 @@ class SandboxFileOps:
         replace_all: bool = False,
     ) -> ExecResult:
         """Replace text in a file inside the sandbox, optionally replacing all matches."""
-        # The strings can be arbitrarily large, so they travel as a chunked payload file
-        # instead of inline arguments (see SANDBOX_EXEC_CHUNK_BYTES); the script deletes it.
-        payload_path = f"/tmp/carapace-str-replace-{secrets.token_hex(8)}.json"
+        # The strings can be arbitrarily large, so they travel on stdin, not in the command.
         payload = json.dumps({"old": old_string, "new": new_string, "replace_all": replace_all})
-        write_result = await self.file_write(session_id, payload_path, payload)
-        if write_result.exit_code != 0:
-            return write_result
-        cmd = f"python3 -c {shlex.quote(_STR_REPLACE_SCRIPT)} {shlex.quote(path)} {payload_path}"
-        result = await self._exec_in_session(session_id, cmd, timeout=10)
+        cmd = f"python3 -c {shlex.quote(_STR_REPLACE_SCRIPT)} {shlex.quote(path)}"
+        result = await self._exec_in_session(session_id, cmd, timeout=10, stdin=payload.encode())
         output = result.output or f"Error: cannot replace in {path}"
         return ExecResult(stdout=result.stdout, exit_code=result.exit_code, output=output)
 
@@ -229,7 +177,7 @@ class SandboxFileOps:
     ) -> ExecResult:
         """Write a file using an existing container while the exec lock is already held."""
         return await self._run_file_write(
-            lambda cmd: self._exec_in_container(sc, cmd, timeout=10, workdir=workdir),
+            lambda cmd, data: self._exec_in_container(sc, cmd, timeout=10, workdir=workdir, stdin=data),
             path,
             content,
             mode=mode,

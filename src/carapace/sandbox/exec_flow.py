@@ -89,6 +89,7 @@ class SandboxExecCoordinator:
         bypass_proxy: bool = False,
         workdir: str | None = None,
         extra_env: dict[str, str] | None = None,
+        stdin: bytes | None = None,
     ) -> ExecResult:
         """Run *command* in *sc* without acquiring the exec lock."""
         if bypass_proxy:
@@ -112,6 +113,7 @@ class SandboxExecCoordinator:
                 timeout=timeout,
                 workdir=workdir,
                 env=env,
+                stdin=stdin,
             )
         finally:
             if bypass_proxy:
@@ -142,6 +144,7 @@ class SandboxExecCoordinator:
         context_tunnels: list[NetworkTunnel] | None = None,
         context_file_creds: list[ContextFileCredential] | None = None,
         after_exec_credential_notify: AfterExecCredentialNotify | None = None,
+        stdin: bytes | None = None,
     ) -> ExecResult:
         """Run a command in the sandbox and return the raw ExecResult.
 
@@ -169,6 +172,7 @@ class SandboxExecCoordinator:
                 workdir=workdir,
                 bypass_proxy=False,
                 extra_env=extra_env,
+                stdin=stdin,
             )
             return result.model_copy(update={"leftover_processes_killed": leftover_processes_killed})
 
