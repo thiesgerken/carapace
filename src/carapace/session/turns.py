@@ -195,7 +195,12 @@ class SessionTurnHost(Protocol):
     async def _broadcast_status(self, active: ActiveSession, *, agent_running: bool) -> None: ...
 
     async def _generate_title(
-        self, active: ActiveSession, events: list[dict[str, Any]], *, track_activity: bool = True
+        self,
+        active: ActiveSession,
+        events: list[dict[str, Any]],
+        *,
+        track_activity: bool = True,
+        previous_title: str | None = None,
     ) -> str: ...
 
 
@@ -685,10 +690,15 @@ class SessionTurnMixin(SessionTurnHost):
         session_id: str,
         events: list[dict[str, Any]],
     ) -> None:
-        if _non_slash_user_message_count(events) not in (1, 3):
-            return
+        match _non_slash_user_message_count(events):
+            case 1:
+                previous_title = None
+            case 3:
+                previous_title = active.state.title
+            case _:
+                return
         task = asyncio.create_task(
-            self._generate_title(active, events, track_activity=False),
+            self._generate_title(active, events, track_activity=False, previous_title=previous_title),
             name=f"title-{session_id}",
         )
         active._pending_sends.add(task)

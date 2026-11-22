@@ -108,3 +108,33 @@ async def test_generate_title_cuts_the_tail_and_keeps_the_opening_request() -> N
     assert len(prompts[0]) == MAX_PROMPT_CHARS
     assert prompts[0].startswith("User: OPENING ")
     assert "LATEST" not in prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_generate_title_appends_previous_title_after_the_cap() -> None:
+    events: list[dict[str, str]] = [{"role": "assistant", "content": "b" * MAX_MESSAGE_CHARS} for _ in range(5)]
+    prompts: list[str] = []
+
+    async def _fake_run(*args: object, **_kw: object) -> MagicMock:
+        prompts.append(str(args[0]))
+        m = MagicMock()
+        m.output = "📌 t"
+        m.usage = MagicMock(return_value=MagicMock())
+        return m
+
+    with patch("carapace.session.titler.Agent") as agent_cls:
+        inst = MagicMock()
+        inst.run = AsyncMock(side_effect=_fake_run)
+        agent_cls.return_value = inst
+        await generate_title(
+            events,
+            previous_title="📓 Tagebucheintrag hinzufügen",
+            model="anthropic:claude-3-5-haiku-latest",
+            user="thies",
+            model_factory=lambda _m, *, user: MagicMock(),
+        )
+
+    assert prompts[0].endswith(
+        "Current title, given based on the first user message: 📓 Tagebucheintrag hinzufügen\n"
+        "Keep it unless the topic is clearly different now."
+    )
