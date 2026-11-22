@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime
 from decimal import Decimal
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
@@ -10,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints, ValidationError, 
 from pydantic_ai.messages import ModelMessage
 
 from ..api_keys import Access, Scope
+from ..artifacts import artifact_index, artifact_title
 from ..auth import UserIdentity
 from ..models.compaction import CompactionPreview
 from ..models.git import GitActionResult, GlobalGitStatus, SandboxGitStatus
@@ -610,6 +612,39 @@ async def get_session_usage(
     """The ``/usage`` breakdown, also while a turn runs: unlike slash commands it never waits for one."""
     _load_owned_state(session_id, user)
     return server._engine.usage_details(server._engine.get_or_activate(session_id))
+
+
+class SessionArtifact(BaseModel):
+    slug: str
+    title: str
+    change: Literal["created", "updated"]
+    last_changed: datetime
+    # A deleted or renamed artifact stays listed: the session did change it.
+    exists: bool
+
+
+@router.get("/sessions/{session_id}/artifacts", response_model=list[SessionArtifact])
+async def list_session_artifacts(
+    session_id: str,
+    user: Annotated[UserIdentity, Depends(require(Scope.sessions, Access.read))],
+) -> list[SessionArtifact]:
+    """The session artifacts, read from the session's commit trailers in the owner's knowledge repo."""
+    _load_owned_state(session_id, user)
+    handle = server._knowledge_repo_registry.get_for_user(user.username)
+    root = handle.knowledge_dir.resolve()
+    artifacts: list[SessionArtifact] = []
+    for change in await handle.git_store.session_artifact_changes(session_id):
+        index = artifact_index(root, change.slug)
+        artifacts.append(
+            SessionArtifact(
+                slug=change.slug,
+                title=(artifact_title(index) if index else None) or change.slug,
+                change="created" if change.created else "updated",
+                last_changed=change.last_changed,
+                exists=index is not None,
+            )
+        )
+    return artifacts
 
 
 @router.get("/sessions/{session_id}/compaction/preview", response_model=CompactionPreview)

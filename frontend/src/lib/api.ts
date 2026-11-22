@@ -1959,6 +1959,21 @@ export async function getArtifact(server: string, slug: string): Promise<Knowled
   return ((await res.json()) as KnowledgeBrowseResult).artifact;
 }
 
+export interface SessionArtifact {
+  slug: string;
+  title: string;
+  change: "created" | "updated";
+  last_changed: string;
+  exists: boolean;
+}
+
+/** The artifacts this session created or changed through its own commits, most recently changed first. */
+export async function getSessionArtifacts(server: string, sessionId: string): Promise<SessionArtifact[]> {
+  const res = await fetch(`${server}/api/sessions/${encodeURIComponent(sessionId)}/artifacts`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the session artifacts"));
+  return (await res.json()) as SessionArtifact[];
+}
+
 export function knowledgeRawUrl(
   server: string,
   path: string,

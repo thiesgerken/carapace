@@ -67,6 +67,22 @@ Titles resolve only for sessions owned by the viewer; missing, deleted, foreign,
 untitled sessions show their recorded ID without a link. Uncommitted artifacts have
 no session references. History is read once per artifact view, not for listing rows.
 
+## Session artifacts
+
+The chat's detail sidebar has an **Artifacts** section below **Knowledge** that lists the
+session artifacts: the artifacts whose `index.html` this session changed through its own
+commits. Referencing an artifact with `show_artifact` doesn't make it a session artifact.
+Each entry shows the title, **new** if the session created it, and when
+the session last changed it (**changed 5 minutes ago**), and links to `/artifacts?slug=<slug>`. A deleted or renamed
+artifact stays listed, struck through and without a link, because the session did change
+it. A rename appears as the old slug (deleted) plus the new one (created). The section is
+hidden while the list is empty.
+
+`GET /api/sessions/<session_id>/artifacts` computes the list on every call from one
+`git log --no-renames --name-status` over `artifacts/`, narrowed with `--grep` and then
+matched exactly on the `carapace-session: <id>` trailer. Nothing is cached or recorded at
+push time. The sidebar loads it when it opens and again after every finished turn.
+
 ## Rendering policy
 
 `GET /api/artifacts/<slug>` serves only `artifacts/<slug>/index.html`.
