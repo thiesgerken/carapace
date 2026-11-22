@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.190.0 (2026-11-22)
+
+### ✨ Introduce new features
+
+- feat: list session artifacts in the session detail sidebar
+
+### 💄 Add or update the UI and style files
+
+- style: use one AppWindow artifact icon everywhere
+- fix: place session artifacts below the knowledge notice, say "changed" for the time
+
+### 💬 Add or update text and literals
+
+- fix: label session artifacts as new or updated beside their last change
+
 ## v0.189.0 (2026-11-22)
 
 ### ✨ Introduce new features
