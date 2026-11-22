@@ -570,6 +570,7 @@ class SandboxManager:
         bypass_proxy: bool = False,
         workdir: str | None = None,
         extra_env: dict[str, str] | None = None,
+        stdin: bytes | None = None,
     ) -> ExecResult:
         return await self._exec_coordinator.exec_in_container(
             sc,
@@ -578,6 +579,7 @@ class SandboxManager:
             bypass_proxy=bypass_proxy,
             workdir=workdir,
             extra_env=extra_env,
+            stdin=stdin,
         )
 
     async def _exec(
@@ -594,6 +596,7 @@ class SandboxManager:
         context_tunnels: list[NetworkTunnel] | None = None,
         context_file_creds: list[tuple[str, str, str]] | None = None,
         after_exec_credential_notify: Callable[[], None] | None = None,
+        stdin: bytes | None = None,
     ) -> ExecResult:
         return await self._exec_coordinator.exec(
             session_id,
@@ -620,6 +623,7 @@ class SandboxManager:
             context_tunnels=context_tunnels,
             context_file_creds=context_file_creds,
             after_exec_credential_notify=after_exec_credential_notify,
+            stdin=stdin,
         )
 
     _KNOWLEDGE_WORKDIR = "/workspace"
@@ -815,12 +819,10 @@ class SandboxManager:
             replace_all=replace_all,
         )
 
-    # Same argv/URL-length bound as file writes (see SANDBOX_EXEC_CHUNK_BYTES).
-    _UPLOAD_CHUNK_BYTES = file_ops.SANDBOX_EXEC_CHUNK_BYTES
-    # Downloads return their data on stdout, not in the command, so that bound doesn't
-    # apply. Every chunk is a full exec round trip (~0.3 s per chunk through send_file on
-    # Kubernetes), so they stay large.
+    # Downloads return their data on stdout, so the command stays short. Every chunk is a
+    # full exec round trip (~0.3 s per chunk through send_file on Kubernetes), so they stay large.
     _DOWNLOAD_CHUNK_BYTES = 4 * 1024 * 1024
+    _UPLOAD_READ_BYTES = 1024 * 1024
 
     async def upload_tmp_file(
         self,
@@ -830,44 +832,34 @@ class SandboxManager:
         *,
         max_bytes: int,
     ) -> str:
-        """Stream an uploaded file into the sandbox ``/tmp`` and return its absolute path.
+        """Write an uploaded file into the sandbox ``/tmp`` and return its absolute path.
 
-        Reads from *read_chunk* (e.g. ``UploadFile.read``) and appends each chunk as
-        base64-decoded bytes via ``exec_command`` — works on every runtime since it needs
-        no exec stdin. If ``/tmp/<name>`` already exists a short hash is inserted before the
-        extension to avoid collisions. Raises ``UploadTooLargeError`` past *max_bytes* and
-        ``UploadError`` on a write failure, removing any partial file first.
+        Reads all of *read_chunk* (e.g. ``UploadFile.read``) and pipes it into the sandbox on
+        the stdin of a single exec. If ``/tmp/<name>`` already exists a short hash is inserted
+        before the extension to avoid collisions. Raises ``UploadTooLargeError`` past
+        *max_bytes* and ``UploadError`` on a write failure, removing any partial file first.
         """
         base = os.path.basename(filename).strip() or "upload"
         stem, suffix = os.path.splitext(base)
         if not stem:
             stem, suffix = suffix, ""
+
+        data = bytearray()
+        while chunk := await read_chunk(self._UPLOAD_READ_BYTES):
+            data += chunk
+            if len(data) > max_bytes:
+                raise UploadTooLargeError(f"File exceeds {max_bytes} bytes")
+
         target = f"/tmp/{stem}{suffix}"
         probe = await self.exec_command(session_id, f"test -e {shlex.quote(target)} && echo EXISTS || true", timeout=10)
         if "EXISTS" in probe.output:
             target = f"/tmp/{stem}-{secrets.token_hex(4)}{suffix}"
         qpath = shlex.quote(target)
-
-        total = 0
-        wrote_any = False
-        while True:
-            chunk = await read_chunk(self._UPLOAD_CHUNK_BYTES)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > max_bytes:
-                await self.exec_command(session_id, f"rm -f {qpath}", timeout=10)
-                raise UploadTooLargeError(f"File exceeds {max_bytes} bytes")
-            b64 = base64.b64encode(chunk).decode()
-            redirect = ">>" if wrote_any else ">"
-            result = await self.exec_command(session_id, f"printf %s {b64} | base64 -d {redirect} {qpath}", timeout=120)
-            if result.exit_code != 0:
-                await self.exec_command(session_id, f"rm -f {qpath}", timeout=10)
-                raise UploadError(f"Failed to write upload to sandbox: {result.output}")
-            wrote_any = True
-
-        if not wrote_any:
-            await self.exec_command(session_id, f": > {qpath}", timeout=10)
+        result = await self._exec(
+            session_id, f"cat > {qpath} || {{ rm -f {qpath}; exit 1; }}", timeout=120, stdin=bytes(data)
+        )
+        if result.exit_code != 0:
+            raise UploadError(f"Failed to write upload to sandbox: {result.output}")
         return target
 
     async def download_tmp_file(self, session_id: str, path: str, dest: Path, *, max_bytes: int) -> int:

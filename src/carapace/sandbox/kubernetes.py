@@ -15,6 +15,7 @@ from kr8s._api import Api
 from kr8s.asyncio.objects import Deployment, Pod, StatefulSet, new_class
 from loguru import logger
 
+from .k8s_exec_v5 import EXEC_V5_PROTOCOL, ExecProtocolError, exec_v5
 from .runtime import (
     ContainerConfig,
     ContainerGoneError,
@@ -802,6 +803,7 @@ class KubernetesRuntime(ContainerRuntime):
         timeout: int = 30,
         env: dict[str, str] | None = None,
         workdir: str | None = None,
+        stdin: bytes | None = None,
     ) -> ExecResult:
         shell_cmd = command if isinstance(command, str) else shlex.join(command)
         if workdir:
@@ -820,15 +822,18 @@ class KubernetesRuntime(ContainerRuntime):
             pod = await Pod.get(container_id, namespace=self._namespace, api=api)
 
             async def _do_exec() -> ExecResult:
-                completed = await pod.exec(
-                    exec_command,
-                    container="sandbox",
-                    check=False,
-                    capture_output=True,
-                )
-                stdout = completed.stdout.decode() if completed.stdout else ""
-                stderr = completed.stderr.decode() if completed.stderr else ""
-                exit_code = completed.returncode
+                if stdin is None:
+                    completed = await pod.exec(
+                        exec_command,
+                        container=_SANDBOX_CONTAINER,
+                        check=False,
+                        capture_output=True,
+                    )
+                    stdout_bytes, stderr_bytes, exit_code = completed.stdout, completed.stderr, completed.returncode
+                else:
+                    stdout_bytes, stderr_bytes, exit_code = await self._exec_with_stdin(api, pod, exec_command, stdin)
+                stdout = stdout_bytes.decode() if stdout_bytes else ""
+                stderr = stderr_bytes.decode() if stderr_bytes else ""
 
                 output = stdout
                 if stderr:
@@ -863,6 +868,26 @@ class KubernetesRuntime(ContainerRuntime):
         if result.exit_code != 0:
             logger.debug(f"Command exited {result.exit_code} in pod {container_id}: {command_preview}")
         return result
+
+    @staticmethod
+    async def _exec_with_stdin(api: Api, pod: Pod, command: list[str], stdin: bytes) -> tuple[bytes, bytes, int]:
+        """Exec over the v5 subprotocol, which kr8s lacks, reusing its authenticated session."""
+        async with api.open_websocket(
+            version=pod.version,
+            url=f"{pod.endpoint}/{pod.name}/exec",
+            namespace=pod.namespace,
+            subprotocols=(EXEC_V5_PROTOCOL,),
+            params={
+                "command": command,
+                "container": _SANDBOX_CONTAINER,
+                "stdin": "true",
+                "stdout": "true",
+                "stderr": "true",
+            },
+        ) as ws:
+            return await exec_v5(ws, stdin)
+        # kr8s swallows a normal close (code 1000 or none), which ends the block without a status frame.
+        raise ExecProtocolError("exec websocket closed before the status frame")
 
     # ------------------------------------------------------------------
     # Low-level operations

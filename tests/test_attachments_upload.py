@@ -1,4 +1,4 @@
-"""Tests for upload preamble building and the sandbox /tmp streaming write."""
+"""Tests for upload preamble building and the sandbox /tmp write."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from carapace.sandbox.manager import SandboxManager, UploadTooLargeError
+from carapace.sandbox.manager import SandboxManager, UploadError, UploadTooLargeError
 from carapace.sandbox.runtime import ExecResult
 from carapace.session.attachments import augment_prompt, build_attachment_preamble
 
@@ -46,7 +46,8 @@ def _fake_manager(exec_outputs: dict[str, ExecResult] | None = None) -> SimpleNa
 
     fake = SimpleNamespace()
     fake.exec_command = AsyncMock(side_effect=exec_command)
-    fake._UPLOAD_CHUNK_BYTES = 4
+    fake._exec = AsyncMock(return_value=ExecResult(stdout="", exit_code=0, output=""))
+    fake._UPLOAD_READ_BYTES = 4
     return fake
 
 
@@ -62,15 +63,13 @@ def _reader(data: bytes):
 
 
 @pytest.mark.asyncio
-async def test_upload_no_collision_returns_plain_path() -> None:
+async def test_upload_is_one_exec_with_the_file_on_stdin() -> None:
     fake = _fake_manager()
     path = await SandboxManager.upload_tmp_file(fake, "s1", "abc.png", _reader(b"hello world"), max_bytes=1000)
     assert path == "/tmp/abc.png"
-    # First write truncates, later chunks append.
-    cmds = [c.args[1] for c in fake.exec_command.call_args_list]
-    writes = [c for c in cmds if "base64 -d" in c]
-    assert writes[0].count(">>") == 0 and ">" in writes[0]
-    assert all(">>" in w for w in writes[1:])
+    fake._exec.assert_awaited_once()
+    assert fake._exec.call_args.args[1].startswith("cat > /tmp/abc.png")
+    assert fake._exec.call_args.kwargs["stdin"] == b"hello world"
 
 
 @pytest.mark.asyncio
@@ -82,22 +81,17 @@ async def test_upload_collision_inserts_hash() -> None:
 
 
 @pytest.mark.asyncio
-async def test_upload_chunks_stay_within_single_arg_limit() -> None:
-    # Each chunk is inlined as one shell argument; Linux caps a single argv string at
-    # MAX_ARG_STRLEN (128 KiB). Larger chunks fail with "Argument list too long".
-    max_arg_strlen = 128 * 1024
-    fake = _fake_manager()
-    fake._UPLOAD_CHUNK_BYTES = SandboxManager._UPLOAD_CHUNK_BYTES
-    await SandboxManager.upload_tmp_file(fake, "s1", "big.jpg", _reader(b"\xff" * (300 * 1024)), max_bytes=10**9)
-    writes = [c.args[1] for c in fake.exec_command.call_args_list if "base64 -d" in c.args[1]]
-    assert writes
-    assert all(len(cmd) < max_arg_strlen for cmd in writes)
-
-
-@pytest.mark.asyncio
-async def test_upload_too_large_raises_and_cleans_up() -> None:
+async def test_upload_too_large_raises_before_touching_the_sandbox() -> None:
     fake = _fake_manager()
     with pytest.raises(UploadTooLargeError):
         await SandboxManager.upload_tmp_file(fake, "s1", "big.bin", _reader(b"0123456789"), max_bytes=4)
-    cmds = [c.args[1] for c in fake.exec_command.call_args_list]
-    assert any(c.startswith("rm -f") for c in cmds)
+    fake.exec_command.assert_not_awaited()
+    fake._exec.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_failure_raises() -> None:
+    fake = _fake_manager()
+    fake._exec.return_value = ExecResult(stdout="", exit_code=1, output="disk full")
+    with pytest.raises(UploadError, match="disk full"):
+        await SandboxManager.upload_tmp_file(fake, "s1", "a.bin", _reader(b"data"), max_bytes=1000)

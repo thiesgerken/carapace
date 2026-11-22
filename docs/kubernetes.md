@@ -89,7 +89,7 @@ graph TD
     NetPol -.->|restricts| StsA & StsB
 ```
 
-The server pod manages sandbox StatefulSets directly via the Kubernetes API. Each session gets its own StatefulSet (replicas=1) with a per-session PVC created via `volumeClaimTemplates`. Commands are executed in the pod `{sts-name}-0` via `kubectl exec`.
+The server pod manages sandbox StatefulSets directly via the Kubernetes API. Each session gets its own StatefulSet (replicas=1) with a per-session PVC created via `volumeClaimTemplates`. Commands are executed in the pod `{sts-name}-0` via `kubectl exec`. File writes, `str_replace` and uploads pass their data on the exec's stdin, in one exec per file. That needs the `v5.channel.k8s.io` exec subprotocol (Kubernetes 1.29 or newer), the only one that can close stdin. kr8s speaks only v4, so carapace opens that websocket itself and fails loudly if the API server doesn't agree to v5.
 
 Sandbox StatefulSets get an `ownerReference` so they show under the owning object in Argo CD and are garbage-collected when that object is deleted.
 
