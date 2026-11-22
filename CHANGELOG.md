@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v0.188.1 (2026-11-22)
+
+### ⚡️ Improve performance
+
+- perf: read sandbox files out in 4 MiB chunks instead of 12 KiB
+
+### ✅ Add, update, or pass tests
+
+- test: cover multi-chunk and short sandbox reads, cap read error output
+
 ## v0.188.0 (2026-11-22)
 
 ### ✨ Introduce new features
