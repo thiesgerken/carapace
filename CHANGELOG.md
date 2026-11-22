@@ -1,6 +1,13 @@
 # CHANGELOG
 
 
+## v0.188.2 (2026-11-22)
+
+### 🐛 Fix a bug
+
+- fix: count model-generated files as media, list "other" in the docs
+- fix: estimate media as a flat 1,600 tokens instead of tokenizing base64
+
 ## v0.188.1 (2026-11-22)
 
 ### ⚡️ Improve performance
