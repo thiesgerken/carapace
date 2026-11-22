@@ -39,10 +39,10 @@ test("session artifacts link live ones and strike through deleted ones", async (
     const items = [...view.container.querySelectorAll("li")];
     assert.equal(items.length, 2);
     assert.equal(items[0].querySelector("a")?.getAttribute("href"), "/artifacts?slug=q3-sales");
-    assert.ok(items[0].textContent?.includes("created 5 minutes ago"));
+    assert.ok(items[0].textContent?.includes("new · 5 minutes ago"));
     assert.equal(items[1].querySelector("a"), null);
     assert.ok(items[1].querySelector(".line-through")?.textContent === "sales-draft");
-    assert.ok(items[1].textContent?.includes("updated 5 minutes ago"));
+    assert.ok(items[1].textContent?.includes("updated · 5 minutes ago"));
     await view.unmount();
   } finally {
     globalThis.fetch = originalFetch;

@@ -45,6 +45,7 @@ export function SessionArtifactsSection({ server, sessionId, refreshKey }: { ser
                   {artifact.title}
                 </span>
               )}
+              {/* The time is the session's last change; "new" says the session also created the artifact. */}
               <span className="shrink-0 text-muted-foreground" title={formatAbsoluteTime(artifact.last_changed, locale)}>
                 {t(artifact.change, { time: formatRelativeTime(artifact.last_changed, locale, now, tSidebar("time.justNow")) })}
               </span>

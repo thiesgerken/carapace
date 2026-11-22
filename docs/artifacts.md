@@ -72,8 +72,8 @@ no session references. History is read once per artifact view, not for listing r
 The chat's detail sidebar has an **Artifacts** section below **Knowledge** that lists the
 session artifacts: the artifacts whose `index.html` this session changed through its own
 commits. Referencing an artifact with `show_artifact` doesn't make it a session artifact.
-Each entry shows the title, whether the session created or updated it, and when the
-session last changed it, and links to `/artifacts?slug=<slug>`. A deleted or renamed
+Each entry shows the title, **new** if the session created it (otherwise **updated**),
+and when the session last changed it, and links to `/artifacts?slug=<slug>`. A deleted or renamed
 artifact stays listed, struck through and without a link, because the session did change
 it. A rename appears as the old slug (deleted) plus the new one (created). The section is
 hidden while the list is empty.
