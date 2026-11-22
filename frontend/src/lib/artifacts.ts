@@ -1,5 +1,8 @@
 import type { ChatMessage } from "@/lib/types";
 
+/** The one icon that stands for an artifact everywhere in the UI. */
+export { AppWindow as ArtifactIcon } from "lucide-react";
+
 export function artifactSlugFromPath(path: string): string | null {
   const slug = /^artifacts\/([^/\\]+)\/index\.html$/.exec(path)?.[1];
   return slug && slug !== "." && slug !== ".." ? slug : null;

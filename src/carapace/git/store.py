@@ -10,7 +10,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from ..models.git import FileCommit
+from ..models.git import FileCommit, SessionArtifactChange
 
 # Record separator for the ``git log`` walk in last_commits, keeping records
 # distinguishable from the NUL-separated paths. Git does accept a subject containing
@@ -19,6 +19,7 @@ from ..models.git import FileCommit
 # dropped, and those entries silently show an older commit.
 _LOG_RECORD_SEP = "%x01"
 _LOG_RECORD_SPLIT = re.compile(r"\x01(?=[0-9a-f]{40}\x00)")
+_ARTIFACT_INDEX = re.compile(r"artifacts/([^/]+)/index\.html")
 
 
 def _parse_last_commits(out: str, prefix: str) -> dict[str, FileCommit]:
@@ -432,6 +433,49 @@ class GitStore:
         if code != 0 or not out:
             return {}
         return _parse_last_commits(out, prefix)
+
+    async def session_artifact_changes(self, session_id: str) -> list[SessionArtifactChange]:
+        """The artifacts whose ``index.html`` this session's commits touched, most recently changed first.
+
+        One ``git log`` walk, live on every call. ``--grep`` only narrows the walk; the trailer
+        itself decides, so a session ID that prefixes another one doesn't match it.
+        """
+        code, out = await self._run(
+            "-c",
+            "core.quotePath=false",
+            "log",
+            "--no-renames",
+            "--name-status",
+            "--fixed-strings",
+            f"--grep=carapace-session: {session_id}",
+            "--format=%x01%ct %(trailers:key=carapace-session,valueonly,separator=%x20)",
+            "--",
+            "artifacts",
+        )
+        if code != 0:
+            if "does not have any commits yet" in out:
+                return []
+            raise RuntimeError(f"git session artifact changes failed: {out}")
+        changes: dict[str, SessionArtifactChange] = {}
+        for record in out.split("\x01")[1:]:
+            header, *files = record.splitlines()
+            timestamp, *sessions = header.split()
+            if session_id not in sessions:
+                continue
+            for line in files:
+                status, _, path = line.partition("\t")
+                if not (match := _ARTIFACT_INDEX.fullmatch(path)):
+                    continue
+                slug = match[1]
+                # Newest commit first: the first one seen sets last_changed.
+                change = changes.setdefault(
+                    slug,
+                    SessionArtifactChange(
+                        slug=slug, created=False, last_changed=datetime.fromtimestamp(int(timestamp), tz=UTC)
+                    ),
+                )
+                change.created |= status == "A"
+        return list(changes.values())
 
     async def session_history(self, relative_path: str) -> tuple[str, str] | None:
         """Return the oldest and newest session trailers touching the current path."""

@@ -218,6 +218,7 @@ The primary interactive channel. A Next.js web app connects to the carapace serv
 | `/api/sessions/{id}/knowledge/commit` | `POST`   | Commit the session snapshot into the knowledge repo                            |
 | `/api/sessions/{id}/history`          | `GET`    | Get chat history (optional `limit` param)                                      |
 | `/api/sessions/{id}/sandbox`          | `GET`    | Get sandbox status and storage snapshot                                        |
+| `/api/sessions/{id}/artifacts`        | `GET`    | List the session artifacts (see [artifacts](artifacts.md#session-artifacts))   |
 | `/api/sessions/{id}/sandbox/up`       | `POST`   | Start or warm the sandbox                                                      |
 | `/api/sessions/{id}/sandbox/down`     | `POST`   | Stop or scale down the sandbox                                                 |
 | `/api/sessions/{id}/sandbox/wipe`     | `POST`   | Destroy sandbox workspace state and start fresh later                          |

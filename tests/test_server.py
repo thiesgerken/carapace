@@ -47,6 +47,7 @@ from carapace.models.credentials import (
     CredentialMetadata,
     FileCredentialBackendConfig,
 )
+from carapace.models.git import SessionArtifactChange
 from carapace.models.jobs import JobDefinition
 from carapace.models.matrix import MatrixTokenFile, MatrixTokensFile
 from carapace.models.session import SessionBudget
@@ -463,6 +464,36 @@ def test_pending_approvals_non_owner_404(auth_headers, admin_auth_headers):
     sid = _create_session(auth_headers)
     resp = TestClient(app).get(f"/api/sessions/{sid}/pending-approvals", headers=admin_auth_headers)
     assert resp.status_code == 404
+
+
+def test_session_artifacts_mark_deleted_ones_and_fall_back_to_the_slug(auth_headers, admin_auth_headers):
+    sid = _create_session(auth_headers)
+    handle = srv._knowledge_repo_registry.get_for_user("thies")
+    report = handle.knowledge_dir / "artifacts" / "report" / "index.html"
+    report.parent.mkdir(parents=True)
+    report.write_text("<title> Q3 report </title>", encoding="utf-8")
+    untitled = handle.knowledge_dir / "artifacts" / "untitled" / "index.html"
+    untitled.parent.mkdir(parents=True)
+    untitled.write_text("<p>no title</p>", encoding="utf-8")
+    changed = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
+    handle.git_store.session_artifact_changes = AsyncMock(
+        return_value=[
+            SessionArtifactChange(slug="report", created=True, last_changed=changed),
+            SessionArtifactChange(slug="untitled", created=False, last_changed=changed),
+            SessionArtifactChange(slug="draft", created=True, last_changed=changed),
+        ]
+    )
+
+    resp = TestClient(app).get(f"/api/sessions/{sid}/artifacts", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert [(a["slug"], a["title"], a["change"], a["exists"]) for a in resp.json()] == [
+        ("report", "Q3 report", "created", True),
+        ("untitled", "untitled", "updated", True),
+        ("draft", "draft", "created", False),
+    ]
+    handle.git_store.session_artifact_changes.assert_awaited_with(sid)
+    assert TestClient(app).get(f"/api/sessions/{sid}/artifacts", headers=admin_auth_headers).status_code == 404
 
 
 def test_session_usage_matches_usage_command(auth_headers, admin_auth_headers):

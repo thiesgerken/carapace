@@ -22,7 +22,8 @@ yourself.
 
 ## Browsing and chat references
 
-The knowledge browser marks artifact directories with an artifact icon and uses
+The knowledge browser marks artifact directories with the artifact icon (lucide
+`AppWindow`, the same one the chat, the session sidebar and the viewer use) and uses
 `index.html`'s `<title>` as their label beside the slug. Only the artifact's
 `index.html` renders in a sandboxed iframe, with controls to inspect its source or
 open it in a new tab. Other HTML files browse normally. The normal knowledge
@@ -66,6 +67,22 @@ not from a database field. Commits without that trailer do not change the refere
 Titles resolve only for sessions owned by the viewer; missing, deleted, foreign, or
 untitled sessions show their recorded ID without a link. Uncommitted artifacts have
 no session references. History is read once per artifact view, not for listing rows.
+
+## Session artifacts
+
+The chat's detail sidebar has an **Artifacts** section below **Knowledge** that lists the
+session artifacts: the artifacts whose `index.html` this session changed through its own
+commits. Referencing an artifact with `show_artifact` doesn't make it a session artifact.
+Each entry shows the title, **new** if the session created it, and when
+the session last changed it (**changed 5 minutes ago**), and links to `/artifacts?slug=<slug>`. A deleted or renamed
+artifact stays listed, struck through and without a link, because the session did change
+it. A rename appears as the old slug (deleted) plus the new one (created). The section is
+hidden while the list is empty.
+
+`GET /api/sessions/<session_id>/artifacts` computes the list on every call from one
+`git log --no-renames --name-status` over `artifacts/`, narrowed with `--grep` and then
+matched exactly on the `carapace-session: <id>` trailer. Nothing is cached or recorded at
+push time. The sidebar loads it when it opens and again after every finished turn.
 
 ## Rendering policy
 

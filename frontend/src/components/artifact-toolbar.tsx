@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { ArtifactShareControls } from "@/components/artifact-share-controls";
 import { ArtifactViewerLink } from "@/components/artifact-viewer-link";
 import type { KnowledgeArtifact } from "@/lib/api";
+import { ArtifactIcon } from "@/lib/artifacts";
 import { knowledgeBrowseHref } from "@/lib/knowledge-links";
 
 export interface LiveArtifact extends Pick<KnowledgeArtifact, "slug" | "created_in" | "updated_in"> {
@@ -35,7 +36,7 @@ export function ArtifactToolbar({ artifact, title, src, fullScreen, showSource, 
       {fullScreen && <button type="button" onClick={back} className={actionClass}><ArrowLeft className="h-4 w-4" />{t("back")}</button>}
       {artifact && (
         <div className="mr-auto min-w-0">
-          <h1 className="max-w-72 truncate text-base font-semibold" title={title}>{title}</h1>
+          <h1 className="flex max-w-72 items-center gap-1.5 text-base font-semibold" title={title}><ArtifactIcon className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="truncate">{title}</span></h1>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">
             {(["created_in", "updated_in"] as const).map(kind => {
               const session = artifact[kind];

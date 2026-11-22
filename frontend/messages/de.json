@@ -1337,6 +1337,13 @@
             },
             "openInBrowser": "Im Wissens-Repository öffnen"
         },
+        "artifacts": {
+            "title": "Artefakte",
+            "created": "neu · geändert {time}",
+            "updated": "geändert {time}",
+            "deleted": "Existiert nicht mehr",
+            "loadError": "Artefakte konnten nicht geladen werden."
+        },
         "mobile": {
             "details": "Details",
             "done": "Fertig"

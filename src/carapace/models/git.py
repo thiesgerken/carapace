@@ -27,6 +27,14 @@ class GlobalGitStatus(BaseModel):
     head_subject: str | None = None
 
 
+class SessionArtifactChange(BaseModel):
+    """What one session's commits did to an artifact's ``index.html``."""
+
+    slug: str
+    created: bool
+    last_changed: datetime
+
+
 class FileCommit(BaseModel):
     """Newest commit touching a given path."""
 
