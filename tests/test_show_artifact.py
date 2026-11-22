@@ -72,7 +72,14 @@ async def test_show_artifact_requires_the_artifact_on_the_server(tmp_path: Path,
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("path", ["/workspace/artifacts/report/index.html", "artifacts/report/chart.svg"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/workspace/artifacts/report/index.html",
+        "artifacts/report/chart.svg",
+        "/workspace/x/../artifacts/report/index.html",
+    ],
+)
 async def test_send_file_points_artifacts_to_show_artifact(tmp_path: Path, path: str) -> None:
     deps = _deps(tmp_path)
 
@@ -80,3 +87,13 @@ async def test_send_file_points_artifacts_to_show_artifact(tmp_path: Path, path:
 
     assert "show_artifact('report')" in result
     assert not deps.sandbox.mock_calls
+
+
+@pytest.mark.anyio
+async def test_send_file_still_sends_files_directly_under_artifacts(tmp_path: Path) -> None:
+    deps = _deps(tmp_path)
+    deps.sandbox.download_tmp_file.side_effect = RuntimeError("sandbox reached")
+
+    result = await _call(deps, "send_file", "/workspace/artifacts/README.md")
+
+    assert result == "Error: sandbox reached"

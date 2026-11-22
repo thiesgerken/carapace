@@ -43,8 +43,8 @@ outside collapsed tool-activity groups, with a separate icon after the title tha
 opens the current version in a new tab. When a new reference to a slug arrives, every
 reference to that slug in the open chat reloads its title and preview. There is no
 server push: changes pushed without a new reference show on the next page load. A
-renamed or deleted artifact renders **This artifact no longer exists** without an
-iframe.
+renamed or deleted artifact renders its row as **Artifact · &lt;slug&gt; · no longer
+exists**, muted, without the new-tab icon and without anything to expand.
 
 `send_file` copies a sandbox file into the session as a sent file, which keeps the
 content it had when sent. Sent HTML files render their inline snapshot without a
