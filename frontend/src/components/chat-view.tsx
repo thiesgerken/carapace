@@ -2897,8 +2897,6 @@ export function ChatView({
         ) : null}
       </section>
 
-      <SessionArtifactsSection server={server} sessionId={sessionId} refreshKey={latestTerminalIndex} />
-
       {knowledgeNotice ? (
         <div
           className={cn(
@@ -2913,6 +2911,8 @@ export function ChatView({
           {knowledgeNotice.message}
         </div>
       ) : null}
+
+      <SessionArtifactsSection server={server} sessionId={sessionId} refreshKey={latestTerminalIndex} />
     </div>
   );
 

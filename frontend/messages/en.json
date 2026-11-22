@@ -1339,8 +1339,8 @@
         },
         "artifacts": {
             "title": "Artifacts",
-            "created": "new · {time}",
-            "updated": "updated · {time}",
+            "created": "new · changed {time}",
+            "updated": "changed {time}",
             "deleted": "No longer exists",
             "loadError": "Failed to load the artifacts."
         },
