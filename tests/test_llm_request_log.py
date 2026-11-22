@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pydantic_ai import ModelMessage
 from pydantic_ai.messages import (
     BinaryContent,
+    FilePart,
     ModelRequest,
     ModelResponse,
     RetryFeedbackPart,
@@ -141,6 +142,12 @@ def test_image_counts_as_flat_estimate_under_other() -> None:
     assert r is not None
     assert r.other > 0.95
     assert r.user > 0
+
+
+def test_model_generated_image_counts_as_flat_estimate() -> None:
+    image = BinaryContent(data=bytes(range(256)) * 400, media_type="image/png")
+    messages: list[ModelMessage] = [ModelResponse(parts=[FilePart(image)])]
+    assert count_message_tokens(messages, model_name="gpt-4o") == 1_600
 
 
 def test_input_shape_ratios_empty_returns_none() -> None:

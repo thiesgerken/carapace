@@ -898,13 +898,6 @@ def _tool_return_blob(content: Any) -> str:
     return _blob(content)
 
 
-def _file_part_blob(part: FilePart) -> str:
-    try:
-        return f"<file {part.content.media_type} bytes={len(part.content.data)}>"
-    except Exception:
-        return "<file>"
-
-
 def _accumulate_request_part(part: ModelRequestPart, buckets: _MessageBuckets) -> None:
     text = buckets.text
     if isinstance(part, SystemPromptPart):
@@ -921,20 +914,21 @@ def _accumulate_request_part(part: ModelRequestPart, buckets: _MessageBuckets) -
         text["user"] += part.model_response() + "\n"
 
 
-def _accumulate_response_part(part: ModelResponsePart, buckets: dict[str, str]) -> None:
+def _accumulate_response_part(part: ModelResponsePart, buckets: _MessageBuckets) -> None:
+    text = buckets.text
     if isinstance(part, TextPart | ThinkingPart):
-        buckets["assistant"] += part.content + "\n"
+        text["assistant"] += part.content + "\n"
     elif isinstance(part, CompactionPart):
         if part.content:
-            buckets["assistant"] += part.content + "\n"
+            text["assistant"] += part.content + "\n"
     elif isinstance(part, ToolCallPart | NativeToolCallPart):
-        buckets["tool_calls"] += f"{part.tool_name}\n{part.args_as_json_str()}\n"
+        text["tool_calls"] += f"{part.tool_name}\n{part.args_as_json_str()}\n"
     elif isinstance(part, NativeToolReturnPart):
-        buckets["tool_returns"] += f"{part.tool_name}\n{_tool_return_blob(part.content)}\n"
+        text["tool_returns"] += f"{part.tool_name}\n{_tool_return_blob(part.content)}\n"
     elif isinstance(part, FilePart):
-        buckets["other"] += _file_part_blob(part) + "\n"
+        buckets.media_items += 1
     elif isinstance(part, SpeechPart):
-        buckets["assistant"] += (part.transcript or "") + "\n"
+        text["assistant"] += (part.transcript or "") + "\n"
     else:
         assert_never(part)
 
@@ -949,7 +943,7 @@ def _message_buckets(messages: list[ModelMessage]) -> _MessageBuckets:
                 buckets.text["system"] += msg.instructions + "\n"
         elif isinstance(msg, ModelResponse):
             for p in msg.parts:
-                _accumulate_response_part(p, buckets.text)
+                _accumulate_response_part(p, buckets)
     return buckets
 
 
