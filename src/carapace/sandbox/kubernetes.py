@@ -15,7 +15,7 @@ from kr8s._api import Api
 from kr8s.asyncio.objects import Deployment, Pod, StatefulSet, new_class
 from loguru import logger
 
-from .k8s_exec_v5 import EXEC_V5_PROTOCOL, exec_v5
+from .k8s_exec_v5 import EXEC_V5_PROTOCOL, ExecProtocolError, exec_v5
 from .runtime import (
     ContainerConfig,
     ContainerGoneError,
@@ -886,6 +886,8 @@ class KubernetesRuntime(ContainerRuntime):
             },
         ) as ws:
             return await exec_v5(ws, stdin)
+        # kr8s swallows a normal close (code 1000 or none), which ends the block without a status frame.
+        raise ExecProtocolError("exec websocket closed before the status frame")
 
     # ------------------------------------------------------------------
     # Low-level operations

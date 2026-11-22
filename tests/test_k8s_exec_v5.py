@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from typing import Any, cast
 
+import httpx_ws
 import pytest
 
 from carapace.sandbox.k8s_exec_v5 import EXEC_V5_PROTOCOL, STDIN_FRAME_BYTES, ExecProtocolError, exec_v5
+from carapace.sandbox.kubernetes import KubernetesRuntime
 
 
 class FakeWebSocket:
@@ -87,3 +93,27 @@ async def test_unknown_channel_raises() -> None:
     ws = FakeWebSocket([b"\x04resize"])
     with pytest.raises(ExecProtocolError, match="channel 4"):
         await exec_v5(ws, b"")
+
+
+class _ClosingWebSocket(FakeWebSocket):
+    async def receive_bytes(self) -> bytes:
+        raise httpx_ws.WebSocketDisconnect(code=1000)
+
+
+class _SwallowingApi:
+    """Mimics kr8s ``Api.open_websocket``, which swallows a normal close."""
+
+    @asynccontextmanager
+    async def open_websocket(self, **_kwargs: object) -> AsyncIterator[FakeWebSocket]:
+        try:
+            yield _ClosingWebSocket([])
+        except httpx_ws.WebSocketDisconnect as exc:
+            if exc.code and exc.code != 1000:
+                raise
+
+
+@pytest.mark.asyncio
+async def test_close_before_status_frame_raises() -> None:
+    pod = SimpleNamespace(version="v1", endpoint="pods", name="p", namespace="ns")
+    with pytest.raises(ExecProtocolError, match="before the status frame"):
+        await KubernetesRuntime._exec_with_stdin(cast(Any, _SwallowingApi()), cast(Any, pod), ["true"], b"x")
