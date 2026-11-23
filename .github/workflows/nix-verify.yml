@@ -44,20 +44,17 @@ jobs:
       # --skip-cached links only what it built; the tools and images are still needed here.
       - name: Fetch cached outputs used below
         run: |
-          for output in tools server-image frontend-image bitwarden-image; do
+          for output in tools server-image frontend-image bitwarden-image sandbox-image; do
             nix build ".#ciBuilds.x86_64-linux.$output" --out-link "result-ci-$output"
           done
           echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"
           echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
-      - name: Build sandbox image
-        run: |
-          docker build --tag carapace-sandbox:local sandbox
-          docker save carapace-sandbox:local | gzip > dist/carapace-sandbox.tar.gz
       - name: Stage verified archive paths
         run: |
           ln -s "$(realpath result-ci-server-image)" dist/carapace.tar.gz
           ln -s "$(realpath result-ci-frontend-image)" dist/carapace-frontend.tar.gz
           ln -s "$(realpath result-ci-bitwarden-image)" dist/carapace-bitwarden-cli.tar.gz
+          ln -s "$(realpath result-ci-sandbox-image)" dist/carapace-sandbox.tar.gz
           cp -R charts/carapace dist/chart
           sha256sum dist/*.tar.gz >> "$GITHUB_STEP_SUMMARY"
       - name: Exercise hardened runtime images

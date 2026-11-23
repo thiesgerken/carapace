@@ -1,6 +1,6 @@
 # Development
 
-The committed Nix flake and lockfile own builds, checks, and runtime images. Python dependencies come from `uv.lock` through uv2nix, preferring wheels on Python 3.14. Frontend dependencies come from `frontend/package-lock.json` through `importNpmLock`, which fetches each package by the integrity hash in the lockfile; npm ships with the pinned Node.js. The sandbox remains a Debian Dockerfile because agents install packages at runtime and need an FHS-compatible loader.
+The committed Nix flake and lockfile own builds, checks, and runtime images. Python dependencies come from `uv.lock` through uv2nix, preferring wheels on Python 3.14. Frontend dependencies come from `frontend/package-lock.json` through `importNpmLock`, which fetches each package by the integrity hash in the lockfile; npm ships with the pinned Node.js. The sandbox image is a Nix image without an FHS layout; see [sandbox image](sandbox.md#sandbox-image) for how foreign binaries still run in it.
 
 The local Python package source includes only `pyproject.toml`, `README.md`, and `src/`. Python check inputs are scoped separately, so changes under `docs/`, `charts/`, or `frontend/`, and changelog updates, do not invalidate Python builds and checks.
 
@@ -15,11 +15,11 @@ uv sync --dev
 
 The shell provides Python 3.14, uv, Node.js 24 (with npm), Git, Helm, Skopeo, and jq. uv manages `.venv`; `UV_PYTHON` selects the Nix interpreter and `UV_PYTHON_DOWNLOADS=never` prevents another interpreter download. With direnv and nix-direnv, run `direnv allow` once in each checkout or worktree to load `.envrc` automatically.
 
-For host iteration, start a disposable Redis, build the sandbox, then run the server:
+For host iteration, start a disposable Redis, build and load the sandbox image, then run the server:
 
 ```sh
 docker run --rm -d --name carapace-dev-redis -p 127.0.0.1:6379:6379 redis:8-alpine
-docker build -t carapace-sandbox:local sandbox
+docker load -i "$(nix build .#packages.aarch64-linux.sandbox-image --no-link --print-out-paths)"  # x86_64-linux on Linux x64
 export CARAPACE_SANDBOX_BASE_IMAGE=carapace-sandbox:local
 export CARAPACE_DATA_DIR=./data/development
 export CARAPACE_CACHE_REDIS_URL=redis://localhost:6379/0
@@ -121,15 +121,17 @@ determinate-nixd status
 nix build .#packages.aarch64-linux.server-image --out-link result-server-image
 nix build .#packages.aarch64-linux.frontend-image --out-link result-frontend-image
 nix build .#packages.aarch64-linux.bitwarden-image --out-link result-bitwarden-image
-for image in result-{server,frontend,bitwarden}-image; do docker load -i "$image"; done
-docker build --platform linux/arm64 -t carapace-sandbox:local sandbox
+nix build .#packages.aarch64-linux.sandbox-image --out-link result-sandbox-image
+for image in result-{server,frontend,bitwarden,sandbox}-image; do docker load -i "$image"; done
 export COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml
 docker compose up -d
 ```
 
 These are native ARM Linux builds, not x86 emulation. Only x86_64 Linux images are published. Non-Nix x64 users pull release images as described in the [quickstart](quickstart.md).
 
-On Linux x64, omit `packages.aarch64-linux.` from the Nix output paths and omit the sandbox `--platform` argument. The local Compose overlay selects `:local` images with `pull_policy: never` and points the server at `carapace-sandbox:local`.
+On Linux x64, use `packages.x86_64-linux.` in the Nix output paths. The local Compose overlay selects `:local` images with `pull_policy: never` and points the server at `carapace-sandbox:local`.
+
+The sandbox image ships nixpkgs as one archive rather than an unpacked tree. The Native Linux Builder fails with "Too many open files in system" once a single build opens about 100k files, and the unpacked nixpkgs alone has 90k. Building the image there also reads macOS's case-insensitive store, so in local images names that differ only in case carry a `~nix~case~hack~1` suffix (terminfo entries, for example). Published x64 images are built on Linux and are not affected.
 
 The server, frontend, and Bitwarden images use UID/GID 999, a read-only root, dropped capabilities, and writable `/tmp`. The server data directory and Bitwarden state need persistent writable mounts. The frontend listens on 8080; Compose's proxy and the chart keep their public ports unchanged.
 
@@ -166,13 +168,13 @@ result-build-tool/bin/nix-fast-build --no-nom --flake .#ciBuilds.x86_64-linux --
 result-build-tool/bin/nix-fast-build --no-nom --flake .#ciBuilds.aarch64-darwin --systems "aarch64-darwin aarch64-linux" --out-link result-ci
 ```
 
-Load the three runtime images, build the native sandbox image, and run:
+Load the four runtime images and run:
 
 ```sh
 python3 scripts/smoke-images.py
 ```
 
-The smoke uses disposable volumes and dynamic ports. It checks authenticated server readiness with Postgres and Redis, rejects a real knowledge-repo push through the sentinel for a missing session, verifies effective UID 999 and read-only roots, and checks default and overridden frontend CSP headers. Bitwarden runs without a network under the runtime restrictions: status, password generation, server configuration round-trip, and the explicit unauthenticated `bw serve` rejection. No LLM credentials or vault account are needed. Real vault login, unlock, sync, and an authenticated Bitwarden API listener remain outside this smoke.
+The smoke uses disposable volumes and dynamic ports. It checks authenticated server readiness with Postgres and Redis, rejects a real knowledge-repo push through the sentinel for a missing session, verifies effective UID 999 and read-only roots, and checks default and overridden frontend CSP headers. Bitwarden runs without a network under the runtime restrictions: status, password generation, server configuration round-trip, and the explicit unauthenticated `bw serve` rejection. No LLM credentials or vault account are needed. In the sandbox image, without capabilities as on Kubernetes, it checks that `python3` is python-build-standalone managed by uv, `uv sync` of numpy, `npm ci` of sharp, a downloaded glibc binary through nix-ld, and `nix run nixpkgs#hello` with nixpkgs resolved offline. The sandbox checks need internet access. Real vault login, unlock, sync, and an authenticated Bitwarden API listener remain outside this smoke.
 
 Focused host checks remain available:
 
@@ -203,15 +205,15 @@ The only Python source-build override supplies setuptools to `http-ece`, whose r
 
 ## CI and publishing
 
-[CI](../.github/workflows/ci.yml) calls [Nix verification](../.github/workflows/nix-verify.yml). Workflows read the public [`thiesgerken` Cachix cache](https://thiesgerken.cachix.org) and skip outputs already in it; only release runs push to it, so PR builds never write it. The flake offers the cache to local builds through `nixConfig` (accept it when Nix asks; it takes effect for trusted users). It holds only x86_64-linux outputs. PR verification has read-only repository access, builds the sandbox, smoke-tests loaded images, and uploads the verified x64 image archives and chart data.
+[CI](../.github/workflows/ci.yml) calls [Nix verification](../.github/workflows/nix-verify.yml). Workflows read the public [`thiesgerken` Cachix cache](https://thiesgerken.cachix.org) and skip outputs already in it; only release runs push to it, so PR builds never write it. The flake offers the cache to local builds through `nixConfig` (accept it when Nix asks; it takes effect for trusted users). It holds only x86_64-linux outputs. PR verification has read-only repository access, smoke-tests loaded images, and uploads the verified x64 image archives and chart data.
 
 Failed Nix builds retain expanded log tails in CI. Locally, `nix log .#checks.<system>.<name>` shows the stored build log for a failing check.
 
 [PR publication](../.github/workflows/publish-pr.yml) runs the trusted workflow from `main` after successful CI. It checks that the tested SHA still belongs to an open same-repository PR against `main`, then publishes those archives with Skopeo. It does not check out or execute PR code with registry write access. Chart previews use `<base>-pr.<number>` and `<base>-pr.<number>.g<sha>`.
 
-Releases are made by [Presswerk](https://presswerk.dev/) on every push to `main` that brings a release-worthy commit since the last release. The release is declared in the flake's `presswerk.default` output: the version files, the Gitmoji analyzer, the changelog, and the publishers (the three Nix images and the chart on GHCR, the GitHub Release). The CLI comes from the flake's pinned `presswerk` input.
+Releases are made by [Presswerk](https://presswerk.dev/) on every push to `main` that brings a release-worthy commit since the last release. The release is declared in the flake's `presswerk.default` output: the version files, the Gitmoji analyzer, the changelog, and the publishers (the four Nix images and the chart on GHCR, the GitHub Release). The CLI comes from the flake's pinned `presswerk` input.
 
-The [release workflow](../.github/workflows/release.yml) runs in two steps. The push run prepares a `🔖 Release vX.Y.Z` commit with the bumped version files and changelog, pushes it to `main` and dispatches the workflow with that commit as the candidate. The candidate run verifies exactly that commit with Nix verification, which pushes the Nix images and the chart to Cachix. The publish job then pushes the verified sandbox archive with Skopeo (as `<version>` and `latest`; it is a Dockerfile build, so Presswerk can't publish it), and `presswerk publish` fetches the rest from Cachix and pushes the tag, the images, the chart and the GitHub Release. Presswerk checks every destination before writing anything, so a failed or cancelled candidate run is safe to repeat:
+The [release workflow](../.github/workflows/release.yml) runs in two steps. The push run prepares a `🔖 Release vX.Y.Z` commit with the bumped version files and changelog, pushes it to `main` and dispatches the workflow with that commit as the candidate. The candidate run verifies exactly that commit with Nix verification, which pushes the Nix images and the chart to Cachix. The publish job then runs `presswerk publish`, which fetches the images and the chart from Cachix and pushes the tag, the images, the chart and the GitHub Release. Presswerk checks every destination before writing anything, so a failed or cancelled candidate run is safe to repeat:
 
 ```sh
 gh workflow run release.yml --ref main -f candidate=<full SHA of the release commit>

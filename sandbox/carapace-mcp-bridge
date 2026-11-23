@@ -1,4 +1,4 @@
-#!/opt/carapace-mcp/bin/python
+#!/usr/bin/env python3
 """carapace-mcp-bridge — stateless stdio MCP bridge for carapace sandboxes.
 
 Spawns a stdio MCP server, runs the ``initialize`` handshake, then either

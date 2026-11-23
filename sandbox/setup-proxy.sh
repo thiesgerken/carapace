@@ -7,13 +7,6 @@ if [ -z "$HTTP_PROXY" ]; then
   exit 0
 fi
 
-# --- apt-get ---
-# apt sometimes ignores the http_proxy env var; a config file is more reliable.
-cat > /etc/apt/apt.conf.d/99proxy <<EOF
-Acquire::http::Proxy "$HTTP_PROXY";
-Acquire::https::Proxy "$HTTPS_PROXY";
-EOF
-
 # --- git ---
 git config --global http.proxy "$HTTP_PROXY"
 git config --global http.proxyAuthMethod basic
@@ -36,4 +29,4 @@ proxy=$HTTP_PROXY
 https-proxy=$HTTPS_PROXY
 EOF
 
-echo "Proxy configured for apt, git, pip, npm"
+echo "Proxy configured for git, pip, npm"

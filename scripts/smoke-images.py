@@ -138,6 +138,37 @@ def assert_bitwarden() -> str:
     return version
 
 
+SANDBOX_SMOKE = r"""
+set -euo pipefail
+python=$(realpath "$(command -v python3)")
+[[ $python == /root/.local/share/uv/python/cpython-3.14.* ]] || { echo "python3 is $python"; exit 1; }
+[[ $(UV_PYTHON_DOWNLOADS=never uv python find) == "$python" ]]
+mkdir /tmp/py && cd /tmp/py
+printf '[project]\nname = "smoke"\nversion = "0"\ndependencies = ["numpy"]\n' > pyproject.toml
+UV_PYTHON_DOWNLOADS=never uv sync --quiet
+uv run python -c 'import numpy; assert numpy.ones(3).sum() == 3'
+mkdir /tmp/js && cd /tmp/js && npm init -y > /dev/null
+npm install --package-lock-only --silent sharp
+npm ci --silent
+node -e 'require("sharp")({create: {width: 1, height: 1, channels: 3, background: "red"}}).png().toBuffer()'
+curl -fsSL "https://github.com/sharkdp/fd/releases/download/v10.2.0/fd-v10.2.0-$(uname -m)-unknown-linux-gnu.tar.gz" \
+  | tar -xz --no-same-owner -C /tmp
+file -L /tmp/fd-*/fd | grep -q "dynamically linked, interpreter /lib"
+/tmp/fd-*/fd --version > /dev/null
+[[ $(nix run nixpkgs#hello) == "Hello, world!" ]]
+"""
+
+
+def assert_sandbox() -> None:
+    # Kubernetes runs sandboxes as root without capabilities; Docker mode adds them back.
+    docker = ["docker", "run", "--rm", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--memory=2g"]
+    image = "carapace-sandbox:local"
+    # The registry entry is locked, so nixpkgs resolves from the image without any network.
+    offline = run(*docker, "--network=none", image, "nix", "eval", "--raw", "nixpkgs#hello.name")
+    assert offline.startswith("hello-"), offline
+    run(*docker, image, "bash", "-c", SANDBOX_SMOKE)
+
+
 def main() -> None:
     architecture = run("docker", "info", "--format", "{{.Architecture}}")
     assert architecture in ("aarch64", "arm64", "x86_64", "amd64"), architecture
@@ -252,9 +283,11 @@ def main() -> None:
             for service in ("server", "frontend", "frontend-extra"):
                 assert_hardened(run(*compose, "ps", "-q", service))
             version = assert_bitwarden()
+            assert_sandbox()
             print(
                 f"PASS {expected}: authenticated server readiness, default/override CSP, "
-                f"effective UID 999, read-only roots, Bitwarden CLI {version} offline commands and serve rejection"
+                f"effective UID 999, read-only roots, Bitwarden CLI {version} offline commands and serve rejection, "
+                "sandbox python-build-standalone, native wheels and npm addons, nix-ld, offline nixpkgs"
             )
         except BaseException:
             subprocess.run([*compose, "logs", "--no-color"], check=False)

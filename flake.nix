@@ -71,8 +71,9 @@
             inherit (tools) nodejs;
           };
           images = import ./nix/images.nix {
-            inherit pkgs;
-            inherit (backend) server tokenizerCache;
+            inherit pkgs nixpkgs;
+            inherit (tools) nodejs;
+            inherit (backend) server tokenizerCache mcpBridgeEnv;
             inherit (frontend) frontend;
           };
           # The version comes from the committed Chart.yaml, which the release commit bumps.
@@ -239,7 +240,6 @@
             artifacts = self.packages.x86_64-linux;
           in
           {
-            # carapace-sandbox is a Dockerfile build, not a store path; the publish job pushes it.
             oci-image =
               nixpkgs.lib.mapAttrs
                 (
@@ -255,6 +255,7 @@
                   carapace = artifacts.server-image;
                   carapace-frontend = artifacts.frontend-image;
                   carapace-bitwarden-cli = artifacts.bitwarden-image;
+                  carapace-sandbox = artifacts.sandbox-image;
                 };
             oci-helm.carapace = ghcr // {
               repository = "ghcr.io/thiesgerken/charts/carapace";
