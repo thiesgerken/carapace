@@ -50,6 +50,8 @@ def test_request_posts_the_declaration(monkeypatch: pytest.MonkeyPatch) -> None:
         "*.cdn.example.com",
         "--credential",
         "demo/api-key",
+        "--oauth",
+        "demo/tracker-oauth",
         "--store-path",
         "/nix/store/abc-example",
     )
@@ -61,6 +63,7 @@ def test_request_posts_the_declaration(monkeypatch: pytest.MonkeyPatch) -> None:
     assert json.loads(request.data or b"") == {
         "domains": ["api.example.com", "*.cdn.example.com"],
         "credentials": ["demo/api-key"],
+        "oauth": ["demo/tracker-oauth"],
         "store_path": "/nix/store/abc-example",
     }
 

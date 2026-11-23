@@ -22,6 +22,28 @@ let
     { credentials."TOKEN; rm -rf ~" = "demo/token"; }
     { tunnels = [ "imap.example.com:993" ]; }
   ];
+  # MCP servers: the bridge's arguments and what each command declares follow from the server.
+  mcp = skillLib.mkSkill {
+    name = "mcp-contract";
+    needs.credentials.UNRELATED = "demo/unrelated";
+    commands = skillLib.mcpCommands {
+      tracker = {
+        url = "https://mcp.example.com/mcp";
+        oauth = "demo/tracker-oauth";
+        description = "An OAuth HTTP server";
+      };
+      notes = {
+        url = "https://notes.example.com:8443/mcp";
+        bearer = "demo/notes-token";
+        description = "A bearer HTTP server";
+      };
+      local = {
+        command = "local-mcp --stdio";
+        description = "A stdio server";
+      };
+    };
+  };
+  mcpNeeds = pkgs.lib.mapAttrs (_: command: command.needs) mcp.passthru.carapace.commands;
   skill = skillLib.mkSkill {
     name = "contract";
     needs = {
@@ -45,6 +67,28 @@ let
   };
 in
 assert pkgs.lib.assertMsg (pkgs.lib.all (x: x) rejected) "mkSkill accepted invalid needs";
+assert pkgs.lib.assertMsg (
+  mcpNeeds == {
+    tracker = {
+      domains = [ "mcp.example.com" ];
+      credentials = { };
+      oauth = [ "demo/tracker-oauth" ];
+      tunnels = [ ];
+    };
+    notes = {
+      domains = [ "notes.example.com" ];
+      credentials.MCP_BEARER_TOKEN = "demo/notes-token";
+      oauth = [ ];
+      tunnels = [ ];
+    };
+    local = {
+      domains = [ ];
+      credentials = { };
+      oauth = [ ];
+      tunnels = [ ];
+    };
+  }
+) "mcpCommands declared the wrong needs: ${builtins.toJSON mcpNeeds}";
 pkgs.runCommand "skill-wrapper-contract" { } ''
   mkdir stubs
   cat > stubs/cgate <<'STUB'
@@ -78,6 +122,24 @@ pkgs.runCommand "skill-wrapper-contract" { } ''
   [ ! -s out ]
   if CCRED_FAIL=1 ${skill}/bin/show-token > out; then exit 1; fi
   [ ! -s out ]
+
+  # An MCP command asks for its server's domain and OAuth entry, then hands the bridge its address.
+  cat > stubs/mcp <<'STUB'
+  #!${pkgs.runtimeShell}
+  echo "mcp $* MCP_BEARER_TOKEN=''${MCP_BEARER_TOKEN:-}" >> "$CALLS"
+  STUB
+  chmod +x stubs/mcp
+  rm calls
+  ${mcp}/bin/tracker --list-tools
+  ${mcp}/bin/notes search --query 'a b'
+  ${mcp}/bin/local --list-tools
+  printf '%s\n' \
+    "cgate request --store-path ${mcp} --domain mcp.example.com --oauth demo/tracker-oauth" \
+    "mcp --name tracker --url https://mcp.example.com/mcp --oauth demo/tracker-oauth --list-tools MCP_BEARER_TOKEN=" \
+    "cgate request --store-path ${mcp} --domain notes.example.com --credential demo/notes-token" \
+    "ccred get demo/notes-token" \
+    "mcp --name notes --url https://notes.example.com:8443/mcp --bearer-env MCP_BEARER_TOKEN search --query a b MCP_BEARER_TOKEN=s3cret" \
+    "mcp --name local --stdio local-mcp --stdio --list-tools MCP_BEARER_TOKEN=" | diff - calls
 
   # The package holds the wrappers and nothing else.
   [ "$(ls -A ${skill})" = bin ]

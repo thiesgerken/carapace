@@ -72,6 +72,7 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 
 - `domains`: host names, or `*.` plus a name of at least two labels.
 - `credentials`: environment variable to vault path. The wrapper exports each one before the command starts. Variable names must be shell identifiers.
+- `oauth`: vault paths of OAuth entries whose access token the command fetches itself with `ccred get --access-token`, as the MCP bridge does. Declared up front, exported nothing.
 - `tunnels`: `"host:port"`. Not supported yet: a non-empty list fails the evaluation.
 
 A command that declares something gets a wrapper that first asks for all of it at once, then fetches the credentials, then runs the command:
@@ -104,12 +105,13 @@ nix eval --json 'path:<skill dir>#packages.x86_64-linux.default.carapace'
       "needs": {
         "domains": ["api.example.com"],
         "credentials": { "WEATHER_TOKEN": "personal/weather-token" },
+        "oauth": [],
         "tunnels": []
       }
     },
     "weather-units": {
       "description": "List the supported units, offline",
-      "needs": { "domains": [], "credentials": {}, "tunnels": [] }
+      "needs": { "domains": [], "credentials": {}, "oauth": [], "tunnels": [] }
     }
   }
 }
@@ -118,6 +120,46 @@ nix eval --json 'path:<skill dir>#packages.x86_64-linux.default.carapace'
 - `commands` has one entry per wrapper in `bin/`, under the same name.
 - `needs` is already resolved: the skill-wide default with the command's override applied, every kind present.
 - The builder passes this on as opaque JSON; the server reads it. Fields are only ever added.
+
+## MCP servers
+
+An MCP server becomes a command like any other: `<server> --list-tools`, `<server> <tool> --help`, `<server> <tool> --flag value`. `mcpCommands` makes one command per attribute, for `mkSkill`'s `commands`:
+
+```nix
+default = skill.mkSkill {
+  name = "tracker";
+  commands = skill.mcpCommands {
+    tracker = {
+      url = "https://mcp.example.com/mcp";
+      oauth = "personal/tracker-oauth";
+      description = "Issues in the example tracker";
+    };
+    notes = {
+      command = "${notesServer}/bin/notes-mcp --stdio";
+      description = "Local notes, over stdio";
+      needs.credentials.NOTES_TOKEN = "personal/notes-token";
+    };
+  };
+};
+```
+
+- `url` (streamable HTTP) or `command` (a shell command that starts the server on stdio), exactly one.
+- For an HTTP server, `bearer` names a vault path whose value is sent as `Authorization: Bearer`, and `oauth` names an OAuth entry (see below). At most one; neither applies to stdio, which takes its credentials as environment variables through `needs`.
+- `needs` is derived from the server: the URL's host, and the `bearer` credential or the `oauth` entry. The skill-wide `needs` do not apply. A `needs` given here overrides the derived one per kind.
+
+The commands run the `mcp` bridge from the sandbox image, one connection per call; a server that keeps state between calls does not work. The bridge turns the tool's input schema into flags (see the [contract](sandbox.md#mcp)). `mcp --url …` also works directly in the sandbox, without a skill: the proxy then reviews the domain when the bridge connects.
+
+### OAuth
+
+The vault entry of an OAuth server holds the OAuth state as a compact JSON object:
+
+```json
+{"token_url":"https://issuer.example.com/oauth2/token","client_id":"...","client_secret":"...","refresh_token":"...","access_token":"...","expires_at":1750000000,"scope":"..."}
+```
+
+`token_url`, `client_id` and `refresh_token` are required; `client_secret` is left out for public clients, and Carapace fills in `access_token` and `expires_at`. Carapace refreshes the token when it is missing or about to expire, writes the result back (a rotated refresh token included), so the vault backend must support writes. The refresh token never enters the sandbox: the bridge asks for an access token with `ccred get --access-token`, and for a fresh one, once per `exec`, after the server answered `401`. Carapace refuses to hand out the entry itself, in any form.
+
+The one-time authorization that produces the first refresh token (typically dynamic client registration, PKCE and a browser login) happens outside Carapace. `scripts/mcp_oauth_blob.py` assembles the object from its result.
 
 ## Python with uv
 

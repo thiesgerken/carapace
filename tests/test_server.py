@@ -3670,7 +3670,7 @@ def test_sandbox_fetch_credential_alternate_kind_uses_sentinel(client, auth_head
     assert resp.json() == {"id": "id-1"}
     evaluate.assert_awaited_once()
     assert evaluate.await_args.kwargs["audit_args"]["value_kind"] == "json"
-    mock_reg.fetch.assert_awaited_once_with("bw/id-1", "json")
+    mock_reg.fetch.assert_awaited_with("bw/id-1", "json")
 
     mock_reg.fetch.reset_mock()
     mock_reg.require_supported.side_effect = UnsupportedCredentialValueKindError("login retrieval is unsupported")
@@ -5048,3 +5048,70 @@ def test_artifact_sessions_follow_git_trailers_without_exposing_foreign_titles(
     assert {entry["name"] for entry in response.json()["entries"]} == {"report", "second"}
     assert sum("log" in call.args for call in run.call_args_list) == 1
     assert all("--format=%(trailers:key=carapace-session,valueonly)" not in call.args for call in run.call_args_list)
+
+
+_OAUTH_BLOB = '{"token_url":"https://issuer.example.com/token","client_id":"cid","refresh_token":"rt"}'
+
+
+@pytest.mark.parametrize("query", ["", "?kind=json", "?kind=login"])
+def test_an_oauth_entry_is_never_handed_out_as_a_credential(client, auth_headers, monkeypatch, query):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    _, mock_reg = _gated_credential(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    mock_reg.fetch = AsyncMock(return_value=_OAUTH_BLOB)
+    _running_exec("ccred get demo/oauth")
+
+    resp = TestClient(sandbox_app).get(f"/credentials/demo/oauth{query}", headers=_sandbox_basic_auth(sid))
+
+    assert resp.status_code == 400
+    assert "ccred get demo/oauth --access-token" in resp.text
+    assert "refresh_token" not in resp.text
+
+
+def test_a_gate_approval_covers_the_access_token_and_only_the_token_leaves(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, mock_reg, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="ok"))
+    issue = AsyncMock(return_value="access-token")
+    monkeypatch.setattr(srv, "oauth_access_token", issue)
+    headers = _sandbox_basic_auth(sid)
+    sb_client = TestClient(sandbox_app)
+
+    assert sb_client.post("/gate", json={"oauth": ["demo/oauth"]}, headers=headers).status_code == 200
+    request = sentinel.evaluate_upfront_request.await_args.args[1]
+    assert ([c.vault_path for c in request.access_tokens], request.credentials) == (["demo/oauth"], [])
+    assert running.credentials == {("demo/oauth", "oauth_access_token")}
+
+    resp = sb_client.get("/oauth-token/demo/oauth", headers=headers)
+
+    assert (resp.status_code, resp.text) == (200, "access-token")
+    sentinel.evaluate_credential_access.assert_not_awaited()
+    issue.assert_awaited_once_with(mock_reg, "demo/oauth", refresh=False)
+
+
+def test_one_forced_refresh_per_exec(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="ok"))
+    issue = AsyncMock(return_value="access-token")
+    monkeypatch.setattr(srv, "oauth_access_token", issue)
+    headers = _sandbox_basic_auth(sid)
+    sb_client = TestClient(sandbox_app)
+    sb_client.post("/gate", json={"oauth": ["demo/oauth"]}, headers=headers)
+
+    first = sb_client.get("/oauth-token/demo/oauth?refresh=true", headers=headers)
+    second = sb_client.get("/oauth-token/demo/oauth?refresh=true", headers=headers)
+
+    assert first.status_code == 200
+    assert (second.status_code, second.text) == (403, srv._SECOND_REFRESH_REJECTION)
+    issue.assert_awaited_once()
+
+
+def test_an_access_token_of_an_entry_without_oauth_state_is_a_bad_request(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="ok"))
+    headers = _sandbox_basic_auth(sid)
+    sb_client = TestClient(sandbox_app)
+    sb_client.post("/gate", json={"oauth": ["demo/api-key"]}, headers=headers)
+
+    resp = sb_client.get("/oauth-token/demo/api-key", headers=headers)
+
+    assert resp.status_code == 400
+    assert "holds no OAuth state" in resp.text

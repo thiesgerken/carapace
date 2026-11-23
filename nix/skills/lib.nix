@@ -11,11 +11,12 @@
 let
   inherit (pkgs) lib;
 
-  # What a command needs from outside the sandbox: domains, credentials as env var -> vault path, and
-  # tunnels as "host:port".
+  # What a command needs from outside the sandbox: domains, credentials as env var -> vault path, OAuth
+  # vault paths whose access token the command fetches itself, and tunnels as "host:port".
   noNeeds = {
     domains = [ ];
     credentials = { };
+    oauth = [ ];
     tunnels = [ ];
   };
 
@@ -33,7 +34,7 @@ let
       );
     in
     assert lib.assertMsg (unknown == [ ])
-      "${where}: unknown kinds in needs: ${lib.concatStringsSep ", " unknown} (known: domains, credentials, tunnels)";
+      "${where}: unknown kinds in needs: ${lib.concatStringsSep ", " unknown} (known: ${lib.concatStringsSep ", " (lib.attrNames noNeeds)})";
     assert lib.assertMsg (
       badVars == [ ]
     ) "${where}: credential variables must be shell identifiers: ${lib.concatStringsSep ", " badVars}";
@@ -45,7 +46,8 @@ let
     let
       gateArgs =
         map (domain: "--domain ${lib.escapeShellArg domain}") needs.domains
-        ++ map (path: "--credential ${lib.escapeShellArg path}") (lib.attrValues needs.credentials);
+        ++ map (path: "--credential ${lib.escapeShellArg path}") (lib.attrValues needs.credentials)
+        ++ map (path: "--oauth ${lib.escapeShellArg path}") needs.oauth;
       # Assignment and export apart: `export X="$(…)"` would hide a failing ccred from `set -e`.
       exports = lib.mapAttrsToList (var: path: ''
         ${var}="$(ccred get ${lib.escapeShellArg path})"
@@ -128,6 +130,55 @@ in
           '') commands
         )
       );
+
+  # Commands for MCP servers, one per attribute, for `mkSkill.commands`: `<name> --list-tools`,
+  # `<name> <tool> --flag …`. They run the `mcp` bridge from the sandbox image; what they need follows
+  # from the server: the URL's host, and the credential of `bearer` (a token) or `oauth` (a vault entry
+  # Carapace refreshes, whose access token the bridge fetches itself). A stdio server declares its own
+  # `needs`, which also override the derived ones per kind; the skill-wide `needs` do not apply.
+  #
+  #   commands = skill.mcpCommands {
+  #     tracker = { url = "https://mcp.example.com/mcp"; oauth = "personal/tracker"; description = "…"; };
+  #     notes = { command = "${notes}/bin/notes-mcp"; description = "…"; };
+  #   };
+  mcpCommands = lib.mapAttrs (
+    name:
+    {
+      description,
+      url ? null,
+      command ? null,
+      bearer ? null,
+      oauth ? null,
+      needs ? { },
+    }:
+    let
+      where = "MCP server ${name}";
+      host = builtins.match "https?://([^/:?#]+).*" url;
+    in
+    assert lib.assertMsg ((url == null) != (command == null)) "${where}: set exactly one of url and command";
+    assert lib.assertMsg (url == null || host != null) "${where}: url must be http(s)";
+    assert lib.assertMsg (
+      command == null || (bearer == null && oauth == null)
+    ) "${where}: bearer and oauth apply to url; a stdio server takes credentials through needs";
+    assert lib.assertMsg (bearer == null || oauth == null) "${where}: set at most one of bearer and oauth";
+    {
+      inherit description;
+      exec = lib.concatStringsSep " " (
+        [ "mcp --name ${lib.escapeShellArg name}" ]
+        ++ lib.optional (url != null) "--url ${lib.escapeShellArg url}"
+        ++ lib.optional (command != null) "--stdio ${lib.escapeShellArg command}"
+        ++ lib.optional (bearer != null) "--bearer-env MCP_BEARER_TOKEN"
+        ++ lib.optional (oauth != null) "--oauth ${lib.escapeShellArg oauth}"
+      );
+      # Every kind set, so the skill-wide needs do not leak into the server's command.
+      needs =
+        noNeeds
+        // lib.optionalAttrs (url != null) { domains = host; }
+        // lib.optionalAttrs (bearer != null) { credentials.MCP_BEARER_TOKEN = bearer; }
+        // lib.optionalAttrs (oauth != null) { oauth = [ oauth ]; }
+        // needs;
+    }
+  );
 
   # A virtualenv from the skill's pyproject.toml and uv.lock. `overrides` is a pyproject-nix overlay
   # for what uv.lock does not record, typically the build system of a Git or sdist dependency:

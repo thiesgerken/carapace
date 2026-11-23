@@ -7,7 +7,7 @@ credentials from the configured vault backends.
 Usage:
     ccred list
     ccred search QUERY
-    ccred get <vault_path> [-o FILE] [--login | --json]
+    ccred get <vault_path> [-o FILE] [--login | --json | --access-token [--refresh]]
 """
 
 from __future__ import annotations
@@ -108,9 +108,13 @@ def cmd_search(args: argparse.Namespace) -> None:
 
 def cmd_get(args: argparse.Namespace) -> None:
     vault_path = args.vault_path
-    path = f"/credentials/{vault_path}"
-    if args.kind != "password":
-        path += f"?kind={args.kind}"
+    if args.refresh and args.kind != "oauth_access_token":
+        print("error: --refresh goes with --access-token", file=sys.stderr)
+        sys.exit(2)
+    if args.kind == "oauth_access_token":
+        path = f"/oauth-token/{vault_path}" + ("?refresh=true" if args.refresh else "")
+    else:
+        path = f"/credentials/{vault_path}" + (f"?kind={args.kind}" if args.kind != "password" else "")
 
     try:
         with urllib.request.urlopen(_request(path)) as resp:
@@ -138,6 +142,9 @@ def main() -> None:
             "  ccred get <backend>/<id>           fetch password (blocks until approved)\n"
             "  ccred get <backend>/<id> --login   fetch login name (not supported by every provider)\n"
             "  ccred get <backend>/<id> --json    fetch provider-specific JSON\n"
+            "  ccred get <backend>/<id> --access-token [--refresh]\n"
+            "                                     short-lived OAuth access token; --refresh forces a new one\n"
+            "                                     (once per exec, after the server rejected the old one)\n"
             "  ccred get <backend>/<id> -o FILE   write output to FILE with mode 0400\n"
             "                                     (-o is subject to approval like stdout fetch)\n"
             "\n"
@@ -167,6 +174,14 @@ def main() -> None:
         help="Fetch the login name (not supported by every provider)",
     )
     kind.add_argument("--json", action="store_const", const="json", dest="kind", help="Fetch provider-specific JSON")
+    kind.add_argument(
+        "--access-token",
+        action="store_const",
+        const="oauth_access_token",
+        dest="kind",
+        help="Fetch a short-lived access token of an OAuth entry; its refresh token stays with Carapace",
+    )
+    get.add_argument("--refresh", action="store_true", help="With --access-token: force a new token, once per exec")
     get.set_defaults(kind="password")
     get.add_argument("-o", "--output", help="Write value to file instead of stdout")
 

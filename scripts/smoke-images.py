@@ -141,6 +141,8 @@ def assert_bitwarden() -> str:
 SANDBOX_SMOKE = r"""
 set -euo pipefail
 command -v cgate getent > /dev/null
+# The MCP bridge loads its SDK from its own environment, not the agent's python3.
+mcp --help | grep -q -- --list-tools
 ! compgen -G '/bin/python*' > /dev/null || { ls /bin/python*; exit 1; }
 # The server's start-up egress probe needs bash's /dev/tcp, timeout and getent.
 timeout 5 bash -c 'exec 3<>/dev/tcp/example.com/80'

@@ -4,11 +4,11 @@ import asyncio
 import sys
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from loguru import logger
 
-from ..models.credentials import CredentialValueKind
+from ..models.credentials import CredentialValueKind, OAuthAccessTokenKind
 from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
 from .file_ops import ContextFileCredential, WrittenContextFile
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult, NetworkTunnel
@@ -58,7 +58,7 @@ ORPHANED_REQUEST_REJECTION = "Denied: no exec is running, the request comes from
 EXEC_ENDED_REJECTION = "Denied: the exec that asked ended before the decision came back."
 
 # What an approved credential request covers: a vault path in one representation, or a listing (no kind).
-type CredentialGrant = tuple[str, CredentialValueKind | None]
+type CredentialGrant = tuple[str, CredentialValueKind | OAuthAccessTokenKind | None]
 
 
 @dataclass(eq=False, slots=True)
@@ -71,6 +71,8 @@ class RunningExec:
     credentials: set[CredentialGrant]
     # Once the sentinel has seen this exec in a boundary decision, its later requests are short follow-ups.
     boundary_reviewed: bool = False
+    # Vault paths whose OAuth access token this exec already forced a refresh of: one each, after a 401.
+    oauth_refreshed: set[str] = field(default_factory=set)
 
 
 # Absolute path: /workspace/.carapace/bin comes first in PATH and holds skill shims.

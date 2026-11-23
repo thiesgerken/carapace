@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import posixpath
 import re
 import secrets
 import shlex
-import time
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path, PurePosixPath
@@ -26,6 +24,8 @@ from pydantic_ai.toolsets.abstract import AbstractToolset
 from .. import security as security
 from ..artifacts import artifact_index, artifact_title
 from ..credentials import CredentialBackendError
+from ..credentials.oauth import OAuthStateRefusedError, is_oauth_state
+from ..credentials.oauth import access_token as oauth_access_token
 from ..llm import (
     ProviderCompactionRejectionCapability,
     model_settings_for_config,
@@ -560,6 +560,9 @@ async def _cache_skill_credentials(
             )
             fetch_errors.append(f"Credential {decl.vault_path}: vault request failed ({type(exc).__name__})")
             continue
+        if is_oauth_state(value):
+            fetch_errors.append(str(OAuthStateRefusedError(decl.vault_path)))
+            continue
         ctx.deps.sandbox.cache_credential(session_id, decl.vault_path, value)
         cached += 1
 
@@ -612,6 +615,8 @@ async def _collect_context_injection(ctx: RunContext[Deps], contexts: list[str])
                 logger.info(f"Credential cache miss for {decl.vault_path!r} (skill {ctx_name!r}), re-fetching")
                 try:
                     cached = await ctx.deps.credential_registry.fetch(decl.vault_path)
+                    if is_oauth_state(cached):
+                        raise OAuthStateRefusedError(decl.vault_path)
                     ctx.deps.sandbox.cache_credential(session_id, decl.vault_path, cached)
                 except Exception:
                     inj.missing_cached.append((ctx_name, decl.vault_path))
@@ -667,77 +672,27 @@ async def _mcp_bearer_token(ctx: RunContext[Deps], decl: SkillMcpDecl) -> str | 
 
 
 class _VaultOAuth(httpx.Auth):
-    """httpx auth that keeps a vault-stored OAuth access token fresh.
+    """httpx auth for the backend HTTP MCP client: the access token of a vault-stored OAuth blob.
 
-    Reads a JSON state blob from the vault, injects ``Authorization: Bearer
-    <access_token>``, refreshes via the refresh-token grant when the token is
-    missing / near expiry / rejected with 401, and writes the rotated blob back
-    to the vault. Used by the backend HTTP MCP client.
+    Carapace keeps the blob fresh (see ``credentials.oauth``); a 401 forces one refresh.
     """
 
-    def __init__(self, cred_registry: Any, vault_path: str, *, refresh_margin: int = 60) -> None:
+    def __init__(self, cred_registry: Any, vault_path: str) -> None:
         self._cred = cred_registry
         self._vault_path = vault_path
-        self._margin = refresh_margin
-        self._lock = asyncio.Lock()
-        self._blob: dict[str, Any] | None = None
 
     async def prewarm(self) -> None:
         """Resolve (and if needed refresh) the token now, to surface auth errors early."""
-        await self._token()
+        await oauth_access_token(self._cred, self._vault_path, refresh=False)
 
     async def async_auth_flow(self, request: httpx.Request) -> Any:
-        request.headers["Authorization"] = f"Bearer {await self._token()}"
+        token = await oauth_access_token(self._cred, self._vault_path, refresh=False)
+        request.headers["Authorization"] = f"Bearer {token}"
         response = yield request
         if response.status_code == 401:
-            request.headers["Authorization"] = f"Bearer {await self._token(force=True)}"
+            token = await oauth_access_token(self._cred, self._vault_path, refresh=True)
+            request.headers["Authorization"] = f"Bearer {token}"
             yield request
-
-    async def _token(self, *, force: bool = False) -> str:
-        async with self._lock:
-            if self._blob is None:
-                self._blob = json.loads(await self._cred.fetch(self._vault_path))
-            if force or self._needs_refresh(self._blob):
-                await self._refresh(self._blob)
-            token = self._blob.get("access_token")
-            if not token:
-                raise CredentialBackendError(f"OAuth state at {self._vault_path!r} has no access_token after refresh")
-            return token
-
-    def _needs_refresh(self, blob: dict[str, Any]) -> bool:
-        if not blob.get("access_token"):
-            return True
-        expires_at = blob.get("expires_at")
-        return expires_at is None or time.time() >= float(expires_at) - self._margin
-
-    async def _refresh(self, blob: dict[str, Any]) -> None:
-        for required in ("token_url", "client_id", "refresh_token"):
-            if not blob.get(required):
-                raise CredentialBackendError(f"OAuth state at {self._vault_path!r} is missing '{required}'")
-        data = {
-            "grant_type": "refresh_token",
-            "refresh_token": blob["refresh_token"],
-            "client_id": blob["client_id"],
-        }
-        if blob.get("client_secret"):
-            data["client_secret"] = blob["client_secret"]
-        if blob.get("scope"):
-            data["scope"] = blob["scope"]
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(blob["token_url"], data=data)
-        if resp.status_code >= 400:
-            raise CredentialBackendError(
-                f"OAuth refresh for {self._vault_path!r} failed ({resp.status_code}); "
-                "the refresh token may be expired — re-provision the vault blob. "
-                f"Response: {resp.text[:200]}"
-            )
-        tok = resp.json()
-        blob["access_token"] = tok["access_token"]
-        if "expires_in" in tok:
-            blob["expires_at"] = int(time.time()) + int(tok["expires_in"])
-        if tok.get("refresh_token"):
-            blob["refresh_token"] = tok["refresh_token"]
-        await self._cred.write(self._vault_path, json.dumps(blob, separators=(",", ":")))
 
 
 async def _gate_mcp_call(ctx: RunContext[Deps], gate_name: str, gate_args: dict[str, Any]) -> ToolDenied | None:

@@ -40,6 +40,8 @@ from ..cache import SessionListCache
 from ..codex_auth import CodexAccounts, CodexCredentialStore
 from ..config import build_config
 from ..credentials import CredentialBackendError, CredentialRegistry, build_credential_registry
+from ..credentials.oauth import NotOAuthStateError, OAuthStateRefusedError, refuse_oauth_state
+from ..credentials.oauth import access_token as oauth_access_token
 from ..credentials.protocol import UnsupportedCredentialValueKindError
 from ..database.engine import SessionFactory, create_engine_and_factory, run_migrations
 from ..git.http import GitHttpHandler
@@ -1053,6 +1055,7 @@ class UpfrontRequestBody(BaseModel):
 
     domains: list[str] = []
     credentials: list[str] = []
+    oauth: list[str] = []
     store_path: str | None = None
 
 
@@ -1080,7 +1083,8 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
     if body.store_path is not None and not _STORE_PATH.fullmatch(body.store_path):
         return Response(status_code=400, content="not a Nix store path", media_type="text/plain")
     vault_paths = sorted(set(body.credentials))
-    if not domains and not vault_paths:
+    token_paths = sorted(set(body.oauth))
+    if not domains and not vault_paths and not token_paths:
         return Response(status_code=400, content="nothing requested", media_type="text/plain")
 
     try:
@@ -1096,17 +1100,20 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
     effective_domains = sandbox_mgr.get_effective_domains(session_id)
     pending_domains = [domain for domain in domains if not domain_allowed(domain, effective_domains)]
     pending_paths = [path for path in vault_paths if (path, "password") not in running.credentials]
-    if not pending_domains and not pending_paths:
+    pending_tokens = [path for path in token_paths if (path, "oauth_access_token") not in running.credentials]
+    if not pending_domains and not pending_paths and not pending_tokens:
         return Response(status_code=200)
 
-    credentials: list[CredentialMetadata] = []
-    for path in pending_paths:
+    metadata: dict[str, CredentialMetadata] = {}
+    for path in sorted({*pending_paths, *pending_tokens}):
         try:
-            credentials.append(await credential_registry.fetch_metadata(path))
+            metadata[path] = await credential_registry.fetch_metadata(path)
         except KeyError:
             return Response(status_code=404, content=f"credential not found: {path}", media_type="text/plain")
         except CredentialBackendError as exc:
             return _credential_backend_unavailable(exc)
+    credentials = [metadata[path] for path in pending_paths]
+    access_tokens = [metadata[path] for path in pending_tokens]
     if active.security is None or active.sentinel is None:
         return _boundary_denied("Session not initialized")
 
@@ -1115,7 +1122,12 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
             evaluation = await evaluate_upfront_request_with(
                 active.security,
                 active.sentinel,
-                UpfrontRequest(domains=pending_domains, credentials=credentials, store_path=body.store_path),
+                UpfrontRequest(
+                    domains=pending_domains,
+                    credentials=credentials,
+                    access_tokens=access_tokens,
+                    store_path=body.store_path,
+                ),
                 running.command,
                 follow_up=running.boundary_reviewed,
                 usage_tracker=active.usage_tracker,
@@ -1131,6 +1143,7 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
         return _boundary_denied(evaluation.rejection)
     running.domains.update(pending_domains)
     running.credentials.update((path, "password") for path in pending_paths)
+    running.credentials.update((path, "oauth_access_token") for path in pending_tokens)
     return Response(status_code=200)
 
 
@@ -1220,15 +1233,83 @@ async def fetch_credential(
             return denial
 
     try:
+        # After the review, so a denial reads nothing from the vault.
+        await refuse_oauth_state(credential_registry, vault_path)
         value = await credential_registry.fetch(vault_path, kind)
     except KeyError:
         return Response(status_code=404, content="Credential not found")
-    except UnsupportedCredentialValueKindError as exc:
+    except (UnsupportedCredentialValueKindError, OAuthStateRefusedError) as exc:
         return Response(status_code=400, content=str(exc), media_type="text/plain")
     except CredentialBackendError as exc:
         return _credential_backend_unavailable(exc)
 
     return Response(content=value, media_type="application/json" if kind == "json" else "text/plain")
+
+
+# A forced refresh mints a new token at the provider; the bridge needs one after a 401, a loop would need many.
+_SECOND_REFRESH_REJECTION = (
+    "Denied: this exec already refreshed this access token once. A new exec asks again, with its own review."
+)
+
+
+@sandbox_app.get("/oauth-token/{vault_path:path}")
+async def fetch_oauth_access_token(request: Request, vault_path: str, refresh: bool = False) -> Response:
+    """A short-lived access token from an OAuth vault entry (``ccred get --access-token``).
+
+    Carapace refreshes the entry; its refresh token never leaves the server. Reviewed like a credential and
+    granted for the rest of the exec. *refresh* forces a new token, once per exec and entry.
+    """
+    session_id = _authenticate_sandbox(request.headers.get("authorization"))
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        credential_registry = await _credential_registry_for_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=403, detail="Session owner is not configured") from None
+    try:
+        meta = await credential_registry.fetch_metadata(vault_path)
+    except KeyError:
+        return Response(status_code=404, content="Credential not found")
+    except CredentialBackendError as exc:
+        return _credential_backend_unavailable(exc)
+
+    active = _engine.get_or_activate(session_id)
+    audit_args = {"operation": "fetch", "vault_path": vault_path, "value_kind": "oauth_access_token"}
+    denial = await _gate_credential_request(
+        active,
+        (vault_path, "oauth_access_token"),
+        lambda security, sentinel, command, follow_up: evaluate_credential_with(
+            security,
+            sentinel,
+            vault_path,
+            meta.name,
+            meta.description,
+            "`ccred get --access-token` (short-lived OAuth access token; the refresh token stays with Carapace)",
+            command,
+            follow_up=follow_up,
+            usage_tracker=active.usage_tracker,
+            assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
+            usage_limits=_engine._remaining_aux_usage_limits(active),
+            audit_args=audit_args,
+        ),
+    )
+    if denial is not None:
+        return denial
+    if refresh:
+        running = _engine.sandbox_mgr.running_exec(session_id)
+        if running is None:
+            return _boundary_denied(EXEC_ENDED_REJECTION)
+        if vault_path in running.oauth_refreshed:
+            return _boundary_denied(_SECOND_REFRESH_REJECTION)
+        running.oauth_refreshed.add(vault_path)
+
+    try:
+        token = await oauth_access_token(credential_registry, vault_path, refresh=refresh)
+    except NotOAuthStateError as exc:
+        return Response(status_code=400, content=str(exc), media_type="text/plain")
+    except CredentialBackendError as exc:
+        return _credential_backend_unavailable(exc)
+    return Response(content=token, media_type="text/plain")
 
 
 if __name__ == "__main__":

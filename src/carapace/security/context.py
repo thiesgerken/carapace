@@ -198,6 +198,8 @@ class UpfrontRequest:
 
     domains: list[str]
     credentials: list[CredentialMetadata]
+    # OAuth entries whose short-lived access token the command wants; the refresh token stays with Carapace.
+    access_tokens: list[CredentialMetadata]
     # The caller's own Nix store path, as a generated skill wrapper reports it; None for any other caller.
     store_path: str | None
 
