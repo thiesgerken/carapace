@@ -332,7 +332,7 @@ def test_sentinel_denied_attempts_count_toward_the_streak(tmp_path: Path, db_fac
     def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         call_id = f"c{len(_tool_returns(messages)) + 1}"
         return ModelResponse(
-            parts=[ToolCallPart(tool_name="exec", args={"command": "rm -rf build"}, tool_call_id=call_id)]
+            parts=[ToolCallPart(tool_name="use_skill", args={"skill_name": "deploy"}, tool_call_id=call_id)]
         )
 
     async def _run() -> None:
@@ -352,8 +352,8 @@ def test_sentinel_denied_attempts_count_toward_the_streak(tmp_path: Path, db_fac
     asyncio.run(_run())
 
 
-def _exec_call(call_id: str) -> ToolCallPart:
-    return ToolCallPart(tool_name="exec", args={"command": "rm -rf build"}, tool_call_id=call_id)
+def _gated_call(call_id: str) -> ToolCallPart:
+    return ToolCallPart(tool_name="use_skill", args={"skill_name": "deploy"}, tool_call_id=call_id)
 
 
 def test_an_allowed_autonomy_approval_still_goes_through_the_security_gate(tmp_path: Path, db_factory) -> None:
@@ -363,7 +363,7 @@ def test_an_allowed_autonomy_approval_still_goes_through_the_security_gate(tmp_p
         returns = _tool_returns(messages)
         seen_returns[:] = [str(part.content) for part in returns]
         if len(returns) < 3:
-            return ModelResponse(parts=[_exec_call(f"c{len(returns) + 1}")])
+            return ModelResponse(parts=[_gated_call(f"c{len(returns) + 1}")])
         return ModelResponse(parts=[TextPart(content="done")])
 
     async def _run() -> None:
@@ -394,7 +394,7 @@ def test_denying_the_autonomy_approval_stops_even_when_the_batch_had_other_decis
             case 0:
                 return _read_calls("c1")
             case 1:
-                return ModelResponse(parts=[_exec_call("c2"), _exec_call("c3")])
+                return ModelResponse(parts=[_gated_call("c2"), _gated_call("c3")])
             case _:
                 return _read_calls("c4")
 

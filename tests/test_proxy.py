@@ -17,10 +17,10 @@ from carapace.models.skills import SkillCarapaceConfig
 from carapace.sandbox.exec_flow import (
     EXEC_ENDED_REJECTION,
     ORPHANED_REQUEST_REJECTION,
-    RunningExec,
     SandboxExecCoordinator,
     SandboxExecState,
 )
+from carapace.sandbox.exec_scope import RunningExec
 from carapace.sandbox.manager import _CONTEXT_TUNNEL_HELPER
 from carapace.sandbox.manager import SandboxManager as _SandboxManager
 from carapace.sandbox.proxy import ProxyServer, domain_matches
@@ -33,7 +33,7 @@ from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.security.context import BoundaryEvaluation
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillDocumentError, SkillRegistry
-from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, make_runtime_mock
+from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, fake_dns, make_runtime_mock
 
 
 def _seed_session_row(session_factory, data_dir: Path, *session_ids: str) -> None:
@@ -178,6 +178,7 @@ class TestProxyParsing:
 
 @pytest.mark.anyio
 async def test_handle_http_supports_absolute_https_urls(monkeypatch: pytest.MonkeyPatch):
+    fake_dns(monkeypatch, {"paperless.gerken.haus": ["93.184.215.14"]})
     proxy = ProxyServer(
         verify_session_token=lambda sid, tok: True,
         get_allowed_domains=lambda sid: {"paperless.gerken.haus"},
@@ -243,7 +244,8 @@ async def test_handle_http_supports_absolute_https_urls(monkeypatch: pytest.Monk
         [b"Host: paperless.gerken.haus\r\n"],
     )
 
-    assert opened["host"] == "paperless.gerken.haus"
+    # Connects to the checked address, verifies the certificate against the name.
+    assert opened["host"] == "93.184.215.14"
     assert opened["port"] == 443
     assert opened["kwargs"].get("server_hostname") == "paperless.gerken.haus"
     assert opened["kwargs"].get("ssl") is not None
@@ -1082,10 +1084,12 @@ async def test_request_domain_approval_consults_sentinel_during_live_exec():
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     _grant(coordinator, "npm ci")
 
+    running = coordinator.running_exec("sess-1")
+
     evaluation = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
 
     assert evaluation.allowed is True
-    cb.assert_awaited_once_with("registry.npmjs.org", "npm ci", False)
+    cb.assert_awaited_once_with("registry.npmjs.org", running)
     assert "registry.npmjs.org" in state.exec_temp_domains["sess-1"]
 
 
@@ -1130,7 +1134,7 @@ async def test_domain_approval_after_its_exec_ended_is_not_granted():
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     _grant(coordinator, "curl https://api.example.com &")
 
-    async def review_outlasting_the_exec(_domain: str, _command: str, _follow_up: bool) -> BoundaryEvaluation:
+    async def review_outlasting_the_exec(_domain: str, _running: RunningExec) -> BoundaryEvaluation:
         coordinator._revoke_exec_scope("sess-1", bypass_proxy=False)
         return BoundaryEvaluation(allowed=True, rejection="")
 
@@ -1148,7 +1152,7 @@ async def test_domain_approval_does_not_land_in_the_next_exec():
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     _grant(coordinator, "curl https://api.example.com &")
 
-    async def review_until_the_next_exec(_domain: str, _command: str, _follow_up: bool) -> BoundaryEvaluation:
+    async def review_until_the_next_exec(_domain: str, _running: RunningExec) -> BoundaryEvaluation:
         coordinator._revoke_exec_scope("sess-1", bypass_proxy=False)
         _grant(coordinator, "ls")
         return BoundaryEvaluation(allowed=True, rejection="")
@@ -1168,8 +1172,8 @@ async def test_only_later_requests_of_the_same_exec_are_follow_ups():
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     seen: list[tuple[str, str, bool]] = []
 
-    async def review(domain: str, command: str, follow_up: bool) -> BoundaryEvaluation:
-        seen.append((domain, command, follow_up))
+    async def review(domain: str, running: RunningExec) -> BoundaryEvaluation:
+        seen.append((domain, running.command, running.boundary_reviewed))
         return BoundaryEvaluation(allowed=True, rejection="")
 
     state.domain_approval_cbs["sess-1"] = review
@@ -1189,7 +1193,8 @@ async def test_only_later_requests_of_the_same_exec_are_follow_ups():
 
 
 @pytest.mark.anyio
-async def test_denied_connect_answers_with_the_rejection_in_the_body():
+async def test_denied_connect_answers_with_the_rejection_in_the_body(monkeypatch: pytest.MonkeyPatch):
+    fake_dns(monkeypatch, {"evil.example.com": ["93.184.215.14"]})
     proxy = ProxyServer(
         verify_session_token=lambda sid, tok: True,
         get_allowed_domains=lambda sid: set(),

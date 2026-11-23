@@ -24,7 +24,7 @@ _AGENT_SCALAR_FIELDS = (
     "compaction",
     "default_session_budget",
     "max_parallel_llm",
-    "max_sentinel_calls_per_tool_call",
+    "max_sentinel_calls_per_exec",
     "sentinel_domain_batch_window_ms",
     "sentinel_timeout_seconds",
     "tool_output_max_chars",

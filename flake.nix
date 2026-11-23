@@ -189,7 +189,8 @@
           inherit (p) chart;
           tools = project.${system}.tools.ci;
         }
-        // p.images
+        # The lite sandbox image is for local Mac builds only; CI builds and publishes the full one.
+        // removeAttrs p.images [ "sandbox-image-lite" ]
         # The release jobs run there and substitute the CLI from our cache, not a third party's.
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
           presswerk = presswerk.packages.${system}.default;

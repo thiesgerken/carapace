@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import logging  # stdlib logging used only for _InterceptHandler → loguru bridge
 import os
 import re
@@ -51,7 +52,7 @@ from ..memory.handlers import DigestHandler, MirrorHandler, SessionExtractHandle
 from ..memory.models import DigestLevel, TaskKind
 from ..memory.service import MemoryService
 from ..memory.store import MemoryStore
-from ..models.config import Config
+from ..models.config import Config, SandboxConfig
 from ..models.credentials import CredentialMetadata, CredentialValueKind
 from ..models.user import UserConfig
 from ..notifications.presence import NotificationPresenceRegistry
@@ -61,8 +62,10 @@ from ..notifications.store import NotificationStore
 from ..notifications.vapid import ensure_vapid_config
 from ..platform_store import PlatformSettingsStore
 from ..prompt_prefix import shared_prompt_prefix
+from ..sandbox.destinations import DestinationPolicy
 from ..sandbox.egress_check import EgressCheckError, EgressProbeError
-from ..sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION, CredentialGrant
+from ..sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION
+from ..sandbox.exec_scope import CredentialGrant
 from ..sandbox.manager import SandboxLimitError, SandboxManager
 from ..sandbox.proxy import ProxyServer, domain_allowed
 from ..sandbox.runtime import ContainerRuntime
@@ -195,6 +198,18 @@ async def _bootstrap_user_knowledge_repo(
 _SESSION_COMMIT_SWEEP_SECONDS = 15 * 60
 _APP_VERSION = get_version()
 _verify_ws_token = verify_ws_token
+
+
+def _destination_policy(config: SandboxConfig, server_addresses: list[str]) -> DestinationPolicy:
+    own = {ipaddress.ip_address(address) for address in server_addresses}
+    # The Kubernetes API, as the service address every pod sees.
+    if kubernetes_api := os.environ.get("KUBERNETES_SERVICE_HOST"):
+        own.add(ipaddress.ip_address(kubernetes_api))
+    return DestinationPolicy(
+        allowed_networks=tuple(config.proxy_allowed_networks),
+        allowed_hosts=frozenset(host.lower() for host in config.proxy_allowed_hosts),
+        own_addresses=frozenset(own),
+    )
 
 
 def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
@@ -594,6 +609,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         attach_sandbox_call=_engine.attach_sandbox_call,
         request_approval=_sandbox_mgr.request_domain_approval,
         notify_domain_access=_sandbox_mgr.notify_domain_access,
+        destinations=_destination_policy(_config.sandbox, list(network_info.values())),
         host="0.0.0.0",
         port=proxy_port,
     )
