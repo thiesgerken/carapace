@@ -38,10 +38,11 @@ server:
   # -- Proxy port (sandbox HTTP proxy)
   proxyPort: 3128
   probes:
+    # -- Start-up includes the egress self-test, which creates one sandbox pod (and may pull its image).
     startup:
       initialDelaySeconds: 15
       periodSeconds: 5
-      failureThreshold: 20
+      failureThreshold: 60
     liveness:
       initialDelaySeconds: 10
       periodSeconds: 30
