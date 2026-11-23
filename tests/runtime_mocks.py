@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import socket
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from carapace.sandbox.exec_flow import KILL_LEFTOVER_PROCESSES_COMMAND
 from carapace.sandbox.runtime import ContainerRuntime, ExecResult, SandboxInspection
@@ -45,3 +50,20 @@ def make_runtime_mock() -> MagicMock:
     runtime.logs = AsyncMock(return_value="")
     runtime.write_stdout_log = AsyncMock()
     return runtime
+
+
+def fake_dns(monkeypatch: pytest.MonkeyPatch, answers: dict[str, list[str]]) -> None:
+    """Answer getaddrinfo from *answers*; IP literals resolve to themselves, other names fail."""
+
+    names = {name.lower(): addresses for name, addresses in answers.items()}
+
+    async def getaddrinfo(_loop: Any, host: str, port: int, **_kwargs: Any) -> list[tuple[Any, ...]]:
+        if host.lower() not in names:
+            try:
+                socket.inet_pton(socket.AF_INET6 if ":" in host else socket.AF_INET, host)
+            except OSError as exc:
+                raise socket.gaierror(socket.EAI_NONAME, f"unknown host {host}") from exc
+        addresses = names.get(host.lower(), [host])
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port)) for address in addresses]
+
+    monkeypatch.setattr(asyncio.BaseEventLoop, "getaddrinfo", getaddrinfo)

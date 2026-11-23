@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, IPvAnyNetwork, SecretStr, model_serializer, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..notifications.models import NotificationsConfig
@@ -337,6 +337,11 @@ class SandboxConfig(BaseSettings):
     network_name: str = "carapace-sandbox"
     # Port of the HTTP proxy sidecar that sandbox traffic is routed through.
     proxy_port: int = 3128
+    # The proxy refuses private and internal destinations. These lift that for hosts a skill should
+    # reach anyway (a homelab, in-cluster services): CIDRs, and host names matched exactly. A
+    # domain approval is still needed. See docs/sandbox.md#internal-destinations.
+    proxy_allowed_networks: list[IPvAnyNetwork] = []
+    proxy_allowed_hosts: list[str] = []
     # Number of generic warm sandboxes to keep ready ahead of assignment (Kubernetes runtime only).
     warm_pool_size: int = Field(default=0, ge=0)
     # Sandboxes a user may hold (running or suspended, until their session is deleted or reset).

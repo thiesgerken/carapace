@@ -181,6 +181,34 @@ Each session maintains a domain allowlist. Domains are added when:
 
 The proxy supports exact domain matching (`example.com`) and wildcard matching (`*.example.com`).
 
+### Internal destinations
+
+The proxy connects from the server's network position, where Postgres, Redis, the builder, the Bitwarden proxy, cluster services and your LAN are reachable, some without authentication. So before it asks the sentinel about a domain, it resolves the name itself and refuses the request if any address is internal: loopback, private (RFC 1918), link-local, unique-local, CGNAT and other non-global ranges, the server's own addresses, and the Kubernetes API's service address. It then connects to the address it checked, not the name again, so a second DNS answer cannot swap in an internal one. A refusal is a `403` like a sentinel denial. Its body names the settings below, and the sentinel is never asked.
+
+Skills that should reach internal hosts anyway, say a homelab, need the operator to allow them:
+
+| Setting | Helm value | Matches |
+| --- | --- | --- |
+| `CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS` | `sandbox.allowedInternalNetworks` | addresses in these CIDRs |
+| `CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS` | `sandbox.allowedInternalHosts` | these host names exactly (case-insensitive, no wildcards), whatever they resolve to |
+
+Both are JSON lists. Allowing a destination only lifts the internal-address block; every domain still needs an approval like any other. For a home network in Docker Compose, in `.env`:
+
+```env
+CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS=["192.168.178.0/24"]
+CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS=["paperless.home.arpa"]
+```
+
+Or in Helm values:
+
+```yaml
+sandbox:
+  allowedInternalNetworks: ["192.168.178.0/24"]
+  allowedInternalHosts: ["paperless.home.arpa"]
+```
+
+Prefer exact hosts or narrow CIDRs over your whole LAN, and never allow the cluster's service or pod ranges or the Compose network as a whole: that reopens Redis, Postgres and the builder API to any approved domain that resolves there.
+
 ### Exec-scoped TCP tunnels
 
 Skills may also declare `network.tunnels` in their `metadata.carapace` config. These are not long-running session daemons. Instead, carapace manages them around a single `exec` call:

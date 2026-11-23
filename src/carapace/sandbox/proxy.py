@@ -5,12 +5,14 @@ import base64
 import contextlib
 import ssl
 from collections.abc import Awaitable, Callable
+from typing import Any
 from urllib.parse import urlsplit
 
 from loguru import logger
 
 from ..security.context import BoundaryEvaluation
 from ..spans import span
+from .destinations import DestinationPolicy, DestinationRefusedError
 
 _CONNECT_OK = b"HTTP/1.1 200 Connection Established\r\n\r\n"
 _PROXY_AUTH_REQUIRED = (
@@ -25,6 +27,8 @@ _FORBIDDEN_RESPONSE = (
 _NO_APPROVAL_PATH = BoundaryEvaluation(allowed=False, rejection="Domain blocked by proxy policy")
 _BAD_REQUEST = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\nConnection: close\r\n\r\nBad Request"
 _RELAY_BUF = 32 * 1024
+# Refuses every internal destination; the server passes the operator's exceptions.
+_NO_EXCEPTIONS = DestinationPolicy()
 
 
 def _denied_response(rejection: str) -> bytes:
@@ -72,6 +76,7 @@ class ProxyServer:
         attach_sandbox_call: Callable[[str], contextlib.AbstractContextManager[None]],
         request_approval: Callable[[str, str], Awaitable[BoundaryEvaluation]] | None = None,
         notify_domain_access: Callable[[str, str, bool], None] | None = None,
+        destinations: DestinationPolicy = _NO_EXCEPTIONS,
         host: str = "0.0.0.0",
         port: int = 3128,
     ) -> None:
@@ -81,6 +86,7 @@ class ProxyServer:
         self._attach_sandbox_call = attach_sandbox_call
         self._request_approval = request_approval
         self._notify_domain_access = notify_domain_access
+        self._destinations = destinations
         self._host = host
         self._port = port
         self._server: asyncio.Server | None = None
@@ -211,6 +217,9 @@ class ProxyServer:
         target: str,
     ) -> None:
         domain, port = self._parse_host_port(target, default_port=443)
+        addresses = await self._checked_addresses(writer, session_id, domain, port)
+        if addresses is None:
+            return
         evaluation = await self._authorize_domain(session_id, domain)
         if not evaluation.allowed:
             logger.warning(f"Proxy CONNECT denied: {domain} (session={session_id}, ip={client_ip})")
@@ -219,10 +228,7 @@ class ProxyServer:
             return
 
         try:
-            remote_reader, remote_writer = await asyncio.wait_for(
-                asyncio.open_connection(domain, port),
-                timeout=30,
-            )
+            remote_reader, remote_writer = await self._open_remote(addresses, port)
         except Exception as exc:
             logger.debug(f"Proxy CONNECT: cannot reach {domain}:{port} — {exc}")
             writer.write(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
@@ -257,6 +263,9 @@ class ProxyServer:
             await writer.drain()
             return
 
+        addresses = await self._checked_addresses(writer, session_id, domain, port)
+        if addresses is None:
+            return
         evaluation = await self._authorize_domain(session_id, domain)
         if not evaluation.allowed:
             logger.warning(f"Proxy HTTP denied: {method} {domain}{path} (session={session_id}, ip={client_ip})")
@@ -286,20 +295,12 @@ class ProxyServer:
 
         try:
             if use_tls:
-                remote_reader, remote_writer = await asyncio.wait_for(
-                    asyncio.open_connection(
-                        domain,
-                        port,
-                        ssl=self._tls_context,
-                        server_hostname=domain,
-                    ),
-                    timeout=30,
+                # The name, not the address, is what the certificate must match.
+                remote_reader, remote_writer = await self._open_remote(
+                    addresses, port, ssl=self._tls_context, server_hostname=domain
                 )
             else:
-                remote_reader, remote_writer = await asyncio.wait_for(
-                    asyncio.open_connection(domain, port),
-                    timeout=30,
-                )
+                remote_reader, remote_writer = await self._open_remote(addresses, port)
         except Exception as exc:
             logger.debug(f"Proxy HTTP: cannot reach {domain}:{port} — {exc}")
             writer.write(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
@@ -330,6 +331,45 @@ class ProxyServer:
             pass
         finally:
             remote_writer.close()
+
+    # ------------------------------------------------------------------
+    # Destination check and connection to the checked addresses
+    # ------------------------------------------------------------------
+
+    async def _checked_addresses(
+        self, writer: asyncio.StreamWriter, session_id: str, domain: str, port: int
+    ) -> list[str] | None:
+        """Resolve *domain* and check its addresses; answer the client and return None when refused.
+
+        Runs before the domain decision: an internal destination is refused by policy, the sentinel
+        is never asked about it.
+        """
+        try:
+            return await self._destinations.resolve(domain, port)
+        except DestinationRefusedError as exc:
+            logger.warning(f"Proxy refused internal destination {domain}:{port} (session={session_id}): {exc}")
+            if self._notify_domain_access:
+                self._notify_domain_access(session_id, domain, False)
+            writer.write(_denied_response(str(exc)))
+        except OSError as exc:
+            logger.debug(f"Proxy: cannot resolve {domain} — {exc}")
+            writer.write(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
+        await writer.drain()
+        return None
+
+    @staticmethod
+    async def _open_remote(
+        addresses: list[str], port: int, **kwargs: Any
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        """Connect to the first reachable of the already checked *addresses*."""
+        error: Exception | None = None
+        for address in addresses:
+            try:
+                return await asyncio.wait_for(asyncio.open_connection(address, port, **kwargs), timeout=30)
+            except (OSError, TimeoutError) as exc:
+                error = exc
+        assert error is not None, "resolve() returns at least one address"
+        raise error
 
     # ------------------------------------------------------------------
     # Bidirectional relay for CONNECT tunnels
@@ -407,13 +447,13 @@ class ProxyServer:
 
     @staticmethod
     def _parse_host_port(target: str, default_port: int = 443) -> tuple[str, int]:
-        if ":" in target:
-            host, port_str = target.rsplit(":", 1)
-            try:
-                return host, int(port_str)
-            except ValueError:
-                return target, default_port
-        return target, default_port
+        # urlsplit handles bracketed IPv6 literals such as [::1]:443.
+        parsed = urlsplit(f"//{target}")
+        try:
+            port = parsed.port or default_port
+        except ValueError:
+            port = default_port
+        return parsed.hostname or target, port
 
     @staticmethod
     def _parse_absolute_url(url: str) -> tuple[str, int, str]:

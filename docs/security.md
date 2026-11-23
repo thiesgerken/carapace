@@ -203,6 +203,8 @@ When a sandboxed container makes a network request, the proxy intercepts it and 
 
 A denied request gets a `403 Forbidden` whose body carries the explanation (see [Boundary requests](#boundary-requests)).
 
+The sentinel does not know which names are internal. So the proxy refuses private and internal destinations (Postgres, Redis, the builder, cluster services, the LAN, the server itself) by policy, before any domain decision, and connects only to the address it checked. Only an operator setting opens specific internal hosts; see [Internal destinations](sandbox.md#internal-destinations).
+
 Where the sandbox network isolation is enforced (Docker's internal network, or on Kubernetes a NetworkPolicy the CNI enforces), the sandbox cannot resolve names, so a DNS lookup cannot carry data past the proxy and its domain checks; see [No DNS from the sandbox](sandbox.md#no-dns-from-the-sandbox).
 
 ## Start-up egress self-test
