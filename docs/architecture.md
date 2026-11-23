@@ -28,7 +28,7 @@ flowchart TB
     end
 
     subgraph sandbox [Sandbox Container]
-        Container["Session Container<br/>(Debian + Python + Node tooling)"]
+        Container["Session Container<br/>(Nix image with nix-ld)"]
     end
 
     subgraph external [External Services]

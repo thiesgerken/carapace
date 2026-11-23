@@ -205,6 +205,21 @@ A denied request gets a `403 Forbidden` whose body carries the explanation (see 
 
 Where the sandbox network isolation is enforced (Docker's internal network, or on Kubernetes a NetworkPolicy the CNI enforces), the sandbox cannot resolve names, so a DNS lookup cannot carry data past the proxy and its domain checks; see [No DNS from the sandbox](sandbox.md#no-dns-from-the-sandbox).
 
+## Start-up egress self-test
+
+Every domain check above assumes that sandbox traffic has to pass the session proxy. That assumption breaks silently: a Kubernetes CNI that does not enforce NetworkPolicy, another policy that grants sandbox pods wider egress, or a Docker sandbox network that is not internal. Without `exec` review the network boundary is the only layer, so carapace checks it before it serves anything.
+
+At start, once the session proxy listens, the server creates one throwaway sandbox (`carapace-sandbox-egress-check`) with the same image, network, labels and therefore NetworkPolicy as a session's sandbox, but without proxy settings. Inside it, it tries:
+
+- a TCP connection to the session proxy, which must succeed. This positive control proves that the probe can open connections at all (a `bash` without `/dev/tcp`, a broken pod network or a misbehaving `timeout` would otherwise make every attempt fail and read as "sealed"),
+- direct TCP connections to `1.1.1.1:443`, `8.8.8.8:53` and `9.9.9.9:443`,
+- a TCP connection to port 53 of every non-loopback resolver in the server's own `/etc/resolv.conf`. On Kubernetes that is the cluster DNS: sandbox pods run with `dnsPolicy: None`, so a lookup by name fails there even when a namespace policy such as "allow DNS to kube-system" lets them reach kube-dns directly, which is a channel for data,
+- a DNS lookup of `example.com` by name, which tests Docker's embedded resolver.
+
+Each attempt has a 5-second timeout. If any of the leaks succeeds, the server logs what got out, the likely cause and the fix for its runtime, and exits with status 1. If the probe cannot run (the positive control fails, a tool is missing, no proxy address is known), the server says so and exits too, since it cannot tell whether sandboxes are sealed. The probe sandbox is removed either way, and a leftover from a server that stopped mid-check is removed before the next one starts. The check is not configurable: a deployment where it fails is not safe to run.
+
+Limits: the probe needs `bash`, `timeout` and `getent` in the sandbox image. Its public targets are fixed, so a network that blocks exactly these addresses but nothing else would pass. In-cluster services other than the cluster DNS (postgres, the Bitwarden proxies) are not probed; the chart's NetworkPolicy keeps sandboxes away from them, and a wider policy would have to be found by hand. On Kubernetes the check adds the creation of one sandbox pod to the server's start-up time.
+
 ## Git push evaluation
 
 When the agent pushes changes from a sandbox container back to the knowledge repository, the push is gated by a **pre-receive hook** that routes each ref update through the sentinel. The sentinel sees the branch, commit log, and diff, and decides whether to allow the push.

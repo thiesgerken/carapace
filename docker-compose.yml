@@ -116,7 +116,6 @@ services:
       retries: 20
 
   sandbox:
-    build: ./sandbox
     image: ghcr.io/thiesgerken/carapace-sandbox:${CARAPACE_IMAGE_TAG:-latest}
     profiles: ["build"]
 

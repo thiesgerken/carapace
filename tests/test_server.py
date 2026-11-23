@@ -56,6 +56,7 @@ from carapace.notifications.presence import NotificationPresenceRegistry
 from carapace.notifications.store import NotificationStore
 from carapace.notifications.vapid import derive_vapid_public_key, ensure_vapid_config
 from carapace.platform_store import PlatformSettingsStore
+from carapace.sandbox.egress_check import EgressCheckError, EgressProbeError
 from carapace.sandbox.exec_flow import (
     EXEC_ENDED_REJECTION,
     ORPHANED_REQUEST_REJECTION,
@@ -768,6 +769,40 @@ async def test_lifespan_initializes_knowledge_repo_registry_module_state(tmp_pat
         assert registry.knowledge_repos_dir == tmp_path / "knowledges"
 
     sandbox_mgr.cleanup_all.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_lifespan_refuses_to_start_when_a_sandbox_has_direct_egress(tmp_path, monkeypatch):
+    sandbox_mgr = _patch_lifespan_dependencies(tmp_path, monkeypatch)
+    sandbox_mgr.verify_no_direct_egress.side_effect = EgressCheckError(["DNS lookup of example.com succeeded"])
+
+    with pytest.raises(SystemExit):
+        async with srv._lifespan(app):
+            pass
+
+
+@pytest.mark.anyio
+async def test_lifespan_refuses_to_start_when_the_egress_probe_cannot_run(tmp_path, monkeypatch):
+    sandbox_mgr = _patch_lifespan_dependencies(tmp_path, monkeypatch)
+    sandbox_mgr.verify_no_direct_egress.side_effect = EgressProbeError("positive control failed")
+
+    with pytest.raises(SystemExit):
+        async with srv._lifespan(app):
+            pass
+
+
+@pytest.mark.parametrize(
+    ("runtime", "names_the_fix"),
+    [("kubernetes", "does not enforce NetworkPolicy"), ("docker", "`docker network inspect sandboxes`")],
+)
+def test_egress_check_failure_names_cause_and_fix(runtime: str, names_the_fix: str) -> None:
+    message = srv._egress_check_failure(
+        EgressCheckError(["direct TCP connection to 1.1.1.1:443 succeeded"]), runtime, "sandboxes"
+    )
+
+    assert "direct TCP connection to 1.1.1.1:443 succeeded" in message
+    assert "refuses to start" in message
+    assert names_the_fix in message
 
 
 @pytest.mark.anyio

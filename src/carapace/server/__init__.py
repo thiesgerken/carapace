@@ -60,6 +60,7 @@ from ..notifications.store import NotificationStore
 from ..notifications.vapid import ensure_vapid_config
 from ..platform_store import PlatformSettingsStore
 from ..prompt_prefix import shared_prompt_prefix
+from ..sandbox.egress_check import EgressCheckError, EgressProbeError
 from ..sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION, CredentialGrant
 from ..sandbox.manager import SandboxLimitError, SandboxManager
 from ..sandbox.proxy import ProxyServer, domain_allowed
@@ -597,6 +598,16 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     await proxy.start()
 
+    # After the proxy starts, which the probe connects to as its positive control; before anything is served.
+    try:
+        await _sandbox_mgr.verify_no_direct_egress(Path("/etc/resolv.conf"))
+    except EgressCheckError as exc:
+        logger.error(_egress_check_failure(exc, _config.sandbox.runtime, sandbox_network))
+        raise SystemExit(1) from exc
+    except EgressProbeError as exc:
+        logger.error(str(exc))
+        raise SystemExit(1) from exc
+
     # Start sandbox-facing API server (Basic Auth, accessible by containers)
     sandbox_server = uvicorn.Server(
         uvicorn.Config(
@@ -918,6 +929,27 @@ async def git_http_backend(request: Request, path: str) -> Response:
         body=body,
     )
     return Response(content=response_body, status_code=status_code, headers=headers)
+
+
+def _egress_check_failure(exc: EgressCheckError, runtime: str, sandbox_network: str) -> str:
+    """Why carapace refuses to start when a sandbox can reach the network directly, and how to fix it."""
+    fix = (
+        "On Kubernetes this usually means the CNI does not enforce NetworkPolicy (standalone Flannel ignores "
+        + "it; Calico, Cilium and k3s' built-in policy controller enforce it), or another NetworkPolicy in the "
+        + "namespace grants sandbox pods wider egress. Install an enforcing CNI or remove the wider policy."
+        if runtime == "kubernetes"
+        else f"On Docker the sandbox network '{sandbox_network}' must be internal: check `docker network inspect "
+        + f'{sandbox_network}` for "Internal": true, and recreate the network as internal if it is not '
+        + "(docker-compose.yml declares it with `internal: true`)."
+    )
+    return (
+        "Sandbox egress self-test failed: "
+        + "; ".join(exc.leaks)
+        + ". Sandbox commands are only safe while their traffic has to pass the session proxy, so carapace "
+        + "refuses to start. "
+        + fix
+        + " See docs/security.md, section 'Start-up egress self-test'."
+    )
 
 
 def _authenticate_sandbox(auth: str | None) -> str | None:

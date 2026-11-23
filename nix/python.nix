@@ -50,6 +50,8 @@ let
       carapace = [ "server" ];
     }
   );
+  # Only the bridge's own interpreter sees it; the agent's python3 is python-build-standalone.
+  mcpBridgeEnv = pythonSet.mkVirtualEnv "carapace-mcp-bridge-env" { mcp = [ ]; };
   dev = pythonSet.mkVirtualEnv "carapace-checks" workspace.deps.all;
   encodingCacheEntry =
     name: sha256:
@@ -117,7 +119,7 @@ let
       '';
 in
 {
-  inherit server tokenizerCache;
+  inherit server tokenizerCache mcpBridgeEnv;
   checks = {
     pytest = check "pytest" "pytest";
     pyrefly = check "pyrefly" "pyrefly check --python-interpreter-path ${dev}/bin/python";

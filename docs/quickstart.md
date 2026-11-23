@@ -38,7 +38,7 @@ This starts:
 
 - **Proxy** at `http://localhost:3001`, serving the frontend and routing `/api` to the backend container internally
 - **Redis** for mandatory session-list caching
-- **Sandbox image** is pulled with the other images; it remains a Debian Dockerfile for local builds
+- **Sandbox image** is pulled with the other images
 
 Log in to the web UI as `admin` with the `CARAPACE_TOKEN` value, then open **Settings** -> **Admin** -> **Users** to create your normal user. carapace is multi-user by default: sessions, jobs, notification subscriptions, Matrix channels, Git remotes, model defaults, and credential backends are owned by the authenticated user. You can also use the admin API after logging in and storing the session cookie:
 
@@ -55,7 +55,7 @@ curl -X POST http://localhost:3001/api/admin/users \
 
 The web UI uses the same origin for frontend and API requests, so it only prompts for username and password on first connect.
 
-Set `CARAPACE_IMAGE_TAG` to a matching release or PR tag when you need a version other than `latest`. Server, frontend, and Bitwarden images are built with Nix, not Dockerfiles. For local builds use the [development guide](development.md) and `docker-compose.local.yml`; the server source is not bind-mounted.
+Set `CARAPACE_IMAGE_TAG` to a matching release or PR tag when you need a version other than `latest`. All images are built with Nix, not Dockerfiles. For local builds use the [development guide](development.md) and `docker-compose.local.yml`; the server source is not bind-mounted.
 
 The frontend listens on 8080 internally. If your API is on another origin, mount a one-line nginx snippet instead of setting an environment variable:
 
