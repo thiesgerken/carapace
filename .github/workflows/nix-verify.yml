@@ -58,6 +58,12 @@ jobs:
           ln -s "$(realpath result-ci-builder-image)" dist/carapace-builder.tar.gz
           cp -R charts/carapace dist/chart
           sha256sum dist/*.tar.gz >> "$GITHUB_STEP_SUMMARY"
+      # Ubuntu 24.04 denies user namespaces to unconfined processes, and the builder's Nix build
+      # sandbox needs them; docs/builder.md lists this as a Compose host prerequisite.
+      - name: Allow user namespaces for the builder's build sandbox
+        run: |
+          sysctl kernel.apparmor_restrict_unprivileged_userns
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Exercise hardened runtime images
         run: |
           for archive in dist/*.tar.gz; do docker load --input "$archive"; done

@@ -66,7 +66,10 @@ async def verify_sandbox(system: str) -> None:
         str(time.time_ns()),
     )
     if code != 0:
-        raise RuntimeError(f"The Nix build sandbox is not effective:\n{_tail(stderr)}")
+        raise RuntimeError(
+            "The Nix build sandbox is not effective; see docs/builder.md for what the host must allow "
+            f"(user namespaces, e.g. kernel.apparmor_restrict_unprivileged_userns on Ubuntu):\n{_tail(stderr)}"
+        )
 
 
 def _failed(tree: str, log: str) -> BuildResult:

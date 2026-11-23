@@ -63,7 +63,16 @@ The server finds the builder through `CARAPACE_BUILDER_URL` and `CARAPACE_BUILDE
 
 `docker-compose.yml` runs `builder-init` and `builder` with a named volume `builder-nix`, and points the server at `http://builder:8330`. Set `CARAPACE_BUILDER_TOKEN` in `.env`. The builder is on the default network only, so sandboxes, which sit on the internal `carapace-sandbox` network, cannot reach it.
 
-The Nix build sandbox needs `security_opt: [seccomp=unconfined, apparmor=unconfined, systempaths=unconfined]`: unshare must be allowed and `/proc` unmasked so that Nix can mount its own. Without all three the builder refuses to start. Plain Docker has no per-container user namespace, so root in the builder is root on the host, with the default capabilities. That is weaker than the Kubernetes setup (see [security](security.md#skill-builder)).
+The Nix build sandbox needs `security_opt: [seccomp=unconfined, apparmor=unconfined, systempaths=unconfined]`: unshare must be allowed and `/proc` unmasked so that Nix can mount its own. Without all three the builder refuses to start.
+
+Ubuntu 23.10 and later also deny user namespaces to processes without an AppArmor profile (`kernel.apparmor_restrict_unprivileged_userns=1`), which includes the unconfined builder. Allow them on such a host:
+
+```sh
+echo 'kernel.apparmor_restrict_unprivileged_userns = 0' | sudo tee /etc/sysctl.d/60-carapace-builder.conf
+sudo sysctl --system
+```
+
+This switches the restriction off for the whole host, not only for the builder. If that is not acceptable, run the builder on Kubernetes or on another machine. Docker Desktop, Debian and Fedora hosts need nothing extra. The builder never falls back to building without the sandbox: if user namespaces are missing, it logs Nix's reason and exits. Plain Docker has no per-container user namespace, so root in the builder is root on the host, with the default capabilities. That is weaker than the Kubernetes setup (see [security](security.md#skill-builder)).
 
 ### Kubernetes
 

@@ -140,7 +140,7 @@ services:
       - CARAPACE_BUILDER_TOKEN=${CARAPACE_BUILDER_TOKEN:?set CARAPACE_BUILDER_TOKEN in .env}
     # The Nix build sandbox creates its own namespaces and mounts /proc. Plain Docker has no
     # per-container user namespace, so this is weaker than the chart's hostUsers: false; see
-    # docs/security.md.
+    # docs/security.md. Ubuntu 23.10+ hosts must allow user namespaces; see docs/builder.md.
     security_opt:
       - seccomp=unconfined
       - apparmor=unconfined
