@@ -19,7 +19,7 @@ For host iteration, start a disposable Redis, build and load the sandbox image, 
 
 ```sh
 docker run --rm -d --name carapace-dev-redis -p 127.0.0.1:6379:6379 redis:8-alpine
-docker load -i "$(nix build .#packages.aarch64-linux.sandbox-image --no-link --print-out-paths)"  # x86_64-linux on Linux x64
+docker load -i "$(nix build .#packages.aarch64-linux.sandbox-image-lite --no-link --print-out-paths)"  # x86_64-linux.sandbox-image on Linux x64
 export CARAPACE_SANDBOX_BASE_IMAGE=carapace-sandbox:local
 export CARAPACE_DATA_DIR=./data/development
 export CARAPACE_CACHE_REDIS_URL=redis://localhost:6379/0
@@ -121,7 +121,7 @@ determinate-nixd status
 nix build .#packages.aarch64-linux.server-image --out-link result-server-image
 nix build .#packages.aarch64-linux.frontend-image --out-link result-frontend-image
 nix build .#packages.aarch64-linux.bitwarden-image --out-link result-bitwarden-image
-nix build .#packages.aarch64-linux.sandbox-image --out-link result-sandbox-image
+nix build .#packages.aarch64-linux.sandbox-image-lite --out-link result-sandbox-image
 for image in result-{server,frontend,bitwarden,sandbox}-image; do docker load -i "$image"; done
 export COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml
 docker compose up -d
@@ -129,9 +129,9 @@ docker compose up -d
 
 These are native ARM Linux builds, not x86 emulation. Only x86_64 Linux images are published. Non-Nix x64 users pull release images as described in the [quickstart](quickstart.md).
 
-On Linux x64, use `packages.x86_64-linux.` in the Nix output paths. The local Compose overlay selects `:local` images with `pull_policy: never` and points the server at `carapace-sandbox:local`.
+On Linux x64, use `packages.x86_64-linux.` in the Nix output paths and the full `sandbox-image`. The local Compose overlay selects `:local` images with `pull_policy: never` and points the server at `carapace-sandbox:local`.
 
-The sandbox image ships nixpkgs as one archive rather than an unpacked tree. The Native Linux Builder fails with "Too many open files in system" once a single build opens about 100k files, and the unpacked nixpkgs alone has 90k. Building the image there also reads macOS's case-insensitive store, so in local images names that differ only in case carry a `~nix~case~hack~1` suffix (terminfo entries, for example). Published x64 images are built on Linux and are not affected.
+`sandbox-image` cannot be built on the Native Linux Builder: it fails with "Too many open files in system" once a single build opens about 100k files, and the nixpkgs source that the image ships has 90k. Build `sandbox-image-lite` there instead (the commands above do); CI or a real Linux builder builds the full image. The lite image is the same except for that source, so its first `nix run nixpkgs#…` fetches nixpkgs (from `cache.nixos.org`, a few seconds) where the full image needs no network. Building on a Mac also reads macOS's case-insensitive store, so in local images names that differ only in case carry a `~nix~case~hack~1` suffix (terminfo entries, for example). Published x64 images are built on Linux and are not affected.
 
 The server, frontend, and Bitwarden images use UID/GID 999, a read-only root, dropped capabilities, and writable `/tmp`. The server data directory and Bitwarden state need persistent writable mounts. The frontend listens on 8080; Compose's proxy and the chart keep their public ports unchanged.
 
@@ -172,9 +172,11 @@ Load the four runtime images and run:
 
 ```sh
 python3 scripts/smoke-images.py
+# with sandbox-image-lite (Apple Silicon): the offline nixpkgs check cannot pass there
+CARAPACE_SMOKE_SANDBOX_LITE=1 python3 scripts/smoke-images.py
 ```
 
-The smoke uses disposable volumes and dynamic ports. It checks authenticated server readiness with Postgres and Redis, which includes the start-up egress self-test in a real sandbox on the internal network (the data volume's mountpoint serves as `CARAPACE_HOST_DATA_DIR`, so sandbox workspaces bind like in `docker-compose.yml`), rejects a real knowledge-repo push through the sentinel for a missing session, verifies effective UID 999 and read-only roots, and checks default and overridden frontend CSP headers. Bitwarden runs without a network under the runtime restrictions: status, password generation, server configuration round-trip, and the explicit unauthenticated `bw serve` rejection. No LLM credentials or vault account are needed. In the sandbox image, without capabilities as on Kubernetes, it checks `cgate`, that the `mcp` bridge loads its SDK, the tools of the server's egress probe (bash `/dev/tcp`, `timeout`, `getent`), that `python3` is python-build-standalone managed by uv, `uv sync` of numpy, `npm ci` of sharp, a downloaded glibc binary through nix-ld, and `nix run nixpkgs#hello` with nixpkgs resolved offline. The sandbox checks need internet access. Real vault login, unlock, sync, and an authenticated Bitwarden API listener remain outside this smoke.
+The smoke uses disposable volumes and dynamic ports. It checks authenticated server readiness with Postgres and Redis, which includes the start-up egress self-test in a real sandbox on the internal network (the data volume's mountpoint serves as `CARAPACE_HOST_DATA_DIR`, so sandbox workspaces bind like in `docker-compose.yml`), rejects a real knowledge-repo push through the sentinel for a missing session, verifies effective UID 999 and read-only roots, and checks default and overridden frontend CSP headers. Bitwarden runs without a network under the runtime restrictions: status, password generation, server configuration round-trip, and the explicit unauthenticated `bw serve` rejection. No LLM credentials or vault account are needed. In the sandbox image, without capabilities as on Kubernetes, it checks `cgate`, that the `mcp` bridge loads its SDK, the tools of the server's egress probe (bash `/dev/tcp`, `timeout`, `getent`), that `python3` is python-build-standalone managed by uv, `uv sync` of numpy, `npm ci` of sharp, a downloaded glibc binary through nix-ld, and `nix run nixpkgs#hello` with nixpkgs resolved offline (not for the lite image, see below). The sandbox checks need internet access. Real vault login, unlock, sync, and an authenticated Bitwarden API listener remain outside this smoke.
 
 Focused host checks remain available:
 

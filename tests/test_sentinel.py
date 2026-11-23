@@ -158,7 +158,13 @@ async def test_push_context_warns_only_for_touched_artifacts(
 
     monkeypatch.setattr(sentinel, "_run_evaluation", capture)
     await sentinel.evaluate_push(
-        SessionSecurity("session-1"), "refs/heads/main", True, "Update report", diff, shared_artifacts=set()
+        SessionSecurity("session-1"),
+        "refs/heads/main",
+        True,
+        "Update report",
+        diff,
+        shared_artifacts=set(),
+        flake_input_changes=[],
     )
     assert ("Artifact security notice:" in prompts[0]) is touches_artifacts
     if touches_artifacts:
@@ -191,7 +197,13 @@ async def test_push_context_marks_only_touched_shared_artifacts_as_publications(
 
     monkeypatch.setattr(sentinel, "_run_evaluation", capture)
     await sentinel.evaluate_push(
-        SessionSecurity("session-1"), "refs/heads/main", True, "Update report", diff, shared_artifacts=shared
+        SessionSecurity("session-1"),
+        "refs/heads/main",
+        True,
+        "Update report",
+        diff,
+        shared_artifacts=shared,
+        flake_input_changes=[],
     )
     assert ("Publicly shared artifacts touched: report." in prompts[0]) is is_public
     assert ("this push is a publication." in prompts[0]) is is_public

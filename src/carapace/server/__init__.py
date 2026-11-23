@@ -45,6 +45,7 @@ from ..credentials.oauth import NotOAuthStateError, OAuthStateRefusedError, fetc
 from ..credentials.oauth import access_token as oauth_access_token
 from ..credentials.protocol import UnsupportedCredentialValueKindError
 from ..database.engine import SessionFactory, create_engine_and_factory, run_migrations
+from ..git.flake_lock import summarize_lock_change
 from ..git.http import GitHttpHandler
 from ..jobs import JobsScheduler, JobsStore
 from ..knowledge import KnowledgeRepoRegistry
@@ -845,12 +846,20 @@ def main() -> None:
 internal_app = FastAPI(title="carapace Internal")
 
 
+class FlakeLockChange(BaseModel):
+    path: str
+    # None where the lock does not exist on that side of the push.
+    old: str | None
+    new: str | None
+
+
 class PushEvalRequest(BaseModel):
     session_id: str
     ref: str
     is_default_branch: bool
     commits: str
     diff: str
+    flake_locks: list[FlakeLockChange]
 
 
 @internal_app.post("/internal/sentinel/evaluate-push")
@@ -874,6 +883,9 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
                 req.commits,
                 req.diff,
                 shared_artifacts=_artifact_share_store.shared_slugs(active.owner),
+                flake_input_changes=[
+                    line for lock in req.flake_locks for line in summarize_lock_change(lock.path, lock.old, lock.new)
+                ],
                 usage_tracker=active.usage_tracker,
                 assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
                 usage_limits=_engine._remaining_aux_usage_limits(active),

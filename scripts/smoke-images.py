@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -170,9 +171,13 @@ def assert_sandbox() -> None:
     # Kubernetes runs sandboxes as root without capabilities; Docker mode adds them back.
     docker = ["docker", "run", "--rm", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--memory=2g"]
     image = "carapace-sandbox:local"
-    # The registry entry is locked, so nixpkgs resolves from the image without any network.
-    offline = run(*docker, "--network=none", image, "nix", "eval", "--raw", "nixpkgs#hello.name")
-    assert offline.startswith("hello-"), offline
+    # The registry entry is final and the image holds its store path, so nixpkgs resolves without
+    # any network. Only the lite image for local Mac builds, which leaves the source out, skips this.
+    if os.environ.get("CARAPACE_SMOKE_SANDBOX_LITE") == "1":
+        print("CARAPACE_SMOKE_SANDBOX_LITE=1: skipping the offline nixpkgs check")
+    else:
+        offline = run(*docker, "--network=none", image, "nix", "eval", "--raw", "nixpkgs#hello.name")
+        assert offline.startswith("hello-"), offline
     run(*docker, image, "bash", "-c", SANDBOX_SMOKE)
 
 
