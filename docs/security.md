@@ -249,6 +249,8 @@ The [builder](builder.md) evaluates and builds every user's skill flakes. Its in
 
 When the agent pushes changes from a sandbox container back to the knowledge repository, the push is gated by a **pre-receive hook** that routes each ref update through the sentinel. The sentinel sees the branch, commit log, and diff, and decides whether to allow the push.
 
+When a push changes a `flake.lock`, the sentinel also gets one plain line per changed input, so it does not have to read a lock diff to notice that `nixpkgs` now points somewhere else. Inputs are named by their path from the root flake (`carapace/uv2nix`), and each line says whether the input was added, removed, bumped to another revision of the same source, or **moved to another source** (another owner, repository or URL); a change to what an input follows shows too. There is no allowlist: the lines are information for the review. Every value taken from the lock, and the file's path, is quoted as a JSON string, so a newline in a pushed lock cannot forge a line of this block. A lock that cannot be parsed, or that has more than 500 inputs (the walk follows paths, which a crafted lock can multiply), is reported in one line that points to the raw diff.
+
 Like tool calls and proxy domains, the sentinel can escalate a git push to the user for approval. Push evaluation results (allow, revise, deny, escalate) are broadcast to all session subscribers (WebSocket, Matrix) and recorded in both the action log (`GitPushEntry`) and the audit log.
 
 If a push is denied or the sentinel requests changes, `git push` fails in the sandbox and the pre-receive hook prints the reason (`Push rejected: Sentinel requests changes (no threat detected): ...`), which the agent reads in git's output.

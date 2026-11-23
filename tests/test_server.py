@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import json
 import subprocess
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -4914,6 +4915,7 @@ def test_internal_push_review_uses_live_owner_scoped_sharing(
                 "is_default_branch": True,
                 "commits": "Update artifact",
                 "diff": f"--- a/artifacts/{slug}/index.html\n+++ /dev/null",
+                "flake_locks": [],
             },
         )
         assert response.status_code == 200
@@ -5044,3 +5046,40 @@ def test_artifact_sessions_follow_git_trailers_without_exposing_foreign_titles(
     assert {entry["name"] for entry in response.json()["entries"]} == {"report", "second"}
     assert sum("log" in call.args for call in run.call_args_list) == 1
     assert all("--format=%(trailers:key=carapace-session,valueonly)" not in call.args for call in run.call_args_list)
+
+
+def test_internal_push_review_shows_flake_input_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    sid = _make_session()
+    active = srv._engine.get_or_activate(sid)
+    assert active.sentinel is not None
+    prompts: list[str] = []
+
+    async def capture(_session: SessionSecurity, prompt: str, **_kwargs: object) -> SentinelVerdict:
+        prompts.append(prompt)
+        return SentinelVerdict(decision="allow", explanation="ok", risk_level="low")
+
+    monkeypatch.setattr(active.sentinel, "_run_evaluation", capture)
+
+    def lock(owner: str, rev: str) -> str:
+        nixpkgs = {"locked": {"type": "github", "owner": owner, "repo": "nixpkgs", "rev": rev}}
+        return json.dumps({"nodes": {"root": {"inputs": {"nixpkgs": "n"}}, "n": nixpkgs}, "root": "root"})
+
+    body = {
+        "session_id": sid,
+        "ref": "refs/heads/main",
+        "is_default_branch": True,
+        "commits": "bump",
+        "diff": "",
+        "flake_locks": [
+            {"path": "skills/demo/flake.lock", "old": lock("NixOS", "a" * 40), "new": lock("other", "b" * 40)}
+        ],
+    }
+
+    response = TestClient(srv.internal_app).post("/internal/sentinel/evaluate-push", json=body)
+
+    assert response.json() == {"verdict": "allow"}
+    assert (
+        "Flake input changes (rendered by Carapace from flake.lock):\n"
+        '- "skills/demo/flake.lock": input "nixpkgs" moved to another source: '
+        f'"github:NixOS/nixpkgs" at "{"a" * 12}" -> "github:other/nixpkgs" at "{"b" * 12}"'
+    ) in prompts[-1]
