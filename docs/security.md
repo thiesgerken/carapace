@@ -6,7 +6,7 @@ carapace gates every agent action through a two-layer security system: a fast **
 
 Every tool call and skill invocation passes through the security module before execution:
 
-1. **Safe-list check.** A hardcoded set of tool names is auto-allowed without any LLM call. `exec` is one of them: the sandbox is the boundary, and what a command wants from outside is reviewed as a [boundary request](#boundary-requests).
+1. **Safe-list check.** A hardcoded set of tool names is auto-allowed without any LLM call. `exec` is one of them: the sandbox is the boundary, and what a command wants from outside is reviewed as a [boundary request](#boundary-requests). An `exec` with `contexts` is still reviewed, since the skill contexts grant credentials and domains without asking.
 2. **Sentinel evaluation.** All other operations are sent to the sentinel agent -- an LLM that receives the action log, the tool name and arguments, and makes a contextual decision.
 3. **Verdict.** The sentinel is a guard rail, not a reviewer of the agent's work: it stops the agent from going haywire beyond the sandbox, changing what it was not asked to change, exfiltrating data, or following injected instructions, and lets everything else through. It returns one of four decisions:
    - **allow** -- proceed without interruption, optionally with a comment for the agent (see [Sentinel comments](#sentinel-comments)).
@@ -91,7 +91,7 @@ The following tools are auto-allowed without consulting the sentinel:
 | `list_skills` | Listing available skills is informational |
 | `show_artifact` | Shows an already pushed artifact; the push itself was reviewed |
 | `read_tool_output` | Only returns tool output this session's agent has already seen |
-| `exec`        | The sandbox is the boundary; the command stays in the action log |
+| `exec`        | The sandbox is the boundary; the command stays in the action log. Not with `contexts`, which hands the command its skills' credentials and domains without a boundary request |
 
 `use_skill` is **not** safe-listed: activating a skill (copy into sandbox, optional venv sync, credential injection) is evaluated by the sentinel like other gated tools.
 

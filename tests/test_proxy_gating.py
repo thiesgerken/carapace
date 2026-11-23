@@ -421,3 +421,27 @@ async def test_failed_batch_does_not_consume_review_budget() -> None:
         {"b.example.com": "python fetch.py --profile b"},
     ]
     assert user_calls == []
+
+
+@pytest.mark.anyio
+async def test_the_review_cap_starts_over_with_the_next_exec() -> None:
+    session = SessionSecurity("session-1", max_sentinel_calls_per_exec=1, sentinel_domain_batch_window_ms=0)
+    user_calls: list[str] = []
+
+    async def approve(_sid: str, subject: str, _context: dict[str, object]) -> UserEscalationDecision:
+        user_calls.append(subject)
+        return UserEscalationDecision(allowed=True)
+
+    session.set_user_escalation_callback(approve)
+    sentinel = StubSentinel(
+        verdicts=[
+            SentinelVerdict(decision="allow", explanation="first exec"),
+            SentinelVerdict(decision="allow", explanation="second exec"),
+        ]
+    )
+
+    assert await evaluate_domain_with_stub(session, sentinel, "a.example.com", "fetch a", "exec-1") is True
+    assert await evaluate_domain_with_stub(session, sentinel, "b.example.com", "fetch b", "exec-2") is True
+
+    assert sentinel.calls == [{"a.example.com": "fetch a"}, {"b.example.com": "fetch b"}]
+    assert user_calls == []

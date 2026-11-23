@@ -52,6 +52,14 @@ SAFE_TOOLS: frozenset[str] = frozenset(
 )
 
 
+def _is_safe(tool_name: str, args: dict[str, Any]) -> bool:
+    # `contexts` hands an exec its skills' credentials, domains and tunnels without a boundary request, so
+    # such an exec is still reviewed. Goes away with context grants (#574).
+    if tool_name == "exec" and args.get("contexts"):
+        return False
+    return tool_name in SAFE_TOOLS
+
+
 def _fallback_verdict(session: SessionSecurity, *, explanation: str) -> SentinelVerdict:
     return SentinelVerdict(
         decision="deny" if session.unattended else "escalate",
@@ -102,7 +110,7 @@ async def evaluate_with(
         )
         return
 
-    if tool_name in SAFE_TOOLS:
+    if _is_safe(tool_name, args):
         entry = ToolCallEntry(tool=tool_name, args=args, decision="auto_allowed")
         session.append(entry)
         session.write_audit(
