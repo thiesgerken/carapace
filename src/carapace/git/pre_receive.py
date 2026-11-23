@@ -33,6 +33,27 @@ def _oversized_artifacts(commit: str) -> list[str]:
     return [artifact for artifact in sorted(sizes) if sizes[artifact] > 10 * 1024 * 1024]
 
 
+def _file_at(commit: str | None, path: str) -> str | None:
+    if commit is None:
+        return None
+    done = subprocess.run(["git", "show", f"{commit}:{path}"], capture_output=True, encoding="utf-8", errors="replace")
+    return done.stdout if done.returncode == 0 else None
+
+
+def _flake_locks(old: str | None, new: str) -> list[dict[str, str | None]]:
+    """Both sides of every `flake.lock` the push changes; the server renders them for the sentinel.
+
+    The incoming objects are only visible inside this hook, so the hook has to send the contents.
+    """
+    base = old if old is not None else _git("hash-object", "-t", "tree", os.devnull)
+    changed = _git("diff", "--name-only", "-z", base, new).split("\0")
+    return [
+        {"path": path, "old": _file_at(old, path), "new": _file_at(new, path)}
+        for path in changed
+        if path == "flake.lock" or path.endswith("/flake.lock")
+    ]
+
+
 def main() -> int:
     null_sha = "0" * 40
     evaluated = False
@@ -62,6 +83,9 @@ def main() -> int:
             "is_default_branch": ref.removeprefix("refs/heads/") == os.environ["CARAPACE_DEFAULT_BRANCH"],
             "commits": changes,
             "diff": diff,
+            "flake_locks": (
+                [] if new_sha == null_sha else _flake_locks(None if old_sha == null_sha else old_sha, new_sha)
+            ),
         }
         connection = HTTPConnection("127.0.0.1", port, timeout=10)
         try:
