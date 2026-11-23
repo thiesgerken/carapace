@@ -79,6 +79,15 @@ in
       mcpBridgeEnv
       ;
   };
+  sandbox-image-lite = import ./sandbox.nix {
+    inherit
+      pkgs
+      nixpkgs
+      nodejs
+      mcpBridgeEnv
+      ;
+    withNixpkgsSource = false;
+  };
   server-image = image "carapace" [ server pkgs.gitMinimal pkgs.cacert ] [ "var/lib/carapace" ] {
     Cmd = [ "${server}/bin/carapace-server" ];
     Env = tlsEnv ++ [
