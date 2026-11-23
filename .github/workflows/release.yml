@@ -56,8 +56,7 @@ jobs:
             gh workflow run release.yml --ref main -f candidate="$(git rev-parse HEAD)"
           fi
 
-  # Pushes the Nix images and the chart to Cachix, where the publish job fetches them, and uploads
-  # the verified sandbox archive.
+  # Pushes the Nix images and the chart to Cachix, where the publish job fetches them.
   verify:
     if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/nix-verify.yml
@@ -83,39 +82,6 @@ jobs:
       - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         with:
           name: thiesgerken
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: verified-x64-images
-          path: ${{ runner.temp }}/verified
-      # The sandbox is a Dockerfile build, not a store path, so Presswerk can't publish it. It goes
-      # first, so a failed push leaves no tag behind.
-      - name: Push the verified sandbox image
-        env:
-          REGISTRY_TOKEN: ${{ github.token }}
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_OWNER: ${{ github.repository_owner }}
-        run: |
-          set -euo pipefail
-          version=$(nix eval --raw .#presswerk.default.version)
-          # Presswerk refuses anything but a pending release commit only after this step, so check
-          # first: a wrong candidate SHA or a published release must not move sandbox:latest.
-          test "$(git log -1 --format=%s)" = "🔖 Release v$version"
-          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
-            echo "v$version is already tagged, so its sandbox image is published"
-            exit 0
-          fi
-          nix build .#ci-tools --out-link result-ci-tools
-          export PATH="$PWD/result-ci-tools/bin:$PATH"
-          export SSL_CERT_FILE="$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt"
-          export REGISTRY_AUTH_FILE="$RUNNER_TEMP/skopeo-auth.json"
-          cleanup_auth() { rm -f "$REGISTRY_AUTH_FILE"; }
-          trap cleanup_auth EXIT
-          printf "%s" "$REGISTRY_TOKEN" | skopeo login --authfile "$REGISTRY_AUTH_FILE" --username "$REGISTRY_USER" --password-stdin ghcr.io
-          # publish-images.sh pushes every archive in dist/, so it gets the sandbox alone: Nix images
-          # tagged here would be foreign to Presswerk and stop the release. mkdir fails if dist exists.
-          mkdir dist
-          mv "$RUNNER_TEMP/verified/carapace-sandbox.tar.gz" dist/
-          bash scripts/publish-images.sh "$version" latest
       # Pushes the tag, the images, the chart and the GitHub Release; GITHUB_ACTOR is the registry user.
       # The tag is annotated, so it needs a tagger identity.
       - name: Publish the release

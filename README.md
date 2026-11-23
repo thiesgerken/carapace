@@ -137,7 +137,7 @@ docker compose up -d
 
 This starts the proxy at `http://localhost:3001`, serving the frontend and routing `/api` to the backend internally.
 
-Published images target Linux x64. On Apple Silicon, use the [native ARM Linux build instructions](docs/development.md#native-linux-images-on-apple-silicon) and local Compose overlay instead of x86 emulation. Nix is the single build/check definition for the server, frontend, and Bitwarden images; only the sandbox remains a Dockerfile. The maintained Compose and Helm configurations run the application images non-root with read-only roots.
+Published images target Linux x64. On Apple Silicon, use the [native ARM Linux build instructions](docs/development.md#native-linux-images-on-apple-silicon) and local Compose overlay instead of x86 emulation. Nix is the single build/check definition for all images, the sandbox included. The maintained Compose and Helm configurations run the application images non-root with read-only roots.
 
 Optional CLI connection:
 

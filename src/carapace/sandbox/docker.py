@@ -27,6 +27,8 @@ from .runtime import (
 )
 
 _FALLBACK_SOCKETS = (Path.home() / ".docker/run/docker.sock",)
+# Evaluating nixpkgs for an ad-hoc `nix run` peaks around 1.3 GiB (#548).
+_SANDBOX_MEMORY_LIMIT = "2g"
 
 
 def _connect() -> docker.DockerClient:
@@ -375,6 +377,7 @@ class DockerRuntime(ContainerRuntime):
             mounts=mounts,
             network=config.network,
             environment=config.environment or None,
+            mem_limit=_SANDBOX_MEMORY_LIMIT,
             detach=True,
         )
 

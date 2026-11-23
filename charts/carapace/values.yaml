@@ -63,7 +63,8 @@ sandbox:
       cpu: 100m
       memory: 128Mi
     limits:
-      memory: 512Mi
+      # Evaluating nixpkgs for an ad-hoc `nix run` peaks around 1.3 GiB.
+      memory: 2Gi
   # -- Per-session PVC settings (StatefulSet mode)
   sessionPvc:
     size: 1Gi

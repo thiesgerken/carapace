@@ -1,6 +1,9 @@
 {
   pkgs,
+  nixpkgs,
+  nodejs,
   server,
+  mcpBridgeEnv,
   tokenizerCache,
   frontend,
 }:
@@ -68,6 +71,14 @@ let
   '';
 in
 {
+  sandbox-image = import ./sandbox.nix {
+    inherit
+      pkgs
+      nixpkgs
+      nodejs
+      mcpBridgeEnv
+      ;
+  };
   server-image = image "carapace" [ server pkgs.gitMinimal pkgs.cacert ] [ "var/lib/carapace" ] {
     Cmd = [ "${server}/bin/carapace-server" ];
     Env = tlsEnv ++ [

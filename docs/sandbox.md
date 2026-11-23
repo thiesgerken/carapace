@@ -15,7 +15,7 @@ flowchart LR
         Proxy[HTTP Forward Proxy]
     end
 
-    subgraph container ["Session Container (Debian + Python + Node tooling)"]
+    subgraph container ["Session Container (Nix image with nix-ld)"]
         Workspace["/workspace/ (git clone, persistent mount)"]
         Skills["/workspace/skills/"]
     end
@@ -36,6 +36,18 @@ flowchart LR
 - **Network access**: All outbound traffic goes through the HTTP forward proxy, which enforces per-session domain allowlisting
 - **Skills**: Activated skills are available in the cloned knowledge repo; the image-provided activator prepares their runtimes
 - **Workspace files**: `SOUL.md`, `USER.md`, `SECURITY.md` etc. live in the knowledge repo at `/workspace/`. Changes are persisted via `git commit` and `git push`.
+
+### Sandbox image
+
+The official image is built with Nix (`nix/sandbox.nix`) and has no FHS layout: `/bin` holds the tools, `/usr/bin` and `/usr/local/bin` link to it, and everything else lives in `/nix/store`. Agents still install and run ordinary software at runtime:
+
+- **nix-ld** sits at the system loader path (`/lib64/ld-linux-x86-64.so.2`, `/lib/ld-linux-aarch64.so.1` on ARM). Dynamically linked downloads, PyPI wheels, and npm addons find their libraries in `/run/current-system/sw/share/nix-ld/lib`: the NixOS default set without systemd, plus ICU, expat, and libffi. No environment variables are involved.
+- **Python** is python-build-standalone 3.14, installed as uv's managed default under `/root/.local/share/uv/python` with `python3` in `/root/.local/bin`. `UV_PYTHON_PREFERENCE=only-managed` keeps uv away from Nix interpreters. A Nix-built interpreter bypasses nix-ld and cannot load the native libraries of wheels, so none is on `PATH`; the stdio MCP bridge has its own Nix Python environment outside `PATH`.
+- **Node.js 24** with npm and corepack (pnpm, yarn), **uv**, Git, curl, jq, ripgrep, kubectl, poppler-utils, the usual base tools, and the sandbox CLIs (`ccred`, `cgate`, `setup-proxy.sh`, the skill activator, the stdio MCP bridge).
+- **FHS data files**: a CA bundle at `/etc/ssl/certs/ca-certificates.crt` and `/etc/ssl/cert.pem`, terminfo at `/usr/share/terminfo`, `/etc/fonts/fonts.conf` with DejaVu, and an `en_US.UTF-8` locale archive (`LANG` is `C.UTF-8`).
+- **Nix**: single-user as root with flakes enabled, no build sandbox, and its own Nix database, so `nix profile` and `nix-collect-garbage` know the image's paths (which are GC roots). The `nixpkgs` registry entry is locked to the image's own nixpkgs, shipped as an archive: the first `nix run nixpkgs#…` in a sandbox unpacks it offline (about 30 s on one CPU, about 250 MB more in the container layer) instead of downloading nixpkgs. The global flake registry is disabled, because fetching it needs a domain approval. Substitutes still come from `cache.nixos.org`, a domain the proxy gates like any other. Evaluating nixpkgs peaks around 1.3 GiB, so sandboxes get a 2 GiB memory limit (Docker runtime default and Helm value); the request stays at 128 MiB.
+
+Store and installed packages live in the container layer and are gone when a sandbox is recreated.
 
 ### Process model
 
