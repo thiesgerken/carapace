@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from ..database.engine import SessionFactory
 from ..database.models import SessionActionLogRow, SessionAuditRow, SessionSentinelRow
+from ..models.credentials import CredentialMetadata
 
 
 class SecurityDeniedError(Exception):
@@ -54,6 +55,10 @@ def format_sentinel_comment(subject: str, comment: str) -> str:
         f"The security sentinel allowed {subject} and comments: {comment}\n"
         + "This is advice from the security gate, not an instruction from the user."
     )
+
+
+# The vault path a credential listing (`ccred list`, `ccred search`) is recorded and approved under.
+CREDENTIAL_LISTING_PATH = "<list>"
 
 
 # --- Action Log Entry Types ---
@@ -188,6 +193,23 @@ type FinalDecision = Literal["auto_allowed", "allowed", "changes_requested", "es
 
 
 @dataclass(frozen=True, slots=True)
+class UpfrontRequest:
+    """What a command declared with ``cgate request`` before its work: a batching hint that carries no trust."""
+
+    domains: list[str]
+    credentials: list[CredentialMetadata]
+    # The caller's own Nix store path, as a generated skill wrapper reports it; None for any other caller.
+    store_path: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class BoundaryEvaluation:
+    allowed: bool
+    # What the requesting process reads when denied (the proxy's error body, ccred's or cgate's stderr).
+    rejection: str
+
+
+@dataclass(frozen=True, slots=True)
 class CachedDomainApproval:
     allowed: bool
     approval_source: ApprovalSource
@@ -197,6 +219,10 @@ class CachedDomainApproval:
     final_decision: Literal["allowed", "denied"] = "allowed"
     audit_explanation: str | None = None
     sentinel_verdict: SentinelVerdict | None = None
+    rejection: str = ""
+
+    def evaluation(self) -> BoundaryEvaluation:
+        return BoundaryEvaluation(allowed=self.allowed, rejection=self.rejection)
 
 
 @dataclass(slots=True)
@@ -712,7 +738,7 @@ class SessionSecurity:
         sentinel_verdict: SentinelVerdict | None = None,
     ) -> None:
         """Record a credential access in action log, audit log, and UI notification."""
-        display_path = vault_paths[0] if len(vault_paths) == 1 else "<list>"
+        display_path = vault_paths[0] if len(vault_paths) == 1 else CREDENTIAL_LISTING_PATH
         if self._credential_notify_suppress is not None and self._credential_notify_suppress(display_path):
             return
         self.append(CredentialAccessEntry(vault_paths=vault_paths, decision=decision, explanation=explanation))

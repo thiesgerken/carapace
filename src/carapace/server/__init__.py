@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging  # stdlib logging used only for _InterceptHandler → loguru bridge
 import os
+import re
 import sys
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -50,7 +51,7 @@ from ..memory.models import DigestLevel, TaskKind
 from ..memory.service import MemoryService
 from ..memory.store import MemoryStore
 from ..models.config import Config
-from ..models.credentials import CredentialValueKind
+from ..models.credentials import CredentialMetadata, CredentialValueKind
 from ..models.user import UserConfig
 from ..notifications.presence import NotificationPresenceRegistry
 from ..notifications.router import NotificationRouter
@@ -59,12 +60,24 @@ from ..notifications.store import NotificationStore
 from ..notifications.vapid import ensure_vapid_config
 from ..platform_store import PlatformSettingsStore
 from ..prompt_prefix import shared_prompt_prefix
+from ..sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION, CredentialGrant
 from ..sandbox.manager import SandboxLimitError, SandboxManager
-from ..sandbox.proxy import ProxyServer
+from ..sandbox.proxy import ProxyServer, domain_allowed
 from ..sandbox.runtime import ContainerRuntime
-from ..security import evaluate_push_with
+from ..security import (
+    CREDENTIAL_LISTING_PATH,
+    CredentialAccessEvaluation,
+    SessionSecurity,
+    evaluate_credential_listing_with,
+    evaluate_credential_with,
+    evaluate_push_with,
+    evaluate_upfront_request_with,
+)
+from ..security.context import UpfrontRequest
+from ..security.sentinel import Sentinel
 from ..session import SessionEngine, SessionManager
 from ..session.archive import SessionArchiveService
+from ..session.types import ActiveSession
 from ..usage import SessionBudgetExceededError
 from .api_keys import router as api_keys_router
 from .artifacts import router as artifacts_router
@@ -929,42 +942,164 @@ def _credential_backend_unavailable(exc: CredentialBackendError) -> Response:
     return Response(status_code=503, content=str(exc), media_type="text/plain")
 
 
+async def _gate_credential_request(
+    active: ActiveSession,
+    grant: CredentialGrant,
+    review: Callable[[SessionSecurity, Sentinel, str, bool], Awaitable[CredentialAccessEvaluation]],
+) -> Response | None:
+    """Review a credential request of the running exec; returns the denial, or None to go ahead.
+
+    An approval holds for the rest of that exec, so a script asking again does not cost another review.
+    """
+    sandbox_mgr = _engine.sandbox_mgr
+    running = sandbox_mgr.running_exec(active.state.session_id)
+    if running is None:
+        return _boundary_denied(ORPHANED_REQUEST_REJECTION)
+    if grant in running.credentials:
+        return None
+    if active.security is None or active.sentinel is None:
+        return _boundary_denied("Session not initialized")
+
+    with _engine.llm_request_recording(active):
+        try:
+            evaluation = await review(active.security, active.sentinel, running.command, running.boundary_reviewed)
+        except (SessionBudgetExceededError, UsageLimitExceeded) as exc:
+            return _boundary_denied(str(exc))
+    if not sandbox_mgr.is_running(running):
+        return _boundary_denied(EXEC_ENDED_REJECTION)
+    running.boundary_reviewed = True
+    if not evaluation.allowed:
+        return _boundary_denied(evaluation.rejection)
+    running.credentials.add(grant)
+    return None
+
+
+def _boundary_denied(rejection: str) -> Response:
+    # ccred and cgate print the body on stderr: the command that asked reads why and decides how to continue.
+    return Response(status_code=403, content=rejection, media_type="text/plain")
+
+
 @sandbox_app.get("/credentials")
-async def list_credentials(request: Request, q: str = "") -> list[dict[str, str]]:
-    """List/search available credentials (metadata only, no values)."""
+async def list_credentials(request: Request, q: str = "") -> Response:
+    """List/search available credentials (metadata only, no values, still sentinel-gated)."""
     session_id = _authenticate_sandbox(request.headers.get("authorization"))
     if session_id is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-    active = _engine.get_or_activate(session_id)
-    if active.security is None:
-        raise HTTPException(status_code=403, detail="Session not initialized")
 
     try:
         credential_registry = await _credential_registry_for_session(session_id)
     except KeyError:
         raise HTTPException(status_code=403, detail="Session owner is not configured") from None
 
+    active = _engine.get_or_activate(session_id)
+    denial = await _gate_credential_request(
+        active,
+        (CREDENTIAL_LISTING_PATH, None),
+        lambda security, sentinel, command, follow_up: evaluate_credential_listing_with(
+            security,
+            sentinel,
+            q,
+            command,
+            follow_up=follow_up,
+            usage_tracker=active.usage_tracker,
+            assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
+            usage_limits=_engine._remaining_aux_usage_limits(active),
+        ),
+    )
+    if denial is not None:
+        return denial
+
     try:
         items = await credential_registry.list(q)
     except CredentialBackendError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    paths = [i.vault_path for i in items]
-    names = [i.name for i in items]
-    explanation = f"Sandbox listed credential metadata (query={q!r}, {len(paths)} item(s))"
-    active.security.record_credential_access(
-        vault_paths=paths,
-        names=names,
-        decision="approved",
-        explanation=explanation,
-        ui_label=f"[sandbox: list metadata] {explanation}",
-        approval_source="safe-list",
-        approval_verdict="allow",
-        audit_final="auto_allowed",
-        audit_args={"operation": "list", "query": q, "count": len(paths)},
-    )
+    return JSONResponse([i.model_dump() for i in items])
 
-    return [i.model_dump() for i in items]
+
+class UpfrontRequestBody(BaseModel):
+    """What ``cgate request`` sends; see the contract in docs/sandbox.md."""
+
+    domains: list[str] = []
+    credentials: list[str] = []
+    store_path: str | None = None
+
+
+# A host name, or `*.` plus a name of at least two labels. A bare `*` would open the proxy to everything,
+# and `*.com` almost as much.
+_DECLARABLE_DOMAIN = re.compile(r"\*\.[a-z0-9-]+(\.[a-z0-9-]+)+|[a-z0-9-]+(\.[a-z0-9-]+)*")
+# The caller's store path reaches the sentinel prompt, so it must not carry text of its own.
+_STORE_PATH = re.compile(r"/nix/store/[0-9a-z]{32}-[^\s/]+")
+
+
+@sandbox_app.post("/gate")
+async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
+    """Review what a command declares before its work (``cgate request``); one decision for all of it.
+
+    Approved domains and credentials hold for the rest of the running exec. Credentials are approved as
+    the password kind, the one generated wrappers fetch with ``ccred get``.
+    """
+    session_id = _authenticate_sandbox(request.headers.get("authorization"))
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    domains = sorted({domain.strip().lower() for domain in body.domains})
+    if invalid := [domain for domain in domains if not _DECLARABLE_DOMAIN.fullmatch(domain)]:
+        return Response(status_code=400, content=f"not a domain: {invalid[0]}", media_type="text/plain")
+    if body.store_path is not None and not _STORE_PATH.fullmatch(body.store_path):
+        return Response(status_code=400, content="not a Nix store path", media_type="text/plain")
+    vault_paths = sorted(set(body.credentials))
+    if not domains and not vault_paths:
+        return Response(status_code=400, content="nothing requested", media_type="text/plain")
+
+    try:
+        credential_registry = await _credential_registry_for_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=403, detail="Session owner is not configured") from None
+
+    active = _engine.get_or_activate(session_id)
+    sandbox_mgr = _engine.sandbox_mgr
+    running = sandbox_mgr.running_exec(session_id)
+    if running is None:
+        return _boundary_denied(ORPHANED_REQUEST_REJECTION)
+    effective_domains = sandbox_mgr.get_effective_domains(session_id)
+    pending_domains = [domain for domain in domains if not domain_allowed(domain, effective_domains)]
+    pending_paths = [path for path in vault_paths if (path, "password") not in running.credentials]
+    if not pending_domains and not pending_paths:
+        return Response(status_code=200)
+
+    credentials: list[CredentialMetadata] = []
+    for path in pending_paths:
+        try:
+            credentials.append(await credential_registry.fetch_metadata(path))
+        except KeyError:
+            return Response(status_code=404, content=f"credential not found: {path}", media_type="text/plain")
+        except CredentialBackendError as exc:
+            return _credential_backend_unavailable(exc)
+    if active.security is None or active.sentinel is None:
+        return _boundary_denied("Session not initialized")
+
+    with _engine.llm_request_recording(active):
+        try:
+            evaluation = await evaluate_upfront_request_with(
+                active.security,
+                active.sentinel,
+                UpfrontRequest(domains=pending_domains, credentials=credentials, store_path=body.store_path),
+                running.command,
+                follow_up=running.boundary_reviewed,
+                usage_tracker=active.usage_tracker,
+                assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
+                usage_limits=_engine._remaining_aux_usage_limits(active),
+            )
+        except (SessionBudgetExceededError, UsageLimitExceeded) as exc:
+            return _boundary_denied(str(exc))
+    if not sandbox_mgr.is_running(running):
+        return _boundary_denied(EXEC_ENDED_REJECTION)
+    running.boundary_reviewed = True
+    if not evaluation.allowed:
+        return _boundary_denied(evaluation.rejection)
+    running.domains.update(pending_domains)
+    running.credentials.update((path, "password") for path in pending_paths)
+    return Response(status_code=200)
 
 
 @sandbox_app.get("/credentials/{vault_path:path}")
@@ -976,7 +1111,6 @@ async def fetch_credential(
     """Fetch a credential value (sentinel-gated, may escalate to user).
 
     Fast path: the default password/value may use an active skill context.
-    Alternate representations always go through ``evaluate_credential_with``.
     """
     session_id = _authenticate_sandbox(request.headers.get("authorization"))
     if session_id is None:
@@ -1011,7 +1145,7 @@ async def fetch_credential(
                 break
 
     if skill_covered:
-        # Allowed by skill context — must still record; same bar as list / sentinel path
+        # Allowed by skill context — must still record; same bar as the sentinel path
         if active.security is None:
             return Response(status_code=403, content="Session not initialized")
         explanation = "skill-declared credential under active context"
@@ -1032,32 +1166,26 @@ async def fetch_credential(
             },
         )
     else:
-        # Always evaluate via sentinel (no session-wide short-circuit)
-        if active.security is None or active.sentinel is None:
-            return Response(status_code=403, content="Session not initialized")
-
-        from ..security import evaluate_credential_with
-
-        with _engine.llm_request_recording(active):
-            try:
-                cred_eval = await evaluate_credential_with(
-                    active.security,
-                    active.sentinel,
-                    vault_path,
-                    meta.name,
-                    meta.description,
-                    f"Sandbox requested credential {kind}: {meta.name}",
-                    usage_tracker=active.usage_tracker,
-                    assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
-                    usage_limits=_engine._remaining_aux_usage_limits(active),
-                    audit_args={"operation": "fetch", "vault_path": vault_path, "value_kind": kind},
-                )
-            except SessionBudgetExceededError as exc:
-                return Response(status_code=403, content=str(exc))
-            except UsageLimitExceeded as exc:
-                return Response(status_code=403, content=str(exc))
-        if not cred_eval.allowed:
-            return Response(status_code=403, content="Credential access denied")
+        denial = await _gate_credential_request(
+            active,
+            (vault_path, kind),
+            lambda security, sentinel, command, follow_up: evaluate_credential_with(
+                security,
+                sentinel,
+                vault_path,
+                meta.name,
+                meta.description,
+                f"`ccred get` ({kind})",
+                command,
+                follow_up=follow_up,
+                usage_tracker=active.usage_tracker,
+                assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
+                usage_limits=_engine._remaining_aux_usage_limits(active),
+                audit_args={"operation": "fetch", "vault_path": vault_path, "value_kind": kind},
+            ),
+        )
+        if denial is not None:
+            return denial
 
     try:
         value = await credential_registry.fetch(vault_path, kind)

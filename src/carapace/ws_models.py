@@ -239,13 +239,14 @@ class GitPushApprovalRequest(BaseModel):
 
 
 class CredentialApprovalRequest(BaseModel):
-    """Server → Client: sentinel escalated a credential access request to the user."""
+    """Server → Client: sentinel escalated a credential request, or an up-front request with domains, to the user."""
 
     type: Literal["credential_approval_request"] = "credential_approval_request"
     request_id: str
     vault_paths: list[str]
     names: list[str]
     descriptions: list[str]
+    domains: list[str]
     skill_name: str | None = None
     explanation: str = ""
 

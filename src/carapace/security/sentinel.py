@@ -47,6 +47,7 @@ from .context import (
     ToolCallEntry,
     ToolResultEntry,
     UnattendedSentinelVerdict,
+    UpfrontRequest,
     UserMessageEntry,
     UserVouchedEntry,
 )
@@ -97,8 +98,13 @@ Your verdicts:
   explanation goes to the agent as a change request, so say what to change.
 - `escalate`: the user decides.
 - `deny`: the operation is blocked as a threat.
-`comment` and `revise` only exist for tool calls and git pushes: the agent
-never sees anything of proxy domain and credential evaluations.
+`comment` and `revise` only exist for tool calls and git pushes.
+
+Proxy domain and credential requests are decisions of their own. No earlier
+review covers them: they come from a command that is already running, and
+the action log shows the exec calls that ran since your last decision. The
+command that asked gets your verdict and explanation back and decides how to
+continue, so write a denial's explanation for it.
 SECURITY.md below says when to choose which.
 
 Pushes to the knowledge repo (`/workspace/knowledge`) get their own git_push
@@ -248,6 +254,21 @@ def _truncate(v: Any, limit: int = 80) -> str:
 def _truncate_text(text: str, limit: int = 80) -> str:
     collapsed = " ".join(text.split())
     return collapsed[: limit - 3] + "..." if len(collapsed) > limit else collapsed
+
+
+def _boundary_origin(command: str, *, follow_up: bool) -> str:
+    """Where a boundary request comes from: the running exec, or only a note for a later request of an exec
+    the sentinel already decided on."""
+    if follow_up:
+        return "Follow-up: an exec you already decided on in this session now also wants this (command not repeated)."
+    return f"Running exec: {command}"
+
+
+def _store_path_line(store_path: str | None) -> str:
+    if store_path is None:
+        return "Caller store path: not given."
+    # Skills are not built by the builder yet, so there is nothing to compare the store path with.
+    return f"Caller store path: {store_path} (matches the build for the current head: unknown)"
 
 
 def _format_action_log(entries: list[Any]) -> str:
@@ -677,8 +698,8 @@ class Sentinel:
     def _check_what_reaches_the_agent(ctx: RunContext[SentinelDeps], output: _SentinelOutput) -> _SentinelOutput:
         if not ctx.deps.agent_reads_verdict and (output.decision == "revise" or output.comment):
             raise ModelRetry(
-                "`revise` and `comment` are not available here: the agent never sees anything of this kind of "
-                + "request. Choose another verdict, without a comment."
+                "`revise` and `comment` are not available here: the command that asked gets only the verdict and "
+                + "its explanation. Choose another verdict, without a comment."
             )
         if output.comment and output.decision != "allow":
             raise ModelRetry("`comment` only goes with `allow`. Put everything else into the explanation.")
@@ -762,6 +783,7 @@ class Sentinel:
         domain: str,
         command: str,
         *,
+        follow_up: bool,
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
         usage_limits: UsageLimits | None = None,
@@ -769,7 +791,8 @@ class Sentinel:
         async with self._lock:
             prompt_parts = _action_log_prompt(session)
 
-            prompt_parts.append(f"\nEVALUATE domain_access_request:\nDomain: {domain}\nTriggered by: {command}")
+            prompt_parts.append(f"\nEVALUATE domain_access_request:\nDomain: {domain}")
+            prompt_parts.append(_boundary_origin(command, follow_up=follow_up))
 
             prompt = "\n".join(prompt_parts)
             return await self._run_evaluation(
@@ -798,7 +821,7 @@ class Sentinel:
             prompt_parts.append("\nEVALUATE domain_access_batch_request:")
             for domain, command in sorted(domain_commands.items()):
                 prompt_parts.append(f"Domain: {domain}")
-                prompt_parts.append(f"Triggered by: {command}")
+                prompt_parts.append(f"Running exec: {command}")
             prompt_parts.append("Apply one verdict to the entire batch of domains.")
 
             prompt = "\n".join(prompt_parts)
@@ -819,8 +842,10 @@ class Sentinel:
         vault_path: str,
         name: str,
         description: str,
-        trigger: str,
+        asked_by: str,
+        command: str,
         *,
+        follow_up: bool,
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
         usage_limits: UsageLimits | None = None,
@@ -831,7 +856,8 @@ class Sentinel:
             prompt_parts.append(f"\nEVALUATE credential_access_request:\nVault path: {vault_path}\nName: {name}")
             if description:
                 prompt_parts.append(f"Description: {description}")
-            prompt_parts.append(f"Triggered by: {trigger}")
+            prompt_parts.append(f"Asked by: {asked_by}")
+            prompt_parts.append(_boundary_origin(command, follow_up=follow_up))
 
             prompt = "\n".join(prompt_parts)
             return await self._run_evaluation(
@@ -839,6 +865,79 @@ class Sentinel:
                 prompt,
                 kind="credential_access",
                 subject=f"{vault_path} ({name})",
+                agent_reads_verdict=False,
+                usage_tracker=usage_tracker,
+                assert_llm_budget_available=assert_llm_budget_available,
+                usage_limits=usage_limits,
+            )
+
+    async def evaluate_credential_listing(
+        self,
+        session: SessionSecurity,
+        query: str,
+        command: str,
+        *,
+        follow_up: bool,
+        usage_tracker: UsageTracker | None = None,
+        assert_llm_budget_available: Callable[[], None] | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> SentinelVerdict:
+        async with self._lock:
+            prompt_parts = _action_log_prompt(session)
+
+            prompt_parts.append("\nEVALUATE credential_listing_request:")
+            prompt_parts.append(f"Query: {query!r}" if query else "Query: none, lists every credential")
+            prompt_parts.append("Returns names, vault paths and descriptions of the matching credentials, no values.")
+            prompt_parts.append(_boundary_origin(command, follow_up=follow_up))
+
+            prompt = "\n".join(prompt_parts)
+            return await self._run_evaluation(
+                session,
+                prompt,
+                kind="credential_listing",
+                subject=f"query={query!r}",
+                agent_reads_verdict=False,
+                usage_tracker=usage_tracker,
+                assert_llm_budget_available=assert_llm_budget_available,
+                usage_limits=usage_limits,
+            )
+
+    async def evaluate_upfront_request(
+        self,
+        session: SessionSecurity,
+        request: UpfrontRequest,
+        command: str,
+        *,
+        follow_up: bool,
+        usage_tracker: UsageTracker | None = None,
+        assert_llm_budget_available: Callable[[], None] | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> SentinelVerdict:
+        """Evaluate what a command declared with ``cgate request`` before it does its work."""
+        async with self._lock:
+            prompt_parts = _action_log_prompt(session)
+
+            prompt_parts.append(
+                "\nEVALUATE upfront_request (declared with `cgate request`, before the command's work):"
+            )
+            if request.domains:
+                prompt_parts.append(f"Domains: {', '.join(request.domains)}")
+            if request.credentials:
+                prompt_parts.append("Credentials:")
+                prompt_parts.extend(
+                    f"- {c.vault_path} ({c.name})" + (f": {c.description}" if c.description else "")
+                    for c in request.credentials
+                )
+            prompt_parts.append(_store_path_line(request.store_path))
+            prompt_parts.append(_boundary_origin(command, follow_up=follow_up))
+            prompt_parts.append("One verdict for everything listed; an approval holds until this exec ends.")
+
+            prompt = "\n".join(prompt_parts)
+            return await self._run_evaluation(
+                session,
+                prompt,
+                kind="upfront_request",
+                subject=f"{len(request.domains)} domains, {len(request.credentials)} credentials",
                 agent_reads_verdict=False,
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,

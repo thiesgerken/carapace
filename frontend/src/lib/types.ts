@@ -264,6 +264,7 @@ export interface HistoryMessage {
   vault_paths?: string[];
   names?: string[];
   descriptions?: string[];
+  domains?: string[];
   skill_name?: string;
   tool_id?: string;
   parent_tool_id?: string;
@@ -450,6 +451,8 @@ export interface CredentialApprovalRequest {
   vault_paths: string[];
   names: string[];
   descriptions: string[];
+  /** Domains an up-front request (`cgate request`) asks for next to its credentials. */
+  domains: string[];
   skill_name?: string;
   explanation: string;
 }

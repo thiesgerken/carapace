@@ -116,6 +116,7 @@ class SessionSubscriber(Protocol):
         vault_paths: list[str],
         names: list[str],
         descriptions: list[str],
+        domains: list[str],
         skill_name: str | None,
         explanation: str,
     ) -> None: ...
