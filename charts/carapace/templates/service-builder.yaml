@@ -16,4 +16,7 @@ spec:
     - name: build-api
       port: 8330
       targetPort: build-api
+    - name: cache
+      port: 8331
+      targetPort: cache
 {{- end }}

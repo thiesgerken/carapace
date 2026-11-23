@@ -32,6 +32,7 @@ services:
       - CARAPACE_DATABASE_URL=postgresql+psycopg://carapace:carapace@postgres:5432/carapace
       - CARAPACE_SANDBOX_BASE_IMAGE=ghcr.io/thiesgerken/carapace-sandbox:${CARAPACE_IMAGE_TAG:-latest}
       - CARAPACE_BUILDER_URL=http://builder:8330
+      - CARAPACE_BUILDER_CACHE_URL=http://builder:8331
       - CARAPACE_BUILDER_TOKEN=${CARAPACE_BUILDER_TOKEN:?set CARAPACE_BUILDER_TOKEN in .env}
       # Internal hosts skills may reach through the proxy (JSON lists); see docs/sandbox.md.
       - CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS=${CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS:-[]}

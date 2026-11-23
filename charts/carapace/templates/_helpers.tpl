@@ -146,12 +146,14 @@ Builder token Secret name (generated for the in-cluster builder, or the user-pro
 {{- end }}
 
 {{/*
-CARAPACE_BUILDER_URL and _TOKEN for the server: the in-cluster builder, or one on another machine.
+CARAPACE_BUILDER_URL, _CACHE_URL and _TOKEN for the server: the in-cluster builder, or one on another machine.
 */}}
 {{- define "carapace.builderEnv" -}}
 {{- if .Values.builder.enabled -}}
 - name: CARAPACE_BUILDER_URL
   value: {{ printf "http://%s-builder.%s:8330" .Release.Name (include "carapace.builder.namespace" .) | quote }}
+- name: CARAPACE_BUILDER_CACHE_URL
+  value: {{ printf "http://%s-builder.%s:8331" .Release.Name (include "carapace.builder.namespace" .) | quote }}
 - name: CARAPACE_BUILDER_TOKEN
   valueFrom:
     secretKeyRef:
@@ -160,6 +162,8 @@ CARAPACE_BUILDER_URL and _TOKEN for the server: the in-cluster builder, or one o
 {{- else if .Values.builder.externalUrl -}}
 - name: CARAPACE_BUILDER_URL
   value: {{ .Values.builder.externalUrl | quote }}
+- name: CARAPACE_BUILDER_CACHE_URL
+  value: {{ required "builder.externalCacheUrl is required with builder.externalUrl" .Values.builder.externalCacheUrl | quote }}
 - name: CARAPACE_BUILDER_TOKEN
   valueFrom:
     secretKeyRef:
