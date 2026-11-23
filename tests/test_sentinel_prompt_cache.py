@@ -112,7 +112,7 @@ async def test_every_sentinel_request_extends_the_previous_one(tmp_path: Path, d
     )
     model.judge("escalate")
     await sentinel.evaluate_push(
-        security, "refs/heads/main", True, "abc fix", "--- a/x\n+++ b/x", shared_artifacts=set()
+        security, "refs/heads/main", True, "abc fix", "--- a/x\n+++ b/x", shared_artifacts=set(), flake_input_changes=[]
     )
 
     security.append(ApprovalEntry(tool="git_push", args={"ref": "refs/heads/main"}, decision="approved"))

@@ -953,11 +953,15 @@ class Sentinel:
         diff: str,
         *,
         shared_artifacts: set[str],
+        flake_input_changes: list[str],
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
         usage_limits: UsageLimits | None = None,
     ) -> SentinelVerdict:
-        """Evaluate a Git push from the pre-receive hook."""
+        """Evaluate a Git push from the pre-receive hook.
+
+        *flake_input_changes* are lines Carapace rendered from the push's `flake.lock` changes.
+        """
         async with self._lock:
             prompt_parts = _action_log_prompt(session)
 
@@ -980,6 +984,9 @@ class Sentinel:
                     f"Publicly shared artifacts touched: {', '.join(sorted(public_slugs))}. "
                     "These artifacts are publicly reachable without authentication; this push is a publication."
                 )
+            if flake_input_changes:
+                prompt_parts.append("Flake input changes (rendered by Carapace from flake.lock):")
+                prompt_parts.extend(f"- {line}" for line in flake_input_changes)
             # Truncate large diffs to avoid exceeding context limits
             if len(diff) > 8192:
                 diff = diff[:8192] + "\n... (diff truncated)"

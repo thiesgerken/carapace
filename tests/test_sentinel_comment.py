@@ -76,7 +76,14 @@ async def test_commented_push_is_allowed_and_leaves_the_comment() -> None:
     session = SessionSecurity("s")
 
     evaluation = await evaluate_push_with(
-        session, _sentinel_returning(_COMMENTED), "refs/heads/main", True, "abc fix", "diff", shared_artifacts=set()
+        session,
+        _sentinel_returning(_COMMENTED),
+        "refs/heads/main",
+        True,
+        "abc fix",
+        "diff",
+        shared_artifacts=set(),
+        flake_input_changes=[],
     )
 
     assert evaluation.allowed is True
