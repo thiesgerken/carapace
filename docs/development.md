@@ -122,7 +122,8 @@ nix build .#packages.aarch64-linux.server-image --out-link result-server-image
 nix build .#packages.aarch64-linux.frontend-image --out-link result-frontend-image
 nix build .#packages.aarch64-linux.bitwarden-image --out-link result-bitwarden-image
 nix build .#packages.aarch64-linux.sandbox-image-lite --out-link result-sandbox-image
-for image in result-{server,frontend,bitwarden,sandbox}-image; do docker load -i "$image"; done
+nix build .#packages.aarch64-linux.builder-image --out-link result-builder-image
+for image in result-{server,frontend,bitwarden,sandbox,builder}-image; do docker load -i "$image"; done
 export COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml
 docker compose up -d
 ```
@@ -168,7 +169,7 @@ result-build-tool/bin/nix-fast-build --no-nom --flake .#ciBuilds.x86_64-linux --
 result-build-tool/bin/nix-fast-build --no-nom --flake .#ciBuilds.aarch64-darwin --systems "aarch64-darwin aarch64-linux" --out-link result-ci
 ```
 
-Load the four runtime images and run:
+Load the five runtime images and run:
 
 ```sh
 python3 scripts/smoke-images.py
@@ -176,7 +177,7 @@ python3 scripts/smoke-images.py
 CARAPACE_SMOKE_SANDBOX_LITE=1 python3 scripts/smoke-images.py
 ```
 
-The smoke uses disposable volumes and dynamic ports. It checks authenticated server readiness with Postgres and Redis, which includes the start-up egress self-test in a real sandbox on the internal network (the data volume's mountpoint serves as `CARAPACE_HOST_DATA_DIR`, so sandbox workspaces bind like in `docker-compose.yml`), rejects a real knowledge-repo push through the sentinel for a missing session, verifies effective UID 999 and read-only roots, and checks default and overridden frontend CSP headers. Bitwarden runs without a network under the runtime restrictions: status, password generation, server configuration round-trip, and the explicit unauthenticated `bw serve` rejection. No LLM credentials or vault account are needed. In the sandbox image, without capabilities as on Kubernetes, it checks `cgate` and the tools of the server's egress probe (bash `/dev/tcp`, `timeout`, `getent`), that `python3` is python-build-standalone managed by uv, `uv sync` of numpy, `npm ci` of sharp, a downloaded glibc binary through nix-ld, and `nix run nixpkgs#hello` with nixpkgs resolved offline (not for the lite image, see below). The sandbox checks need internet access. Real vault login, unlock, sync, and an authenticated Bitwarden API listener remain outside this smoke.
+The smoke uses disposable volumes and dynamic ports. It checks authenticated server readiness with Postgres and Redis, which includes the start-up egress self-test in a real sandbox on the internal network (the data volume's mountpoint serves as `CARAPACE_HOST_DATA_DIR`, so sandbox workspaces bind like in `docker-compose.yml`), rejects a real knowledge-repo push through the sentinel for a missing session, verifies effective UID 999 and read-only roots, and checks default and overridden frontend CSP headers. Bitwarden runs without a network under the runtime restrictions: status, password generation, server configuration round-trip, and the explicit unauthenticated `bw serve` rejection. No LLM credentials or vault account are needed. In the sandbox image, without capabilities as on Kubernetes, it checks `cgate` and the tools of the server's egress probe (bash `/dev/tcp`, `timeout`, `getent`), that `python3` is python-build-standalone managed by uv, `uv sync` of numpy, `npm ci` of sharp, a downloaded glibc binary through nix-ld, and `nix run nixpkgs#hello` with nixpkgs resolved offline (not for the lite image, see below). The builder runs with the Compose security options, must pass its sandbox probe, builds a skill flake without inputs, answers a second request from the stored result, and runs its API as UID 999. The sandbox checks need internet access. Real vault login, unlock, sync, and an authenticated Bitwarden API listener remain outside this smoke.
 
 Focused host checks remain available:
 
@@ -213,7 +214,7 @@ Failed Nix builds retain expanded log tails in CI. Locally, `nix log .#checks.<s
 
 [PR publication](../.github/workflows/publish-pr.yml) runs the trusted workflow from `main` after successful CI. It checks that the tested SHA still belongs to an open same-repository PR against `main`, then publishes those archives with Skopeo. It does not check out or execute PR code with registry write access. Chart previews use `<base>-pr.<number>` and `<base>-pr.<number>.g<sha>`.
 
-Releases are made by [Presswerk](https://presswerk.dev/) on every push to `main` that brings a release-worthy commit since the last release. The release is declared in the flake's `presswerk.default` output: the version files, the Gitmoji analyzer, the changelog, and the publishers (the four Nix images and the chart on GHCR, the GitHub Release). The CLI comes from the flake's pinned `presswerk` input.
+Releases are made by [Presswerk](https://presswerk.dev/) on every push to `main` that brings a release-worthy commit since the last release. The release is declared in the flake's `presswerk.default` output: the version files, the Gitmoji analyzer, the changelog, and the publishers (the five Nix images and the chart on GHCR, the GitHub Release). The CLI comes from the flake's pinned `presswerk` input.
 
 The [release workflow](../.github/workflows/release.yml) runs in two steps. The push run prepares a `🔖 Release vX.Y.Z` commit with the bumped version files and changelog, pushes it to `main` and dispatches the workflow with that commit as the candidate. The candidate run verifies exactly that commit with Nix verification, which pushes the Nix images and the chart to Cachix. The publish job then runs `presswerk publish`, which fetches the images and the chart from Cachix and pushes the tag, the images, the chart and the GitHub Release. Presswerk checks every destination before writing anything, so a failed or cancelled candidate run is safe to repeat:
 

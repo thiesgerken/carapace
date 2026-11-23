@@ -44,10 +44,17 @@ server = [
     "alembic>=1.18,<2",
     "psycopg[binary]>=3.3,<4",
 ]
+# The skill builder service (carapace-builder); the server stack already contains it.
+builder = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.40,<1",
+    "loguru>=0.7.3",
+]
 
 [project.scripts]
 carapace = "carapace.cli:app"
 carapace-server = "carapace.server:main"
+carapace-builder = "carapace.builder.app:main"
 carapace-migrate = "carapace.database.cli:app"
 
 [dependency-groups]

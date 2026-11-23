@@ -1,0 +1,19 @@
+{{- if .Values.builder.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-builder
+  namespace: {{ include "carapace.builder.namespace" . }}
+  labels:
+    {{- include "carapace.labels" . | nindent 4 }}
+    app.kubernetes.io/component: builder
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.builder.persistence.storageClassName }}
+  storageClassName: {{ .Values.builder.persistence.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.builder.persistence.size }}
+{{- end }}

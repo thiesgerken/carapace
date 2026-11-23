@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
 import subprocess
+import tarfile
 import tempfile
 import time
 import urllib.request
@@ -179,11 +181,82 @@ def assert_sandbox() -> None:
     run(*docker, image, "bash", "-c", SANDBOX_SMOKE)
 
 
+# A skill flake without inputs builds offline: /bin/sh inside the Nix build sandbox is Nix's own shell.
+BUILDER_SMOKE_FLAKE = b"""{
+  outputs = { self }: {
+    packages = builtins.listToAttrs (map (system: {
+      name = system;
+      value.default = derivation {
+        name = "smoke-skill";
+        inherit system;
+        builder = "/bin/sh";
+        args = [ "-c" "echo smoke > $out" ];
+      } // { passthru.carapace.commands.smoke.description = "Smoke"; };
+    }) [ "x86_64-linux" "aarch64-linux" ]);
+  };
+}
+"""
+
+
+def skill_archive(files: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+        for name, content in files.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            tar.addfile(info, io.BytesIO(content))
+    return buffer.getvalue()
+
+
+def put_build(url: str, token: str, archive: bytes) -> dict:
+    req = urllib.request.Request(url, data=archive, method="PUT", headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=300) as response:
+        return json.loads(response.read())
+
+
+def assert_builder() -> str:
+    image = "carapace-builder:local"
+    token = "builder-smoke-token"
+    volume = f"carapace-smoke-builder-{uuid.uuid4().hex[:10]}"
+    run("docker", "volume", "create", volume)
+    container = ""
+    try:
+        run("docker", "run", "--rm", "-v", f"{volume}:/mnt/nix", image, "/bin/carapace-builder-init")
+        # The Compose settings for the Nix build sandbox (see docker-compose.yml).
+        container = run(
+            *("docker", "run", "-d", "-p", "127.0.0.1::8330", "-e", f"CARAPACE_BUILDER_TOKEN={token}"),
+            *("--security-opt", "seccomp=unconfined", "--security-opt", "apparmor=unconfined"),
+            *("--security-opt", "systempaths=unconfined", "-v", f"{volume}:/nix", image),
+        )
+        base = "http://" + run("docker", "port", container, "8330")
+        eventually(lambda: request(base + "/healthz"))
+        url = base + "/builds/" + "5" * 40
+        archive = skill_archive(
+            {"flake.nix": BUILDER_SMOKE_FLAKE, "flake.lock": b'{"nodes":{"root":{}},"root":"root","version":7}'}
+        )
+        built = put_build(url, token, archive)
+        assert built["state"] == "succeeded", built
+        assert built["metadata"] == {"commands": {"smoke": {"description": "Smoke"}}}, built
+        assert put_build(url, token, b"stored results need no archive") == built
+        processes = run("docker", "top", container, "-eo", "pid,euid,cmd").splitlines()[1:]
+        api = [line.split()[1] for line in processes if line.endswith("/bin/carapace-builder")]
+        assert api == ["999"], processes
+        return built["store_paths"][0]
+    except BaseException:
+        if container:
+            subprocess.run(["docker", "logs", container], check=False)
+        raise
+    finally:
+        if container:
+            subprocess.run(["docker", "rm", "-f", container], check=True, capture_output=True)
+        subprocess.run(["docker", "volume", "rm", volume], check=True, capture_output=True)
+
+
 def main() -> None:
     architecture = run("docker", "info", "--format", "{{.Architecture}}")
     assert architecture in ("aarch64", "arm64", "x86_64", "amd64"), architecture
     expected = "arm64" if architecture in ("aarch64", "arm64") else "amd64"
-    for image in ("carapace", "carapace-frontend", "carapace-bitwarden-cli", "carapace-sandbox"):
+    for image in ("carapace", "carapace-frontend", "carapace-bitwarden-cli", "carapace-sandbox", "carapace-builder"):
         actual = run("docker", "image", "inspect", f"{image}:local", "--format", "{{.Architecture}}")
         assert actual == expected, (image, actual, expected)
 
@@ -305,10 +378,12 @@ def main() -> None:
                 assert_hardened(run(*compose, "ps", "-q", service))
             version = assert_bitwarden()
             assert_sandbox()
+            assert_builder()
             print(
                 f"PASS {expected}: authenticated server readiness, sandbox egress self-test, default/override CSP, "
                 f"effective UID 999, read-only roots, Bitwarden CLI {version} offline commands and serve rejection, "
-                "sandbox python-build-standalone, native wheels and npm addons, nix-ld, offline nixpkgs"
+                "sandbox python-build-standalone, native wheels and npm addons, nix-ld, offline nixpkgs, "
+                "builder sandbox probe, build and stored result with the API unprivileged"
             )
         except BaseException:
             subprocess.run([*compose, "logs", "--no-color"], check=False)
