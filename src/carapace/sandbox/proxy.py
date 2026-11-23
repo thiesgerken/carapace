@@ -12,7 +12,7 @@ from loguru import logger
 
 from ..security.context import BoundaryEvaluation
 from ..spans import span
-from .destinations import DestinationPolicy, DestinationRefusedError
+from .destinations import DestinationPolicy, DestinationRefusedError, ip_literal
 
 _CONNECT_OK = b"HTTP/1.1 200 Connection Established\r\n\r\n"
 _PROXY_AUTH_REQUIRED = (
@@ -217,14 +217,16 @@ class ProxyServer:
         target: str,
     ) -> None:
         domain, port = self._parse_host_port(target, default_port=443)
-        addresses = await self._checked_addresses(writer, session_id, domain, port)
-        if addresses is None:
+        if ip_literal(domain) is not None and await self._checked_addresses(writer, session_id, domain, port) is None:
             return
         evaluation = await self._authorize_domain(session_id, domain)
         if not evaluation.allowed:
             logger.warning(f"Proxy CONNECT denied: {domain} (session={session_id}, ip={client_ip})")
             writer.write(_denied_response(evaluation.rejection))
             await writer.drain()
+            return
+        addresses = await self._checked_addresses(writer, session_id, domain, port)
+        if addresses is None:
             return
 
         try:
@@ -263,14 +265,16 @@ class ProxyServer:
             await writer.drain()
             return
 
-        addresses = await self._checked_addresses(writer, session_id, domain, port)
-        if addresses is None:
+        if ip_literal(domain) is not None and await self._checked_addresses(writer, session_id, domain, port) is None:
             return
         evaluation = await self._authorize_domain(session_id, domain)
         if not evaluation.allowed:
             logger.warning(f"Proxy HTTP denied: {method} {domain}{path} (session={session_id}, ip={client_ip})")
             writer.write(_denied_response(evaluation.rejection))
             await writer.drain()
+            return
+        addresses = await self._checked_addresses(writer, session_id, domain, port)
+        if addresses is None:
             return
 
         # Filter out proxy-specific and hop-by-hop headers, then find content-length.
@@ -341,8 +345,9 @@ class ProxyServer:
     ) -> list[str] | None:
         """Resolve *domain* and check its addresses; answer the client and return None when refused.
 
-        Runs before the domain decision: an internal destination is refused by policy, the sentinel
-        is never asked about it.
+        An IP literal is checked before the domain decision, so the sentinel is never asked about an
+        internal address. A name is resolved only after its decision: resolving first would let any
+        sandbox send data out as DNS queries for names nobody approved.
         """
         try:
             return await self._destinations.resolve(domain, port)

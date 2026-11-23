@@ -52,12 +52,16 @@ def make_runtime_mock() -> MagicMock:
     return runtime
 
 
-def fake_dns(monkeypatch: pytest.MonkeyPatch, answers: dict[str, list[str]]) -> None:
-    """Answer getaddrinfo from *answers*; IP literals resolve to themselves, other names fail."""
+def fake_dns(monkeypatch: pytest.MonkeyPatch, answers: dict[str, list[str]]) -> list[str]:
+    """Answer getaddrinfo from *answers*; IP literals resolve to themselves, other names fail.
 
+    Returns the list of looked-up hosts, to assert which names went out to DNS.
+    """
     names = {name.lower(): addresses for name, addresses in answers.items()}
+    lookups: list[str] = []
 
     async def getaddrinfo(_loop: Any, host: str, port: int, **_kwargs: Any) -> list[tuple[Any, ...]]:
+        lookups.append(host)
         if host.lower() not in names:
             try:
                 socket.inet_pton(socket.AF_INET6 if ":" in host else socket.AF_INET, host)
@@ -67,3 +71,4 @@ def fake_dns(monkeypatch: pytest.MonkeyPatch, answers: dict[str, list[str]]) -> 
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port)) for address in addresses]
 
     monkeypatch.setattr(asyncio.BaseEventLoop, "getaddrinfo", getaddrinfo)
+    return lookups
