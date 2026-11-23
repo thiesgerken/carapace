@@ -664,7 +664,7 @@ async def _mcp_bearer_token(ctx: RunContext[Deps], decl: SkillMcpDecl) -> str | 
     cached = ctx.deps.sandbox.get_cached_credential(session_id, vault_path)
     if cached is None:
         logger.info(f"Credential cache miss for {vault_path!r} (MCP server {decl.name!r}), re-fetching from vault")
-        cached = await ctx.deps.credential_registry.fetch(vault_path)
+        cached = await fetch_for_sandbox(ctx.deps.credential_registry, vault_path)
         ctx.deps.sandbox.cache_credential(session_id, vault_path, cached)
     return cached
 
