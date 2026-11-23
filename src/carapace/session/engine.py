@@ -28,6 +28,7 @@ from ..agent.deps import Deps
 from ..agent.history_compaction import HistoryCompactor
 from ..agent.loop import run_agent_turn as _run_agent_turn
 from ..credentials import SessionCredentialRegistry
+from ..credentials.oauth import OAuthStateRefusedError, fetch_for_sandbox
 from ..git.store import GitStore
 from ..knowledge import KnowledgeRepoHandle, KnowledgeRepoResolver
 from ..llm import ModelFactory, SlotLimitedModel
@@ -356,11 +357,14 @@ class SessionEngine(
                 value = None
             try:
                 if value is None:
-                    value = await self._session_credential_registry(session_id).fetch(decl.vault_path)
+                    registry = self._session_credential_registry(session_id)
+                    value = await fetch_for_sandbox(registry, decl.vault_path)
                     self._sandbox_mgr.cache_credential(session_id, decl.vault_path, value)
             except KeyError:
                 logger.warning(f"Credential {decl.vault_path} not found in vault during re-injection")
                 continue
+            except OAuthStateRefusedError as exc:
+                raise SkillActivationError(f"skill {skill_name!r} declares an OAuth entry: {exc}") from exc
             if decl.base64:
                 value = base64.b64decode(value).decode()
             if decl.env_var:

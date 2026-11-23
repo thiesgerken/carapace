@@ -14,8 +14,9 @@ from collections import defaultdict
 from typing import Any
 
 import httpx
+from loguru import logger
 
-from ..models.credentials import CredentialRegistryProtocol
+from ..models.credentials import CredentialRegistryProtocol, CredentialValueKind
 from .protocol import CredentialBackendError
 
 # Refresh this long before the access token expires, so a token is never handed out about to lapse.
@@ -43,22 +44,39 @@ class NotOAuthStateError(ValueError):
         super().__init__(f"{vault_path} holds no OAuth state (a JSON object with token_url and refresh_token)")
 
 
-def is_oauth_state(value: str) -> bool:
+def _json_object(value: str) -> dict[str, Any] | None:
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError:
-        return False
-    return isinstance(parsed, dict) and "token_url" in parsed and "refresh_token" in parsed
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
-async def refuse_oauth_state(registry: CredentialRegistryProtocol, vault_path: str) -> None:
-    """Raise ``OAuthStateRefusedError`` if *vault_path* holds an OAuth state blob.
+def _is_oauth_state(value: str) -> bool:
+    """What `access_token` can refresh: strict, so it fails on anything it would get wrong."""
+    parsed = _json_object(value)
+    return parsed is not None and "token_url" in parsed and "refresh_token" in parsed
 
-    Every representation of the entry carries the blob (a provider's JSON includes the password field),
-    so the check looks at the password value whatever kind the caller asked for.
+
+def _holds_refresh_token(value: str) -> bool:
+    """What never goes to a sandbox: fail closed, also for near misses such as a Google `token_uri` file."""
+    parsed = _json_object(value)
+    return parsed is not None and "refresh_token" in parsed
+
+
+async def fetch_for_sandbox(
+    registry: CredentialRegistryProtocol, vault_path: str, kind: CredentialValueKind = "password"
+) -> str:
+    """A credential value bound for a sandbox. The only way one is fetched, so no path forgets the check.
+
+    Raises ``OAuthStateRefusedError`` for an entry that holds a refresh token. Every representation of the
+    entry carries it (a provider's JSON includes the password field), so the check reads the password value
+    whatever kind the caller asked for.
     """
-    if is_oauth_state(await registry.fetch(vault_path)):
+    password = await registry.fetch(vault_path)
+    if _holds_refresh_token(password):
         raise OAuthStateRefusedError(vault_path)
+    return password if kind == "password" else await registry.fetch(vault_path, kind)
 
 
 async def access_token(registry: CredentialRegistryProtocol, vault_path: str, *, refresh: bool) -> str:
@@ -74,7 +92,7 @@ async def access_token(registry: CredentialRegistryProtocol, vault_path: str, *,
 
 
 def _parse(vault_path: str, value: str) -> dict[str, Any]:
-    if not is_oauth_state(value):
+    if not _is_oauth_state(value):
         raise NotOAuthStateError(vault_path)
     return json.loads(value)
 
@@ -96,13 +114,21 @@ async def _refreshed(vault_path: str, blob: dict[str, Any]) -> dict[str, Any]:
             data[optional] = blob[optional]
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(blob["token_url"], data=data)
+    # The provider's body stays in the server log: token endpoints echo request details in their errors,
+    # and this message reaches the sandbox.
     if resp.status_code >= 400:
+        logger.warning(f"OAuth refresh for {vault_path!r} failed ({resp.status_code}): {resp.text[:200]}")
         raise CredentialBackendError(
             f"OAuth refresh for {vault_path!r} failed ({resp.status_code}); "
-            "the refresh token may be expired, re-provision the vault entry. "
-            f"Response: {resp.text[:200]}"
+            "the refresh token may be expired, re-provision the vault entry"
         )
-    token = resp.json()
+    try:
+        token = resp.json()
+    except ValueError:
+        token = None
+    if not isinstance(token, dict) or not token.get("access_token"):
+        logger.warning(f"OAuth refresh for {vault_path!r} answered without an access_token: {resp.text[:200]}")
+        raise CredentialBackendError(f"OAuth refresh for {vault_path!r} answered without an access_token")
     refreshed = blob | {"access_token": token["access_token"]}
     if "expires_in" in token:
         refreshed["expires_at"] = int(time.time()) + int(token["expires_in"])

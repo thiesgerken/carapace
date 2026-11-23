@@ -44,6 +44,35 @@ let
     };
   };
   mcpNeeds = pkgs.lib.mapAttrs (_: command: command.needs) mcp.passthru.carapace.commands;
+  rejectsMcp =
+    server:
+    !(builtins.tryEval (
+      builtins.toJSON
+        (skillLib.mkSkill {
+          name = "bad-mcp";
+          commands = skillLib.mcpCommands {
+            bad = {
+              description = "Invalid server";
+            }
+            // server;
+          };
+        }).passthru.carapace
+    )).success;
+  rejectedMcp = map rejectsMcp [
+    { url = "http://mcp.example.com/mcp"; }
+    { url = "https://user:secret@mcp.example.com/mcp"; }
+    { url = "https://user@mcp.example.com/mcp"; }
+    { url = "https://[::1]/mcp"; }
+    { url = "https://10.0.0.1/mcp"; }
+    {
+      url = "https://mcp.example.com/mcp";
+      command = "local-mcp";
+    }
+    {
+      command = "local-mcp";
+      bearer = "demo/token";
+    }
+  ];
   skill = skillLib.mkSkill {
     name = "contract";
     needs = {
@@ -67,6 +96,9 @@ let
   };
 in
 assert pkgs.lib.assertMsg (pkgs.lib.all (x: x) rejected) "mkSkill accepted invalid needs";
+assert pkgs.lib.assertMsg (pkgs.lib.all (
+  x: x
+) rejectedMcp) "mcpCommands accepted an invalid server";
 assert pkgs.lib.assertMsg (
   mcpNeeds == {
     tracker = {

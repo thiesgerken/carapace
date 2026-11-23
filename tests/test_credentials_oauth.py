@@ -8,14 +8,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from carapace.credentials.oauth import (
-    NotOAuthStateError,
-    OAuthStateRefusedError,
-    access_token,
-    is_oauth_state,
-    refuse_oauth_state,
-)
+from carapace.agent.tools import _cache_skill_credentials
+from carapace.credentials.oauth import NotOAuthStateError, OAuthStateRefusedError, access_token, fetch_for_sandbox
 from carapace.credentials.protocol import CredentialBackendError
+from carapace.models.credentials import CredentialMetadata
+from carapace.models.skills import SkillCredentialDecl
 
 _BASE_BLOB = {"token_url": "https://issuer.example.com/token", "client_id": "cid", "refresh_token": "rt"}
 
@@ -26,7 +23,7 @@ class _FakeVault:
         self.written: str | None = None
 
     async def fetch(self, vault_path: str, kind: str = "password") -> str:
-        return self.value
+        return self.value if kind == "password" else f"{kind} of {vault_path}"
 
     async def write(self, vault_path: str, value: str) -> None:
         self.written = value
@@ -43,16 +40,41 @@ def _token_endpoint(*, status: int = 200, payload: dict | None = None):
     return patch("carapace.credentials.oauth.httpx.AsyncClient", MagicMock(return_value=cm)), client
 
 
-def test_a_blob_is_a_json_object_with_token_url_and_refresh_token() -> None:
-    assert is_oauth_state(json.dumps(_BASE_BLOB))
-    assert not is_oauth_state('{"token_url": "https://issuer.example.com/token"}')
-    assert not is_oauth_state("s3cret")
-
-
-async def test_a_blob_is_refused_and_other_values_pass() -> None:
+@pytest.mark.parametrize(
+    "value",
+    [
+        _BASE_BLOB,
+        # A near miss is refused too: a Google authorized_user file names its endpoint token_uri.
+        {"token_uri": "https://oauth2.example.com/token", "client_id": "cid", "refresh_token": "rt"},
+        {"refresh_token": "rt"},
+    ],
+)
+@pytest.mark.parametrize("kind", ["password", "json", "login"])
+async def test_anything_with_a_refresh_token_is_refused_in_every_kind(value: dict, kind: str) -> None:
     with pytest.raises(OAuthStateRefusedError, match="--access-token"):
-        await refuse_oauth_state(_FakeVault(_BASE_BLOB), "demo/oauth")
-    await refuse_oauth_state(_FakeVault("s3cret"), "demo/api-key")
+        await fetch_for_sandbox(_FakeVault(value), "demo/oauth", kind)  # type: ignore[arg-type]
+
+
+async def test_other_values_go_to_the_sandbox_in_the_kind_asked_for() -> None:
+    vault = _FakeVault('{"user": "a", "password": "b"}')
+
+    assert await fetch_for_sandbox(vault, "demo/login") == '{"user": "a", "password": "b"}'
+    assert await fetch_for_sandbox(vault, "demo/login", "json") == "json of demo/login"
+
+
+async def test_use_skill_never_caches_an_oauth_entry() -> None:
+    ctx = MagicMock()
+    ctx.deps.credential_registry = _FakeVault(_BASE_BLOB)
+    ctx.deps.credential_registry.fetch_metadata = AsyncMock(
+        return_value=CredentialMetadata(vault_path="demo/oauth", name="OAuth", description="")
+    )
+    ctx.deps.append_session_events = None
+    decl = SkillCredentialDecl(vault_path="demo/oauth", description="OAuth", env_var="TOKEN")
+
+    message, _ = await _cache_skill_credentials(ctx, [decl], "tracker")
+
+    assert "refresh token" in message
+    ctx.deps.sandbox.cache_credential.assert_not_called()
 
 
 async def test_a_missing_access_token_is_refreshed_and_written_back() -> None:
@@ -87,13 +109,28 @@ async def test_an_expiring_token_is_refreshed() -> None:
         assert await access_token(vault, "demo/oauth", refresh=False) == "fresh"
 
 
-async def test_a_failed_refresh_raises() -> None:
-    endpoint, _ = _token_endpoint(status=400, payload={"error": "invalid_grant"})
+async def test_a_failed_refresh_raises_without_the_providers_answer() -> None:
+    endpoint, _ = _token_endpoint(status=400, payload={"error": "invalid_grant", "client_id": "cid-echoed"})
 
-    with endpoint, pytest.raises(CredentialBackendError, match="refresh"):
+    with endpoint, pytest.raises(CredentialBackendError, match="re-provision") as raised:
+        await access_token(_FakeVault(_BASE_BLOB), "demo/oauth", refresh=False)
+    assert "cid-echoed" not in str(raised.value)
+
+
+async def test_a_refresh_answer_without_an_access_token_raises() -> None:
+    endpoint, _ = _token_endpoint(payload={"token_type": "bearer"})
+
+    with endpoint, pytest.raises(CredentialBackendError, match="without an access_token"):
         await access_token(_FakeVault(_BASE_BLOB), "demo/oauth", refresh=False)
 
 
 async def test_an_entry_without_oauth_state_has_no_access_token() -> None:
     with pytest.raises(NotOAuthStateError):
         await access_token(_FakeVault("s3cret"), "demo/api-key", refresh=False)
+
+
+async def test_a_near_miss_is_refused_but_cannot_be_refreshed_either() -> None:
+    vault = _FakeVault({"token_uri": "https://oauth2.example.com/token", "client_id": "cid", "refresh_token": "rt"})
+
+    with pytest.raises(NotOAuthStateError):
+        await access_token(vault, "demo/google", refresh=False)

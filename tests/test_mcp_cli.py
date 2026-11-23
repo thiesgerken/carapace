@@ -35,6 +35,11 @@ _SERVER = textwrap.dedent(
         return json.dumps({"names": names, "filter": filter}, sort_keys=True)
 
     @mcp.tool()
+    def describe(schema: str, help: str = "") -> str:
+        "Properties named like the bridge's own flags."
+        return f"{schema}|{help}"
+
+    @mcp.tool()
     def fail() -> str:
         "Always fails."
         raise ValueError("broken on purpose")
@@ -68,6 +73,7 @@ def test_list_tools_shows_names_and_first_description_lines(server: str) -> None
     assert done.stdout.splitlines() == [
         "echo\tEcho text a number of times.",
         "tag\tShow what arrived.",
+        "describe\tProperties named like the bridge's own flags.",
         "fail\tAlways fails.",
     ]
 
@@ -222,3 +228,11 @@ def test_a_rejected_oauth_token_is_refreshed_once_for_the_whole_call(tmp_path: P
         "get demo/oauth --access-token",
         "get demo/oauth --access-token --refresh",
     ]
+
+
+def test_a_property_named_like_a_bridge_flag_is_passed_with_json(server: str) -> None:
+    help_text = _mcp(server, "describe", "--help").stdout
+    done = _mcp(server, "describe", "--json", '{"schema": "s", "help": "h"}')
+
+    assert "Without a flag, because the name is taken: schema, help" in " ".join(help_text.split())
+    assert (done.returncode, done.stdout) == (0, "s|h\n")

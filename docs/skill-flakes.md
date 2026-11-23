@@ -143,7 +143,7 @@ default = skill.mkSkill {
 };
 ```
 
-- `url` (streamable HTTP) or `command` (a shell command that starts the server on stdio), exactly one.
+- `url` (streamable HTTP) or `command` (a shell command that starts the server on stdio), exactly one. The URL must be `https://` with a host name: no `http://`, since tokens go along, and no user info or IP address, which the domain review cannot express. A mistake fails the evaluation.
 - For an HTTP server, `bearer` names a vault path whose value is sent as `Authorization: Bearer`, and `oauth` names an OAuth entry (see below). At most one; neither applies to stdio, which takes its credentials as environment variables through `needs`.
 - `needs` is derived from the server: the URL's host, and the `bearer` credential or the `oauth` entry. The skill-wide `needs` do not apply. A `needs` given here overrides the derived one per kind.
 

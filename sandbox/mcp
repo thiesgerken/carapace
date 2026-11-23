@@ -124,22 +124,26 @@ def _tool_parser(prog: str, tool: dict[str, Any]) -> argparse.ArgumentParser:
     parser.add_argument("--json", type=_json_value, metavar="BODY", help="the whole argument object as JSON")
     properties = parser.add_argument_group("arguments")
     required = set(tool["input_schema"].get("required", []))
+    colliding: list[str] = []
     for name, prop in tool["input_schema"].get("properties", {}).items():
         description = (prop.get("description") or "") + (" (required)" if name in required else "")
-        flag = {"dest": f"arg:{name}", "help": description}
+        options: dict[str, Any] = {"dest": f"arg:{name}", "help": description}
         kind = _scalar_type(prop)
         if kind == "boolean":
-            properties.add_argument(f"--{name}", action=argparse.BooleanOptionalAction, **flag)
+            options |= {"action": argparse.BooleanOptionalAction}
         elif kind is not None:
-            properties.add_argument(
-                f"--{name}", type=_SCALARS[kind], choices=prop.get("enum"), metavar=kind.upper(), **flag
-            )
+            options |= {"type": _SCALARS[kind], "choices": prop.get("enum"), "metavar": kind.upper()}
         elif prop.get("type") == "array" and (item_kind := _scalar_type(prop.get("items", {}))) in _SCALARS:
-            properties.add_argument(
-                f"--{name}", type=_SCALARS[item_kind], action="append", metavar=item_kind.upper(), **flag
-            )
+            options |= {"type": _SCALARS[item_kind], "action": "append", "metavar": item_kind.upper()}
         else:
-            properties.add_argument(f"--{name}", type=_json_value, metavar="JSON", **flag)
+            options |= {"type": _json_value, "metavar": "JSON"}
+        try:
+            properties.add_argument(f"--{name}", **options)
+        except argparse.ArgumentError:
+            # `--json`, `--schema`, `--help` or another property's `--no-x` has the name already.
+            colliding.append(name)
+    if colliding:
+        parser.epilog += f" Without a flag, because the name is taken: {', '.join(colliding)}; pass these with --json."
     return parser
 
 

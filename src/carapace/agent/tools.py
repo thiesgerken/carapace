@@ -24,7 +24,7 @@ from pydantic_ai.toolsets.abstract import AbstractToolset
 from .. import security as security
 from ..artifacts import artifact_index, artifact_title
 from ..credentials import CredentialBackendError
-from ..credentials.oauth import OAuthStateRefusedError, is_oauth_state
+from ..credentials.oauth import OAuthStateRefusedError, fetch_for_sandbox
 from ..credentials.oauth import access_token as oauth_access_token
 from ..llm import (
     ProviderCompactionRejectionCapability,
@@ -544,9 +544,12 @@ async def _cache_skill_credentials(
         if decl.vault_path in failed_vault_paths:
             continue  # skip if metadata fetch already failed
         try:
-            value = await cred_registry.fetch(decl.vault_path)
+            value = await fetch_for_sandbox(cred_registry, decl.vault_path)
         except KeyError:
             fetch_errors.append(f"Credential {decl.vault_path} not found in vault")
+            continue
+        except OAuthStateRefusedError as exc:
+            fetch_errors.append(str(exc))
             continue
         except CredentialBackendError as exc:
             logger.warning(
@@ -559,9 +562,6 @@ async def _cache_skill_credentials(
                 f"Credential fetch failed for {decl.vault_path!r} (session {session_id}, skill {skill_name!r}): {exc}"
             )
             fetch_errors.append(f"Credential {decl.vault_path}: vault request failed ({type(exc).__name__})")
-            continue
-        if is_oauth_state(value):
-            fetch_errors.append(str(OAuthStateRefusedError(decl.vault_path)))
             continue
         ctx.deps.sandbox.cache_credential(session_id, decl.vault_path, value)
         cached += 1
@@ -614,9 +614,7 @@ async def _collect_context_injection(ctx: RunContext[Deps], contexts: list[str])
                 # Cache miss (e.g. after backend restart) — re-fetch from vault
                 logger.info(f"Credential cache miss for {decl.vault_path!r} (skill {ctx_name!r}), re-fetching")
                 try:
-                    cached = await ctx.deps.credential_registry.fetch(decl.vault_path)
-                    if is_oauth_state(cached):
-                        raise OAuthStateRefusedError(decl.vault_path)
+                    cached = await fetch_for_sandbox(ctx.deps.credential_registry, decl.vault_path)
                     ctx.deps.sandbox.cache_credential(session_id, decl.vault_path, cached)
                 except Exception:
                     inj.missing_cached.append((ctx_name, decl.vault_path))

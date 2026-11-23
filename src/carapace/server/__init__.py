@@ -40,7 +40,7 @@ from ..cache import SessionListCache
 from ..codex_auth import CodexAccounts, CodexCredentialStore
 from ..config import build_config
 from ..credentials import CredentialBackendError, CredentialRegistry, build_credential_registry
-from ..credentials.oauth import NotOAuthStateError, OAuthStateRefusedError, refuse_oauth_state
+from ..credentials.oauth import NotOAuthStateError, OAuthStateRefusedError, fetch_for_sandbox
 from ..credentials.oauth import access_token as oauth_access_token
 from ..credentials.protocol import UnsupportedCredentialValueKindError
 from ..database.engine import SessionFactory, create_engine_and_factory, run_migrations
@@ -1234,8 +1234,7 @@ async def fetch_credential(
 
     try:
         # After the review, so a denial reads nothing from the vault.
-        await refuse_oauth_state(credential_registry, vault_path)
-        value = await credential_registry.fetch(vault_path, kind)
+        value = await fetch_for_sandbox(credential_registry, vault_path, kind)
     except KeyError:
         return Response(status_code=404, content="Credential not found")
     except (UnsupportedCredentialValueKindError, OAuthStateRefusedError) as exc:

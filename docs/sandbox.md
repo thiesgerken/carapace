@@ -242,7 +242,7 @@ Under the hood `cgate` posts `{"domains": [...], "credentials": [...], "oauth": 
 | `--name NAME` | The server's name in usage and error messages. |
 | `--list-tools [--json]` | One line per tool (name, tab, first description line), or names, descriptions and input schemas as JSON. |
 | `TOOL --help`, `TOOL --schema` | The tool's flags, or its input JSON Schema. |
-| `TOOL [flags]` | One flag per top-level property, named exactly like it. Strings, integers and numbers take a value, booleans are `--flag` or `--no-flag`, an array of scalars repeats its flag, anything else takes a JSON value: literal, `@file`, or `-` for stdin. `--json BODY` passes the whole argument object instead, and is an error next to any property flag. A required property missing is a usage error. |
+| `TOOL [flags]` | One flag per top-level property, named exactly like it. Strings, integers and numbers take a value, booleans are `--flag` or `--no-flag`, an array of scalars repeats its flag, anything else takes a JSON value: literal, `@file`, or `-` for stdin. `--json BODY` passes the whole argument object instead, and is an error next to any property flag. A required property missing is a usage error. A property whose name is taken (`json`, `schema`, `help`, or the `no-x` of a boolean `x`) gets no flag; `--help` lists it, and it goes in through `--json`. |
 | Output | The tool's text content; its structured content as JSON when there is no text. |
 | Exit status | `0` success, `1` the call failed or the tool reported an error (on stderr), `2` usage error, also an unknown tool. |
 

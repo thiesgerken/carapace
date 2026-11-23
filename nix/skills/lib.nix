@@ -153,14 +153,23 @@ in
     }:
     let
       where = "MCP server ${name}";
-      host = builtins.match "https?://([^/:?#]+).*" url;
+      # A host name and an optional port: no userinfo, whose `u@` would become the declared domain, and no
+      # IP literal, which the proxy's domain review does not cover. HTTPS only, since tokens go along.
+      authority =
+        if url == null then null else builtins.match "https://([A-Za-z0-9.-]+)(:[0-9]+)?([/?#].*)?" url;
+      host = if authority == null then null else builtins.head authority;
     in
-    assert lib.assertMsg ((url == null) != (command == null)) "${where}: set exactly one of url and command";
-    assert lib.assertMsg (url == null || host != null) "${where}: url must be http(s)";
+    assert lib.assertMsg (
+      (url == null) != (command == null)
+    ) "${where}: set exactly one of url and command";
+    assert lib.assertMsg (url == null || (host != null && builtins.match "[0-9.]+" host == null))
+      "${where}: url must be https://<host name>[:port][/path], without userinfo or IP address: ${toString url}";
     assert lib.assertMsg (
       command == null || (bearer == null && oauth == null)
     ) "${where}: bearer and oauth apply to url; a stdio server takes credentials through needs";
-    assert lib.assertMsg (bearer == null || oauth == null) "${where}: set at most one of bearer and oauth";
+    assert lib.assertMsg (
+      bearer == null || oauth == null
+    ) "${where}: set at most one of bearer and oauth";
     {
       inherit description;
       exec = lib.concatStringsSep " " (
@@ -173,7 +182,7 @@ in
       # Every kind set, so the skill-wide needs do not leak into the server's command.
       needs =
         noNeeds
-        // lib.optionalAttrs (url != null) { domains = host; }
+        // lib.optionalAttrs (url != null) { domains = [ host ]; }
         // lib.optionalAttrs (bearer != null) { credentials.MCP_BEARER_TOKEN = bearer; }
         // lib.optionalAttrs (oauth != null) { oauth = [ oauth ]; }
         // needs;
