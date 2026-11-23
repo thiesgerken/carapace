@@ -574,17 +574,19 @@ class SandboxSessionLifecycle:
         logger.info(f"Created warm sandbox {sandbox_name} ({container_id[:12]})")
         return container_id
 
-    async def verify_no_direct_egress(self) -> None:
+    async def verify_no_direct_egress(self, resolv_conf: Path) -> None:
         """Probe from a throwaway sandbox that nothing leaves it except through the session proxy.
 
         Raises ``EgressCheckError`` when the probe got out, ``EgressProbeError`` when it could not tell.
         The probe is a real sandbox, so it sits behind the same network, labels and NetworkPolicy as every
         session's. The session proxy must already listen: it is the probe's positive control.
+        *resolv_conf* is the server's own resolver config (``/etc/resolv.conf``), whose resolvers the probe must
+        not reach.
         """
         proxy_host = await self._runtime.get_host_ip(self._network_name)
         if proxy_host is None:
             raise EgressProbeError(f"no address of the session proxy on network '{self._network_name}'")
-        env = probe_env(proxy_host, self._proxy_port, Path("/etc/resolv.conf").read_text())
+        env = probe_env(proxy_host, self._proxy_port, resolv_conf.read_text())
         probe_id = self._EGRESS_CHECK_ID
         name = self.sandbox_name_for_id(probe_id)
         with span("sandbox", "egress check"):

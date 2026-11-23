@@ -600,7 +600,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # After the proxy starts, which the probe connects to as its positive control; before anything is served.
     try:
-        await _sandbox_mgr.verify_no_direct_egress()
+        await _sandbox_mgr.verify_no_direct_egress(Path("/etc/resolv.conf"))
     except EgressCheckError as exc:
         logger.error(_egress_check_failure(exc, _config.sandbox.runtime, sandbox_network))
         raise SystemExit(1) from exc
