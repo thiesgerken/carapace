@@ -1,0 +1,18 @@
+[project]
+name = "demo-uv-skill"
+version = "0.1.0"
+description = "Example skill packaged with the Carapace uv helper"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx",
+    # Published as an sdist only, so the flake names its build system through the overrides hook.
+    "docopt",
+]
+
+[project.scripts]
+demo-status = "demo_uv_skill:status"
+demo-usage = "demo_uv_skill:usage"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
