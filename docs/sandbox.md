@@ -45,7 +45,7 @@ The official image is built with Nix (`nix/sandbox.nix`) and has no FHS layout: 
 - **Python** is python-build-standalone 3.14, installed as uv's managed default under `/root/.local/share/uv/python` with `python3` in `/root/.local/bin`. `UV_PYTHON_PREFERENCE=only-managed` keeps uv away from Nix interpreters. A Nix-built interpreter bypasses nix-ld and cannot load the native libraries of wheels, so none is on `PATH`; the stdio MCP bridge has its own Nix Python environment outside `PATH`.
 - **Node.js 24** with npm and corepack (pnpm, yarn), **uv**, Git, curl, jq, ripgrep, kubectl, poppler-utils, the usual base tools, and the sandbox CLIs (`ccred`, `cgate`, `setup-proxy.sh`, the skill activator, the stdio MCP bridge).
 - **FHS data files**: a CA bundle at `/etc/ssl/certs/ca-certificates.crt` and `/etc/ssl/cert.pem`, terminfo at `/usr/share/terminfo`, `/etc/fonts/fonts.conf` with DejaVu, and an `en_US.UTF-8` locale archive (`LANG` is `C.UTF-8`).
-- **Nix**: single-user as root with flakes enabled, no build sandbox, and its own Nix database, so `nix profile` and `nix-collect-garbage` know the image's paths (which are GC roots). The `nixpkgs` registry entry is the flake's own locked nixpkgs, marked final, and the image ships that source as a valid store path, so `nix run nixpkgs#…` evaluates without downloading nixpkgs. The global flake registry is disabled, because fetching it needs a domain approval. Substitutes still come from `cache.nixos.org`, a domain the proxy gates like any other. Evaluating nixpkgs peaks around 1.3 GiB, so sandboxes get a 2 GiB memory limit (Docker runtime default and Helm value); the request stays at 128 MiB.
+- **Nix**: single-user as root with flakes enabled, no build sandbox, and its own Nix database, so `nix profile` and `nix-collect-garbage` know the image's paths (which are GC roots). The `nixpkgs` registry entry is the flake's own locked nixpkgs, marked final, and the image ships that source as a valid store path, so `nix run nixpkgs#…` evaluates without downloading nixpkgs. The global flake registry is disabled, because fetching it needs a domain approval. Substitutes come only from the [builder cache](#builder-cache), which also passes `cache.nixos.org` through. Evaluating nixpkgs peaks around 1.3 GiB, so sandboxes get a 2 GiB memory limit (Docker runtime default and Helm value); the request stays at 128 MiB.
 
 Store and installed packages live in the container layer and are gone when a sandbox is recreated.
 
@@ -208,6 +208,12 @@ sandbox:
 ```
 
 Prefer exact hosts or narrow CIDRs over your whole LAN, and never allow the cluster's service or pod ranges or the Compose network as a whole: that reopens Redis, Postgres and the builder API to any approved domain that resolves there.
+
+### Builder cache
+
+`cache.carapace.internal` is the one destination the proxy reaches without a domain decision and despite being internal: it maps that name to the [builder's binary cache](builder.md#binary-cache) (`CARAPACE_BUILDER_CACHE_URL`). Only plain-HTTP `GET` and `HEAD` of cache paths pass (`/nix-cache-info`, narinfos, NARs); anything else, and `CONNECT`, is a `403`. So `nix run nixpkgs#hello` costs no sentinel call per download, and the mapping reaches nothing on the builder but the cache.
+
+Sandboxes get the matching Nix settings in `NIX_CONFIG`: the cache as the only substituter, the builder's and the upstreams' public keys as the trusted keys (so an unsigned or wrongly signed path is refused), `max-substitution-jobs = 1` and `narinfo-cache-negative-ttl = 30`, because Nix otherwise remembers a missing path for an hour. The server learns the keys from the builder's `/info`; a sandbox created while the builder has never answered starts without `NIX_CONFIG` and substitutes from `cache.nixos.org` through the domain gate instead. The agent is root in its sandbox and can override `NIX_CONFIG`. That only changes its own sandbox: any other substituter is an ordinary destination that needs a domain approval.
 
 ### Exec-scoped TCP tunnels
 

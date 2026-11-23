@@ -248,6 +248,7 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`    | `carapace`                | Server Deployment name (Helm sets to release name)         |
 | `CARAPACE_SANDBOX_NETWORK_NAME`                  | `carapace-sandbox`        | Docker network name (Docker only)                          |
 | `CARAPACE_BUILDER_URL`                           | (none: no builder)        | [Skill builder](builder.md) API URL (Helm sets it)         |
+| `CARAPACE_BUILDER_CACHE_URL`                     | (required with a URL)     | Builder [binary cache](builder.md#binary-cache) URL (Helm sets it) |
 | `CARAPACE_BUILDER_TOKEN`                         | (required with a URL)     | Builder token (Helm reads it from the builder Secret)      |
 | `CARAPACE_BUILDER_TIMEOUT_SECONDS`               | `1800`                    | Upper bound for one build request                          |
 
