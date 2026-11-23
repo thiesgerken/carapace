@@ -273,6 +273,12 @@ def main() -> None:
         "%g",
         "/var/run/docker.sock",
     )
+    project = f"carapace-smoke-{uuid.uuid4().hex[:10]}"
+    # The server creates sandboxes through the host's Docker daemon, which resolves their workspace bind
+    # mounts on the host: the data directory needs a host path, as CARAPACE_HOST_DATA_DIR in
+    # docker-compose.yml. A volume's mountpoint is one, and the daemon owns its cleanup.
+    data_volume = run("docker", "volume", "create", f"{project}-data")
+    host_data_dir = run("docker", "volume", "inspect", "--format", "{{.Mountpoint}}", data_volume)
     with tempfile.TemporaryDirectory(prefix="carapace-smoke-") as directory:
         state = Path(directory)
         state.chmod(0o755)
@@ -288,9 +294,13 @@ def main() -> None:
                             "image": "carapace:local",
                             "ports": ["127.0.0.1::8321"],
                             "group_add": [socket_gid],
-                            "volumes": ["data:/var/lib/carapace", "/var/run/docker.sock:/var/run/docker.sock"],
+                            "volumes": [
+                                f"{data_volume}:/var/lib/carapace",
+                                "/var/run/docker.sock:/var/run/docker.sock",
+                            ],
                             "environment": {
                                 "CARAPACE_TOKEN": "carapace-smoke-password",
+                                "CARAPACE_HOST_DATA_DIR": host_data_dir,
                                 "CARAPACE_DATABASE_URL": "postgresql+psycopg://carapace:carapace@postgres:5432/carapace",
                                 "CARAPACE_CACHE_REDIS_URL": "redis://redis:6379/0",
                                 "CARAPACE_SANDBOX_BASE_IMAGE": "carapace-sandbox:local",
@@ -334,12 +344,12 @@ def main() -> None:
                             "healthcheck": {"test": ["CMD", "redis-cli", "ping"], "interval": "2s", "retries": 30},
                         },
                     },
-                    "volumes": {"data": {}},
+                    "volumes": {data_volume: {"external": True}},
                     "networks": {"carapace-sandbox": {"internal": True}},
                 }
             )
         )
-        compose = ["docker", "compose", "-p", f"carapace-smoke-{uuid.uuid4().hex[:10]}", "-f", str(compose_file)]
+        compose = ["docker", "compose", "-p", project, "-f", str(compose_file)]
         try:
             run(*compose, "up", "-d")
             server = "http://" + run(*compose, "port", "server", "8321")
@@ -349,6 +359,7 @@ def main() -> None:
                 )
             )
             assert json.loads(body)["user"]["username"] == "admin", body
+            assert "Sandbox egress self-test passed" in run(*compose, "logs", "--no-color", "server")
             assert_push_gated(run(*compose, "ps", "-q", "server"))
             for service, policy in (
                 ("frontend", "img-src 'self' data: blob:"),
@@ -364,7 +375,7 @@ def main() -> None:
             assert_sandbox()
             assert_builder()
             print(
-                f"PASS {expected}: authenticated server readiness, default/override CSP, "
+                f"PASS {expected}: authenticated server readiness, sandbox egress self-test, default/override CSP, "
                 f"effective UID 999, read-only roots, Bitwarden CLI {version} offline commands and serve rejection, "
                 "sandbox python-build-standalone, native wheels and npm addons, nix-ld, offline nixpkgs, "
                 "builder sandbox probe, build and stored result with the API unprivileged"
@@ -374,6 +385,7 @@ def main() -> None:
             raise
         finally:
             subprocess.run([*compose, "down", "--volumes", "--remove-orphans"], check=True)
+            subprocess.run(["docker", "volume", "rm", data_volume], check=True)
 
 
 if __name__ == "__main__":

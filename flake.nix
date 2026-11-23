@@ -53,6 +53,27 @@
       forSystems = nixpkgs.lib.genAttrs systems;
       forLinux = nixpkgs.lib.genAttrs linuxSystems;
       linuxFor = system: if system == "aarch64-darwin" then "aarch64-linux" else system;
+      # What skills get from the skills subflake (nix/skills/flake.nix), here on this flake's inputs.
+      skillLib = import ./nix/skills {
+        inherit
+          nixpkgs
+          pyproject-nix
+          uv2nix
+          pyproject-build-systems
+          ;
+      };
+      # Built against this checkout's lib, as the skills of a knowledge repo are against their pinned one.
+      skillExamples = forLinux (
+        system:
+        nixpkgs.lib.mapAttrs' (
+          name: _:
+          nixpkgs.lib.nameValuePair "skill-example-${name}"
+            ((import ./nix/skills/examples/${name}/flake.nix).outputs {
+              inherit nixpkgs;
+              carapace.lib = skillLib;
+            }).packages.${system}.default
+        ) (builtins.readDir ./nix/skills/examples)
+      );
       project = forSystems (
         system:
         let
@@ -131,7 +152,23 @@
         in
         p.backend.checks
         // p.frontend.checks
+        // skillExamples.${system}
         // {
+          skill-wrapper-contract = import ./nix/skills/tests.nix {
+            inherit (p) pkgs;
+            skillLib = skillLib.skill p.pkgs;
+          };
+          # The examples' local commands run: the venv imports its packages, Node finds node_modules.
+          skill-examples-run =
+            let
+              examples = skillExamples.${system};
+            in
+            p.pkgs.runCommand "skill-examples-run" { } ''
+              [ "$(${examples.skill-example-uv}/bin/demo-usage Ada)" = "hello, Ada" ]
+              ${examples.skill-example-npm}/bin/demo-npm-hello Ada | grep -q "hello, Ada"
+              ${examples.skill-example-pnpm}/bin/demo-pnpm-hello Ada | grep -q "hello, Ada"
+              touch $out
+            '';
           helm =
             p.pkgs.runCommand "carapace-helm"
               {
