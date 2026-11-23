@@ -20,14 +20,28 @@ let
   };
 
   # A command's own `needs` replaces the skill-wide default per kind, so a command can drop or narrow
-  # what the rest of the skill asks for.
-  needsOf = defaults: command: noNeeds // defaults // (command.needs or { });
+  # what the rest of the skill asks for. Checked here, which the metadata forces: a mistake fails
+  # `nix eval` of `passthru.carapace` as well as the build.
+  needsOf =
+    where: defaults: command:
+    let
+      needs = noNeeds // defaults // (command.needs or { });
+      unknown = lib.subtractLists (lib.attrNames noNeeds) (lib.attrNames needs);
+      # Spliced into the wrapper as `VAR="$(ccred get …)"; export VAR`.
+      badVars = lib.filter (var: builtins.match "[A-Za-z_][A-Za-z0-9_]*" var == null) (
+        lib.attrNames needs.credentials
+      );
+    in
+    assert lib.assertMsg (unknown == [ ])
+      "${where}: unknown kinds in needs: ${lib.concatStringsSep ", " unknown} (known: domains, credentials, tunnels)";
+    assert lib.assertMsg (
+      badVars == [ ]
+    ) "${where}: credential variables must be shell identifiers: ${lib.concatStringsSep ", " badVars}";
+    assert lib.assertMsg (needs.tunnels == [ ]) "${where}: tunnels are not supported by cgate yet";
+    needs;
 
   wrapper =
-    name: command: needs:
-    assert lib.assertMsg (
-      needs.tunnels == [ ]
-    ) "skill command ${name}: tunnels are not supported by cgate yet";
+    command: needs:
     let
       gateArgs =
         map (domain: "--domain ${lib.escapeShellArg domain}") needs.domains
@@ -90,9 +104,9 @@ in
       needs ? { },
     }:
     let
-      declared = lib.mapAttrs (_: command: {
+      declared = lib.mapAttrs (cmd: command: {
         inherit (command) description;
-        needs = needsOf needs command;
+        needs = needsOf "skill ${name}, command ${cmd}" needs command;
       }) commands;
     in
     pkgs.runCommand "skill-${name}"
@@ -108,7 +122,7 @@ in
         ''
         + lib.concatStrings (
           lib.mapAttrsToList (cmd: command: ''
-            substitute ${pkgs.writeText "${cmd}-wrapper" (wrapper cmd command declared.${cmd}.needs)} \
+            substitute ${pkgs.writeText "${cmd}-wrapper" (wrapper command declared.${cmd}.needs)} \
               $out/bin/${cmd} --subst-var out
             chmod +x $out/bin/${cmd}
           '') commands

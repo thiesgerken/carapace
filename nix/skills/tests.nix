@@ -2,6 +2,26 @@
 # cgate and ccred that log their calls, so it needs no Carapace.
 { pkgs, skillLib }:
 let
+  # A mistake in `needs` fails the metadata the builder evaluates, not only the build.
+  rejects =
+    needs:
+    let
+      bad = skillLib.mkSkill {
+        name = "bad";
+        commands.cmd = {
+          exec = "true";
+          description = "Invalid needs";
+          inherit needs;
+        };
+      };
+    in
+    !(builtins.tryEval (builtins.toJSON bad.passthru.carapace)).success;
+  rejected = map rejects [
+    { domain = [ "api.example.com" ]; }
+    { credentials."A=B" = "demo/token"; }
+    { credentials."TOKEN; rm -rf ~" = "demo/token"; }
+    { tunnels = [ "imap.example.com:993" ]; }
+  ];
   skill = skillLib.mkSkill {
     name = "contract";
     needs = {
@@ -24,6 +44,7 @@ let
     };
   };
 in
+assert pkgs.lib.assertMsg (pkgs.lib.all (x: x) rejected) "mkSkill accepted invalid needs";
 pkgs.runCommand "skill-wrapper-contract" { } ''
   mkdir stubs
   cat > stubs/cgate <<'STUB'
@@ -51,9 +72,11 @@ pkgs.runCommand "skill-wrapper-contract" { } ''
   [ "$(${skill}/bin/local)" = local ]
   [ ! -e calls ]
 
-  # A denial or a failing ccred stops the wrapper before the command runs.
-  ! CGATE_DENY=1 ${skill}/bin/show-token
-  ! CCRED_FAIL=1 ${skill}/bin/show-token > out
+  # A denial or a failing ccred stops the wrapper before the command runs. `if` rather than `!`, which
+  # errexit ignores.
+  if CGATE_DENY=1 ${skill}/bin/show-token > out; then exit 1; fi
+  [ ! -s out ]
+  if CCRED_FAIL=1 ${skill}/bin/show-token > out; then exit 1; fi
   [ ! -s out ]
 
   # The package holds the wrappers and nothing else.

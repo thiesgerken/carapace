@@ -64,14 +64,14 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 
 `mkSkill { name, commands, needs ? { } }` builds the package. Each command has:
 
-- `exec`: what the wrapper runs, with the wrapper's arguments appended. A store path, possibly with fixed arguments in front (`"${pkgs.nodejs}/bin/node ${app}/src/main.mjs"`).
+- `exec`: what the wrapper runs, with the wrapper's arguments appended. It is shell words, not quoted for you: it gets word-split and expanded, which is what lets a store path carry fixed arguments (`"${pkgs.nodejs}/bin/node ${app}/src/main.mjs"`). A path with spaces needs its own quoting.
 - `description`: one short line, shown to the agent.
 - `needs` (optional): overrides the skill-wide `needs`, per kind. A command that sets `domains = [ ]` asks for no domains, whatever the default says.
 
-`needs` declares what a command will want from outside the sandbox:
+`needs` declares what a command will want from outside the sandbox. Any other key, an invalid variable name or a tunnel fails the evaluation, also of the metadata below:
 
 - `domains`: host names, or `*.` plus a name of at least two labels.
-- `credentials`: environment variable to vault path. The wrapper exports each one before the command starts.
+- `credentials`: environment variable to vault path. The wrapper exports each one before the command starts. Variable names must be shell identifiers.
 - `tunnels`: `"host:port"`. Not supported yet: a non-empty list fails the evaluation.
 
 A command that declares something gets a wrapper that first asks for all of it at once, then fetches the credentials, then runs the command:
