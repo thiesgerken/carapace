@@ -72,6 +72,12 @@ sandbox:
     storageClass: ""
   # -- Preferred Sandboxes CR name for sandbox StatefulSets; set to null for the release default or "" for Deployment fallback
   sandboxesName:
+  # -- Internal destinations skills may reach through the session proxy, which otherwise refuses
+  # private, link-local and cluster addresses. CIDRs; a domain approval is still needed.
+  # Example for a homelab: ["192.168.178.0/24"]
+  allowedInternalNetworks: []
+  # -- Host names (matched exactly) that may resolve to internal addresses, e.g. ["paperless.home.arpa"]
+  allowedInternalHosts: []
   # -- Number of generic warm sandboxes to keep ready for faster claims (0 disables)
   warmPoolSize: 1
   # -- Sandboxes a user may hold (running or scaled down); starting a new one at the limit fails (0 disables)

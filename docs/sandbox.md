@@ -181,6 +181,34 @@ Each session maintains a domain allowlist. Domains are added when:
 
 The proxy supports exact domain matching (`example.com`) and wildcard matching (`*.example.com`).
 
+### Internal destinations
+
+The proxy connects from the server's network position, where Postgres, Redis, the builder, the Bitwarden proxy, cluster services and your LAN are reachable, some without authentication. So the proxy refuses internal addresses: loopback, private (RFC 1918), link-local, unique-local, CGNAT and other non-global ranges (also when embedded in IPv6 as mapped, NAT64 or 6to4 addresses), the server's own addresses, and the Kubernetes API's service address. An IP literal is checked right away, so the sentinel is never asked about it. A name goes through the domain decision first and is resolved only once it is allowed, because resolving it earlier would let any process send data out in DNS queries for names nobody approved. The proxy then checks every address the name resolves to and connects to a checked address, not the name again, so a second DNS answer cannot swap in an internal one. A refusal is a `403` like a sentinel denial. Its body names the settings below but not the internal address.
+
+Skills that should reach internal hosts anyway, say a homelab, need the operator to allow them:
+
+| Setting | Helm value | Matches |
+| --- | --- | --- |
+| `CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS` | `sandbox.allowedInternalNetworks` | addresses in these CIDRs |
+| `CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS` | `sandbox.allowedInternalHosts` | these host names exactly (case-insensitive, no wildcards), whatever they resolve to |
+
+Both are JSON lists. Allowing a destination only lifts the internal-address block; every domain still needs an approval like any other. For a home network in Docker Compose, in `.env`:
+
+```env
+CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS=["192.168.178.0/24"]
+CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS=["paperless.home.arpa"]
+```
+
+Or in Helm values:
+
+```yaml
+sandbox:
+  allowedInternalNetworks: ["192.168.178.0/24"]
+  allowedInternalHosts: ["paperless.home.arpa"]
+```
+
+Prefer exact hosts or narrow CIDRs over your whole LAN, and never allow the cluster's service or pod ranges or the Compose network as a whole: that reopens Redis, Postgres and the builder API to any approved domain that resolves there.
+
 ### Exec-scoped TCP tunnels
 
 Skills may also declare `network.tunnels` in their `metadata.carapace` config. These are not long-running session daemons. Instead, carapace manages them around a single `exec` call:
