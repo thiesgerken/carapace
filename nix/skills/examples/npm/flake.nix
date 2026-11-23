@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     carapace = {
-      url = "github:thiesgerken/carapace";
+      url = "github:thiesgerken/carapace?dir=nix/skills";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

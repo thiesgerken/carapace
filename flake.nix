@@ -53,6 +53,15 @@
       forSystems = nixpkgs.lib.genAttrs systems;
       forLinux = nixpkgs.lib.genAttrs linuxSystems;
       linuxFor = system: if system == "aarch64-darwin" then "aarch64-linux" else system;
+      # What skills get from the skills subflake (nix/skills/flake.nix), here on this flake's inputs.
+      skillLib = import ./nix/skills {
+        inherit
+          nixpkgs
+          pyproject-nix
+          uv2nix
+          pyproject-build-systems
+          ;
+      };
       # Built against this checkout's lib, as the skills of a knowledge repo are against their pinned one.
       skillExamples = forLinux (
         system:
@@ -61,7 +70,7 @@
           nixpkgs.lib.nameValuePair "skill-example-${name}"
             ((import ./nix/skills/examples/${name}/flake.nix).outputs {
               inherit nixpkgs;
-              carapace = self;
+              carapace.lib = skillLib;
             }).packages.${system}.default
         ) (builtins.readDir ./nix/skills/examples)
       );
@@ -112,22 +121,6 @@
       );
     in
     {
-      # For skill flakes, see docs/skill-flakes.md. Skills pin a released commit and keep calling these
-      # functions after Carapace moves on, so their interface only grows.
-      lib = {
-        # Sandboxes run on Linux, on the builder's architecture.
-        forSkillSystems = nixpkgs.lib.genAttrs linuxSystems;
-        skill =
-          pkgs:
-          import ./nix/skills/lib.nix {
-            inherit
-              pkgs
-              pyproject-nix
-              uv2nix
-              pyproject-build-systems
-              ;
-          };
-      };
       packages = forSystems (
         system:
         let
@@ -157,7 +150,7 @@
         // {
           skill-wrapper-contract = import ./nix/skills/tests.nix {
             inherit (p) pkgs;
-            skillLib = self.lib.skill p.pkgs;
+            skillLib = skillLib.skill p.pkgs;
           };
           # The examples' local commands run: the venv imports its packages, Node finds node_modules.
           skill-examples-run =
