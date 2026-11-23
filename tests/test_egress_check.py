@@ -109,6 +109,12 @@ def _manager(tmp_path: Path, db_factory: Any, runtime: MagicMock) -> SandboxMana
     )
 
 
+def _resolv_conf(tmp_path: Path) -> Path:
+    path = tmp_path / "resolv.conf"
+    path.write_text("nameserver 10.96.0.10\n")
+    return path
+
+
 def _ready(runtime: MagicMock) -> None:
     runtime.logs = AsyncMock(return_value="carapace sandbox ready\n")
 
@@ -120,9 +126,9 @@ async def test_the_check_runs_in_a_throwaway_sandbox_without_proxy(tmp_path: Pat
     runtime.sandbox_exists = AsyncMock(return_value="stale-probe")
     runtime.exec = AsyncMock(return_value=ExecResult(exit_code=0, output="", stdout=""))
 
-    await _manager(tmp_path, db_factory, runtime).verify_no_direct_egress()
+    await _manager(tmp_path, db_factory, runtime).verify_no_direct_egress(_resolv_conf(tmp_path))
 
-    assert runtime.exec.await_args.kwargs["env"]["PROXY_TARGET"] == "172.18.0.1/3128"
+    assert runtime.exec.await_args.kwargs["env"] == {"PROXY_TARGET": "172.18.0.1/3128", "DNS_TARGETS": "10.96.0.10/53"}
     config = runtime.create_sandbox.await_args.args[0]
     assert (config.name, config.environment) == ("carapace-sandbox-egress-check", {})
     assert "carapace.session" not in config.labels
@@ -141,7 +147,7 @@ async def test_a_leak_raises_and_the_probe_is_removed(tmp_path: Path, db_factory
     runtime.exec = AsyncMock(return_value=ExecResult(exit_code=0, output=leak, stdout=leak))
 
     with pytest.raises(EgressCheckError) as exc_info:
-        await _manager(tmp_path, db_factory, runtime).verify_no_direct_egress()
+        await _manager(tmp_path, db_factory, runtime).verify_no_direct_egress(_resolv_conf(tmp_path))
 
     assert exc_info.value.leaks == ["direct TCP connection to 1.1.1.1:443 succeeded"]
     runtime.destroy_sandbox.assert_awaited_with("egress-check", "carapace-sandbox-egress-check", "container-1")
