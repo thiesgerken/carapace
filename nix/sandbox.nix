@@ -134,6 +134,7 @@ let
   # The flake's own nixpkgs lock. `__final` is what makes Nix (2.34) use the already valid store
   # path for that narHash, which the full image ships; without it Nix fetches the tarball into its
   # Git cache anyway, and fails offline. Where the path is missing, Nix substitutes or downloads it.
+  lock = builtins.fromJSON (builtins.readFile ../flake.lock);
   registry = pkgs.writeText "registry.json" (
     builtins.toJSON {
       version = 2;
@@ -143,7 +144,7 @@ let
             type = "indirect";
             id = "nixpkgs";
           };
-          to = (builtins.fromJSON (builtins.readFile ../flake.lock)).nodes.nixpkgs.locked // {
+          to = lock.nodes.${lock.nodes.${lock.root}.inputs.nixpkgs}.locked // {
             __final = true;
           };
         }
