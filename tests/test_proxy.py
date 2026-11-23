@@ -14,7 +14,13 @@ from carapace.database.models import SandboxTokenRow
 from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
 from carapace.models.skills import SkillCarapaceConfig
-from carapace.sandbox.exec_flow import ORPHANED_REQUEST_REJECTION, SandboxExecCoordinator, SandboxExecState
+from carapace.sandbox.exec_flow import (
+    EXEC_ENDED_REJECTION,
+    ORPHANED_REQUEST_REJECTION,
+    RunningExec,
+    SandboxExecCoordinator,
+    SandboxExecState,
+)
 from carapace.sandbox.manager import _CONTEXT_TUNNEL_HELPER
 from carapace.sandbox.manager import SandboxManager as _SandboxManager
 from carapace.sandbox.proxy import ProxyServer, domain_matches
@@ -1072,11 +1078,9 @@ async def test_request_domain_approval_denies_orphaned_request_without_sentinel(
 async def test_request_domain_approval_consults_sentinel_during_live_exec():
     """Live exec (command recorded) → callback is consulted as before."""
     cb = AsyncMock(return_value=DomainEvaluation(allowed=True, rejection=""))
-    state = _make_exec_state(
-        domain_approval_cbs={"sess-1": cb},
-        session_current_command={"sess-1": "npm ci"},
-    )
+    state = _make_exec_state(domain_approval_cbs={"sess-1": cb})
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    _grant(coordinator, "npm ci")
 
     evaluation = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
 
@@ -1090,11 +1094,13 @@ async def test_credential_approval_lasts_until_the_exec_ends():
     state = _make_exec_state()
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     sc = SessionContainer(container_id="container-1", session_id="sess-1", created_at=0, last_used=0)
-    seen_during_exec: list[bool] = []
+    captured: list[RunningExec] = []
 
     async def exec_in_container(*_args: Any, **_kwargs: Any) -> ExecResult:
-        coordinator.approve_credential("sess-1", "vault/token")
-        seen_during_exec.append(coordinator.is_credential_approved("sess-1", "vault/token"))
+        running = coordinator.running_exec("sess-1")
+        assert running is not None and running.command == "ccred get vault/token"
+        running.credentials.add(("vault/token", "password"))
+        captured.append(running)
         return ExecResult(exit_code=0, output="", stdout="")
 
     await coordinator.exec(
@@ -1110,10 +1116,49 @@ async def test_credential_approval_lasts_until_the_exec_ends():
         delete_context_file_credentials=AsyncMock(),
     )
 
-    assert seen_during_exec == [True]
-    assert coordinator.is_credential_approved("sess-1", "vault/token") is False
-    with pytest.raises(RuntimeError, match="no exec is running"):
-        coordinator.approve_credential("sess-1", "vault/token")
+    assert coordinator.running_exec("sess-1") is None
+    assert coordinator.is_running(captured[0]) is False
+
+
+def _grant(coordinator: SandboxExecCoordinator, command: str) -> None:
+    coordinator._grant_exec_scope("sess-1", command, [], None, bypass_proxy=False)
+
+
+@pytest.mark.anyio
+async def test_domain_approval_after_its_exec_ended_is_not_granted():
+    state = _make_exec_state()
+    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    _grant(coordinator, "curl https://api.example.com &")
+
+    async def review_outlasting_the_exec(_domain: str, _command: str) -> DomainEvaluation:
+        coordinator._revoke_exec_scope("sess-1", bypass_proxy=False)
+        return DomainEvaluation(allowed=True, rejection="")
+
+    state.domain_approval_cbs["sess-1"] = review_outlasting_the_exec
+
+    evaluation = await coordinator.request_domain_approval("sess-1", "api.example.com")
+
+    assert evaluation == DomainEvaluation(allowed=False, rejection=EXEC_ENDED_REJECTION)
+    assert "api.example.com" not in coordinator.get_effective_domains("sess-1")
+
+
+@pytest.mark.anyio
+async def test_domain_approval_does_not_land_in_the_next_exec():
+    state = _make_exec_state()
+    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    _grant(coordinator, "curl https://api.example.com &")
+
+    async def review_until_the_next_exec(_domain: str, _command: str) -> DomainEvaluation:
+        coordinator._revoke_exec_scope("sess-1", bypass_proxy=False)
+        _grant(coordinator, "ls")
+        return DomainEvaluation(allowed=True, rejection="")
+
+    state.domain_approval_cbs["sess-1"] = review_until_the_next_exec
+
+    evaluation = await coordinator.request_domain_approval("sess-1", "api.example.com")
+
+    assert evaluation.allowed is False
+    assert "api.example.com" not in coordinator.get_effective_domains("sess-1")
 
 
 @pytest.mark.anyio

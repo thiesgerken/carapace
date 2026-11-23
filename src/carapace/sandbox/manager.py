@@ -21,7 +21,7 @@ from ..models.git import GitActionResult, SandboxGitStatus
 from ..security.context import ApprovalSource, ApprovalVerdict, DomainEvaluation
 from ..spans import span
 from . import file_ops
-from .exec_flow import SandboxExecCoordinator, SandboxExecState
+from .exec_flow import CredentialGrant, RunningExec, SandboxExecCoordinator, SandboxExecState
 from .file_ops import SandboxFileOps
 from .runtime import (
     ContainerRuntime,
@@ -259,7 +259,7 @@ class SandboxManager:
         self._session_current_contexts: dict[str, list[str]] = {}
         self._exec_notified_domains: dict[str, set[str]] = {}  # dedupe silent-allow domain UI notifications
         self._exec_notified_credentials: dict[str, set[str]] = {}  # dedupe credential UI notifications
-        self._exec_approved_credentials: dict[str, set[str]] = {}
+        self._exec_approved_credentials: dict[str, set[CredentialGrant]] = {}
         self._get_activated_skills_cb: Callable[[str], list[str]] | None = None
         self._skill_activation_inputs_cb: Callable[[str, str], Awaitable[SkillActivationInputs]] | None = None
         self._skill_command_aliases_cb: Callable[[str, str], list[tuple[str, str]]] | None = None
@@ -1226,14 +1226,11 @@ class SandboxManager:
     def mark_credential_notified(self, session_id: str, vault_path: str) -> bool:
         return self._exec_coordinator.mark_credential_notified(session_id, vault_path)
 
-    def current_command(self, session_id: str) -> str | None:
-        return self._exec_coordinator.current_command(session_id)
+    def running_exec(self, session_id: str) -> RunningExec | None:
+        return self._exec_coordinator.running_exec(session_id)
 
-    def is_credential_approved(self, session_id: str, vault_path: str) -> bool:
-        return self._exec_coordinator.is_credential_approved(session_id, vault_path)
-
-    def approve_credential(self, session_id: str, vault_path: str) -> None:
-        self._exec_coordinator.approve_credential(session_id, vault_path)
+    def is_running(self, running: RunningExec) -> bool:
+        return self._exec_coordinator.is_running(running)
 
     def notify_domain_access(self, session_id: str, domain: str, allowed: bool) -> None:
         self._exec_coordinator.notify_domain_access(session_id, domain, allowed)

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from loguru import logger
 
+from ..models.credentials import CredentialValueKind
 from ..security.context import ApprovalSource, ApprovalVerdict, DomainEvaluation
 from .file_ops import ContextFileCredential, WrittenContextFile
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult, NetworkTunnel
@@ -52,6 +53,22 @@ echo "$leftover"
 """
 # A process that outlived its exec asks for nothing: what it was granted ended with that exec.
 ORPHANED_REQUEST_REJECTION = "Denied: no exec is running, the request comes from a process an earlier exec left behind."
+# The decision was made for an exec that is gone; granting it now would reach no one or the wrong exec.
+EXEC_ENDED_REJECTION = "Denied: the exec that asked ended before the decision came back."
+
+# What an approved credential request covers: a vault path in one representation, or a listing (no kind).
+type CredentialGrant = tuple[str, CredentialValueKind | None]
+
+
+@dataclass(eq=False, frozen=True, slots=True)
+class RunningExec:
+    """The scope of one exec, captured when a request arrives: approvals land in it only while it still runs."""
+
+    session_id: str
+    command: str
+    domains: set[str]
+    credentials: set[CredentialGrant]
+
 
 # Absolute path: /workspace/.carapace/bin comes first in PATH and holds skill shims.
 KILL_LEFTOVER_PROCESSES_COMMAND = ["/bin/bash", "-c", KILL_LEFTOVER_PROCESSES_SCRIPT]
@@ -71,8 +88,8 @@ class SandboxExecState:
     session_current_contexts: dict[str, list[str]]
     exec_notified_domains: dict[str, set[str]]
     exec_notified_credentials: dict[str, set[str]]
-    # Vault paths approved during the running exec; they need no further review until it ends.
-    exec_approved_credentials: dict[str, set[str]]
+    # Credentials approved during the running exec; they need no further review until it ends.
+    exec_approved_credentials: dict[str, set[CredentialGrant]]
 
 
 class SandboxExecCoordinator:
@@ -308,18 +325,24 @@ class SandboxExecCoordinator:
         notified.add(vault_path)
         return False
 
-    def current_command(self, session_id: str) -> str | None:
-        """The command of the running exec, or None between execs."""
-        return self._state.session_current_command.get(session_id)
+    def running_exec(self, session_id: str) -> RunningExec | None:
+        """The scope of the running exec, or None between execs."""
+        command = self._state.session_current_command.get(session_id)
+        if command is None:
+            return None
+        return RunningExec(
+            session_id=session_id,
+            command=command,
+            domains=self._state.exec_temp_domains[session_id],
+            credentials=self._state.exec_approved_credentials[session_id],
+        )
 
-    def is_credential_approved(self, session_id: str, vault_path: str) -> bool:
-        return vault_path in self._state.exec_approved_credentials.get(session_id, set())
-
-    def approve_credential(self, session_id: str, vault_path: str) -> None:
-        approved = self._state.exec_approved_credentials.get(session_id)
-        if approved is None:
-            raise RuntimeError(f"Cannot approve credential {vault_path}: no exec is running in session {session_id}")
-        approved.add(vault_path)
+    def is_running(self, running: RunningExec) -> bool:
+        # Every exec gets fresh scope sets, so identity tells this exec apart from a later one.
+        return (
+            self._state.exec_temp_domains.get(running.session_id) is running.domains
+            and self._state.exec_approved_credentials.get(running.session_id) is running.credentials
+        )
 
     def notify_domain_access(self, session_id: str, domain: str, allowed: bool) -> None:
         cb = self._state.domain_notify_cbs.get(session_id)
@@ -365,14 +388,17 @@ class SandboxExecCoordinator:
         # No live exec: the request comes from a process orphaned by a cancelled
         # exec (e.g. an interrupted skill install still hitting registry.npmjs.org).
         # Deny without invoking the sentinel so orphaned traffic can't burn tokens.
-        command = self.current_command(session_id)
-        if command is None:
+        running = self.running_exec(session_id)
+        if running is None:
             logger.info(f"Denying {domain} for session {session_id}: no active exec (orphaned request)")
             return DomainEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
 
-        evaluation = await cb(domain, command)
+        evaluation = await cb(domain, running.command)
+        if not self.is_running(running):
+            logger.info(f"Denying {domain} for session {session_id}: its exec ended during the review")
+            return DomainEvaluation(allowed=False, rejection=EXEC_ENDED_REJECTION)
         if evaluation.allowed:
-            self._state.exec_temp_domains.setdefault(session_id, set()).add(domain)
+            running.domains.add(domain)
             logger.info(f"Security approved {domain} for session {session_id}")
         else:
             logger.info(f"Security denied {domain} for session {session_id}")

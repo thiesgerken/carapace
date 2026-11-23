@@ -59,7 +59,7 @@ from ..notifications.store import NotificationStore
 from ..notifications.vapid import ensure_vapid_config
 from ..platform_store import PlatformSettingsStore
 from ..prompt_prefix import shared_prompt_prefix
-from ..sandbox.exec_flow import ORPHANED_REQUEST_REJECTION
+from ..sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION, CredentialGrant
 from ..sandbox.manager import SandboxLimitError, SandboxManager
 from ..sandbox.proxy import ProxyServer
 from ..sandbox.runtime import ContainerRuntime
@@ -941,31 +941,32 @@ def _credential_backend_unavailable(exc: CredentialBackendError) -> Response:
 
 async def _gate_credential_request(
     active: ActiveSession,
-    vault_path: str,
+    grant: CredentialGrant,
     review: Callable[[SessionSecurity, Sentinel, str], Awaitable[CredentialAccessEvaluation]],
 ) -> Response | None:
     """Review a credential request of the running exec; returns the denial, or None to go ahead.
 
     An approval holds for the rest of that exec, so a script asking again does not cost another review.
     """
-    session_id = active.state.session_id
     sandbox_mgr = _engine.sandbox_mgr
-    command = sandbox_mgr.current_command(session_id)
-    if command is None:
+    running = sandbox_mgr.running_exec(active.state.session_id)
+    if running is None:
         return _credential_denied(ORPHANED_REQUEST_REJECTION)
-    if sandbox_mgr.is_credential_approved(session_id, vault_path):
+    if grant in running.credentials:
         return None
     if active.security is None or active.sentinel is None:
         return _credential_denied("Session not initialized")
 
     with _engine.llm_request_recording(active):
         try:
-            evaluation = await review(active.security, active.sentinel, command)
+            evaluation = await review(active.security, active.sentinel, running.command)
         except (SessionBudgetExceededError, UsageLimitExceeded) as exc:
             return _credential_denied(str(exc))
+    if not sandbox_mgr.is_running(running):
+        return _credential_denied(EXEC_ENDED_REJECTION)
     if not evaluation.allowed:
         return _credential_denied(evaluation.rejection)
-    sandbox_mgr.approve_credential(session_id, vault_path)
+    running.credentials.add(grant)
     return None
 
 
@@ -989,7 +990,7 @@ async def list_credentials(request: Request, q: str = "") -> Response:
     active = _engine.get_or_activate(session_id)
     denial = await _gate_credential_request(
         active,
-        CREDENTIAL_LISTING_PATH,
+        (CREDENTIAL_LISTING_PATH, None),
         lambda security, sentinel, command: evaluate_credential_listing_with(
             security,
             sentinel,
@@ -1076,7 +1077,7 @@ async def fetch_credential(
     else:
         denial = await _gate_credential_request(
             active,
-            vault_path,
+            (vault_path, kind),
             lambda security, sentinel, command: evaluate_credential_with(
                 security,
                 sentinel,

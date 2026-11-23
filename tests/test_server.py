@@ -56,7 +56,12 @@ from carapace.notifications.presence import NotificationPresenceRegistry
 from carapace.notifications.store import NotificationStore
 from carapace.notifications.vapid import derive_vapid_public_key, ensure_vapid_config
 from carapace.platform_store import PlatformSettingsStore
-from carapace.sandbox.exec_flow import ORPHANED_REQUEST_REJECTION
+from carapace.sandbox.exec_flow import (
+    EXEC_ENDED_REJECTION,
+    ORPHANED_REQUEST_REJECTION,
+    CredentialGrant,
+    RunningExec,
+)
 from carapace.sandbox.manager import SandboxLimitError, SandboxManager
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import CredentialAccessEntry, SentinelVerdict, SessionSecurity
@@ -3512,11 +3517,18 @@ def _sandbox_basic_auth(sid: str) -> dict[str, str]:
     return {"Authorization": f"Basic {base64.b64encode(f'{sid}:secret'.encode()).decode()}"}
 
 
-def _running_exec(command: str | None, *, approved: set[str] = frozenset()) -> None:
-    srv._engine.sandbox_mgr.current_command.side_effect = lambda _sid: command
-    srv._engine.sandbox_mgr.is_credential_approved.side_effect = lambda _sid, vault_path: vault_path in approved
-    srv._engine.sandbox_mgr.approve_credential.reset_mock()
+def _running_exec(
+    command: str | None, *, approved: set[CredentialGrant] | None = None, ends_during_review: bool = False
+) -> RunningExec | None:
+    running = (
+        None
+        if command is None
+        else RunningExec(session_id="-", command=command, domains=set(), credentials=set(approved or ()))
+    )
+    srv._engine.sandbox_mgr.running_exec.side_effect = lambda _sid: running
+    srv._engine.sandbox_mgr.is_running.side_effect = lambda _running: not ends_during_review
     srv._engine.sandbox_mgr.mark_credential_notified.return_value = False
+    return running
 
 
 def test_sandbox_list_credentials_is_reviewed_by_the_sentinel(client, auth_headers, monkeypatch):
@@ -3531,7 +3543,7 @@ def test_sandbox_list_credentials_is_reviewed_by_the_sentinel(client, auth_heade
     mock_reg = MagicMock()
     mock_reg.list = AsyncMock(return_value=[CredentialMetadata(vault_path="dev/key", name="key", description="test")])
     monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
-    _running_exec("ccred search dev")
+    running = _running_exec("ccred search dev")
     headers = _sandbox_basic_auth(sid)
     sb_client = TestClient(sandbox_app)
 
@@ -3545,7 +3557,7 @@ def test_sandbox_list_credentials_is_reviewed_by_the_sentinel(client, auth_heade
 
     query, trigger = active.sentinel.evaluate_credential_listing.await_args.args[1:]
     assert (query, trigger) == ("dev", "exec 'ccred search dev'")
-    srv._engine.sandbox_mgr.approve_credential.assert_called_once_with(sid, "<list>")
+    assert running is not None and running.credentials == {("<list>", None)}
     cred_entries = [e for e in active.security.action_log if isinstance(e, CredentialAccessEntry)]
     assert [(e.vault_paths, e.decision) for e in cred_entries] == [(["<list>"], "approved")]
 
@@ -3561,14 +3573,14 @@ def test_sandbox_list_credentials_denial_carries_the_explanation(client, auth_he
     mock_reg = MagicMock()
     mock_reg.list = AsyncMock()
     monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
-    _running_exec("ccred list")
+    running = _running_exec("ccred list")
 
     resp = TestClient(sandbox_app).get("/credentials", headers=_sandbox_basic_auth(sid))
 
     assert resp.status_code == 403
     assert resp.text == "Sentinel denied this operation. No credential needed for this task."
     mock_reg.list.assert_not_awaited()
-    srv._engine.sandbox_mgr.approve_credential.assert_not_called()
+    assert running is not None and running.credentials == set()
 
 
 def test_sandbox_list_credentials_backend_error_returns_503(client, auth_headers, monkeypatch):
@@ -3578,7 +3590,7 @@ def test_sandbox_list_credentials_backend_error_returns_503(client, auth_headers
     mock_reg = MagicMock()
     mock_reg.list = AsyncMock(side_effect=CredentialBackendError("Bitwarden backend unavailable"))
     monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
-    _running_exec("ccred list", approved={"<list>"})
+    _running_exec("ccred list", approved={("<list>", None)})
 
     resp = TestClient(sandbox_app).get("/credentials", headers=_sandbox_basic_auth(sid))
 
@@ -3651,7 +3663,7 @@ def _gated_credential(monkeypatch, sid: str, verdict: SentinelVerdict) -> tuple[
 def test_sandbox_fetch_credential_approval_holds_for_the_exec(client, auth_headers, monkeypatch):
     sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
     sentinel, _ = _gated_credential(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
-    _running_exec("./sync.sh")
+    running = _running_exec("./sync.sh")
     headers = _sandbox_basic_auth(sid)
     sb_client = TestClient(sandbox_app)
 
@@ -3659,13 +3671,29 @@ def test_sandbox_fetch_credential_approval_holds_for_the_exec(client, auth_heade
 
     assert (resp.status_code, resp.text) == (200, "s3cret")
     assert sentinel.evaluate_credential_access.await_args.args[4] == "`ccred get` (password) in exec './sync.sh'"
-    srv._engine.sandbox_mgr.approve_credential.assert_called_once_with(sid, "bw/id-1")
+    assert running is not None and running.credentials == {("bw/id-1", "password")}
 
-    _running_exec("./sync.sh", approved={"bw/id-1"})
     resp = sb_client.get("/credentials/bw/id-1", headers=headers)
 
     assert (resp.status_code, resp.text) == (200, "s3cret")
     sentinel.evaluate_credential_access.assert_awaited_once()
+
+    resp = sb_client.get("/credentials/bw/id-1?kind=json", headers=headers)
+
+    assert resp.status_code == 200
+    assert sentinel.evaluate_credential_access.await_count == 2
+
+
+def test_sandbox_fetch_credential_approved_after_its_exec_ended_is_refused(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    _, mock_reg = _gated_credential(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    running = _running_exec("ccred get bw/id-1 &", ends_during_review=True)
+
+    resp = TestClient(sandbox_app).get("/credentials/bw/id-1", headers=_sandbox_basic_auth(sid))
+
+    assert (resp.status_code, resp.text) == (403, EXEC_ENDED_REJECTION)
+    assert running is not None and running.credentials == set()
+    mock_reg.fetch.assert_not_awaited()
 
 
 def test_sandbox_fetch_credential_denial_carries_the_explanation(client, auth_headers, monkeypatch):
