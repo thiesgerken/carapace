@@ -24,8 +24,8 @@ RUN corepack enable
 COPY setup-proxy.sh /usr/local/bin/setup-proxy.sh
 RUN chmod +x /usr/local/bin/setup-proxy.sh
 
-COPY ccred /usr/local/bin/ccred
-RUN chmod +x /usr/local/bin/ccred
+COPY ccred cgate /usr/local/bin/
+RUN chmod +x /usr/local/bin/ccred /usr/local/bin/cgate
 
 COPY carapace-skill-activator /usr/local/bin/carapace-skill-activator
 RUN chmod +x /usr/local/bin/carapace-skill-activator

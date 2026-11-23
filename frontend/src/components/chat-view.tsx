@@ -910,6 +910,7 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
               vault_paths: normalizeStringList(entry.vault_paths) ?? [],
               names: normalizeStringList(entry.names) ?? [],
               descriptions: normalizeStringList(entry.descriptions) ?? [],
+              domains: normalizeStringList(entry.domains) ?? [],
               skill_name: normalizeOptionalString(entry.skill_name),
               explanation: entry.explanation ?? "",
             },

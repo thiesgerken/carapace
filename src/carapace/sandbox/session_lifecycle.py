@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..database.engine import SessionFactory
 from ..database.models import SandboxTokenRow
-from ..security.context import ApprovalSource, ApprovalVerdict, DomainEvaluation
+from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
 from ..spans import span
 from .egress_check import PROBE_SCRIPT, raise_for_leaks
 from .runtime import ContainerRuntime, DuplicateSandboxError, PoolSandbox, SandboxConfig
@@ -41,7 +41,7 @@ class SandboxSessionLifecycleState:
     exec_temp_domains: dict[str, set[str]]
     exec_context_skill_domains: dict[str, set[str]]
     session_current_command: dict[str, str]
-    domain_approval_cbs: dict[str, Callable[[str, str], Awaitable[DomainEvaluation]]]
+    domain_approval_cbs: dict[str, Callable[[str, str, bool], Awaitable[BoundaryEvaluation]]]
     domain_notify_cbs: dict[
         str,
         Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],

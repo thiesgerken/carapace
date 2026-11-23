@@ -22,7 +22,7 @@ from carapace.models.session import SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ExecResult
-from carapace.security.context import DomainEvaluation, SessionSecurity
+from carapace.security.context import BoundaryEvaluation, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillRegistry
@@ -93,9 +93,9 @@ def test_a_domain_decision_waiting_on_the_user_is_a_wait_inside_the_domain_check
         active.turn_trace = trace
         escalate = engine._make_escalation_cb(active)
 
-        async def _ask_user(session_id: str, domain: str) -> DomainEvaluation:
+        async def _ask_user(session_id: str, domain: str) -> BoundaryEvaluation:
             decision = await escalate(session_id, domain, {"kind": "domain_access", "command": "curl"})
-            return DomainEvaluation(allowed=decision.allowed, rejection="")
+            return BoundaryEvaluation(allowed=decision.allowed, rejection="")
 
         proxy = ProxyServer(
             verify_session_token=lambda _sid, _tok: True,

@@ -148,7 +148,9 @@ async def test_sentinel_comments_only_on_allows_the_agent_reads(
     )
 
     if first["decision"] == "allow":
-        verdict = await sentinel.evaluate_domain_access(SessionSecurity("s"), "example.com", "curl example.com")
+        verdict = await sentinel.evaluate_domain_access(
+            SessionSecurity("s"), "example.com", "curl example.com", follow_up=False
+        )
     else:
         verdict = await sentinel.evaluate_tool_call(SessionSecurity("s"), "exec", {"command": "ls"})
 

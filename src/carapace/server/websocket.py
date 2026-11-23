@@ -325,6 +325,7 @@ class WebSocketSubscriber:
         vault_paths: list[str],
         names: list[str],
         descriptions: list[str],
+        domains: list[str],
         skill_name: str | None,
         explanation: str,
     ) -> None:
@@ -334,6 +335,7 @@ class WebSocketSubscriber:
                 vault_paths=vault_paths,
                 names=names,
                 descriptions=descriptions,
+                domains=domains,
                 skill_name=skill_name,
                 explanation=explanation,
             )
@@ -417,6 +419,7 @@ async def chat_ws(
                         vault_paths=pp.get("vault_paths", []),
                         names=pp.get("names", []),
                         descriptions=pp.get("descriptions", []),
+                        domains=pp["domains"],
                         skill_name=pp.get("skill_name"),
                         explanation=pp.get("explanation", ""),
                     ),

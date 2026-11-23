@@ -30,7 +30,7 @@ from carapace.sandbox.runtime import (
     NetworkTunnel,
 )
 from carapace.sandbox.session_lifecycle import SessionContainer
-from carapace.security.context import DomainEvaluation
+from carapace.security.context import BoundaryEvaluation
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillDocumentError, SkillRegistry
 from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, make_runtime_mock
@@ -1005,7 +1005,7 @@ async def test_exec_cleanup_tunnel_error_does_not_mask_command_error_or_skip_cre
         session_current_contexts={},
         exec_notified_domains={},
         exec_notified_credentials={},
-        exec_approved_credentials={},
+        running_execs={},
     )
     coordinator = SandboxExecCoordinator(runtime=runtime, state=state)
     sc1 = SessionContainer(container_id="container-1", session_id="sess-1", created_at=0, last_used=0)
@@ -1054,7 +1054,7 @@ def _make_exec_state(**overrides) -> SandboxExecState:
         session_current_contexts={},
         exec_notified_domains={},
         exec_notified_credentials={},
-        exec_approved_credentials={},
+        running_execs={},
     )
     base.update(overrides)
     return SandboxExecState(**base)
@@ -1063,13 +1063,13 @@ def _make_exec_state(**overrides) -> SandboxExecState:
 @pytest.mark.anyio
 async def test_request_domain_approval_denies_orphaned_request_without_sentinel():
     """No live exec → deny without invoking the sentinel callback (orphaned process)."""
-    cb = AsyncMock(return_value=DomainEvaluation(allowed=True, rejection=""))
+    cb = AsyncMock(return_value=BoundaryEvaluation(allowed=True, rejection=""))
     state = _make_exec_state(domain_approval_cbs={"sess-1": cb})
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
 
     evaluation = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
 
-    assert evaluation == DomainEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
+    assert evaluation == BoundaryEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
     cb.assert_not_awaited()
     assert "registry.npmjs.org" not in state.exec_temp_domains.get("sess-1", set())
 
@@ -1077,7 +1077,7 @@ async def test_request_domain_approval_denies_orphaned_request_without_sentinel(
 @pytest.mark.anyio
 async def test_request_domain_approval_consults_sentinel_during_live_exec():
     """Live exec (command recorded) → callback is consulted as before."""
-    cb = AsyncMock(return_value=DomainEvaluation(allowed=True, rejection=""))
+    cb = AsyncMock(return_value=BoundaryEvaluation(allowed=True, rejection=""))
     state = _make_exec_state(domain_approval_cbs={"sess-1": cb})
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     _grant(coordinator, "npm ci")
@@ -1085,7 +1085,7 @@ async def test_request_domain_approval_consults_sentinel_during_live_exec():
     evaluation = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
 
     assert evaluation.allowed is True
-    cb.assert_awaited_once_with("registry.npmjs.org", "npm ci")
+    cb.assert_awaited_once_with("registry.npmjs.org", "npm ci", False)
     assert "registry.npmjs.org" in state.exec_temp_domains["sess-1"]
 
 
@@ -1130,15 +1130,15 @@ async def test_domain_approval_after_its_exec_ended_is_not_granted():
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     _grant(coordinator, "curl https://api.example.com &")
 
-    async def review_outlasting_the_exec(_domain: str, _command: str) -> DomainEvaluation:
+    async def review_outlasting_the_exec(_domain: str, _command: str, _follow_up: bool) -> BoundaryEvaluation:
         coordinator._revoke_exec_scope("sess-1", bypass_proxy=False)
-        return DomainEvaluation(allowed=True, rejection="")
+        return BoundaryEvaluation(allowed=True, rejection="")
 
     state.domain_approval_cbs["sess-1"] = review_outlasting_the_exec
 
     evaluation = await coordinator.request_domain_approval("sess-1", "api.example.com")
 
-    assert evaluation == DomainEvaluation(allowed=False, rejection=EXEC_ENDED_REJECTION)
+    assert evaluation == BoundaryEvaluation(allowed=False, rejection=EXEC_ENDED_REJECTION)
     assert "api.example.com" not in coordinator.get_effective_domains("sess-1")
 
 
@@ -1148,10 +1148,10 @@ async def test_domain_approval_does_not_land_in_the_next_exec():
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     _grant(coordinator, "curl https://api.example.com &")
 
-    async def review_until_the_next_exec(_domain: str, _command: str) -> DomainEvaluation:
+    async def review_until_the_next_exec(_domain: str, _command: str, _follow_up: bool) -> BoundaryEvaluation:
         coordinator._revoke_exec_scope("sess-1", bypass_proxy=False)
         _grant(coordinator, "ls")
-        return DomainEvaluation(allowed=True, rejection="")
+        return BoundaryEvaluation(allowed=True, rejection="")
 
     state.domain_approval_cbs["sess-1"] = review_until_the_next_exec
 
@@ -1162,13 +1162,40 @@ async def test_domain_approval_does_not_land_in_the_next_exec():
 
 
 @pytest.mark.anyio
+async def test_only_later_requests_of_the_same_exec_are_follow_ups():
+    """Parallel tool calls run their execs one after the other; each exec starts with the full form."""
+    state = _make_exec_state()
+    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    seen: list[tuple[str, str, bool]] = []
+
+    async def review(domain: str, command: str, follow_up: bool) -> BoundaryEvaluation:
+        seen.append((domain, command, follow_up))
+        return BoundaryEvaluation(allowed=True, rejection="")
+
+    state.domain_approval_cbs["sess-1"] = review
+
+    _grant(coordinator, "fetch-a")
+    await coordinator.request_domain_approval("sess-1", "a.example.com")
+    await coordinator.request_domain_approval("sess-1", "b.example.com")
+    coordinator._revoke_exec_scope("sess-1", bypass_proxy=False)
+    _grant(coordinator, "fetch-b")
+    await coordinator.request_domain_approval("sess-1", "c.example.com")
+
+    assert seen == [
+        ("a.example.com", "fetch-a", False),
+        ("b.example.com", "fetch-a", True),
+        ("c.example.com", "fetch-b", False),
+    ]
+
+
+@pytest.mark.anyio
 async def test_denied_connect_answers_with_the_rejection_in_the_body():
     proxy = ProxyServer(
         verify_session_token=lambda sid, tok: True,
         get_allowed_domains=lambda sid: set(),
         attach_sandbox_call=lambda sid: contextlib.nullcontext(),
         request_approval=AsyncMock(
-            return_value=DomainEvaluation(allowed=False, rejection="Sentinel denied this operation. Not needed.")
+            return_value=BoundaryEvaluation(allowed=False, rejection="Sentinel denied this operation. Not needed.")
         ),
     )
 

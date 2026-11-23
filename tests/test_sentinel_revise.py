@@ -100,7 +100,9 @@ def _sentinel(tmp_path: Path, decisions: list[str], *, unattended: bool = False)
 async def test_sentinel_cannot_revise_requests_whose_explanation_never_reaches_the_agent(tmp_path: Path) -> None:
     sentinel, requests = _sentinel(tmp_path, ["revise", "deny"])
 
-    verdict = await sentinel.evaluate_domain_access(SessionSecurity("s"), "example.com", "curl example.com")
+    verdict = await sentinel.evaluate_domain_access(
+        SessionSecurity("s"), "example.com", "curl example.com", follow_up=False
+    )
 
     assert verdict.decision == "deny"
     retry = requests[1][-1].parts[0]

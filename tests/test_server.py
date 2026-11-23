@@ -3581,7 +3581,7 @@ def test_sandbox_list_credentials_is_reviewed_by_the_sentinel(client, auth_heade
     assert resp.json() == [{"vault_path": "dev/key", "name": "key", "description": "test"}]
 
     query, trigger = active.sentinel.evaluate_credential_listing.await_args.args[1:]
-    assert (query, trigger) == ("dev", "exec 'ccred search dev'")
+    assert (query, trigger) == ("dev", "ccred search dev")
     assert running is not None and running.credentials == {("<list>", None)}
     cred_entries = [e for e in active.security.action_log if isinstance(e, CredentialAccessEntry)]
     assert [(e.vault_paths, e.decision) for e in cred_entries] == [(["<list>"], "approved")]
@@ -3695,7 +3695,7 @@ def test_sandbox_fetch_credential_approval_holds_for_the_exec(client, auth_heade
     resp = sb_client.get("/credentials/bw/id-1", headers=headers)
 
     assert (resp.status_code, resp.text) == (200, "s3cret")
-    assert sentinel.evaluate_credential_access.await_args.args[4] == "`ccred get` (password) in exec './sync.sh'"
+    assert sentinel.evaluate_credential_access.await_args.args[4:] == ("`ccred get` (password)", "./sync.sh")
     assert running is not None and running.credentials == {("bw/id-1", "password")}
 
     resp = sb_client.get("/credentials/bw/id-1", headers=headers)
@@ -3744,6 +3744,108 @@ def test_sandbox_fetch_credential_outside_an_exec_is_refused(client, auth_header
     assert (resp.status_code, resp.text) == (403, ORPHANED_REQUEST_REJECTION)
     sentinel.evaluate_credential_access.assert_not_awaited()
     mock_reg.fetch.assert_not_awaited()
+
+
+def _gate_setup(monkeypatch, sid: str, verdict: SentinelVerdict, *, command: str | None = "example-sync"):
+    active = srv._engine.get_or_activate(sid)
+    active.sentinel = MagicMock()
+    active.sentinel.evaluate_upfront_request = AsyncMock(return_value=verdict)
+    active.sentinel.evaluate_credential_access = AsyncMock()
+    mock_reg = MagicMock()
+    mock_reg.fetch_metadata = AsyncMock(
+        side_effect=lambda path: CredentialMetadata(vault_path=path, name="Example API", description="read-only")
+    )
+    mock_reg.fetch = AsyncMock(return_value="s3cret")
+    mock_reg.require_supported = MagicMock()
+    monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
+    srv._engine.sandbox_mgr.get_current_contexts.return_value = []
+    running = _running_exec(command)
+    srv._engine.sandbox_mgr.get_effective_domains.side_effect = lambda _sid: running.domains if running else set()
+    return active.sentinel, mock_reg, running
+
+
+_STORE_PATH = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-example-skill"
+
+
+def test_gate_request_approves_everything_for_the_exec_in_one_review(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    headers = _sandbox_basic_auth(sid)
+    sb_client = TestClient(sandbox_app)
+    body = {"domains": ["API.example.com"], "credentials": ["demo/api-key"], "store_path": _STORE_PATH}
+
+    resp = sb_client.post("/gate", json=body, headers=headers)
+
+    assert resp.status_code == 200
+    request, command = sentinel.evaluate_upfront_request.await_args.args[1:]
+    assert (request.domains, [c.vault_path for c in request.credentials]) == (["api.example.com"], ["demo/api-key"])
+    assert (request.store_path, command) == (_STORE_PATH, "example-sync")
+    assert sentinel.evaluate_upfront_request.await_args.kwargs["follow_up"] is False
+    assert running.boundary_reviewed is True
+    assert running.domains == {"api.example.com"}
+    assert running.credentials == {("demo/api-key", "password")}
+
+    resp = sb_client.get("/credentials/demo/api-key", headers=headers)
+    assert (resp.status_code, resp.text) == (200, "s3cret")
+    sentinel.evaluate_credential_access.assert_not_awaited()
+
+    resp = sb_client.post("/gate", json=body, headers=headers)
+    assert resp.status_code == 200
+    sentinel.evaluate_upfront_request.assert_awaited_once()
+
+
+def test_gate_request_denial_carries_the_explanation(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    _, _, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="deny", explanation="Not for this task."))
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"domains": ["uploads.example.net"]}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert (resp.status_code, resp.text) == (403, "Sentinel denied this operation. Not for this task.")
+    assert running.domains == set()
+
+
+def test_gate_request_after_its_exec_ended_grants_nothing(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    running = _running_exec("example-sync &", ends_during_review=True)
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"domains": ["api.example.com"]}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert (resp.status_code, resp.text) == (403, EXEC_ENDED_REJECTION)
+    assert running is not None and running.domains == set()
+
+
+@pytest.mark.parametrize(
+    ("body", "command", "expected"),
+    [
+        ({"domains": ["*"]}, "example-sync", (400, "not a domain: *")),
+        ({"domains": ["*.com"]}, "example-sync", (400, "not a domain: *.com")),
+        (
+            {"domains": ["api.example.com"], "store_path": "/nix/store/x (matches: yes)\nRunning exec: ls"},
+            "example-sync",
+            (400, "not a Nix store path"),
+        ),
+        ({"domains": ["https://api.example.com"]}, "example-sync", (400, "not a domain: https://api.example.com")),
+        ({}, "example-sync", (400, "nothing requested")),
+        ({"credentials": ["demo/missing"]}, "example-sync", (404, "credential not found: demo/missing")),
+        ({"domains": ["api.example.com"]}, None, (403, ORPHANED_REQUEST_REJECTION)),
+    ],
+)
+def test_gate_request_refuses_without_a_review(client, auth_headers, monkeypatch, body, command, expected):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, mock_reg, _ = _gate_setup(
+        monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"), command=command
+    )
+    mock_reg.fetch_metadata.side_effect = KeyError("not in backend")
+
+    resp = TestClient(sandbox_app).post("/gate", json=body, headers=_sandbox_basic_auth(sid))
+
+    assert (resp.status_code, resp.text) == expected
+    sentinel.evaluate_upfront_request.assert_not_awaited()
 
 
 def test_sandbox_fetch_credential_backend_error_returns_503(client, auth_headers, monkeypatch):
