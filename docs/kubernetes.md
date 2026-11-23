@@ -296,7 +296,7 @@ the server being reachable on `localhost` (see [chatgpt-subscription.md](chatgpt
 
 ### Proxy
 
-Sandbox pods reach the internet exclusively through the HTTP proxy running inside the server pod (port 3128). The proxy enforces per-session domain allowlisting with token-based auth. Sandbox pods receive **only** `HTTP_PROXY` / `HTTPS_PROXY` env vars pointing to the carapace service.
+Sandbox pods reach the internet exclusively through the HTTP proxy running inside the server pod (port 3128). The proxy enforces per-session domain allowlisting with token-based auth, and it refuses cluster-internal and private destinations (other pods, Services, the Kubernetes API, the node network) unless `sandbox.allowedInternalNetworks` or `sandbox.allowedInternalHosts` allows them; see [Internal destinations](sandbox.md#internal-destinations). Sandbox pods receive **only** `HTTP_PROXY` / `HTTPS_PROXY` env vars pointing to the carapace service.
 
 Git operations (`git clone`, `git push`) use the **sandbox API** (port 8322) directly with HTTP Basic Auth (`session_id:token`). The sandbox API hostname is added to `NO_PROXY` so Git traffic bypasses the HTTP proxy.
 

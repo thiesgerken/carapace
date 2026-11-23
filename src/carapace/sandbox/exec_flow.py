@@ -4,18 +4,17 @@ import asyncio
 import sys
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from loguru import logger
 
-from ..models.credentials import CredentialValueKind, OAuthAccessTokenKind
 from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
+from .exec_scope import RunningExec
 from .file_ops import ContextFileCredential, WrittenContextFile
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult, NetworkTunnel
 from .session_lifecycle import SessionContainer
 
-# (domain, command of the running exec, whether the sentinel already saw that exec) -> decision
-type DomainApprovalCallback = Callable[[str, str, bool], Awaitable[BoundaryEvaluation]]
+type DomainApprovalCallback = Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]
 type DomainNotifyCallback = Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None]
 type AfterExecCredentialNotify = Callable[[], None]
 type EnsureSessionCallback = Callable[[str], Awaitable[SessionContainer]]
@@ -56,24 +55,6 @@ echo "$leftover"
 ORPHANED_REQUEST_REJECTION = "Denied: no exec is running, the request comes from a process an earlier exec left behind."
 # The decision was made for an exec that is gone; granting it now would reach no one or the wrong exec.
 EXEC_ENDED_REJECTION = "Denied: the exec that asked ended before the decision came back."
-
-# What an approved credential request covers: a vault path in one representation, or a listing (no kind).
-type CredentialGrant = tuple[str, CredentialValueKind | OAuthAccessTokenKind | None]
-
-
-@dataclass(eq=False, slots=True)
-class RunningExec:
-    """The scope of one exec, captured when a request arrives: approvals land in it only while it still runs."""
-
-    session_id: str
-    command: str
-    domains: set[str]
-    credentials: set[CredentialGrant]
-    # Once the sentinel has seen this exec in a boundary decision, its later requests are short follow-ups.
-    boundary_reviewed: bool = False
-    # Vault paths whose OAuth access token this exec already forced a refresh of: one each, after a 401.
-    oauth_refreshed: set[str] = field(default_factory=set)
-
 
 # Absolute path: /workspace/.carapace/bin comes first in PATH and holds skill shims.
 KILL_LEFTOVER_PROCESSES_COMMAND = ["/bin/bash", "-c", KILL_LEFTOVER_PROCESSES_SCRIPT]
@@ -396,7 +377,7 @@ class SandboxExecCoordinator:
             logger.info(f"Denying {domain} for session {session_id}: no active exec (orphaned request)")
             return BoundaryEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
 
-        evaluation = await cb(domain, running.command, running.boundary_reviewed)
+        evaluation = await cb(domain, running)
         if not self.is_running(running):
             logger.info(f"Denying {domain} for session {session_id}: its exec ended during the review")
             return BoundaryEvaluation(allowed=False, rejection=EXEC_ENDED_REJECTION)

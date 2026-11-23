@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, IPvAnyNetwork, SecretStr, model_serializer, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..notifications.models import NotificationsConfig
@@ -228,11 +228,11 @@ class AgentConfig(ConfigModel):
 
     max_parallel_llm: int = 2
 
-    # Maximum number of sentinel-backed proxy domain review batches one tool call can trigger.
+    # Maximum number of sentinel-backed proxy domain review batches one exec can trigger.
     # 0 disables the cap.
-    max_sentinel_calls_per_tool_call: int = 10
+    max_sentinel_calls_per_exec: int = 10
 
-    # Debounce window for coalescing proxy domain requests within a tool call.
+    # Debounce window for coalescing proxy domain requests within an exec.
     sentinel_domain_batch_window_ms: int = 100
 
     # Max wall-clock time for one sentinel LLM review.
@@ -243,8 +243,8 @@ class AgentConfig(ConfigModel):
 
     @model_validator(mode="after")
     def _defaults_listed_in_available_models(self) -> AgentConfig:
-        if self.max_sentinel_calls_per_tool_call < 0:
-            raise ValueError("agent.max_sentinel_calls_per_tool_call must be >= 0")
+        if self.max_sentinel_calls_per_exec < 0:
+            raise ValueError("agent.max_sentinel_calls_per_exec must be >= 0")
         if self.sentinel_domain_batch_window_ms < 0:
             raise ValueError("agent.sentinel_domain_batch_window_ms must be >= 0")
         catalog = {e.model_id: e for e in self.available_models}
@@ -337,6 +337,11 @@ class SandboxConfig(BaseSettings):
     network_name: str = "carapace-sandbox"
     # Port of the HTTP proxy sidecar that sandbox traffic is routed through.
     proxy_port: int = 3128
+    # The proxy refuses private and internal destinations. These lift that for hosts a skill should
+    # reach anyway (a homelab, in-cluster services): CIDRs, and host names matched exactly. A
+    # domain approval is still needed. See docs/sandbox.md#internal-destinations.
+    proxy_allowed_networks: list[IPvAnyNetwork] = []
+    proxy_allowed_hosts: list[str] = []
     # Number of generic warm sandboxes to keep ready ahead of assignment (Kubernetes runtime only).
     warm_pool_size: int = Field(default=0, ge=0)
     # Sandboxes a user may hold (running or suspended, until their session is deleted or reset).

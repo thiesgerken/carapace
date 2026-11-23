@@ -271,7 +271,7 @@ def _agent_config_from_patch(body: PlatformSettingsPatch, existing_agent: AgentC
         default_session_budget=body.default_budget,
         available_models=entries,
         max_parallel_llm=existing_agent.max_parallel_llm,
-        max_sentinel_calls_per_tool_call=existing_agent.max_sentinel_calls_per_tool_call,
+        max_sentinel_calls_per_exec=existing_agent.max_sentinel_calls_per_exec,
         sentinel_domain_batch_window_ms=existing_agent.sentinel_domain_batch_window_ms,
         sentinel_timeout_seconds=existing_agent.sentinel_timeout_seconds,
         tool_output_max_chars=existing_agent.tool_output_max_chars,
