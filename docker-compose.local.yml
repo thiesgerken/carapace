@@ -13,3 +13,9 @@ services:
   sandbox:
     image: carapace-sandbox:local
     pull_policy: never
+  builder-init:
+    image: carapace-builder:local
+    pull_policy: never
+  builder:
+    image: carapace-builder:local
+    pull_policy: never

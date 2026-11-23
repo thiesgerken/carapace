@@ -128,7 +128,7 @@ See [docs/security.md](docs/security.md), [docs/credentials.md](docs/credentials
 
 ```bash
 cp .env.example .env
-# fill in ANTHROPIC_API_KEY and CARAPACE_TOKEN
+# fill in ANTHROPIC_API_KEY, CARAPACE_TOKEN and CARAPACE_BUILDER_TOKEN
 # CARAPACE_TOKEN is only the initial password for the bootstrap admin user
 
 docker compose --profile build pull

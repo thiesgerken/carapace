@@ -44,7 +44,7 @@ jobs:
       # --skip-cached links only what it built; the tools and images are still needed here.
       - name: Fetch cached outputs used below
         run: |
-          for output in tools server-image frontend-image bitwarden-image sandbox-image; do
+          for output in tools server-image frontend-image bitwarden-image sandbox-image builder-image; do
             nix build ".#ciBuilds.x86_64-linux.$output" --out-link "result-ci-$output"
           done
           echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"
@@ -55,13 +55,20 @@ jobs:
           ln -s "$(realpath result-ci-frontend-image)" dist/carapace-frontend.tar.gz
           ln -s "$(realpath result-ci-bitwarden-image)" dist/carapace-bitwarden-cli.tar.gz
           ln -s "$(realpath result-ci-sandbox-image)" dist/carapace-sandbox.tar.gz
+          ln -s "$(realpath result-ci-builder-image)" dist/carapace-builder.tar.gz
           cp -R charts/carapace dist/chart
           sha256sum dist/*.tar.gz >> "$GITHUB_STEP_SUMMARY"
+      # Ubuntu 24.04 denies user namespaces to unconfined processes, and the builder's Nix build
+      # sandbox needs them; docs/builder.md lists this as a Compose host prerequisite.
+      - name: Allow user namespaces for the builder's build sandbox
+        run: |
+          sysctl kernel.apparmor_restrict_unprivileged_userns
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Exercise hardened runtime images
         run: |
           for archive in dist/*.tar.gz; do docker load --input "$archive"; done
           result-ci-tools/bin/python scripts/smoke-images.py
-          docker image inspect carapace:local carapace-frontend:local carapace-bitwarden-cli:local carapace-sandbox:local \
+          docker image inspect carapace:local carapace-frontend:local carapace-bitwarden-cli:local carapace-sandbox:local carapace-builder:local \
             --format '{{.RepoTags}} {{.Architecture}} {{.Size}} bytes' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

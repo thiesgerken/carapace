@@ -30,3 +30,34 @@ spec:
           port: {{ .Values.server.proxyPort }}
         - protocol: TCP
           port: {{ .Values.server.sandboxPort }}
+{{- if .Values.builder.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-builder-api
+  namespace: {{ include "carapace.builder.namespace" . }}
+  labels:
+    {{- include "carapace.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: carapace
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: builder
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: carapace
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: server
+      ports:
+        - protocol: TCP
+          port: 8330
+{{- end }}
