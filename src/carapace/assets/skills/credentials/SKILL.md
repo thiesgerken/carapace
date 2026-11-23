@@ -49,6 +49,7 @@ ccred search gmail      # filter by name or description
 ```
 
 The list shows metadata only (name, vault path, description) — never values.
+It still enumerates the vault, so it is reviewed like `ccred get`.
 
 ## Fetching a credential on demand
 
@@ -84,5 +85,8 @@ for the task.
   return secret values as command output
 - **Never** include credential values in tool call arguments or responses
 - **Never** store credentials in files that will be committed to git
-- If a credential is already approved for the session, `ccred get` returns
-  it immediately without re-prompting
+- If a credential was already approved earlier in the same `exec` (in the same
+  form: password, `--login` or `--json`), `ccred get` returns it immediately
+  without re-prompting; the next `exec` asks again
+- A denial makes `ccred` exit with status 1 and print the reason on stderr;
+  do not retry the same request unchanged

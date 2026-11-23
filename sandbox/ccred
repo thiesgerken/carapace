@@ -20,7 +20,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any
+from typing import Any, NoReturn
 
 
 def _parse_api_url() -> tuple[str, str | None]:
@@ -59,6 +59,19 @@ def _request(path: str) -> urllib.request.Request:
     return req
 
 
+def _fail(e: urllib.error.HTTPError, vault_path: str | None = None) -> NoReturn:
+    match e.code:
+        case 400 | 403:
+            # A 403 is a denial by the sentinel or the user; the body says why.
+            message = e.read().decode()
+        case 404 if vault_path is not None:
+            message = f"credential not found: {vault_path}"
+        case _:
+            message = f"{e.code} {e.reason}"
+    print(f"error: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
 def _fetch_credential_metadata(query: str) -> list[dict[str, Any]]:
     path = "/credentials"
     if query:
@@ -67,8 +80,7 @@ def _fetch_credential_metadata(query: str) -> list[dict[str, Any]]:
         with urllib.request.urlopen(_request(path)) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        print(f"error: {e.code} {e.reason}", file=sys.stderr)
-        sys.exit(1)
+        _fail(e)
 
 
 def _print_credential_list(data: list[dict[str, Any]]) -> None:
@@ -104,17 +116,7 @@ def cmd_get(args: argparse.Namespace) -> None:
         with urllib.request.urlopen(_request(path)) as resp:
             value = resp.read().decode()
     except urllib.error.HTTPError as e:
-        match e.code:
-            case 400:
-                message = e.read().decode()
-            case 403:
-                message = "credential request denied by user"
-            case 404:
-                message = f"credential not found: {vault_path}"
-            case _:
-                message = f"{e.code} {e.reason}"
-        print(f"error: {message}", file=sys.stderr)
-        sys.exit(1)
+        _fail(e, vault_path)
 
     if args.output:
         fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o400)
@@ -131,13 +133,16 @@ def main() -> None:
         description="Carapace credential helper",
         epilog=(
             "examples:\n"
-            "  ccred list                         list all available credentials\n"
-            "  ccred search gmail                 search credentials matching 'gmail'\n"
+            "  ccred list                         list all available credentials (blocks until approved)\n"
+            "  ccred search gmail                 search credentials matching 'gmail' (blocks until approved)\n"
             "  ccred get <backend>/<id>           fetch password (blocks until approved)\n"
             "  ccred get <backend>/<id> --login   fetch login name (not supported by every provider)\n"
             "  ccred get <backend>/<id> --json    fetch provider-specific JSON\n"
             "  ccred get <backend>/<id> -o FILE   write output to FILE with mode 0400\n"
             "                                     (-o is subject to approval like stdout fetch)\n"
+            "\n"
+            "Every request is reviewed by the security sentinel, and an approval holds until the exec ends.\n"
+            "A denial exits with status 1 and prints the reason on stderr.\n"
             "\n"
             "Only request credentials that are needed. Never echo secret values or log them;\n"
             "prefer -o or env/subshell wiring so tools consume secrets without exposing them."

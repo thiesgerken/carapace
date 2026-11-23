@@ -56,6 +56,10 @@ def format_sentinel_comment(subject: str, comment: str) -> str:
     )
 
 
+# The vault path a credential listing (`ccred list`, `ccred search`) is recorded and approved under.
+CREDENTIAL_LISTING_PATH = "<list>"
+
+
 # --- Action Log Entry Types ---
 
 
@@ -188,6 +192,13 @@ type FinalDecision = Literal["auto_allowed", "allowed", "changes_requested", "es
 
 
 @dataclass(frozen=True, slots=True)
+class DomainEvaluation:
+    allowed: bool
+    # What the requesting process reads in the proxy's error response; empty when allowed.
+    rejection: str
+
+
+@dataclass(frozen=True, slots=True)
 class CachedDomainApproval:
     allowed: bool
     approval_source: ApprovalSource
@@ -197,6 +208,10 @@ class CachedDomainApproval:
     final_decision: Literal["allowed", "denied"] = "allowed"
     audit_explanation: str | None = None
     sentinel_verdict: SentinelVerdict | None = None
+    rejection: str = ""
+
+    def evaluation(self) -> DomainEvaluation:
+        return DomainEvaluation(allowed=self.allowed, rejection=self.rejection)
 
 
 @dataclass(slots=True)
@@ -712,7 +727,7 @@ class SessionSecurity:
         sentinel_verdict: SentinelVerdict | None = None,
     ) -> None:
         """Record a credential access in action log, audit log, and UI notification."""
-        display_path = vault_paths[0] if len(vault_paths) == 1 else "<list>"
+        display_path = vault_paths[0] if len(vault_paths) == 1 else CREDENTIAL_LISTING_PATH
         if self._credential_notify_suppress is not None and self._credential_notify_suppress(display_path):
             return
         self.append(CredentialAccessEntry(vault_paths=vault_paths, decision=decision, explanation=explanation))

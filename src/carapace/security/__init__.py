@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -12,14 +11,15 @@ from pydantic_ai.usage import UsageLimits
 
 from ..git.diff import touched_paths
 from ..usage import UsageTracker
-from .context import ActionLogEntry as ActionLogEntry
 from .context import (
+    CREDENTIAL_LISTING_PATH,
     ApprovalSource,
     ApprovalVerdict,
     AuditEntry,
     CachedDomainApproval,
     ChangesRequestedError,
     DomainBatchSnapshot,
+    DomainEvaluation,
     GitPushEntry,
     SecurityDeniedError,
     SentinelVerdict,
@@ -29,6 +29,7 @@ from .context import (
     format_denial_message,
     normalize_optional_message,
 )
+from .context import ActionLogEntry as ActionLogEntry
 from .context import CredentialAccessEntry as CredentialAccessEntry
 from .exec_allowlist import match_auto_allowed_exec
 from .sentinel import Sentinel
@@ -265,8 +266,8 @@ async def evaluate_domain_with(
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
     usage_limits: UsageLimits | None = None,
-) -> bool:
-    """Evaluate a proxy domain request. Returns True to allow, False to deny.
+) -> DomainEvaluation:
+    """Evaluate a proxy domain request as a decision of its own: no earlier review covers it.
 
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
@@ -288,26 +289,7 @@ async def evaluate_domain_with(
                 explanation=explanation,
             )
         )
-        return True
-
-    if _exec_command_mentions_domain(command, domain):
-        explanation = "Auto-allowed because the exact domain appears in the exec command."
-        session.notify_domain_decision(
-            domain,
-            "[safe-list] auto-allowed because the exact domain appears in the exec command",
-            approval_source="safe-list",
-            approval_verdict="allow",
-            approval_explanation=explanation,
-        )
-        session.write_audit(
-            AuditEntry.now(
-                kind="proxy_domain",
-                domain=domain,
-                final_decision="allowed",
-                explanation=explanation,
-            )
-        )
-        return True
+        return DomainEvaluation(allowed=True, rejection="")
 
     if session.current_parent_tool_id is None:
         result = await _evaluate_single_domain_access(
@@ -335,7 +317,7 @@ async def evaluate_domain_with(
                 explanation=result.audit_explanation,
             )
         )
-        return result.allowed
+        return result.evaluation()
 
     cached_approval, pending_result, should_notify_queued = await session.get_or_enqueue_domain_approval(
         domain,
@@ -368,7 +350,7 @@ async def evaluate_domain_with(
                 explanation="Reused earlier domain decision within the same tool call.",
             )
         )
-        return cached_approval.allowed
+        return cached_approval.evaluation()
 
     if pending_result is None:
         result = await _evaluate_single_domain_access(
@@ -396,7 +378,7 @@ async def evaluate_domain_with(
                 explanation=result.audit_explanation,
             )
         )
-        return result.allowed
+        return result.evaluation()
 
     if should_notify_queued:
         session.notify_domain_decision(domain, "[sentinel] queued for batched review", approval_source="sentinel")
@@ -418,14 +400,7 @@ async def evaluate_domain_with(
             explanation=result.audit_explanation,
         )
     )
-    return result.allowed
-
-
-def _exec_command_mentions_domain(command: str, domain: str) -> bool:
-    if not command or not domain:
-        return False
-    pattern = re.compile(rf"(?<![A-Za-z0-9.-]){re.escape(domain)}(?![A-Za-z0-9.-])", re.IGNORECASE)
-    return pattern.search(command) is not None
+    return result.evaluation()
 
 
 async def _evaluate_single_domain_access(
@@ -464,6 +439,7 @@ async def _decision_from_verdict(
     allowed: bool
     final_decision: Literal["allowed", "denied"]
     user_message: str | None = None
+    rejection = ""
 
     match verdict.decision:
         case "allow":
@@ -474,6 +450,7 @@ async def _decision_from_verdict(
             allowed = False
             final_decision = "denied"
             detail = f"[sentinel: deny] {verdict.explanation}"
+            rejection = format_denial_message("sentinel", verdict.explanation)
         case "escalate":
             user_decision = await session.escalate_to_user(
                 domain,
@@ -482,7 +459,8 @@ async def _decision_from_verdict(
             allowed = user_decision.allowed
             user_message = user_decision.message
             final_decision = "allowed" if allowed else "denied"
-            detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
+            rejection = "" if allowed else format_denial_message("user", user_message)
+            detail = rejection or "[user: allow]"
         case "revise":
             raise _revise_not_offered("domain access")
 
@@ -500,6 +478,7 @@ async def _decision_from_verdict(
         final_decision=final_decision,
         audit_explanation=verdict.explanation,
         sentinel_verdict=verdict,
+        rejection=rejection,
     )
 
 
@@ -529,6 +508,7 @@ async def _decision_for_batch_limit(
             final_decision="denied",
             audit_explanation=verdict.explanation,
             sentinel_verdict=verdict,
+            rejection=format_denial_message("sentinel", verdict.explanation),
         )
     user_decision = await session.escalate_to_user(
         domain,
@@ -549,6 +529,7 @@ async def _decision_for_batch_limit(
         final_decision="allowed" if allowed else "denied",
         audit_explanation=verdict.explanation,
         sentinel_verdict=verdict,
+        rejection="" if allowed else format_denial_message("user", user_message),
     )
 
 
@@ -808,7 +789,7 @@ async def evaluate_push_with(
 
 @dataclass(frozen=True, slots=True)
 class CredentialAccessEvaluation:
-    """Outcome of ``evaluate_credential_with`` for callers that need audit or UI parity."""
+    """Outcome of a credential request, for the sandbox API that answers ``ccred``."""
 
     allowed: bool
     """True if access was granted."""
@@ -818,6 +799,9 @@ class CredentialAccessEvaluation:
 
     explanation: str
     """Sentinel explanation text (same as stored on the audit entry)."""
+
+    rejection: str
+    """What ``ccred`` prints on stderr when access was denied; empty when allowed."""
 
 
 async def evaluate_credential_with(
@@ -833,12 +817,69 @@ async def evaluate_credential_with(
     usage_limits: UsageLimits | None = None,
     audit_args: dict[str, Any] | None = None,
 ) -> CredentialAccessEvaluation:
-    """Evaluate a credential access request.
+    """Evaluate a request for a credential value.
 
     If the sentinel escalates, delegates to the session's user escalation callback.
-    ``user_was_prompted`` is False when the sentinel allowed or denied without escalation
-    (the engine's escalation callback already persists UI events when escalation runs).
     """
+    return await _evaluate_credential_request(
+        session,
+        lambda: sentinel.evaluate_credential_access(
+            session,
+            vault_path,
+            name,
+            description,
+            trigger,
+            usage_tracker=usage_tracker,
+            assert_llm_budget_available=assert_llm_budget_available,
+            usage_limits=usage_limits,
+        ),
+        vault_path=vault_path,
+        name=name,
+        description=description,
+        trigger=trigger,
+        audit_args=audit_args,
+    )
+
+
+async def evaluate_credential_listing_with(
+    session: SessionSecurity,
+    sentinel: Sentinel,
+    query: str,
+    trigger: str,
+    *,
+    usage_tracker: UsageTracker | None = None,
+    assert_llm_budget_available: Callable[[], None] | None = None,
+    usage_limits: UsageLimits | None = None,
+) -> CredentialAccessEvaluation:
+    """Evaluate ``ccred list`` / ``ccred search``: they enumerate vault metadata, so they are gated too."""
+    return await _evaluate_credential_request(
+        session,
+        lambda: sentinel.evaluate_credential_listing(
+            session,
+            query,
+            trigger,
+            usage_tracker=usage_tracker,
+            assert_llm_budget_available=assert_llm_budget_available,
+            usage_limits=usage_limits,
+        ),
+        vault_path=CREDENTIAL_LISTING_PATH,
+        name=f"ccred search {query!r}" if query else "ccred list",
+        description="Names, vault paths and descriptions of matching credentials, no values",
+        trigger=trigger,
+        audit_args={"operation": "list", "query": query},
+    )
+
+
+async def _evaluate_credential_request(
+    session: SessionSecurity,
+    review: Callable[[], Awaitable[SentinelVerdict]],
+    *,
+    vault_path: str,
+    name: str,
+    description: str,
+    trigger: str,
+    audit_args: dict[str, Any] | None,
+) -> CredentialAccessEvaluation:
     if session.yolo_mode:
         explanation = "YOLO mode bypassed sentinel."
         session.record_credential_access(
@@ -858,20 +899,12 @@ async def evaluate_credential_with(
             allowed=True,
             user_was_prompted=False,
             explanation=explanation,
+            rejection="",
         )
 
     session.notify_credential_review(vault_path, "[sentinel] reviewing", name=name, approval_source="sentinel")
 
-    verdict = await sentinel.evaluate_credential_access(
-        session,
-        vault_path,
-        name,
-        description,
-        trigger,
-        usage_tracker=usage_tracker,
-        assert_llm_budget_available=assert_llm_budget_available,
-        usage_limits=usage_limits,
-    )
+    verdict = await review()
 
     if verdict.decision == "escalate" and session.unattended:
         verdict = SentinelVerdict(
@@ -886,6 +919,7 @@ async def evaluate_credential_with(
     user_was_prompted = verdict.decision == "escalate"
 
     user_message: str | None = None
+    rejection = ""
     match verdict.decision:
         case "allow":
             allowed = True
@@ -893,6 +927,7 @@ async def evaluate_credential_with(
         case "deny":
             allowed = False
             detail = f"[sentinel: deny] {verdict.explanation}"
+            rejection = format_denial_message("sentinel", verdict.explanation)
         case "escalate":
             user_decision = await session.escalate_to_user(
                 vault_path,
@@ -907,7 +942,8 @@ async def evaluate_credential_with(
             )
             allowed = user_decision.allowed
             user_message = user_decision.message
-            detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
+            rejection = "" if allowed else format_denial_message("user", user_message)
+            detail = rejection or "[user: allow]"
         case "revise":
             raise _revise_not_offered("credential access")
 
@@ -932,6 +968,7 @@ async def evaluate_credential_with(
         allowed=allowed,
         user_was_prompted=user_was_prompted,
         explanation=verdict.explanation,
+        rejection=rejection,
     )
 
 

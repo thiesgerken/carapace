@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 from loguru import logger
 
+from ..security.context import DomainEvaluation
 from ..spans import span
 
 _CONNECT_OK = b"HTTP/1.1 200 Connection Established\r\n\r\n"
@@ -21,8 +22,19 @@ _PROXY_AUTH_REQUIRED = (
 _FORBIDDEN_RESPONSE = (
     b"HTTP/1.1 403 Forbidden\r\nContent-Length: 30\r\nConnection: close\r\n\r\nDomain blocked by proxy policy"
 )
+_NO_APPROVAL_PATH = DomainEvaluation(allowed=False, rejection="Domain blocked by proxy policy")
 _BAD_REQUEST = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\nConnection: close\r\n\r\nBad Request"
 _RELAY_BUF = 32 * 1024
+
+
+def _denied_response(rejection: str) -> bytes:
+    """A 403 whose body tells the requesting command why, so it can decide how to continue."""
+    body = f"{rejection}\n".encode()
+    return (
+        b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n"
+        + f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
+        + body
+    )
 
 
 def domain_matches(domain: str, pattern: str) -> bool:
@@ -50,7 +62,7 @@ class ProxyServer:
         verify_session_token: Callable[[str, str], bool],
         get_allowed_domains: Callable[[str], set[str]],
         attach_sandbox_call: Callable[[str], contextlib.AbstractContextManager[None]],
-        request_approval: Callable[[str, str], Awaitable[bool]] | None = None,
+        request_approval: Callable[[str, str], Awaitable[DomainEvaluation]] | None = None,
         notify_domain_access: Callable[[str, str, bool], None] | None = None,
         host: str = "0.0.0.0",
         port: int = 3128,
@@ -191,9 +203,10 @@ class ProxyServer:
         target: str,
     ) -> None:
         domain, port = self._parse_host_port(target, default_port=443)
-        if not await self._authorize_domain(session_id, domain):
+        evaluation = await self._authorize_domain(session_id, domain)
+        if not evaluation.allowed:
             logger.warning(f"Proxy CONNECT denied: {domain} (session={session_id}, ip={client_ip})")
-            writer.write(_FORBIDDEN_RESPONSE)
+            writer.write(_denied_response(evaluation.rejection))
             await writer.drain()
             return
 
@@ -236,9 +249,10 @@ class ProxyServer:
             await writer.drain()
             return
 
-        if not await self._authorize_domain(session_id, domain):
+        evaluation = await self._authorize_domain(session_id, domain)
+        if not evaluation.allowed:
             logger.warning(f"Proxy HTTP denied: {method} {domain}{path} (session={session_id}, ip={client_ip})")
-            writer.write(_FORBIDDEN_RESPONSE)
+            writer.write(_denied_response(evaluation.rejection))
             await writer.drain()
             return
 
@@ -349,35 +363,32 @@ class ProxyServer:
     # Domain authorization (allowlist check + optional approval request)
     # ------------------------------------------------------------------
 
-    async def _authorize_domain(self, session_id: str, domain: str) -> bool:
+    async def _authorize_domain(self, session_id: str, domain: str) -> DomainEvaluation:
         with self._attach_sandbox_call(session_id), span("domain", domain, domain=domain) as check:
-            allowed = await self._decide_domain(session_id, domain)
-            check.attrs["allowed"] = allowed
-        return allowed
+            evaluation = await self._decide_domain(session_id, domain)
+            check.attrs["allowed"] = evaluation.allowed
+        return evaluation
 
-    async def _decide_domain(self, session_id: str, domain: str) -> bool:
-        """Return True if *domain* is allowed for *session_id*.
+    async def _decide_domain(self, session_id: str, domain: str) -> DomainEvaluation:
+        """Decide whether *session_id* may reach *domain*.
 
         If the domain is not in the allowlist and a ``request_approval``
-        callback is configured, the connection is suspended until the user
-        makes a decision (the callback is responsible for updating the
-        allowlist on approval).  Without a callback, unknown domains are
-        denied immediately.
+        callback is configured, the connection is suspended until the
+        sentinel or the user decides (the callback is responsible for
+        updating the allowlist on approval).  Without a callback, unknown
+        domains are denied immediately.
         """
         if self._is_allowed(session_id, domain):
             if self._notify_domain_access:
                 self._notify_domain_access(session_id, domain, True)
-            return True
+            return DomainEvaluation(allowed=True, rejection="")
         if self._request_approval is None:
             if self._notify_domain_access:
                 self._notify_domain_access(session_id, domain, False)
-            return False
+            return _NO_APPROVAL_PATH
         logger.info(f"Proxy: suspending connection to {domain} (session={session_id}), requesting approval")
-        allowed = await self._request_approval(session_id, domain)
-        # Note: request_approval already notifies for sentinel/user outcomes,
-        # but for denied-without-callback and silently-allowed cases, we
-        # notify above.
-        return allowed
+        # request_approval notifies for sentinel/user outcomes itself; the cases above notify here.
+        return await self._request_approval(session_id, domain)
 
     def _is_allowed(self, session_id: str, domain: str) -> bool:
         allowed = self._get_domains(session_id)

@@ -22,7 +22,7 @@ from carapace.models.session import SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ExecResult
-from carapace.security.context import SessionSecurity
+from carapace.security.context import DomainEvaluation, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillRegistry
@@ -73,8 +73,8 @@ async def test_the_proxys_domain_check_nests_under_the_exec_that_made_it() -> No
         attach_sandbox_call=lambda _sid: attach_sandbox_call(trace),
     )
 
-    assert await proxy._authorize_domain("s1", "pypi.org")
-    assert not await proxy._authorize_domain("s1", "evil.example")
+    assert (await proxy._authorize_domain("s1", "pypi.org")).allowed
+    assert not (await proxy._authorize_domain("s1", "evil.example")).allowed
 
     checks = {s.name: s for s in trace.spans.values() if s.kind == "domain"}
     assert checks["pypi.org"].parent_id == exec_span.span_id
@@ -93,8 +93,9 @@ def test_a_domain_decision_waiting_on_the_user_is_a_wait_inside_the_domain_check
         active.turn_trace = trace
         escalate = engine._make_escalation_cb(active)
 
-        async def _ask_user(session_id: str, domain: str) -> bool:
-            return (await escalate(session_id, domain, {"kind": "domain_access", "command": "curl"})).allowed
+        async def _ask_user(session_id: str, domain: str) -> DomainEvaluation:
+            decision = await escalate(session_id, domain, {"kind": "domain_access", "command": "curl"})
+            return DomainEvaluation(allowed=decision.allowed, rejection="")
 
         proxy = ProxyServer(
             verify_session_token=lambda _sid, _tok: True,
@@ -107,7 +108,7 @@ def test_a_domain_decision_waiting_on_the_user_is_a_wait_inside_the_domain_check
         await asyncio.sleep(0.01)
         (pending,) = active.pending_escalations
         await engine.submit_approval(sid, EscalationResponse(request_id=pending["request_id"], decision="allow"))
-        assert await asyncio.wait_for(check, timeout=1)
+        assert (await asyncio.wait_for(check, timeout=1)).allowed
 
         domain = next(s for s in trace.spans.values() if s.kind == "domain")
         wait = next(s for s in trace.spans.values() if s.kind == "wait")
