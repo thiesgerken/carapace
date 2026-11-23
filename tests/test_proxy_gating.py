@@ -207,7 +207,7 @@ async def test_reuses_user_domain_approval_within_exec() -> None:
 
 @pytest.mark.anyio
 async def test_domain_review_limit_falls_back_to_user_approval() -> None:
-    session = SessionSecurity("session-1", max_sentinel_calls_per_tool_call=2, sentinel_domain_batch_window_ms=0)
+    session = SessionSecurity("session-1", max_sentinel_calls_per_exec=2, sentinel_domain_batch_window_ms=0)
     user_calls: list[tuple[str, dict[str, object]]] = []
 
     async def approve(subject: str, context: dict[str, object]) -> UserEscalationDecision:
@@ -392,7 +392,7 @@ async def test_pending_requests_fail_when_worker_errors() -> None:
 
 @pytest.mark.anyio
 async def test_failed_batch_does_not_consume_review_budget() -> None:
-    session = SessionSecurity("session-1", max_sentinel_calls_per_tool_call=1, sentinel_domain_batch_window_ms=0)
+    session = SessionSecurity("session-1", max_sentinel_calls_per_exec=1, sentinel_domain_batch_window_ms=0)
     user_calls: list[tuple[str, dict[str, object]]] = []
     sentinel = StubSentinel(
         side_effects=[

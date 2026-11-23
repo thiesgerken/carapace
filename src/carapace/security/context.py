@@ -289,7 +289,7 @@ class SessionSecurity:
         session_id: str,
         *,
         session_factory: SessionFactory | None = None,
-        max_sentinel_calls_per_tool_call: int = 5,
+        max_sentinel_calls_per_exec: int = 5,
         sentinel_domain_batch_window_ms: int = 100,
         unattended: bool = False,
         ask_mode: bool = False,
@@ -303,7 +303,7 @@ class SessionSecurity:
         # The sentinel's shadow conversation; with the action log, this is the persisted sentinel state.
         self.sentinel_messages: list[ModelMessage] = []
         self.sentinel_eval_count: int = 0
-        self.max_sentinel_calls_per_tool_call = max_sentinel_calls_per_tool_call
+        self.max_sentinel_calls_per_exec = max_sentinel_calls_per_exec
         self.sentinel_domain_batch_window_ms = sentinel_domain_batch_window_ms
         self._last_synced_idx: int = 0
         self._session_factory = session_factory
@@ -447,7 +447,7 @@ class SessionSecurity:
                 for domain, request in requests.items():
                     self._domain_scope_inflight_futures[domain] = request.future
 
-                limit = self.max_sentinel_calls_per_tool_call
+                limit = self.max_sentinel_calls_per_exec
                 can_review = limit <= 0 or self._domain_scope_sentinel_calls < limit
                 if can_review:
                     self._domain_scope_sentinel_calls += 1

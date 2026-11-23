@@ -77,6 +77,8 @@ The default is only copied into a knowledge repo that has no `SECURITY.md` yet, 
 
 A stale policy does not break anything, but it describes reviews that no longer happen.
 
+The cap on domain reviews follows the same cut: `agent.max_sentinel_calls_per_tool_call` is now `agent.max_sentinel_calls_per_exec`, since one exec is the scope a review covers. A value saved in the platform settings is carried over by the database migration. Anywhere else the old name fails config validation at start; rename it there.
+
 ## Safe-list
 
 The following tools are auto-allowed without consulting the sentinel:
