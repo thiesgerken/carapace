@@ -56,6 +56,11 @@ builder:
   enabled: true
   # -- URL of a builder outside the cluster, used when enabled is false
   externalUrl: ""
+  # -- Namespace for the in-cluster builder (default: the release namespace). Its pod needs Pod
+  # Security level `privileged`, and that label applies to every pod in a namespace, sandboxes
+  # included. Under Pod Security enforcement, create a separate namespace labelled
+  # `pod-security.kubernetes.io/enforce: privileged` and name it here. The chart does not create it.
+  namespace: ""
   image:
     registry: ghcr.io
     repository: thiesgerken/carapace-builder

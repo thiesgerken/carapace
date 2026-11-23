@@ -8,7 +8,7 @@ carapace supports Kubernetes as a sandbox runtime. Instead of Docker containers,
 - **RWO StorageClass** — any standard ReadWriteOnce provisioner. The server pod has its own data PVC; sandbox sessions each get a dedicated PVC.
 - **Container images** pushed to a registry accessible by the cluster (GHCR by default)
 - **Helm 3** installed locally
-- **User namespaces for pods** on the nodes that run the [skill builder](builder.md#kubernetes) (`hostUsers: false`, `procMount: Unmasked`), and a Pod Security level of `privileged` in its namespace. Or run the builder on a separate machine and set `builder.enabled: false`.
+- **User namespaces for pods** on the nodes that run the [skill builder](builder.md#kubernetes) (`hostUsers: false`, `procMount: Unmasked`), and Pod Security level `privileged` for it, ideally in its own namespace (`builder.namespace`) so the sandboxes keep their checks. Or run the builder on a separate machine and set `builder.enabled: false`.
 - Published application images support **Linux x64**; native ARM Linux builds are a local development target.
 
 ## Quick start

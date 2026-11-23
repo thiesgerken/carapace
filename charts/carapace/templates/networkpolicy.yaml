@@ -36,6 +36,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ .Release.Name }}-builder-api
+  namespace: {{ include "carapace.builder.namespace" . }}
   labels:
     {{- include "carapace.labels" . | nindent 4 }}
 spec:
@@ -48,7 +49,10 @@ spec:
     - Ingress
   ingress:
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: carapace
               app.kubernetes.io/instance: {{ .Release.Name }}

@@ -69,7 +69,15 @@ The Nix build sandbox needs `security_opt: [seccomp=unconfined, apparmor=unconfi
 
 The chart deploys the builder by default (`builder.enabled`). That covers a Deployment with an init container, a PVC (`builder.persistence.size`, default 20Gi), a Service, a NetworkPolicy that admits only the server on port 8330, and a generated token Secret. The pod runs with `hostUsers: false` (root in the pod is an unprivileged host user), `procMount: Unmasked`, and `Unconfined` seccomp and AppArmor profiles. It gets no added capabilities.
 
-The cluster has to support user namespaces for pods. That means a recent kernel and container runtime, plus the `UserNamespacesSupport` and `ProcMountType` features. The settings were verified on k3s 1.37 with containerd 2.3 and kernel 7.3. If the builder logs that the Nix build sandbox is not effective, the node or its runtime lacks one of these. A Pod Security Admission level of `restricted` or `baseline` rejects the pod (unconfined seccomp, unmasked `/proc`); the builder needs `privileged` in its namespace, which `hostUsers: false` keeps from meaning root on the node.
+The cluster has to support user namespaces for pods. That means a recent kernel and container runtime, plus the `UserNamespacesSupport` and `ProcMountType` features. The settings were verified on k3s 1.37 with containerd 2.3 and kernel 7.3. If the builder logs that the Nix build sandbox is not effective, the node or its runtime lacks one of these. Pod Security Admission levels `restricted` and `baseline` reject the pod (unconfined seccomp, unmasked `/proc`), so the builder needs `privileged`. `hostUsers: false` keeps that from meaning root on the node. A Pod Security label covers every pod in its namespace, so under enforcement, don't lower the release namespace: that would also lift the checks on the sandbox pods the server creates there. Give the builder its own namespace instead:
+
+```sh
+kubectl create namespace carapace-builder
+kubectl label namespace carapace-builder pod-security.kubernetes.io/enforce=privileged
+helm upgrade … --set builder.namespace=carapace-builder
+```
+
+The chart then puts the builder's Deployment, PVC, Service and NetworkPolicy there, writes the token Secret into both namespaces, and points the server at `http://<release>-builder.carapace-builder:8330`. With `builder.auth.existingSecret`, create that Secret in both namespaces.
 
 ### On a separate machine
 

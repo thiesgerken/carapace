@@ -3,6 +3,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ .Release.Name }}-builder
+  namespace: {{ include "carapace.builder.namespace" . }}
   labels:
     {{- include "carapace.labels" . | nindent 4 }}
     app.kubernetes.io/component: builder

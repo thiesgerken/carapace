@@ -131,6 +131,14 @@ Builder image with tag defaulting to appVersion
 {{- end }}
 
 {{/*
+Namespace of the in-cluster builder. Its pod needs Pod Security level `privileged`, which a
+namespace grants to all of its pods, sandboxes included; a separate namespace keeps that apart.
+*/}}
+{{- define "carapace.builder.namespace" -}}
+{{- .Values.builder.namespace | default .Release.Namespace -}}
+{{- end }}
+
+{{/*
 Builder token Secret name (generated for the in-cluster builder, or the user-provided existingSecret).
 */}}
 {{- define "carapace.builder.secretName" -}}
@@ -143,7 +151,7 @@ CARAPACE_BUILDER_URL and _TOKEN for the server: the in-cluster builder, or one o
 {{- define "carapace.builderEnv" -}}
 {{- if .Values.builder.enabled -}}
 - name: CARAPACE_BUILDER_URL
-  value: {{ printf "http://%s-builder:8330" .Release.Name | quote }}
+  value: {{ printf "http://%s-builder.%s:8330" .Release.Name (include "carapace.builder.namespace" .) | quote }}
 - name: CARAPACE_BUILDER_TOKEN
   valueFrom:
     secretKeyRef:
