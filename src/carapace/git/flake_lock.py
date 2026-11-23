@@ -22,36 +22,51 @@ class _Input:
 
 type _Inputs = dict[str, _Input | tuple[str, ...]]  # a locked input, or the path it follows
 
+# Real locks are small trees joined by `follows`. The walk enumerates paths, not nodes, so a crafted lock
+# of diamonds would have exponentially many; past this many the sentinel gets the raw diff instead.
+_MAX_INPUTS = 500
+
+
+class _TooManyInputsError(Exception):
+    pass
+
+
+def _q(text: str) -> str:
+    """A string from the pushed lock, quoted: a newline in it must not forge a line of this block."""
+    return json.dumps(text)
+
 
 def summarize_lock_change(path: str, old: str | None, new: str | None) -> list[str]:
     """One line per input that was added, removed, moved to another source, or bumped to another revision."""
     before, after = _inputs(old), _inputs(new)
+    lock = _q(path)
     if isinstance(before, str) or isinstance(after, str):
-        return [f"{path}: {before if isinstance(before, str) else after}"]
+        return [f"{lock}: {before if isinstance(before, str) else after}"]
     lines: list[str] = []
     for name in sorted(before.keys() | after.keys()):
         was, now = before.get(name), after.get(name)
         if was == now:
             continue
+        prefix = f"{lock}: input {_q(name)}"
         if was is None:
-            lines.append(f"{path}: input {name} added: {_describe(now)}")
+            lines.append(f"{prefix} added: {_describe(now)}")
         elif now is None:
-            lines.append(f"{path}: input {name} removed (was {_describe(was)})")
+            lines.append(f"{prefix} removed (was {_describe(was)})")
         elif isinstance(was, _Input) and isinstance(now, _Input) and was.source == now.source:
-            lines.append(f"{path}: input {name} revision {was.revision} -> {now.revision} ({now.source})")
+            lines.append(f"{prefix} revision {_q(was.revision)} -> {_q(now.revision)} ({_q(now.source)})")
         elif isinstance(was, _Input) and isinstance(now, _Input):
-            lines.append(f"{path}: input {name} moved to another source: {_describe(was)} -> {_describe(now)}")
+            lines.append(f"{prefix} moved to another source: {_describe(was)} -> {_describe(now)}")
         else:
-            lines.append(f"{path}: input {name} changed: {_describe(was)} -> {_describe(now)}")
+            lines.append(f"{prefix} changed: {_describe(was)} -> {_describe(now)}")
     return lines
 
 
 def _describe(entry: _Input | tuple[str, ...] | None) -> str:
     match entry:
         case _Input(source=source, revision=revision):
-            return f"{source} at {revision}"
+            return f"{_q(source)} at {_q(revision)}"
         case tuple() as follows:
-            return f"follows {'/'.join(follows) or 'the root flake'}"
+            return f"follows {_q('/'.join(follows))}" if follows else "follows the root flake"
         case None:
             return "nothing"
 
@@ -65,6 +80,8 @@ def _inputs(text: str | None) -> _Inputs | str:
     def walk(node: dict, prefix: tuple[str, ...], seen: frozenset[str]) -> None:
         for name, target in node.get("inputs", {}).items():
             path = (*prefix, name)
+            if len(found) >= _MAX_INPUTS:
+                raise _TooManyInputsError
             if isinstance(target, list):
                 found["/".join(path)] = tuple(target)
             elif target not in seen:
@@ -78,6 +95,8 @@ def _inputs(text: str | None) -> _Inputs | str:
         walk(lock["nodes"][lock["root"]], (), frozenset({lock["root"]}))
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
         return f"flake.lock could not be read ({type(exc).__name__}); review the raw diff"
+    except _TooManyInputsError:
+        return f"flake.lock has more than {_MAX_INPUTS} inputs; review the raw diff"
     return found
 
 

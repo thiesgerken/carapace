@@ -5084,6 +5084,6 @@ def test_internal_push_review_shows_flake_input_changes(monkeypatch: pytest.Monk
     assert response.json() == {"verdict": "allow"}
     assert (
         "Flake input changes (rendered by Carapace from flake.lock):\n"
-        "- skills/demo/flake.lock: input nixpkgs moved to another source: "
-        f"github:NixOS/nixpkgs at {'a' * 12} -> github:other/nixpkgs at {'b' * 12}"
+        '- "skills/demo/flake.lock": input "nixpkgs" moved to another source: '
+        f'"github:NixOS/nixpkgs" at "{"a" * 12}" -> "github:other/nixpkgs" at "{"b" * 12}"'
     ) in prompts[-1]
