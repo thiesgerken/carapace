@@ -16,15 +16,16 @@ from .context import (
     ApprovalSource,
     ApprovalVerdict,
     AuditEntry,
+    BoundaryEvaluation,
     CachedDomainApproval,
     ChangesRequestedError,
     DomainBatchSnapshot,
-    DomainEvaluation,
     GitPushEntry,
     SecurityDeniedError,
     SentinelVerdict,
     SessionSecurity,
     ToolCallEntry,
+    UpfrontRequest,
     format_changes_requested_message,
     format_denial_message,
     normalize_optional_message,
@@ -266,7 +267,7 @@ async def evaluate_domain_with(
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
     usage_limits: UsageLimits | None = None,
-) -> DomainEvaluation:
+) -> BoundaryEvaluation:
     """Evaluate a proxy domain request as a decision of its own: no earlier review covers it.
 
     If the sentinel escalates, delegates to the session's user escalation callback.
@@ -289,7 +290,7 @@ async def evaluate_domain_with(
                 explanation=explanation,
             )
         )
-        return DomainEvaluation(allowed=True, rejection="")
+        return BoundaryEvaluation(allowed=True, rejection="")
 
     if session.current_parent_tool_id is None:
         result = await _evaluate_single_domain_access(
@@ -810,7 +811,8 @@ async def evaluate_credential_with(
     vault_path: str,
     name: str,
     description: str,
-    trigger: str,
+    asked_by: str,
+    command: str,
     *,
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
@@ -828,7 +830,8 @@ async def evaluate_credential_with(
             vault_path,
             name,
             description,
-            trigger,
+            asked_by,
+            command,
             usage_tracker=usage_tracker,
             assert_llm_budget_available=assert_llm_budget_available,
             usage_limits=usage_limits,
@@ -836,7 +839,6 @@ async def evaluate_credential_with(
         vault_path=vault_path,
         name=name,
         description=description,
-        trigger=trigger,
         audit_args=audit_args,
     )
 
@@ -845,7 +847,7 @@ async def evaluate_credential_listing_with(
     session: SessionSecurity,
     sentinel: Sentinel,
     query: str,
-    trigger: str,
+    command: str,
     *,
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
@@ -857,7 +859,7 @@ async def evaluate_credential_listing_with(
         lambda: sentinel.evaluate_credential_listing(
             session,
             query,
-            trigger,
+            command,
             usage_tracker=usage_tracker,
             assert_llm_budget_available=assert_llm_budget_available,
             usage_limits=usage_limits,
@@ -865,7 +867,6 @@ async def evaluate_credential_listing_with(
         vault_path=CREDENTIAL_LISTING_PATH,
         name=f"ccred search {query!r}" if query else "ccred list",
         description="Names, vault paths and descriptions of matching credentials, no values",
-        trigger=trigger,
         audit_args={"operation": "list", "query": query},
     )
 
@@ -877,7 +878,6 @@ async def _evaluate_credential_request(
     vault_path: str,
     name: str,
     description: str,
-    trigger: str,
     audit_args: dict[str, Any] | None,
 ) -> CredentialAccessEvaluation:
     if session.yolo_mode:
@@ -904,71 +904,190 @@ async def _evaluate_credential_request(
 
     session.notify_credential_review(vault_path, "[sentinel] reviewing", name=name, approval_source="sentinel")
 
-    verdict = await review()
+    outcome = await _decide_boundary_request(
+        session,
+        await review(),
+        subject=vault_path,
+        what="credential access",
+        items=_AccessItems(vault_paths=[vault_path], names=[name], descriptions=[description], domains=[]),
+    )
+    _record_credential_outcome(session, outcome, vault_path=vault_path, name=name, audit_args=audit_args)
+    return CredentialAccessEvaluation(
+        allowed=outcome.allowed,
+        user_was_prompted=outcome.source == "user",
+        explanation=outcome.verdict.explanation,
+        rejection=outcome.rejection,
+    )
 
+
+async def evaluate_upfront_request_with(
+    session: SessionSecurity,
+    sentinel: Sentinel,
+    request: UpfrontRequest,
+    command: str,
+    *,
+    usage_tracker: UsageTracker | None = None,
+    assert_llm_budget_available: Callable[[], None] | None = None,
+    usage_limits: UsageLimits | None = None,
+) -> BoundaryEvaluation:
+    """Evaluate what a command declared with ``cgate request``: one decision for all of it.
+
+    The declaration only bundles requests and carries no trust; the sentinel judges it like the single requests.
+    """
+    if session.yolo_mode:
+        outcome = _BoundaryOutcome(
+            verdict=SentinelVerdict(decision="allow", explanation="YOLO mode bypassed sentinel."),
+            allowed=True,
+            source="bypass",
+            detail="[bypass] yolo mode auto-allowed",
+            rejection="",
+            ui_explanation="YOLO mode bypassed sentinel.",
+        )
+    else:
+        for domain in request.domains:
+            session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
+        for credential in request.credentials:
+            session.notify_credential_review(
+                credential.vault_path, "[sentinel] reviewing", name=credential.name, approval_source="sentinel"
+            )
+        verdict = await sentinel.evaluate_upfront_request(
+            session,
+            request,
+            command,
+            usage_tracker=usage_tracker,
+            assert_llm_budget_available=assert_llm_budget_available,
+            usage_limits=usage_limits,
+        )
+        outcome = await _decide_boundary_request(
+            session,
+            verdict,
+            subject=", ".join([*request.domains, *(c.vault_path for c in request.credentials)]),
+            what="the up-front request",
+            items=_AccessItems(
+                vault_paths=[c.vault_path for c in request.credentials],
+                names=[c.name for c in request.credentials],
+                descriptions=[c.description for c in request.credentials],
+                domains=request.domains,
+            ),
+        )
+
+    for domain in request.domains:
+        session.notify_domain_decision(
+            domain,
+            outcome.detail,
+            approval_source=outcome.source,
+            approval_verdict="allow" if outcome.allowed else "deny",
+            approval_explanation=outcome.ui_explanation,
+        )
+        session.write_audit(
+            AuditEntry.now(
+                kind="proxy_domain",
+                domain=domain,
+                sentinel_verdict=outcome.verdict if outcome.source != "bypass" else None,
+                final_decision="allowed" if outcome.allowed else "denied",
+                explanation=outcome.verdict.explanation,
+            )
+        )
+    for credential in request.credentials:
+        _record_credential_outcome(
+            session,
+            outcome,
+            vault_path=credential.vault_path,
+            name=credential.name,
+            audit_args={"operation": "upfront_request", "vault_path": credential.vault_path},
+        )
+    return BoundaryEvaluation(allowed=outcome.allowed, rejection=outcome.rejection)
+
+
+@dataclass(frozen=True, slots=True)
+class _AccessItems:
+    """What an escalated boundary request shows the user, in the shape of a credential approval request."""
+
+    vault_paths: list[str]
+    names: list[str]
+    descriptions: list[str]
+    domains: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _BoundaryOutcome:
+    verdict: SentinelVerdict
+    allowed: bool
+    source: ApprovalSource
+    detail: str
+    rejection: str
+    ui_explanation: str | None
+
+
+async def _decide_boundary_request(
+    session: SessionSecurity,
+    verdict: SentinelVerdict,
+    *,
+    subject: str,
+    what: str,
+    items: _AccessItems,
+) -> _BoundaryOutcome:
+    """Turn the sentinel's verdict on a credential or up-front request into the final decision, asking the user."""
     if verdict.decision == "escalate" and session.unattended:
         verdict = SentinelVerdict(
             decision="deny",
             explanation=(
                 verdict.explanation
-                or "Credential access was denied because no user approval path is available for unattended sessions."
+                or f"Denied {what} because no user approval path is available for unattended sessions."
             ),
             risk_level=verdict.risk_level,
         )
 
-    user_was_prompted = verdict.decision == "escalate"
-
-    user_message: str | None = None
-    rejection = ""
     match verdict.decision:
         case "allow":
-            allowed = True
             detail = f"[sentinel: allow] {verdict.explanation}"
+            return _BoundaryOutcome(verdict, True, "sentinel", detail, "", verdict.explanation)
         case "deny":
-            allowed = False
             detail = f"[sentinel: deny] {verdict.explanation}"
             rejection = format_denial_message("sentinel", verdict.explanation)
+            return _BoundaryOutcome(verdict, False, "sentinel", detail, rejection, verdict.explanation)
         case "escalate":
             user_decision = await session.escalate_to_user(
-                vault_path,
+                subject,
                 {
                     "kind": "credential_access",
-                    "vault_path": vault_path,
-                    "name": name,
-                    "description": description,
+                    "vault_path": subject,
+                    "vault_paths": items.vault_paths,
+                    "names": items.names,
+                    "descriptions": items.descriptions,
+                    "domains": items.domains,
                     "explanation": verdict.explanation,
-                    "trigger": trigger,
                 },
             )
-            allowed = user_decision.allowed
-            user_message = user_decision.message
-            rejection = "" if allowed else format_denial_message("user", user_message)
-            detail = rejection or "[user: allow]"
+            message = normalize_optional_message(user_decision.message)
+            rejection = "" if user_decision.allowed else format_denial_message("user", message)
+            return _BoundaryOutcome(
+                verdict, user_decision.allowed, "user", rejection or "[user: allow]", rejection, message
+            )
         case "revise":
-            raise _revise_not_offered("credential access")
+            raise _revise_not_offered(what)
 
-    source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
-    approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
 
+def _record_credential_outcome(
+    session: SessionSecurity,
+    outcome: _BoundaryOutcome,
+    *,
+    vault_path: str,
+    name: str,
+    audit_args: dict[str, Any] | None,
+) -> None:
     session.record_credential_access(
         vault_paths=[vault_path],
         names=[name],
-        decision="approved" if allowed else "denied",
-        explanation=verdict.explanation,
-        ui_label=detail,
-        approval_source=source,
-        approval_verdict=approval_verdict,
-        ui_explanation=verdict.explanation if source == "sentinel" else normalize_optional_message(user_message),
-        audit_final="allowed" if allowed else "denied",
+        decision="approved" if outcome.allowed else "denied",
+        explanation=outcome.verdict.explanation,
+        ui_label=outcome.detail,
+        approval_source=outcome.source,
+        approval_verdict="allow" if outcome.allowed else "deny",
+        ui_explanation=outcome.ui_explanation,
+        audit_final="allowed" if outcome.allowed else "denied",
         audit_args=audit_args,
-        sentinel_verdict=verdict,
-    )
-
-    return CredentialAccessEvaluation(
-        allowed=allowed,
-        user_was_prompted=user_was_prompted,
-        explanation=verdict.explanation,
-        rejection=rejection,
+        sentinel_verdict=outcome.verdict if outcome.source != "bypass" else None,
     )
 
 

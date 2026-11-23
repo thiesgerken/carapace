@@ -20,6 +20,9 @@ export function CredentialApprovalCard({
 }: CredentialApprovalCardProps) {
   const t = useTranslations("approval.credential");
   const resolved = decision !== undefined;
+  // An up-front request (`cgate request`) can ask for domains next to credentials, or for domains only.
+  const hasDomains = request.domains.length > 0;
+  const hasCredentials = request.names.length > 0;
   const decisionLabels: Record<EscalationDecision, string> = {
     allow: t("decision.allow"),
     deny: t("decision.deny"),
@@ -36,7 +39,7 @@ export function CredentialApprovalCard({
     >
       <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-warning-foreground/70">
         <KeyRound className="h-3.5 w-3.5" />
-        {t("title")}
+        {hasDomains ? t("accessTitle") : t("title")}
       </div>
 
       <div className="space-y-1.5">
@@ -45,6 +48,19 @@ export function CredentialApprovalCard({
             <span className="text-muted-foreground">{t("skillLabel")} </span>
             <span className="font-medium">{request.skill_name}</span>
           </div>
+        )}
+        {hasDomains && (
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground">{t("domainsLabel")}</div>
+            {request.domains.map((domain) => (
+              <div key={domain} className="font-mono font-medium text-foreground">
+                {domain}
+              </div>
+            ))}
+          </div>
+        )}
+        {hasDomains && hasCredentials && (
+          <div className="text-xs text-muted-foreground">{t("credentialsLabel")}</div>
         )}
         <div className="space-y-1">
           {request.names.map((name, i) => (

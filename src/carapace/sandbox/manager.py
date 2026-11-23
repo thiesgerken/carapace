@@ -18,7 +18,7 @@ from loguru import logger
 from ..database.engine import SessionFactory
 from ..knowledge import KnowledgeRepoHandle, KnowledgeRepoResolver
 from ..models.git import GitActionResult, SandboxGitStatus
-from ..security.context import ApprovalSource, ApprovalVerdict, DomainEvaluation
+from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
 from ..spans import span
 from . import file_ops
 from .exec_flow import CredentialGrant, RunningExec, SandboxExecCoordinator, SandboxExecState
@@ -244,7 +244,7 @@ class SandboxManager:
         self._exec_temp_domains: dict[str, set[str]] = {}  # session_id -> domains, cleared after each exec
         self._exec_context_skill_domains: dict[str, set[str]] = {}  # skill-sourced subset of exec_temp_domains
         self._session_current_command: dict[str, str] = {}
-        self._domain_approval_cbs: dict[str, Callable[[str, str], Awaitable[DomainEvaluation]]] = {}
+        self._domain_approval_cbs: dict[str, Callable[[str, str], Awaitable[BoundaryEvaluation]]] = {}
         self._domain_notify_cbs: dict[
             str,
             Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],
@@ -1240,7 +1240,7 @@ class SandboxManager:
     # ------------------------------------------------------------------
 
     def set_domain_approval_callback(
-        self, session_id: str, cb: Callable[[str, str], Awaitable[DomainEvaluation]] | None
+        self, session_id: str, cb: Callable[[str, str], Awaitable[BoundaryEvaluation]] | None
     ) -> None:
         self._exec_coordinator.set_domain_approval_callback(session_id, cb)
 
@@ -1251,7 +1251,7 @@ class SandboxManager:
     ) -> None:
         self._exec_coordinator.set_domain_notify_callback(session_id, cb)
 
-    async def request_domain_approval(self, session_id: str, domain: str) -> DomainEvaluation:
+    async def request_domain_approval(self, session_id: str, domain: str) -> BoundaryEvaluation:
         return await self._exec_coordinator.request_domain_approval(session_id, domain)
 
     def _cleanup_tracking(

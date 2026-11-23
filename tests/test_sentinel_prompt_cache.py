@@ -118,7 +118,9 @@ async def test_every_sentinel_request_extends_the_previous_one(tmp_path: Path, d
     security.append(ApprovalEntry(tool="git_push", args={"ref": "refs/heads/main"}, decision="approved"))
     security.append(GitPushEntry(ref="refs/heads/main", decision="allowed"))
     model.judge("allow")
-    await sentinel.evaluate_credential_access(security, "moneta/token", "token", "API token", "moneta query")
+    await sentinel.evaluate_credential_access(
+        security, "moneta/token", "token", "API token", "`ccred get` (password)", "moneta query"
+    )
 
     requests = model.requests
     assert len(requests) == 6

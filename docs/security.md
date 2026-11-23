@@ -155,15 +155,16 @@ This action log is distinct from both runtime session transcripts:
 
 ## Boundary requests
 
-Requests that cross the sandbox boundary while a command runs, a domain at the proxy or a credential through `ccred`, are decisions of their own, not a plausibility check behind an already reviewed `exec`. The sentinel is told so in its instructions.
+Requests that cross the sandbox boundary while a command runs, a domain at the proxy, a credential through `ccred` or everything a command declares up front with `cgate request`, are decisions of their own, not a plausibility check behind an already reviewed `exec`. The sentinel is told so in its instructions.
 
-- **What the sentinel sees.** The usual action log update: every entry since its last decision, which includes the `exec` calls that ran since then, followed by the request and the command that is running.
-- **What the caller gets back.** The verdict and the sentinel's (or the user's) explanation. The proxy answers a denied domain with `403 Forbidden` and the explanation as a plain-text body; `ccred` prints a denial on stderr and exits with status 1. The command decides how to continue; the `exec` is not aborted from outside. `revise` and comments are not offered here.
+- **What the sentinel sees.** The usual action log update: every entry since its last decision, which includes the `exec` calls that ran since then, followed by the request and the command that is running. A later request of the same `exec` (same tool call) is a short follow-up instead: what it adds, without repeating the command.
+- **Up-front requests.** `cgate request` asks for domains and credentials together and gets one verdict for all of them. A declaration carries no trust; the sentinel also sees the caller's store path and whether it matches the build for the current head (unknown until skills are built by the builder). See [sandbox.md](sandbox.md#declaring-needs-up-front-cgate) for the CLI.
+- **What the caller gets back.** The verdict and the sentinel's (or the user's) explanation. The proxy answers a denied domain with `403 Forbidden` and the explanation as a plain-text body; `ccred` and `cgate` print a denial on stderr and exit with status 1. The command decides how to continue; the `exec` is not aborted from outside. `revise` and comments are not offered here.
   For HTTPS the 403 answers the `CONNECT`, and common clients drop its body: curl reports `CONNECT tunnel failed, response 403`, Python requests `Tunnel connection failed: 403 Forbidden`. Only plain HTTP clients reliably see the explanation, so do not build on it for HTTPS.
 - **Scope of an approval.** An approved domain or credential is free for the rest of that `exec` and not beyond. A credential approval covers the representation that was reviewed: a second `ccred get` for the same vault path in the same form returns without another review, `--json` after an approved password is reviewed again, and the next `exec` asks again. An approved `ccred list` or `ccred search` covers further listings in that `exec`. Only the first request is recorded; repeats within the `exec` leave no new UI, action log or audit entry.
 - **Late decisions.** A review can take minutes when it escalates to the user, and the `exec` may end meanwhile (a backgrounded `curl … &`, a timeout). A decision that comes back after its `exec` ended is not granted, neither to leftover processes nor to a later `exec`; the caller gets a denial.
 - **Outside an exec.** A request while no `exec` is running comes from a process an earlier call left behind. Carapace refuses it without asking the sentinel.
-- **Escalation.** The sentinel can escalate any of these to the user, who sees the request in the web UI, Matrix or the CLI.
+- **Escalation.** The sentinel can escalate any of these to the user, who sees the request in the web UI, Matrix or the CLI. An up-front request shows as an "Access Request" with its domains and credentials.
 
 ## Credential access
 

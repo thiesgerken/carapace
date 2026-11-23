@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging  # stdlib logging used only for _InterceptHandler → loguru bridge
 import os
+import re
 import sys
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -50,7 +51,7 @@ from ..memory.models import DigestLevel, TaskKind
 from ..memory.service import MemoryService
 from ..memory.store import MemoryStore
 from ..models.config import Config
-from ..models.credentials import CredentialValueKind
+from ..models.credentials import CredentialMetadata, CredentialValueKind
 from ..models.user import UserConfig
 from ..notifications.presence import NotificationPresenceRegistry
 from ..notifications.router import NotificationRouter
@@ -61,7 +62,7 @@ from ..platform_store import PlatformSettingsStore
 from ..prompt_prefix import shared_prompt_prefix
 from ..sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION, CredentialGrant
 from ..sandbox.manager import SandboxLimitError, SandboxManager
-from ..sandbox.proxy import ProxyServer
+from ..sandbox.proxy import ProxyServer, domain_allowed
 from ..sandbox.runtime import ContainerRuntime
 from ..security import (
     CREDENTIAL_LISTING_PATH,
@@ -70,7 +71,9 @@ from ..security import (
     evaluate_credential_listing_with,
     evaluate_credential_with,
     evaluate_push_with,
+    evaluate_upfront_request_with,
 )
+from ..security.context import UpfrontRequest
 from ..security.sentinel import Sentinel
 from ..session import SessionEngine, SessionManager
 from ..session.archive import SessionArchiveService
@@ -951,27 +954,27 @@ async def _gate_credential_request(
     sandbox_mgr = _engine.sandbox_mgr
     running = sandbox_mgr.running_exec(active.state.session_id)
     if running is None:
-        return _credential_denied(ORPHANED_REQUEST_REJECTION)
+        return _boundary_denied(ORPHANED_REQUEST_REJECTION)
     if grant in running.credentials:
         return None
     if active.security is None or active.sentinel is None:
-        return _credential_denied("Session not initialized")
+        return _boundary_denied("Session not initialized")
 
     with _engine.llm_request_recording(active):
         try:
             evaluation = await review(active.security, active.sentinel, running.command)
         except (SessionBudgetExceededError, UsageLimitExceeded) as exc:
-            return _credential_denied(str(exc))
+            return _boundary_denied(str(exc))
     if not sandbox_mgr.is_running(running):
-        return _credential_denied(EXEC_ENDED_REJECTION)
+        return _boundary_denied(EXEC_ENDED_REJECTION)
     if not evaluation.allowed:
-        return _credential_denied(evaluation.rejection)
+        return _boundary_denied(evaluation.rejection)
     running.credentials.add(grant)
     return None
 
 
-def _credential_denied(rejection: str) -> Response:
-    # ccred prints the body on stderr: the command that asked reads why and decides how to continue.
+def _boundary_denied(rejection: str) -> Response:
+    # ccred and cgate print the body on stderr: the command that asked reads why and decides how to continue.
     return Response(status_code=403, content=rejection, media_type="text/plain")
 
 
@@ -995,7 +998,7 @@ async def list_credentials(request: Request, q: str = "") -> Response:
             security,
             sentinel,
             q,
-            f"exec {command!r}",
+            command,
             usage_tracker=active.usage_tracker,
             assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
             usage_limits=_engine._remaining_aux_usage_limits(active),
@@ -1009,6 +1012,85 @@ async def list_credentials(request: Request, q: str = "") -> Response:
     except CredentialBackendError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return JSONResponse([i.model_dump() for i in items])
+
+
+class UpfrontRequestBody(BaseModel):
+    """What ``cgate request`` sends; see the contract in docs/sandbox.md."""
+
+    domains: list[str] = []
+    credentials: list[str] = []
+    store_path: str | None = None
+
+
+# A host name, or `*.` plus one. A bare `*` would open the proxy to everything.
+_DECLARABLE_DOMAIN = re.compile(r"(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)*")
+
+
+@sandbox_app.post("/gate")
+async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
+    """Review what a command declares before its work (``cgate request``); one decision for all of it.
+
+    Approved domains and credentials hold for the rest of the running exec. Credentials are approved as
+    the password kind, the one generated wrappers fetch with ``ccred get``.
+    """
+    session_id = _authenticate_sandbox(request.headers.get("authorization"))
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    domains = sorted({domain.strip().lower() for domain in body.domains})
+    if invalid := [domain for domain in domains if not _DECLARABLE_DOMAIN.fullmatch(domain)]:
+        return Response(status_code=400, content=f"not a domain: {invalid[0]}", media_type="text/plain")
+    vault_paths = sorted(set(body.credentials))
+    if not domains and not vault_paths:
+        return Response(status_code=400, content="nothing requested", media_type="text/plain")
+
+    try:
+        credential_registry = await _credential_registry_for_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=403, detail="Session owner is not configured") from None
+
+    active = _engine.get_or_activate(session_id)
+    sandbox_mgr = _engine.sandbox_mgr
+    running = sandbox_mgr.running_exec(session_id)
+    if running is None:
+        return _boundary_denied(ORPHANED_REQUEST_REJECTION)
+    effective_domains = sandbox_mgr.get_effective_domains(session_id)
+    pending_domains = [domain for domain in domains if not domain_allowed(domain, effective_domains)]
+    pending_paths = [path for path in vault_paths if (path, "password") not in running.credentials]
+    if not pending_domains and not pending_paths:
+        return Response(status_code=200)
+
+    credentials: list[CredentialMetadata] = []
+    for path in pending_paths:
+        try:
+            credentials.append(await credential_registry.fetch_metadata(path))
+        except KeyError:
+            return Response(status_code=404, content=f"credential not found: {path}", media_type="text/plain")
+        except CredentialBackendError as exc:
+            return _credential_backend_unavailable(exc)
+    if active.security is None or active.sentinel is None:
+        return _boundary_denied("Session not initialized")
+
+    with _engine.llm_request_recording(active):
+        try:
+            evaluation = await evaluate_upfront_request_with(
+                active.security,
+                active.sentinel,
+                UpfrontRequest(domains=pending_domains, credentials=credentials, store_path=body.store_path),
+                running.command,
+                usage_tracker=active.usage_tracker,
+                assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
+                usage_limits=_engine._remaining_aux_usage_limits(active),
+            )
+        except (SessionBudgetExceededError, UsageLimitExceeded) as exc:
+            return _boundary_denied(str(exc))
+    if not sandbox_mgr.is_running(running):
+        return _boundary_denied(EXEC_ENDED_REJECTION)
+    if not evaluation.allowed:
+        return _boundary_denied(evaluation.rejection)
+    running.domains.update(pending_domains)
+    running.credentials.update((path, "password") for path in pending_paths)
+    return Response(status_code=200)
 
 
 @sandbox_app.get("/credentials/{vault_path:path}")
@@ -1084,7 +1166,8 @@ async def fetch_credential(
                 vault_path,
                 meta.name,
                 meta.description,
-                f"`ccred get` ({kind}) in exec {command!r}",
+                f"`ccred get` ({kind})",
+                command,
                 usage_tracker=active.usage_tracker,
                 assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
                 usage_limits=_engine._remaining_aux_usage_limits(active),

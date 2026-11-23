@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from ..database.engine import SessionFactory
 from ..database.models import SessionActionLogRow, SessionAuditRow, SessionSentinelRow
+from ..models.credentials import CredentialMetadata
 
 
 class SecurityDeniedError(Exception):
@@ -192,9 +193,19 @@ type FinalDecision = Literal["auto_allowed", "allowed", "changes_requested", "es
 
 
 @dataclass(frozen=True, slots=True)
-class DomainEvaluation:
+class UpfrontRequest:
+    """What a command declared with ``cgate request`` before its work: a batching hint that carries no trust."""
+
+    domains: list[str]
+    credentials: list[CredentialMetadata]
+    # The caller's own Nix store path, as a generated skill wrapper reports it; None for any other caller.
+    store_path: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class BoundaryEvaluation:
     allowed: bool
-    # What the requesting process reads in the proxy's error response; empty when allowed.
+    # What the requesting process reads when denied (the proxy's error body, ccred's or cgate's stderr).
     rejection: str
 
 
@@ -210,8 +221,8 @@ class CachedDomainApproval:
     sentinel_verdict: SentinelVerdict | None = None
     rejection: str = ""
 
-    def evaluation(self) -> DomainEvaluation:
-        return DomainEvaluation(allowed=self.allowed, rejection=self.rejection)
+    def evaluation(self) -> BoundaryEvaluation:
+        return BoundaryEvaluation(allowed=self.allowed, rejection=self.rejection)
 
 
 @dataclass(slots=True)
@@ -311,6 +322,9 @@ class SessionSecurity:
         ) = None
         self._credential_notify_suppress: Callable[[str], bool] | None = None
         self.current_parent_tool_id: str | None = None
+        # The tool call whose exec the sentinel last saw in a boundary request: later requests of that exec
+        # only say what they add, instead of repeating the command.
+        self.boundary_reviewed_call: str | None = None
         # Sentinel comments on allowed operations, until the agent's next model request carries them.
         self._comments_for_agent: list[str] = []
         self._domain_scope_lock = asyncio.Lock()

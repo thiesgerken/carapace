@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -10,17 +11,23 @@ import pytest
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo
 
-from carapace.security import evaluate_credential_listing_with
+from carapace.models.credentials import CredentialMetadata
+from carapace.security import evaluate_credential_listing_with, evaluate_upfront_request_with
 from carapace.security.context import (
     SENTINEL_VERDICT_TOOL,
+    BoundaryEvaluation,
     SentinelVerdict,
     SessionSecurity,
     ToolCallEntry,
     ToolResultEntry,
+    UpfrontRequest,
     UserEscalationDecision,
     UserMessageEntry,
 )
 from carapace.security.sentinel import Sentinel
+from carapace.session.types import SessionSubscriber
+from carapace.ws_models import EscalationResponse
+from tests.session_helpers import _make_engine, _patch_sentinel
 
 from .streaming_model import ReplayStreamModel
 
@@ -78,12 +85,12 @@ async def test_a_credential_listing_is_its_own_request(tmp_path: Path) -> None:
     security = SessionSecurity("s1")
     security.append(_exec("ccred search gmail"))
 
-    verdict = await sentinel.evaluate_credential_listing(security, "gmail", "exec 'ccred search gmail'")
+    verdict = await sentinel.evaluate_credential_listing(security, "gmail", "ccred search gmail")
 
     assert verdict.decision == "allow"
     prompt = model.prompts[-1]
     assert "EVALUATE credential_listing_request:\nQuery: 'gmail'" in prompt
-    assert "Triggered by: exec 'ccred search gmail'" in prompt
+    assert "Running exec: ccred search gmail" in prompt
 
 
 @pytest.mark.asyncio
@@ -101,9 +108,117 @@ async def test_an_escalated_credential_listing_asks_the_user_and_passes_on_the_d
 
     security.set_user_escalation_callback(deny)
 
-    evaluation = await evaluate_credential_listing_with(security, sentinel, "gmail", "exec 'ccred search gmail'")
+    evaluation = await evaluate_credential_listing_with(security, sentinel, "gmail", "ccred search gmail")
 
     assert (evaluation.allowed, evaluation.rejection) == (False, "User denied this operation. Not now.")
-    assert [(c["kind"], c["vault_path"], c["name"]) for c in asked] == [
-        ("credential_access", "<list>", "ccred search 'gmail'")
+    assert [(c["kind"], c["vault_paths"], c["names"], c["domains"]) for c in asked] == [
+        ("credential_access", ["<list>"], ["ccred search 'gmail'"], [])
     ]
+
+
+@pytest.mark.asyncio
+async def test_an_upfront_request_shows_everything_declared_and_the_whole_exec(tmp_path: Path) -> None:
+    model = _AllowingModel()
+    sentinel = _sentinel(tmp_path, model)
+    security = SessionSecurity("s1")
+    request = UpfrontRequest(
+        domains=["api.example.com", "*.cdn.example.com"],
+        credentials=[CredentialMetadata(vault_path="demo/api-key", name="Example API", description="read-only")],
+        store_path="/nix/store/abc-example-skill",
+    )
+
+    await sentinel.evaluate_upfront_request(security, request, "example-sync --all")
+
+    prompt = model.prompts[-1]
+    assert "EVALUATE upfront_request" in prompt
+    assert "Domains: api.example.com, *.cdn.example.com" in prompt
+    assert "- demo/api-key (Example API): read-only" in prompt
+    assert "Caller store path: /nix/store/abc-example-skill (matches the build for the current head: unknown)" in prompt
+    assert "Running exec: example-sync --all" in prompt
+
+
+@pytest.mark.asyncio
+async def test_a_later_request_of_the_same_exec_is_a_short_follow_up(tmp_path: Path) -> None:
+    model = _AllowingModel()
+    sentinel = _sentinel(tmp_path, model)
+    security = SessionSecurity("s1")
+    security.current_parent_tool_id = "exec-1"
+    request = UpfrontRequest(domains=["api.example.com"], credentials=[], store_path=None)
+
+    await sentinel.evaluate_upfront_request(security, request, "example-sync --all")
+    await sentinel.evaluate_domain_access(security, "uploads.example.net", "example-sync --all")
+
+    follow_up = model.prompts[-1]
+    assert "Domain: uploads.example.net" in follow_up
+    assert "Follow-up: the exec of your last boundary decision now also wants this" in follow_up
+    assert "example-sync --all" not in follow_up
+
+    security.current_parent_tool_id = "exec-2"
+    await sentinel.evaluate_domain_access(security, "uploads.example.net", "example-sync --again")
+
+    assert "Running exec: example-sync --again" in model.prompts[-1]
+
+
+@pytest.mark.asyncio
+async def test_an_escalated_upfront_request_with_domains_only_asks_the_user() -> None:
+    sentinel = MagicMock(spec=Sentinel)
+    sentinel.evaluate_upfront_request = AsyncMock(
+        return_value=SentinelVerdict(decision="escalate", explanation="Unknown upload host.")
+    )
+    security = SessionSecurity("s1")
+    asked: list[dict[str, Any]] = []
+
+    async def allow(_session_id: str, _subject: str, context: dict[str, Any]) -> UserEscalationDecision:
+        asked.append(context)
+        return UserEscalationDecision(allowed=True)
+
+    security.set_user_escalation_callback(allow)
+    request = UpfrontRequest(domains=["uploads.example.net"], credentials=[], store_path=None)
+
+    evaluation = await evaluate_upfront_request_with(security, sentinel, request, "example-upload")
+
+    assert evaluation == BoundaryEvaluation(allowed=True, rejection="")
+    assert [(c["kind"], c["domains"], c["vault_paths"]) for c in asked] == [
+        ("credential_access", ["uploads.example.net"], [])
+    ]
+
+
+def test_an_escalated_upfront_request_reaches_the_user_with_its_domains(tmp_path: Path, db_factory: Any) -> None:
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        subscriber = MagicMock(spec=SessionSubscriber)
+        engine.subscribe(sid, subscriber)
+        escalate = engine._make_escalation_cb(active)
+        context = {
+            "kind": "credential_access",
+            "vault_path": "uploads.example.net, demo/api-key",
+            "vault_paths": ["demo/api-key"],
+            "names": ["Example API"],
+            "descriptions": ["read-only"],
+            "domains": ["uploads.example.net"],
+            "explanation": "Unknown upload host.",
+        }
+
+        decision = asyncio.create_task(escalate(sid, context["vault_path"], context))
+        await asyncio.sleep(0.01)
+        (pending,) = active.pending_escalations
+        await engine.submit_approval(sid, EscalationResponse(request_id=pending["request_id"], decision="deny"))
+
+        assert (await asyncio.wait_for(decision, timeout=1)).allowed is False
+        subscriber.on_credential_approval_request.assert_awaited_once_with(
+            pending["request_id"],
+            ["demo/api-key"],
+            ["Example API"],
+            ["read-only"],
+            ["uploads.example.net"],
+            None,
+            "Unknown upload host.",
+        )
+        events = engine.session_mgr.load_events(sid)
+        request = next(e for e in events if e["role"] == "credential_approval" and "domains" in e)
+        assert request["domains"] == ["uploads.example.net"]
+
+    with _patch_sentinel():
+        asyncio.run(_run())

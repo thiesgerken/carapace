@@ -944,6 +944,9 @@
         },
         "credential": {
             "title": "Credential Request",
+            "accessTitle": "Access Request",
+            "domainsLabel": "Domains:",
+            "credentialsLabel": "Credentials:",
             "skillLabel": "Skill:",
             "allow": "Allow",
             "denyPlaceholder": "Why should this credential access be blocked?",

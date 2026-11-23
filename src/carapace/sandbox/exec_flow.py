@@ -9,12 +9,12 @@ from dataclasses import dataclass
 from loguru import logger
 
 from ..models.credentials import CredentialValueKind
-from ..security.context import ApprovalSource, ApprovalVerdict, DomainEvaluation
+from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
 from .file_ops import ContextFileCredential, WrittenContextFile
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult, NetworkTunnel
 from .session_lifecycle import SessionContainer
 
-type DomainApprovalCallback = Callable[[str, str], Awaitable[DomainEvaluation]]
+type DomainApprovalCallback = Callable[[str, str], Awaitable[BoundaryEvaluation]]
 type DomainNotifyCallback = Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None]
 type AfterExecCredentialNotify = Callable[[], None]
 type EnsureSessionCallback = Callable[[str], Awaitable[SessionContainer]]
@@ -379,11 +379,11 @@ class SandboxExecCoordinator:
         else:
             self._state.domain_notify_cbs[session_id] = cb
 
-    async def request_domain_approval(self, session_id: str, domain: str) -> DomainEvaluation:
+    async def request_domain_approval(self, session_id: str, domain: str) -> BoundaryEvaluation:
         cb = self._state.domain_approval_cbs.get(session_id)
         if cb is None:
             logger.warning(f"No domain approval callback for session {session_id}, denying {domain}")
-            return DomainEvaluation(allowed=False, rejection="No approval path is set up for this session.")
+            return BoundaryEvaluation(allowed=False, rejection="No approval path is set up for this session.")
 
         # No live exec: the request comes from a process orphaned by a cancelled
         # exec (e.g. an interrupted skill install still hitting registry.npmjs.org).
@@ -391,12 +391,12 @@ class SandboxExecCoordinator:
         running = self.running_exec(session_id)
         if running is None:
             logger.info(f"Denying {domain} for session {session_id}: no active exec (orphaned request)")
-            return DomainEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
+            return BoundaryEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
 
         evaluation = await cb(domain, running.command)
         if not self.is_running(running):
             logger.info(f"Denying {domain} for session {session_id}: its exec ended during the review")
-            return DomainEvaluation(allowed=False, rejection=EXEC_ENDED_REJECTION)
+            return BoundaryEvaluation(allowed=False, rejection=EXEC_ENDED_REJECTION)
         if evaluation.allowed:
             running.domains.add(domain)
             logger.info(f"Security approved {domain} for session {session_id}")

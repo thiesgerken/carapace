@@ -30,7 +30,7 @@ from carapace.sandbox.runtime import (
     NetworkTunnel,
 )
 from carapace.sandbox.session_lifecycle import SessionContainer
-from carapace.security.context import DomainEvaluation
+from carapace.security.context import BoundaryEvaluation
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillDocumentError, SkillRegistry
 from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, make_runtime_mock
@@ -1063,13 +1063,13 @@ def _make_exec_state(**overrides) -> SandboxExecState:
 @pytest.mark.anyio
 async def test_request_domain_approval_denies_orphaned_request_without_sentinel():
     """No live exec → deny without invoking the sentinel callback (orphaned process)."""
-    cb = AsyncMock(return_value=DomainEvaluation(allowed=True, rejection=""))
+    cb = AsyncMock(return_value=BoundaryEvaluation(allowed=True, rejection=""))
     state = _make_exec_state(domain_approval_cbs={"sess-1": cb})
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
 
     evaluation = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
 
-    assert evaluation == DomainEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
+    assert evaluation == BoundaryEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
     cb.assert_not_awaited()
     assert "registry.npmjs.org" not in state.exec_temp_domains.get("sess-1", set())
 
@@ -1077,7 +1077,7 @@ async def test_request_domain_approval_denies_orphaned_request_without_sentinel(
 @pytest.mark.anyio
 async def test_request_domain_approval_consults_sentinel_during_live_exec():
     """Live exec (command recorded) → callback is consulted as before."""
-    cb = AsyncMock(return_value=DomainEvaluation(allowed=True, rejection=""))
+    cb = AsyncMock(return_value=BoundaryEvaluation(allowed=True, rejection=""))
     state = _make_exec_state(domain_approval_cbs={"sess-1": cb})
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     _grant(coordinator, "npm ci")
@@ -1130,15 +1130,15 @@ async def test_domain_approval_after_its_exec_ended_is_not_granted():
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     _grant(coordinator, "curl https://api.example.com &")
 
-    async def review_outlasting_the_exec(_domain: str, _command: str) -> DomainEvaluation:
+    async def review_outlasting_the_exec(_domain: str, _command: str) -> BoundaryEvaluation:
         coordinator._revoke_exec_scope("sess-1", bypass_proxy=False)
-        return DomainEvaluation(allowed=True, rejection="")
+        return BoundaryEvaluation(allowed=True, rejection="")
 
     state.domain_approval_cbs["sess-1"] = review_outlasting_the_exec
 
     evaluation = await coordinator.request_domain_approval("sess-1", "api.example.com")
 
-    assert evaluation == DomainEvaluation(allowed=False, rejection=EXEC_ENDED_REJECTION)
+    assert evaluation == BoundaryEvaluation(allowed=False, rejection=EXEC_ENDED_REJECTION)
     assert "api.example.com" not in coordinator.get_effective_domains("sess-1")
 
 
@@ -1148,10 +1148,10 @@ async def test_domain_approval_does_not_land_in_the_next_exec():
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     _grant(coordinator, "curl https://api.example.com &")
 
-    async def review_until_the_next_exec(_domain: str, _command: str) -> DomainEvaluation:
+    async def review_until_the_next_exec(_domain: str, _command: str) -> BoundaryEvaluation:
         coordinator._revoke_exec_scope("sess-1", bypass_proxy=False)
         _grant(coordinator, "ls")
-        return DomainEvaluation(allowed=True, rejection="")
+        return BoundaryEvaluation(allowed=True, rejection="")
 
     state.domain_approval_cbs["sess-1"] = review_until_the_next_exec
 
@@ -1168,7 +1168,7 @@ async def test_denied_connect_answers_with_the_rejection_in_the_body():
         get_allowed_domains=lambda sid: set(),
         attach_sandbox_call=lambda sid: contextlib.nullcontext(),
         request_approval=AsyncMock(
-            return_value=DomainEvaluation(allowed=False, rejection="Sentinel denied this operation. Not needed.")
+            return_value=BoundaryEvaluation(allowed=False, rejection="Sentinel denied this operation. Not needed.")
         ),
     )
 

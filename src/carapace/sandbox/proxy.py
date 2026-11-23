@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from loguru import logger
 
-from ..security.context import DomainEvaluation
+from ..security.context import BoundaryEvaluation
 from ..spans import span
 
 _CONNECT_OK = b"HTTP/1.1 200 Connection Established\r\n\r\n"
@@ -22,7 +22,7 @@ _PROXY_AUTH_REQUIRED = (
 _FORBIDDEN_RESPONSE = (
     b"HTTP/1.1 403 Forbidden\r\nContent-Length: 30\r\nConnection: close\r\n\r\nDomain blocked by proxy policy"
 )
-_NO_APPROVAL_PATH = DomainEvaluation(allowed=False, rejection="Domain blocked by proxy policy")
+_NO_APPROVAL_PATH = BoundaryEvaluation(allowed=False, rejection="Domain blocked by proxy policy")
 _BAD_REQUEST = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\nConnection: close\r\n\r\nBad Request"
 _RELAY_BUF = 32 * 1024
 
@@ -35,6 +35,14 @@ def _denied_response(rejection: str) -> bytes:
         + f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
         + body
     )
+
+
+def domain_allowed(domain: str, allowed: set[str]) -> bool:
+    """Whether an allowlist (``*`` allows everything) covers *domain*."""
+    if "*" in allowed:
+        return True
+    domain = domain.lower()
+    return any(domain_matches(domain, p.lower()) for p in allowed)
 
 
 def domain_matches(domain: str, pattern: str) -> bool:
@@ -62,7 +70,7 @@ class ProxyServer:
         verify_session_token: Callable[[str, str], bool],
         get_allowed_domains: Callable[[str], set[str]],
         attach_sandbox_call: Callable[[str], contextlib.AbstractContextManager[None]],
-        request_approval: Callable[[str, str], Awaitable[DomainEvaluation]] | None = None,
+        request_approval: Callable[[str, str], Awaitable[BoundaryEvaluation]] | None = None,
         notify_domain_access: Callable[[str, str, bool], None] | None = None,
         host: str = "0.0.0.0",
         port: int = 3128,
@@ -363,13 +371,13 @@ class ProxyServer:
     # Domain authorization (allowlist check + optional approval request)
     # ------------------------------------------------------------------
 
-    async def _authorize_domain(self, session_id: str, domain: str) -> DomainEvaluation:
+    async def _authorize_domain(self, session_id: str, domain: str) -> BoundaryEvaluation:
         with self._attach_sandbox_call(session_id), span("domain", domain, domain=domain) as check:
             evaluation = await self._decide_domain(session_id, domain)
             check.attrs["allowed"] = evaluation.allowed
         return evaluation
 
-    async def _decide_domain(self, session_id: str, domain: str) -> DomainEvaluation:
+    async def _decide_domain(self, session_id: str, domain: str) -> BoundaryEvaluation:
         """Decide whether *session_id* may reach *domain*.
 
         If the domain is not in the allowlist and a ``request_approval``
@@ -381,7 +389,7 @@ class ProxyServer:
         if self._is_allowed(session_id, domain):
             if self._notify_domain_access:
                 self._notify_domain_access(session_id, domain, True)
-            return DomainEvaluation(allowed=True, rejection="")
+            return BoundaryEvaluation(allowed=True, rejection="")
         if self._request_approval is None:
             if self._notify_domain_access:
                 self._notify_domain_access(session_id, domain, False)
@@ -391,11 +399,7 @@ class ProxyServer:
         return await self._request_approval(session_id, domain)
 
     def _is_allowed(self, session_id: str, domain: str) -> bool:
-        allowed = self._get_domains(session_id)
-        if "*" in allowed:
-            return True
-        domain = domain.lower()
-        return any(domain_matches(domain, p.lower()) for p in allowed)
+        return domain_allowed(domain, self._get_domains(session_id))
 
     # ------------------------------------------------------------------
     # URL / host parsing helpers
