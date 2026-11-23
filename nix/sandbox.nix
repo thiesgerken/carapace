@@ -3,6 +3,9 @@
   nixpkgs,
   nodejs,
   mcpBridgeEnv,
+  # The Native Linux Builder on a Mac fails once one build opens about 100k files, and nixpkgs
+  # alone has 90k; local images leave it out and fetch it on first use (see docs/development.md).
+  withNixpkgsSource ? true,
 }:
 let
   inherit (pkgs) lib;
@@ -128,14 +131,9 @@ let
     # without a domain approval; nixpkgs resolves from /etc/nix/registry.json instead.
     flake-registry =
   '';
-  # A single archive instead of the unpacked tree: the Native Linux Builder fails once one build
-  # opens about 100k files, and nixpkgs alone has 90k. Nix unpacks it on first use, offline.
-  # The transform's S flag leaves relative symlink targets alone.
-  nixpkgsArchive = pkgs.runCommand "nixpkgs-source.tar.gz" { } ''
-    tar -C ${nixpkgs} --transform 's,^\.,source,S' --sort=name --owner=0 --group=0 --numeric-owner \
-      --mtime=@${toString nixpkgs.lastModified} -cf - . | gzip -n > $out
-  '';
-  # Locked like NixOS's nix.registry.nixpkgs.flake, so Nix accepts the archive as that exact tree.
+  # The flake's own nixpkgs lock. `__final` is what makes Nix (2.34) use the already valid store
+  # path for that narHash, which the full image ships; without it Nix fetches the tarball into its
+  # Git cache anyway, and fails offline. Where the path is missing, Nix substitutes or downloads it.
   registry = pkgs.writeText "registry.json" (
     builtins.toJSON {
       version = 2;
@@ -145,10 +143,8 @@ let
             type = "indirect";
             id = "nixpkgs";
           };
-          to = {
-            type = "tarball";
-            url = "file://${nixpkgsArchive}";
-            inherit (nixpkgs) lastModified narHash rev;
+          to = (builtins.fromJSON (builtins.readFile ../flake.lock)).nodes.nixpkgs.locked // {
+            __final = true;
           };
         }
       ];
@@ -177,7 +173,10 @@ let
     EOF
     ln -s ${nixConf} $out/etc/nix/nix.conf
     ln -s ${registry} $out/etc/nix/registry.json
-    ln -s ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt $out/etc/ssl/certs/ca-certificates.crt
+    ${lib.optionalString withNixpkgsSource ''
+      # Puts the source into the image's closure and Nix database, which the registry entry relies on.
+      ln -s ${nixpkgs} $out/etc/nix/nixpkgs
+    ''}    ln -s ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt $out/etc/ssl/certs/ca-certificates.crt
     ln -s ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt $out/etc/ssl/cert.pem
     ln -s ${pkgs.iana-etc}/etc/services $out/etc/services
     ln -s ${pkgs.iana-etc}/etc/protocols $out/etc/protocols

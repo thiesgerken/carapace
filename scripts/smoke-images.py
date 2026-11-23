@@ -168,9 +168,13 @@ def assert_sandbox() -> None:
     # Kubernetes runs sandboxes as root without capabilities; Docker mode adds them back.
     docker = ["docker", "run", "--rm", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--memory=2g"]
     image = "carapace-sandbox:local"
-    # The registry entry is locked, so nixpkgs resolves from the image without any network.
-    offline = run(*docker, "--network=none", image, "nix", "eval", "--raw", "nixpkgs#hello.name")
-    assert offline.startswith("hello-"), offline
+    # The registry entry is final and the image holds its store path, so nixpkgs resolves without
+    # any network. The lite image for local Mac builds leaves the source out and fetches it instead.
+    if subprocess.run([*docker, image, "test", "-e", "/etc/nix/nixpkgs"], check=False).returncode == 0:
+        offline = run(*docker, "--network=none", image, "nix", "eval", "--raw", "nixpkgs#hello.name")
+        assert offline.startswith("hello-"), offline
+    else:
+        print("Lite sandbox image without nixpkgs source: skipping the offline nixpkgs check")
     run(*docker, image, "bash", "-c", SANDBOX_SMOKE)
 
 
