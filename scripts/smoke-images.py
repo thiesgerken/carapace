@@ -140,6 +140,10 @@ def assert_bitwarden() -> str:
 
 SANDBOX_SMOKE = r"""
 set -euo pipefail
+command -v cgate getent > /dev/null
+# The server's start-up egress probe needs bash's /dev/tcp, timeout and getent.
+timeout 5 bash -c 'exec 3<>/dev/tcp/example.com/80'
+getent hosts example.com > /dev/null
 python=$(realpath "$(command -v python3)")
 [[ $python == /root/.local/share/uv/python/cpython-3.14.* ]] || { echo "python3 is $python"; exit 1; }
 [[ $(UV_PYTHON_DOWNLOADS=never uv python find) == "$python" ]]
