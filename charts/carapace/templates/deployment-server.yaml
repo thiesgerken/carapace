@@ -52,6 +52,14 @@ spec:
               value: {{ .Values.server.sandboxPort | quote }}
             - name: CARAPACE_SANDBOX_PROXY_PORT
               value: {{ .Values.server.proxyPort | quote }}
+          {{- with .Values.sandbox.allowedInternalNetworks }}
+            - name: CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS
+              value: {{ toJson . | quote }}
+          {{- end }}
+          {{- with .Values.sandbox.allowedInternalHosts }}
+            - name: CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS
+              value: {{ toJson . | quote }}
+          {{- end }}
             - name: CARAPACE_SANDBOX_RUNTIME
               value: kubernetes
             - name: CARAPACE_SANDBOX_BASE_IMAGE

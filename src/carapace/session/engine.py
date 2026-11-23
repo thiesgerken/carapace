@@ -254,7 +254,7 @@ class SessionEngine(
         security = SessionSecurity(
             session_id,
             session_factory=self._session_mgr.session_factory,
-            max_sentinel_calls_per_tool_call=self._config.agent.max_sentinel_calls_per_tool_call,
+            max_sentinel_calls_per_exec=self._config.agent.max_sentinel_calls_per_exec,
             sentinel_domain_batch_window_ms=self._config.agent.sentinel_domain_batch_window_ms,
             unattended=state.attributes.unattended,
             ask_mode=state.attributes.ask_mode,

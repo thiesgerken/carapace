@@ -306,6 +306,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `sandbox/container_scripts.py` | Python snippets executed inside sandboxes for setup and helper operations.                 |
 | `sandbox/docker.py`            | Docker runtime implementation.                                                             |
 | `sandbox/exec_flow.py`         | Exec orchestration, command metadata, context handling, and tunnel lifecycle coordination. |
+| `sandbox/exec_scope.py`        | `RunningExec`: what one running exec has been granted, and its id for exec-scoped reviews. |
 | `sandbox/file_ops.py`          | Read/write/replace file operation helpers and size/window limits.                          |
 | `sandbox/k8s_exec_v5.py`       | Pod exec with stdin over the `v5.channel.k8s.io` websocket subprotocol.                    |
 | `sandbox/kubernetes.py`        | Kubernetes StatefulSet/PVC runtime implementation.                                         |
@@ -322,7 +323,6 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | ---------------------------- | --------------------------------------------------------------------------------- |
 | `security/__init__.py`       | Public security evaluation API for tools, domains, credentials, and pushes.       |
 | `security/context.py`        | Session security state, action log entries, approval records, and callback types. |
-| `security/exec_allowlist.py` | Safe-list rules for low-risk shell commands.                                      |
 | `security/sentinel.py`       | LLM-powered sentinel agent and persistent shadow conversation handling.           |
 
 ### Server package
