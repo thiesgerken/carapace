@@ -16,11 +16,16 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
+from pydantic import TypeAdapter
 
 from . import nix
-from .models import BuilderInfo, BuildResult, TreeHash
+from .cache import create_cache_app
+from .models import BuilderInfo, BuildResult, TreeHash, UpstreamCache
 
 PORT = 8330
+CACHE_PORT = 8331
+# Written by the root start script; readable here, the secret half is not.
+CACHE_PUBLIC_KEY = Path("/nix/var/carapace-builder-key/public")
 # Skill directories are text and small lock files; anything near this is a mistake.
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 # Lives on the same volume as the store, so results and the paths they name come and go together.
@@ -38,7 +43,7 @@ def _extract(archive: bytes, destination: Path) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid skill archive: {exc}") from exc
 
 
-def create_app(token: str, state_dir: Path, system: str) -> FastAPI:
+def create_app(token: str, state_dir: Path, system: str, cache_public_keys: list[str]) -> FastAPI:
     builds_dir = state_dir / "builds"
     roots_dir = state_dir / "roots"
     work_dir = state_dir / "work"
@@ -70,7 +75,7 @@ def create_app(token: str, state_dir: Path, system: str) -> FastAPI:
 
     @app.get("/info", dependencies=authorized)
     async def info() -> BuilderInfo:
-        return BuilderInfo(system=system)
+        return BuilderInfo(system=system, cache_public_keys=cache_public_keys)
 
     @app.get("/builds/{tree}", dependencies=authorized)
     async def get_build(tree: TreeHash) -> BuildResult:
@@ -110,10 +115,19 @@ async def _start_checks() -> str:
     return system
 
 
+async def _serve(token: str, upstreams: list[UpstreamCache]) -> None:
+    system = await _start_checks()
+    keys = [CACHE_PUBLIC_KEY.read_text().strip(), *(upstream.public_key for upstream in upstreams)]
+    # The build API and the cache are separate listeners: the session proxy forwards to the cache only.
+    api = uvicorn.Server(uvicorn.Config(create_app(token, STATE_DIR, system, keys), host="0.0.0.0", port=PORT))
+    cache = uvicorn.Server(uvicorn.Config(create_cache_app(upstreams), host="0.0.0.0", port=CACHE_PORT))
+    await asyncio.gather(api.serve(), cache.serve())
+
+
 def main() -> None:
     """Entry point for `carapace-builder`."""
     token = os.environ.get("CARAPACE_BUILDER_TOKEN", "")
     if not token:
         raise SystemExit("CARAPACE_BUILDER_TOKEN must be set")
-    system = asyncio.run(_start_checks())
-    uvicorn.run(create_app(token, STATE_DIR, system), host="0.0.0.0", port=PORT)
+    upstreams = TypeAdapter(list[UpstreamCache]).validate_json(os.environ["CARAPACE_BUILDER_UPSTREAM_CACHES"])
+    asyncio.run(_serve(token, upstreams))
