@@ -219,7 +219,8 @@ pkgs.dockerTools.buildLayeredImage {
       "HOME=/root"
       "USER=root"
       "LANG=C.UTF-8"
-      # Nix's glibc ignores /usr/lib/locale; foreign binaries read that path instead.
+      # Nix's glibc reads only this variable, and nix-ld hands it to foreign binaries as well;
+      # /usr/lib/locale is for the rare binary that bundles its own glibc.
       "LOCALE_ARCHIVE=${locales}/lib/locale/locale-archive"
       "NODE_USE_ENV_PROXY=1"
       "UV_PYTHON_PREFERENCE=only-managed"

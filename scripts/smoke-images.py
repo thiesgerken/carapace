@@ -141,6 +141,7 @@ def assert_bitwarden() -> str:
 SANDBOX_SMOKE = r"""
 set -euo pipefail
 command -v cgate getent > /dev/null
+! compgen -G '/bin/python*' > /dev/null || { ls /bin/python*; exit 1; }
 # The server's start-up egress probe needs bash's /dev/tcp, timeout and getent.
 timeout 5 bash -c 'exec 3<>/dev/tcp/example.com/80'
 getent hosts example.com > /dev/null
