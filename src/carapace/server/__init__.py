@@ -39,6 +39,7 @@ from ..artifact_shares import ArtifactShareStore
 from ..auth import AuthStore
 from ..bootstrap import ensure_data_dir, ensure_knowledge_dir
 from ..builder.client import BuilderClient
+from ..builder.skill_builds import SkillBuilds
 from ..cache import SessionListCache
 from ..codex_auth import CodexAccounts, CodexCredentialStore
 from ..config import build_config
@@ -141,6 +142,7 @@ _platform_store: PlatformSettingsStore
 _codex_accounts: CodexAccounts
 _memory_service: MemoryService
 _builder: BuilderClient | None
+_skill_builds: SkillBuilds
 
 
 def _enabled_user_git_configs(auth_store: AuthStore) -> dict[str, KnowledgeGitConfig]:
@@ -216,6 +218,14 @@ async def _connect_builder(config: BuilderConfig) -> BuilderClient | None:
         # A builder for another architecture is: BuilderSystemMismatchError stops the start.
         logger.warning(f"Skill builder at {config.url} is unreachable ({exc}); checking again on first use")
     return client
+
+
+async def _after_push(owner: str) -> None:
+    """A sandbox push was accepted: build the skills it changed ahead of use, then mirror it upstream."""
+    try:
+        await _skill_builds.ensure_built(_knowledge_repo_registry.get_for_user(owner).knowledge_dir)
+    finally:
+        await _knowledge_git_runtime.push_if_configured(owner)
 
 
 def _destination_policy(config: SandboxConfig, server_addresses: list[str]) -> DestinationPolicy:
@@ -410,7 +420,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         _platform_store, \
         _codex_accounts, \
         _memory_service, \
-        _builder
+        _builder, \
+        _skill_builds
 
     # 1. Build config from env (CARAPACE_DATA_DIR + CARAPACE_* subsections; no config file)
     _config = build_config()
@@ -468,6 +479,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         raise SystemExit(1)
 
     _builder = await _connect_builder(_config.builder)
+    _skill_builds = SkillBuilds(_builder)
 
     sandbox_network = _config.sandbox.network_name
     if _config.sandbox.runtime == "docker":
@@ -621,7 +633,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         default_branch="main",
         api_port=_config.server.internal_port,
         verify_session_token=_sandbox_mgr.verify_session_token,
-        on_push_success=_knowledge_git_runtime.push_if_configured,
+        on_push_success=_after_push,
     )
 
     proxy = ProxyServer(

@@ -320,6 +320,15 @@ A `SKILL.md` without frontmatter is valid: its directory name becomes the skill 
 
 The opt-out survives an invalid `metadata.carapace`, because `disabled: true` is read from the raw mapping. Invalid YAML cannot carry an opt-out, so such a skill is listed as broken (directory name and error position only, no file content) until it is fixed.
 
+## Building skills
+
+A skill with a `flake.nix` next to its `SKILL.md` is built by the [builder](builder.md); a skill without one has no commands and is never built. A disabled skill is not built either.
+
+- **When.** Every result belongs to the Git tree hash of the skill directory, so a skill is built once per content. After a sandbox push is accepted, the server builds the skill trees at the new head that have no result yet: only the skills the push changed. Content that arrived another way (a pull from upstream, the Knowledge UI, bootstrap seeding) is built when something first asks for it. Nothing waits for a build: a push is never held up or rejected by one.
+- **What the server knows.** Per skill tree: building, built (store paths and the commands from `passthru.carapace`), failed (the end of the build log), or unavailable (no builder configured, or the builder unreachable, in which case the next request asks again). A failed build stays failed until it is retried. A package without valid `mkSkill` metadata counts as failed. Results are shared between users with the same skill tree, and the builder keeps them across server restarts.
+- **What it reads.** The skill directory at `HEAD`, from Git objects rather than the working tree, so the tree hash, the archive the builder gets and the checks (`flake.nix` present, not disabled) all describe the same content.
+- **The catalog stays out of it.** The skill catalog is read from frontmatter only, never waits for the builder and never contains build state, because it is part of the cached prompt prefix ([persistent-context.md](persistent-context.md)).
+
 ## Skill activation as a security event
 
 When the agent activates a skill (loads its full `SKILL.md` into context), a `SkillActivatedEntry` is recorded in the action log. The `use_skill` tool call goes through the sentinel (not the safe-list); the activation is logged so the sentinel has context for evaluating subsequent actions.
