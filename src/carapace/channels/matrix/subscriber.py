@@ -244,12 +244,18 @@ class MatrixSubscriber:
         vault_paths: list[str],
         names: list[str],
         descriptions: list[str],
+        domains: list[str],
         skill_name: str | None,
         explanation: str,
     ) -> None:
-        parts = ["🔑 **Credential Request**"]
+        parts = ["🔑 **Access Request**" if domains else "🔑 **Credential Request**"]
         if skill_name:
             parts.append(f"Skill: **{skill_name}**")
+        if domains:
+            parts.append("Domains:")
+            parts.extend(f"- `{domain}`" for domain in domains)
+        if domains and names:
+            parts.append("Credentials:")
         for name, desc in zip(names, descriptions, strict=False):
             line = f"- `{name}`"
             if desc:

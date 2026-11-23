@@ -18,10 +18,10 @@ from loguru import logger
 from ..database.engine import SessionFactory
 from ..knowledge import KnowledgeRepoHandle, KnowledgeRepoResolver
 from ..models.git import GitActionResult, SandboxGitStatus
-from ..security.context import ApprovalSource, ApprovalVerdict, DomainEvaluation
+from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
 from ..spans import span
 from . import file_ops
-from .exec_flow import CredentialGrant, RunningExec, SandboxExecCoordinator, SandboxExecState
+from .exec_flow import RunningExec, SandboxExecCoordinator, SandboxExecState
 from .file_ops import SandboxFileOps
 from .runtime import (
     ContainerRuntime,
@@ -244,7 +244,7 @@ class SandboxManager:
         self._exec_temp_domains: dict[str, set[str]] = {}  # session_id -> domains, cleared after each exec
         self._exec_context_skill_domains: dict[str, set[str]] = {}  # skill-sourced subset of exec_temp_domains
         self._session_current_command: dict[str, str] = {}
-        self._domain_approval_cbs: dict[str, Callable[[str, str], Awaitable[DomainEvaluation]]] = {}
+        self._domain_approval_cbs: dict[str, Callable[[str, str, bool], Awaitable[BoundaryEvaluation]]] = {}
         self._domain_notify_cbs: dict[
             str,
             Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],
@@ -259,7 +259,7 @@ class SandboxManager:
         self._session_current_contexts: dict[str, list[str]] = {}
         self._exec_notified_domains: dict[str, set[str]] = {}  # dedupe silent-allow domain UI notifications
         self._exec_notified_credentials: dict[str, set[str]] = {}  # dedupe credential UI notifications
-        self._exec_approved_credentials: dict[str, set[CredentialGrant]] = {}
+        self._running_execs: dict[str, RunningExec] = {}
         self._get_activated_skills_cb: Callable[[str], list[str]] | None = None
         self._skill_activation_inputs_cb: Callable[[str, str], Awaitable[SkillActivationInputs]] | None = None
         self._skill_command_aliases_cb: Callable[[str, str], list[tuple[str, str]]] | None = None
@@ -309,7 +309,7 @@ class SandboxManager:
                 session_current_contexts=self._session_current_contexts,
                 exec_notified_domains=self._exec_notified_domains,
                 exec_notified_credentials=self._exec_notified_credentials,
-                exec_approved_credentials=self._exec_approved_credentials,
+                running_execs=self._running_execs,
             ),
         )
         self._sandbox_file_ops = SandboxFileOps(
@@ -1240,7 +1240,7 @@ class SandboxManager:
     # ------------------------------------------------------------------
 
     def set_domain_approval_callback(
-        self, session_id: str, cb: Callable[[str, str], Awaitable[DomainEvaluation]] | None
+        self, session_id: str, cb: Callable[[str, str, bool], Awaitable[BoundaryEvaluation]] | None
     ) -> None:
         self._exec_coordinator.set_domain_approval_callback(session_id, cb)
 
@@ -1251,7 +1251,7 @@ class SandboxManager:
     ) -> None:
         self._exec_coordinator.set_domain_notify_callback(session_id, cb)
 
-    async def request_domain_approval(self, session_id: str, domain: str) -> DomainEvaluation:
+    async def request_domain_approval(self, session_id: str, domain: str) -> BoundaryEvaluation:
         return await self._exec_coordinator.request_domain_approval(session_id, domain)
 
     def _cleanup_tracking(

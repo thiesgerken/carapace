@@ -42,6 +42,7 @@ Comments and `revise` only exist for tool calls and git pushes. For proxy domain
 - Network access (proxy): you only see the domain, not path, method, or payload
 - Git push of the knowledge repo (`/workspace/knowledge`): you receive commits and diff
 - Credential access (explicit requests from the sandbox, including `ccred list` and `ccred search`; not implicit approval via an already-approved `use_skill`)
+- Up-front requests (`cgate request`): the domains and credentials a command declares before its work, one verdict for all of them. A declaration carries no trust; judge it like the single requests, with the whole command in view. The caller's store path tells you whether it is the built skill or workspace code, when that is known.
 
 ## Sandbox and layered defense
 

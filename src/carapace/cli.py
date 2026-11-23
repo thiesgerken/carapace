@@ -475,9 +475,15 @@ async def _render_credential_escalation(data: dict[str, Any]) -> tuple[str, str 
     """Render a sentinel-escalated credential request and return the decision."""
     names = data.get("names", [])
     descriptions = data.get("descriptions", [])
+    domains = data.get("domains", [])
     explanation = data.get("explanation", "")
 
     panel_lines: list[str] = []
+    if domains:
+        panel_lines.append("Domains:")
+        panel_lines.extend(f"  [bold]{domain}[/bold]" for domain in domains)
+    if domains and names:
+        panel_lines.append("Credentials:")
     for name, desc in zip(names, descriptions, strict=False):
         line = f"[bold]{name}[/bold]"
         if desc:
@@ -490,7 +496,7 @@ async def _render_credential_escalation(data: dict[str, Any]) -> tuple[str, str 
     console.print(
         Panel(
             "\n".join(panel_lines),
-            title="[yellow]Credential Request[/yellow]",
+            title="[yellow]Access Request[/yellow]" if domains else "[yellow]Credential Request[/yellow]",
             border_style="yellow",
         )
     )

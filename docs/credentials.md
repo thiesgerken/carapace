@@ -143,6 +143,8 @@ ccred get <backend>/<id> -o ~/.ssh/id_ed25519
 
 `ccred` reads `CARAPACE_API_URL` from the sandbox environment to reach the sandbox API with session auth.
 
+A command that knows its credentials in advance can declare them with `cgate request --credential <backend>/<id>` before it starts (see [sandbox.md](sandbox.md#declaring-needs-up-front-cgate)). One review covers the declaration, and the following `ccred get` calls for those credentials return without another one for the rest of the `exec`.
+
 ## API surface (sandbox-only)
 
 - `GET /credentials?q=<query>`: list/search metadata (approval-gated per exec)

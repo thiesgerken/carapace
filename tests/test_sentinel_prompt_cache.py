@@ -99,7 +99,7 @@ async def test_every_sentinel_request_extends_the_previous_one(tmp_path: Path, d
     security.append(ToolResultEntry(tool="exec"))
     security.append(AgentResponseEntry(text="Fixed. Committing and pushing."))
     model.judge("allow")
-    await sentinel.evaluate_domain_access(security, "api.example.com", "moneta query --fix")
+    await sentinel.evaluate_domain_access(security, "api.example.com", "moneta query --fix", follow_up=False)
 
     # A restart reloads the sentinel state and builds a new sentinel; the cache must not notice.
     security = _restarted(session_id, db_factory)
@@ -118,7 +118,9 @@ async def test_every_sentinel_request_extends_the_previous_one(tmp_path: Path, d
     security.append(ApprovalEntry(tool="git_push", args={"ref": "refs/heads/main"}, decision="approved"))
     security.append(GitPushEntry(ref="refs/heads/main", decision="allowed"))
     model.judge("allow")
-    await sentinel.evaluate_credential_access(security, "moneta/token", "token", "API token", "moneta query")
+    await sentinel.evaluate_credential_access(
+        security, "moneta/token", "token", "API token", "`ccred get` (password)", "moneta query", follow_up=True
+    )
 
     requests = model.requests
     assert len(requests) == 6
