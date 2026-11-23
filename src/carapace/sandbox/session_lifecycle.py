@@ -79,6 +79,7 @@ class SandboxSessionLifecycle:
         warm_pool_size: int,
         knowledge_repo_name_for_session: Callable[[str], str],
         git_author_for_session: Callable[[str], str],
+        nix_config: Callable[[], str | None] | None = None,
     ) -> None:
         self._runtime = runtime
         self._state = state
@@ -92,6 +93,8 @@ class SandboxSessionLifecycle:
         self._warm_pool_size = warm_pool_size
         self._knowledge_repo_name_for_session = knowledge_repo_name_for_session
         self._git_author_for_session = git_author_for_session
+        # The builder's cache settings for Nix in the sandbox, once the builder has answered.
+        self._nix_config = nix_config
         self._warm_claim_lock = asyncio.Lock()
         self._warm_refill_tasks: set[asyncio.Task[int]] = set()
 
@@ -257,6 +260,7 @@ class SandboxSessionLifecycle:
             "GIT_REPO_URL": git_url,
             "CARAPACE_API_URL": f"{scheme}://{session_id}:{proxy_token}@{no_proxy_host}:{self._sandbox_port}",
             "CARAPACE_SESSION_ID": session_id,
+            **({"NIX_CONFIG": nix_config} if self._nix_config and (nix_config := self._nix_config()) else {}),
         }
 
     async def log_assignment(

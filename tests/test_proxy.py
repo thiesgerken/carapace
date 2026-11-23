@@ -295,6 +295,21 @@ class TestSandboxManagerAllowlists:
         env = mgr._build_proxy_env("sess-1", "tok", "http://172.18.0.2:3128")
         assert env["CARAPACE_SESSION_ID"] == "sess-1"
 
+    def test_proxy_env_points_nix_at_the_builder_cache(self, tmp_path: Path, db_factory):
+        mgr = _sandbox_manager(
+            runtime=make_runtime_mock(),
+            data_dir=tmp_path,
+            knowledge_dir=tmp_path,
+            session_factory=db_factory,
+            nix_config=lambda: "substituters = http://cache.carapace.internal",
+        )
+        env = mgr._build_proxy_env("sess-1", "tok", "http://172.18.0.2:3128")
+        assert env["NIX_CONFIG"] == "substituters = http://cache.carapace.internal"
+
+    def test_proxy_env_has_no_nix_config_without_a_builder(self, tmp_path: Path, db_factory):
+        env = self._make_manager(tmp_path, db_factory)._build_proxy_env("sess-1", "tok", "http://172.18.0.2:3128")
+        assert "NIX_CONFIG" not in env
+
     def test_proxy_env_uses_owner_repo_name(self, tmp_path: Path, db_factory):
         runtime = make_runtime_mock()
         mgr = _sandbox_manager(

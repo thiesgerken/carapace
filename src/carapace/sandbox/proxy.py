@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 from loguru import logger
 
+from ..builder.models import CACHE_HOST, cache_path_allowed
 from ..security.context import BoundaryEvaluation
 from ..spans import span
 from .destinations import DestinationPolicy, DestinationRefusedError, ip_literal
@@ -77,6 +78,7 @@ class ProxyServer:
         request_approval: Callable[[str, str], Awaitable[BoundaryEvaluation]] | None = None,
         notify_domain_access: Callable[[str, str, bool], None] | None = None,
         destinations: DestinationPolicy = _NO_EXCEPTIONS,
+        builder_cache_url: str | None = None,
         host: str = "0.0.0.0",
         port: int = 3128,
     ) -> None:
@@ -87,6 +89,8 @@ class ProxyServer:
         self._request_approval = request_approval
         self._notify_domain_access = notify_domain_access
         self._destinations = destinations
+        # The one internal destination every sandbox reaches without a decision: read-only and fixed.
+        self._builder_cache = urlsplit(builder_cache_url) if builder_cache_url else None
         self._host = host
         self._port = port
         self._server: asyncio.Server | None = None
@@ -217,6 +221,10 @@ class ProxyServer:
         target: str,
     ) -> None:
         domain, port = self._parse_host_port(target, default_port=443)
+        if domain == CACHE_HOST:
+            writer.write(_denied_response(f"{CACHE_HOST} is reached with plain HTTP through the proxy, not CONNECT."))
+            await writer.drain()
+            return
         if ip_literal(domain) is not None and await self._checked_addresses(writer, session_id, domain, port) is None:
             return
         evaluation = await self._authorize_domain(session_id, domain)
@@ -265,6 +273,9 @@ class ProxyServer:
             await writer.drain()
             return
 
+        if domain == CACHE_HOST:
+            await self._handle_cache(reader, writer, session_id, method, path, http_version, raw_headers)
+            return
         if ip_literal(domain) is not None and await self._checked_addresses(writer, session_id, domain, port) is None:
             return
         evaluation = await self._authorize_domain(session_id, domain)
@@ -277,6 +288,70 @@ class ProxyServer:
         if addresses is None:
             return
 
+        # The name, not the address, is what the certificate must match.
+        tls: dict[str, Any] = {"ssl": self._tls_context, "server_hostname": domain} if use_tls else {}
+        logger.info(f"Proxy HTTP allowed: {method} {domain}{path} (session={session_id})")
+        await self._forward(
+            reader, writer, lambda: self._open_remote(addresses, port, **tls), method, path, http_version, raw_headers
+        )
+
+    async def _handle_cache(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        session_id: str,
+        method: str,
+        path: str,
+        http_version: str,
+        raw_headers: list[bytes],
+    ) -> None:
+        """Forward a binary cache request to the builder's cache: no decision, no destination check.
+
+        Only reads of the cache info, narinfos and NARs pass, so the mapping cannot reach anything
+        else on the builder, and every other substituter still goes through the domain decision.
+        """
+        cache = self._builder_cache
+        if cache is None or cache.hostname is None:
+            rejection = f"No builder cache is configured, so {CACHE_HOST} is unavailable."
+        elif method not in ("GET", "HEAD") or not cache_path_allowed(path.split("?", 1)[0]):
+            rejection = f"{CACHE_HOST} serves only reads of nix-cache-info, narinfos and NARs."
+        else:
+            hostname = cache.hostname
+            port = cache.port or (443 if cache.scheme == "https" else 80)
+            tls: dict[str, Any] = (
+                {"ssl": self._tls_context, "server_hostname": hostname} if cache.scheme == "https" else {}
+            )
+            logger.debug(f"Proxy cache: {method} {path} (session={session_id})")
+            await self._forward(
+                reader,
+                writer,
+                lambda: asyncio.wait_for(asyncio.open_connection(hostname, port, **tls), timeout=30),
+                method,
+                cache.path.rstrip("/") + path,
+                http_version,
+                raw_headers,
+                host=cache.netloc,
+            )
+            return
+        logger.warning(f"Proxy cache refused: {method} {path} (session={session_id}): {rejection}")
+        writer.write(_denied_response(rejection))
+        await writer.drain()
+
+    async def _forward(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        connect: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        method: str,
+        path: str,
+        http_version: str,
+        raw_headers: list[bytes],
+        host: str | None = None,
+    ) -> None:
+        """Send the request to the remote *connect* opens and stream the response back.
+
+        *host* replaces the client's Host header when the request goes elsewhere than it names.
+        """
         # Filter out proxy-specific and hop-by-hop headers, then find content-length.
         # Drop any existing Connection header — we will inject "Connection: close"
         # so the server closes the TCP connection after sending its response.
@@ -288,9 +363,13 @@ class ProxyServer:
             lower = hdr.lower()
             if lower.startswith(b"proxy-") or lower.startswith(b"connection:"):
                 continue
+            if host is not None and lower.startswith(b"host:"):
+                continue
             if lower.startswith(b"content-length:"):
                 content_length = int(hdr.split(b":", 1)[1].strip())
             headers.append(hdr)
+        if host is not None:
+            headers.append(f"Host: {host}\r\n".encode())
         headers.append(b"Connection: close\r\n")
 
         body = b""
@@ -298,20 +377,12 @@ class ProxyServer:
             body = await asyncio.wait_for(reader.readexactly(content_length), timeout=30)
 
         try:
-            if use_tls:
-                # The name, not the address, is what the certificate must match.
-                remote_reader, remote_writer = await self._open_remote(
-                    addresses, port, ssl=self._tls_context, server_hostname=domain
-                )
-            else:
-                remote_reader, remote_writer = await self._open_remote(addresses, port)
+            remote_reader, remote_writer = await connect()
         except Exception as exc:
-            logger.debug(f"Proxy HTTP: cannot reach {domain}:{port} — {exc}")
+            logger.debug(f"Proxy HTTP: cannot reach the remote for {path} — {exc}")
             writer.write(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
             await writer.drain()
             return
-
-        logger.info(f"Proxy HTTP allowed: {method} {domain}{path} (session={session_id})")
 
         # Rebuild request with relative path
         request_line = f"{method} {path} {http_version}\r\n".encode()
