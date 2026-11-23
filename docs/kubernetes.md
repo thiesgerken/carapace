@@ -321,10 +321,10 @@ This mirrors the Docker setup where sandbox containers are on an internal networ
 > - Another NetworkPolicy in the same namespace grants sandbox pods broader egress (Kubernetes NetworkPolicy is **additive** — a permissive policy cannot be overridden by a restrictive one).
 > - Namespace-level or cluster-level network rules (e.g. Cilium `CiliumNetworkPolicy`, Calico `GlobalNetworkPolicy`) open additional egress paths for sandbox pods.
 >
-> **Before deploying to production**, verify your setup:
+> The server checks this at every start: it creates a probe sandbox pod and refuses to start if that pod can open a direct connection or resolve a name (see [Start-up egress self-test](security.md#start-up-egress-self-test)). A server that crash-loops with `Sandbox egress self-test failed` in its log is the symptom of one of the cases above. The check covers a few public addresses; a policy that blocks exactly those would still pass, so after changing network rules you can also check by hand:
 >
 > ```bash
-> # After deploying, exec into a sandbox pod and confirm it cannot reach the internet directly
+> # Exec into a sandbox pod and confirm it cannot reach the internet directly
 > kubectl exec -it <sandbox-pod> -- curl -m 5 https://example.com
 > # This MUST fail (timeout / connection refused). If it succeeds, your NetworkPolicy is not being enforced.
 > ```
