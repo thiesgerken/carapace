@@ -2,6 +2,8 @@
 
 carapace uses the open [AgentSkills](https://agentskills.io/) format for skills. This makes skills portable to any AgentSkills-compatible agent (Claude Code, Cursor, Gemini CLI, etc.) while carapace adds its own security layer on top.
 
+Skills with commands are moving to Nix flakes that the Carapace builder builds; [skill-flakes.md](skill-flakes.md) describes how to write one. Until that migration lands, the format below is the one sessions use.
+
 ## Skill structure
 
 A skill is a directory with a `SKILL.md` file (Markdown instructions with YAML frontmatter) plus optional `scripts/`, `references/`, and `assets/` directories.
