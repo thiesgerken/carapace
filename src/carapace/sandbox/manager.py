@@ -21,7 +21,8 @@ from ..models.git import GitActionResult, SandboxGitStatus
 from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
 from ..spans import span
 from . import file_ops
-from .exec_flow import RunningExec, SandboxExecCoordinator, SandboxExecState
+from .exec_flow import SandboxExecCoordinator, SandboxExecState
+from .exec_scope import RunningExec
 from .file_ops import SandboxFileOps
 from .runtime import (
     ContainerRuntime,
@@ -244,7 +245,7 @@ class SandboxManager:
         self._exec_temp_domains: dict[str, set[str]] = {}  # session_id -> domains, cleared after each exec
         self._exec_context_skill_domains: dict[str, set[str]] = {}  # skill-sourced subset of exec_temp_domains
         self._session_current_command: dict[str, str] = {}
-        self._domain_approval_cbs: dict[str, Callable[[str, str, bool], Awaitable[BoundaryEvaluation]]] = {}
+        self._domain_approval_cbs: dict[str, Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]] = {}
         self._domain_notify_cbs: dict[
             str,
             Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],
@@ -1243,7 +1244,7 @@ class SandboxManager:
     # ------------------------------------------------------------------
 
     def set_domain_approval_callback(
-        self, session_id: str, cb: Callable[[str, str, bool], Awaitable[BoundaryEvaluation]] | None
+        self, session_id: str, cb: Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]] | None
     ) -> None:
         self._exec_coordinator.set_domain_approval_callback(session_id, cb)
 

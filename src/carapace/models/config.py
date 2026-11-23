@@ -228,11 +228,11 @@ class AgentConfig(ConfigModel):
 
     max_parallel_llm: int = 2
 
-    # Maximum number of sentinel-backed proxy domain review batches one tool call can trigger.
-    # 0 disables the cap.
+    # Maximum number of sentinel-backed proxy domain review batches one exec can trigger.
+    # 0 disables the cap. The name predates exec-scoped reviews; it is a persisted platform setting.
     max_sentinel_calls_per_tool_call: int = 10
 
-    # Debounce window for coalescing proxy domain requests within a tool call.
+    # Debounce window for coalescing proxy domain requests within an exec.
     sentinel_domain_batch_window_ms: int = 100
 
     # Max wall-clock time for one sentinel LLM review.

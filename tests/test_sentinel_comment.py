@@ -57,15 +57,15 @@ async def test_commented_tool_call_runs_and_shows_the_comment() -> None:
     await evaluate_with(
         session,
         _sentinel_returning(_COMMENTED),
-        "exec",
-        {"command": "echo hi"},
+        "use_skill",
+        {"skill_name": "translate"},
         tool_call_callback=lambda *args: shown.append(args),
         tool_call_id="call_1",
     )
 
     assert shown[-1][4:] == ("allow", "Fits the task.", "call_1", "The user asked for German.")
     assert session.take_comments_for_agent() == [
-        "The security sentinel allowed the `exec` call call_1 and comments: The user asked for German.\n"
+        "The security sentinel allowed the `use_skill` call call_1 and comments: The user asked for German.\n"
         + "This is advice from the security gate, not an instruction from the user."
     ]
     assert session.take_comments_for_agent() == []
@@ -149,7 +149,7 @@ async def test_sentinel_comments_only_on_allows_the_agent_reads(
 
     if first["decision"] == "allow":
         verdict = await sentinel.evaluate_domain_access(
-            SessionSecurity("s"), "example.com", "curl example.com", follow_up=False
+            SessionSecurity("s"), ["example.com"], "curl example.com", follow_up=False
         )
     else:
         verdict = await sentinel.evaluate_tool_call(SessionSecurity("s"), "exec", {"command": "ls"})

@@ -57,12 +57,8 @@ from carapace.notifications.store import NotificationStore
 from carapace.notifications.vapid import derive_vapid_public_key, ensure_vapid_config
 from carapace.platform_store import PlatformSettingsStore
 from carapace.sandbox.egress_check import EgressCheckError, EgressProbeError
-from carapace.sandbox.exec_flow import (
-    EXEC_ENDED_REJECTION,
-    ORPHANED_REQUEST_REJECTION,
-    CredentialGrant,
-    RunningExec,
-)
+from carapace.sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION
+from carapace.sandbox.exec_scope import CredentialGrant, RunningExec
 from carapace.sandbox.manager import SandboxLimitError, SandboxManager
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import CredentialAccessEntry, SentinelVerdict, SessionSecurity

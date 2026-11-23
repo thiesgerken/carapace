@@ -61,7 +61,8 @@ from ..notifications.vapid import ensure_vapid_config
 from ..platform_store import PlatformSettingsStore
 from ..prompt_prefix import shared_prompt_prefix
 from ..sandbox.egress_check import EgressCheckError, EgressProbeError
-from ..sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION, CredentialGrant
+from ..sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION
+from ..sandbox.exec_scope import CredentialGrant
 from ..sandbox.manager import SandboxLimitError, SandboxManager
 from ..sandbox.proxy import ProxyServer, domain_allowed
 from ..sandbox.runtime import ContainerRuntime

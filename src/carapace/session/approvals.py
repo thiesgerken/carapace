@@ -14,6 +14,7 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 from .. import security as security_mod
 from ..models.tooling import normalize_tool_call_args
 from ..notifications.router import NotificationRouter, build_escalation_notification_id
+from ..sandbox.exec_scope import RunningExec
 from ..security.context import (
     ApprovalSource,
     ApprovalVerdict,
@@ -472,18 +473,19 @@ class SessionApprovalMixin:
         security: SessionSecurity,
         sentinel: Sentinel,
         active: ActiveSession,
-    ) -> Callable[[str, str, bool], Awaitable[BoundaryEvaluation]]:
+    ) -> Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]:
         """Build a callback for SandboxManager.request_domain_approval."""
 
-        async def _eval(domain: str, command: str, follow_up: bool) -> BoundaryEvaluation:
+        async def _eval(domain: str, running: RunningExec) -> BoundaryEvaluation:
             with self.llm_request_recording(active):
                 try:
                     return await security_mod.evaluate_domain_with(
                         security,
                         sentinel,
                         domain,
-                        command,
-                        follow_up=follow_up,
+                        running.command,
+                        exec_id=running.exec_id,
+                        follow_up=running.boundary_reviewed,
                         usage_tracker=active.usage_tracker,
                         assert_llm_budget_available=lambda: self._assert_llm_budget_available(active),
                         usage_limits=self._remaining_aux_usage_limits(active),

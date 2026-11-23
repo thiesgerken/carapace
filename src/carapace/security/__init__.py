@@ -32,7 +32,6 @@ from .context import (
 )
 from .context import ActionLogEntry as ActionLogEntry
 from .context import CredentialAccessEntry as CredentialAccessEntry
-from .exec_allowlist import match_auto_allowed_exec
 from .sentinel import Sentinel
 
 SAFE_TOOLS: frozenset[str] = frozenset(
@@ -46,6 +45,9 @@ SAFE_TOOLS: frozenset[str] = frozenset(
         "show_artifact",
         # Only returns tool output this session's agent has already seen.
         "read_tool_output",
+        # The sandbox is the boundary: a command only reaches the outside through the proxy, `ccred`
+        # or `cgate`, and each of those is reviewed when it asks. The exec itself stays in the action log.
+        "exec",
     }
 )
 
@@ -122,33 +124,6 @@ async def evaluate_with(
             approval_explanation="auto-allowed",
         )
         return
-
-    if tool_name == "exec":
-        matched_exec = match_auto_allowed_exec(args)
-        if matched_exec is not None:
-            explanation = f"Auto-allowed by read-only exec heuristic ({matched_exec})."
-            entry = ToolCallEntry(tool=tool_name, args=args, decision="auto_allowed", explanation=explanation)
-            session.append(entry)
-            session.write_audit(
-                AuditEntry.now(
-                    kind="tool_call",
-                    tool=tool_name,
-                    args_summary=args,
-                    final_decision="auto_allowed",
-                    explanation=explanation,
-                )
-            )
-            _log_tool_call(
-                tool_name,
-                args,
-                f"[safe-list] auto-allowed read-only exec heuristic ({matched_exec})",
-                tool_call_callback,
-                tool_call_id=tool_call_id,
-                approval_source="safe-list",
-                approval_verdict="allow",
-                approval_explanation=explanation,
-            )
-            return
 
     _log_tool_call(
         tool_name,
@@ -264,6 +239,7 @@ async def evaluate_domain_with(
     domain: str,
     command: str,
     *,
+    exec_id: str,
     follow_up: bool,
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
@@ -271,7 +247,9 @@ async def evaluate_domain_with(
 ) -> BoundaryEvaluation:
     """Evaluate a proxy domain request as a decision of its own: no earlier review covers it.
 
-    *follow_up* says the sentinel already decided on this exec, so the request need not repeat the command.
+    Requests of one exec (*exec_id*) are reviewed together and their decisions reused until that exec
+    ends; the next exec asks again. *follow_up* says the sentinel already decided a request of this exec, so the
+    request need not repeat the command.
 
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
@@ -295,38 +273,11 @@ async def evaluate_domain_with(
         )
         return BoundaryEvaluation(allowed=True, rejection="")
 
-    if session.current_parent_tool_id is None:
-        result = await _evaluate_single_domain_access(
-            session,
-            sentinel,
-            domain,
-            command,
-            follow_up=follow_up,
-            usage_tracker=usage_tracker,
-            assert_llm_budget_available=assert_llm_budget_available,
-            usage_limits=usage_limits,
-        )
-        session.notify_domain_decision(
-            domain,
-            result.detail,
-            approval_source=result.approval_source,
-            approval_verdict=result.approval_verdict,
-            approval_explanation=result.explanation,
-        )
-        session.write_audit(
-            AuditEntry.now(
-                kind="proxy_domain",
-                domain=domain,
-                sentinel_verdict=result.sentinel_verdict,
-                final_decision=result.final_decision,
-                explanation=result.audit_explanation,
-            )
-        )
-        return result.evaluation()
-
     cached_approval, pending_result, should_notify_queued = await session.get_or_enqueue_domain_approval(
         domain,
         command,
+        exec_id,
+        follow_up,
         lambda: asyncio.create_task(
             _run_domain_batch_worker(
                 session,
@@ -352,39 +303,12 @@ async def evaluate_domain_with(
                 kind="proxy_domain",
                 domain=domain,
                 final_decision="allowed" if cached_approval.allowed else "denied",
-                explanation="Reused earlier domain decision within the same tool call.",
+                explanation="Reused earlier domain decision within the same exec.",
             )
         )
         return cached_approval.evaluation()
 
-    if pending_result is None:
-        result = await _evaluate_single_domain_access(
-            session,
-            sentinel,
-            domain,
-            command,
-            follow_up=follow_up,
-            usage_tracker=usage_tracker,
-            assert_llm_budget_available=assert_llm_budget_available,
-            usage_limits=usage_limits,
-        )
-        session.notify_domain_decision(
-            domain,
-            result.detail,
-            approval_source=result.approval_source,
-            approval_verdict=result.approval_verdict,
-            approval_explanation=result.explanation,
-        )
-        session.write_audit(
-            AuditEntry.now(
-                kind="proxy_domain",
-                domain=domain,
-                sentinel_verdict=result.sentinel_verdict,
-                final_decision=result.final_decision,
-                explanation=result.audit_explanation,
-            )
-        )
-        return result.evaluation()
+    assert pending_result is not None, "no earlier decision, so a review is pending"
 
     if should_notify_queued:
         session.notify_domain_decision(domain, "[sentinel] queued for batched review", approval_source="sentinel")
@@ -407,35 +331,6 @@ async def evaluate_domain_with(
         )
     )
     return result.evaluation()
-
-
-async def _evaluate_single_domain_access(
-    session: SessionSecurity,
-    sentinel: Sentinel,
-    domain: str,
-    command: str,
-    *,
-    follow_up: bool,
-    usage_tracker: UsageTracker | None = None,
-    assert_llm_budget_available: Callable[[], None] | None = None,
-    usage_limits: UsageLimits | None = None,
-) -> CachedDomainApproval:
-    session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
-
-    try:
-        verdict = await sentinel.evaluate_domain_access(
-            session,
-            domain,
-            command,
-            follow_up=follow_up,
-            usage_tracker=usage_tracker,
-            assert_llm_budget_available=assert_llm_budget_available,
-            usage_limits=usage_limits,
-        )
-    except UsageLimitExceeded:
-        return await _decision_for_usage_limit(session, domain, command)
-
-    return await _decision_from_verdict(session, domain, command, verdict)
 
 
 async def _decision_from_verdict(
@@ -579,10 +474,14 @@ async def _evaluate_domain_batch(
     for domain in domain_commands:
         session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
 
+    # One exec per scope: its requests share the command.
+    any_request = next(iter(snapshot.requests.values()))
     try:
-        verdict = await sentinel.evaluate_domain_access_batch(
+        verdict = await sentinel.evaluate_domain_access(
             session,
-            domain_commands,
+            list(domain_commands),
+            any_request.command,
+            follow_up=all(request.follow_up for request in snapshot.requests.values()),
             usage_tracker=usage_tracker,
             assert_llm_budget_available=assert_llm_budget_available,
             usage_limits=usage_limits,
