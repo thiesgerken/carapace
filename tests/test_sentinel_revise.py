@@ -65,7 +65,14 @@ async def test_revised_push_is_rejected_with_the_change_request() -> None:
     session = SessionSecurity("s")
 
     evaluation = await evaluate_push_with(
-        session, _sentinel_returning(_REVISE), "refs/heads/main", True, "abc fix", "diff", shared_artifacts=set()
+        session,
+        _sentinel_returning(_REVISE),
+        "refs/heads/main",
+        True,
+        "abc fix",
+        "diff",
+        shared_artifacts=set(),
+        flake_input_changes=[],
     )
 
     assert evaluation.allowed is False

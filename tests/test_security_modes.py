@@ -38,6 +38,7 @@ async def test_ask_mode_denies_git_push_without_sentinel_review(tmp_path) -> Non
         "abc123 test commit",
         "diff --git a/README.md b/README.md",
         shared_artifacts=set(),
+        flake_input_changes=[],
     )
 
     assert evaluation.allowed is False
