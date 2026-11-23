@@ -264,11 +264,14 @@ async def evaluate_domain_with(
     domain: str,
     command: str,
     *,
+    follow_up: bool,
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
     usage_limits: UsageLimits | None = None,
 ) -> BoundaryEvaluation:
     """Evaluate a proxy domain request as a decision of its own: no earlier review covers it.
+
+    *follow_up* says the sentinel already decided on this exec, so the request need not repeat the command.
 
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
@@ -298,6 +301,7 @@ async def evaluate_domain_with(
             sentinel,
             domain,
             command,
+            follow_up=follow_up,
             usage_tracker=usage_tracker,
             assert_llm_budget_available=assert_llm_budget_available,
             usage_limits=usage_limits,
@@ -359,6 +363,7 @@ async def evaluate_domain_with(
             sentinel,
             domain,
             command,
+            follow_up=follow_up,
             usage_tracker=usage_tracker,
             assert_llm_budget_available=assert_llm_budget_available,
             usage_limits=usage_limits,
@@ -410,6 +415,7 @@ async def _evaluate_single_domain_access(
     domain: str,
     command: str,
     *,
+    follow_up: bool,
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
     usage_limits: UsageLimits | None = None,
@@ -421,6 +427,7 @@ async def _evaluate_single_domain_access(
             session,
             domain,
             command,
+            follow_up=follow_up,
             usage_tracker=usage_tracker,
             assert_llm_budget_available=assert_llm_budget_available,
             usage_limits=usage_limits,
@@ -814,6 +821,7 @@ async def evaluate_credential_with(
     asked_by: str,
     command: str,
     *,
+    follow_up: bool,
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
     usage_limits: UsageLimits | None = None,
@@ -832,6 +840,7 @@ async def evaluate_credential_with(
             description,
             asked_by,
             command,
+            follow_up=follow_up,
             usage_tracker=usage_tracker,
             assert_llm_budget_available=assert_llm_budget_available,
             usage_limits=usage_limits,
@@ -849,6 +858,7 @@ async def evaluate_credential_listing_with(
     query: str,
     command: str,
     *,
+    follow_up: bool,
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
     usage_limits: UsageLimits | None = None,
@@ -860,6 +870,7 @@ async def evaluate_credential_listing_with(
             session,
             query,
             command,
+            follow_up=follow_up,
             usage_tracker=usage_tracker,
             assert_llm_budget_available=assert_llm_budget_available,
             usage_limits=usage_limits,
@@ -926,6 +937,7 @@ async def evaluate_upfront_request_with(
     request: UpfrontRequest,
     command: str,
     *,
+    follow_up: bool,
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
     usage_limits: UsageLimits | None = None,
@@ -954,6 +966,7 @@ async def evaluate_upfront_request_with(
             session,
             request,
             command,
+            follow_up=follow_up,
             usage_tracker=usage_tracker,
             assert_llm_budget_available=assert_llm_budget_available,
             usage_limits=usage_limits,
@@ -1009,7 +1022,7 @@ class _AccessItems:
     domains: list[str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class _BoundaryOutcome:
     verdict: SentinelVerdict
     allowed: bool
@@ -1041,11 +1054,25 @@ async def _decide_boundary_request(
     match verdict.decision:
         case "allow":
             detail = f"[sentinel: allow] {verdict.explanation}"
-            return _BoundaryOutcome(verdict, True, "sentinel", detail, "", verdict.explanation)
+            return _BoundaryOutcome(
+                verdict=verdict,
+                allowed=True,
+                source="sentinel",
+                detail=detail,
+                rejection="",
+                ui_explanation=verdict.explanation,
+            )
         case "deny":
             detail = f"[sentinel: deny] {verdict.explanation}"
             rejection = format_denial_message("sentinel", verdict.explanation)
-            return _BoundaryOutcome(verdict, False, "sentinel", detail, rejection, verdict.explanation)
+            return _BoundaryOutcome(
+                verdict=verdict,
+                allowed=False,
+                source="sentinel",
+                detail=detail,
+                rejection=rejection,
+                ui_explanation=verdict.explanation,
+            )
         case "escalate":
             user_decision = await session.escalate_to_user(
                 subject,
@@ -1062,7 +1089,12 @@ async def _decide_boundary_request(
             message = normalize_optional_message(user_decision.message)
             rejection = "" if user_decision.allowed else format_denial_message("user", message)
             return _BoundaryOutcome(
-                verdict, user_decision.allowed, "user", rejection or "[user: allow]", rejection, message
+                verdict=verdict,
+                allowed=user_decision.allowed,
+                source="user",
+                detail=rejection or "[user: allow]",
+                rejection=rejection,
+                ui_explanation=message,
             )
         case "revise":
             raise _revise_not_offered(what)

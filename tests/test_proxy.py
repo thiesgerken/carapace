@@ -1005,7 +1005,7 @@ async def test_exec_cleanup_tunnel_error_does_not_mask_command_error_or_skip_cre
         session_current_contexts={},
         exec_notified_domains={},
         exec_notified_credentials={},
-        exec_approved_credentials={},
+        running_execs={},
     )
     coordinator = SandboxExecCoordinator(runtime=runtime, state=state)
     sc1 = SessionContainer(container_id="container-1", session_id="sess-1", created_at=0, last_used=0)
@@ -1054,7 +1054,7 @@ def _make_exec_state(**overrides) -> SandboxExecState:
         session_current_contexts={},
         exec_notified_domains={},
         exec_notified_credentials={},
-        exec_approved_credentials={},
+        running_execs={},
     )
     base.update(overrides)
     return SandboxExecState(**base)
@@ -1085,7 +1085,7 @@ async def test_request_domain_approval_consults_sentinel_during_live_exec():
     evaluation = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
 
     assert evaluation.allowed is True
-    cb.assert_awaited_once_with("registry.npmjs.org", "npm ci")
+    cb.assert_awaited_once_with("registry.npmjs.org", "npm ci", False)
     assert "registry.npmjs.org" in state.exec_temp_domains["sess-1"]
 
 
@@ -1130,7 +1130,7 @@ async def test_domain_approval_after_its_exec_ended_is_not_granted():
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     _grant(coordinator, "curl https://api.example.com &")
 
-    async def review_outlasting_the_exec(_domain: str, _command: str) -> BoundaryEvaluation:
+    async def review_outlasting_the_exec(_domain: str, _command: str, _follow_up: bool) -> BoundaryEvaluation:
         coordinator._revoke_exec_scope("sess-1", bypass_proxy=False)
         return BoundaryEvaluation(allowed=True, rejection="")
 
@@ -1148,7 +1148,7 @@ async def test_domain_approval_does_not_land_in_the_next_exec():
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
     _grant(coordinator, "curl https://api.example.com &")
 
-    async def review_until_the_next_exec(_domain: str, _command: str) -> BoundaryEvaluation:
+    async def review_until_the_next_exec(_domain: str, _command: str, _follow_up: bool) -> BoundaryEvaluation:
         coordinator._revoke_exec_scope("sess-1", bypass_proxy=False)
         _grant(coordinator, "ls")
         return BoundaryEvaluation(allowed=True, rejection="")
@@ -1159,6 +1159,33 @@ async def test_domain_approval_does_not_land_in_the_next_exec():
 
     assert evaluation.allowed is False
     assert "api.example.com" not in coordinator.get_effective_domains("sess-1")
+
+
+@pytest.mark.anyio
+async def test_only_later_requests_of_the_same_exec_are_follow_ups():
+    """Parallel tool calls run their execs one after the other; each exec starts with the full form."""
+    state = _make_exec_state()
+    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    seen: list[tuple[str, str, bool]] = []
+
+    async def review(domain: str, command: str, follow_up: bool) -> BoundaryEvaluation:
+        seen.append((domain, command, follow_up))
+        return BoundaryEvaluation(allowed=True, rejection="")
+
+    state.domain_approval_cbs["sess-1"] = review
+
+    _grant(coordinator, "fetch-a")
+    await coordinator.request_domain_approval("sess-1", "a.example.com")
+    await coordinator.request_domain_approval("sess-1", "b.example.com")
+    coordinator._revoke_exec_scope("sess-1", bypass_proxy=False)
+    _grant(coordinator, "fetch-b")
+    await coordinator.request_domain_approval("sess-1", "c.example.com")
+
+    assert seen == [
+        ("a.example.com", "fetch-a", False),
+        ("b.example.com", "fetch-a", True),
+        ("c.example.com", "fetch-b", False),
+    ]
 
 
 @pytest.mark.anyio

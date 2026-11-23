@@ -945,7 +945,7 @@ def _credential_backend_unavailable(exc: CredentialBackendError) -> Response:
 async def _gate_credential_request(
     active: ActiveSession,
     grant: CredentialGrant,
-    review: Callable[[SessionSecurity, Sentinel, str], Awaitable[CredentialAccessEvaluation]],
+    review: Callable[[SessionSecurity, Sentinel, str, bool], Awaitable[CredentialAccessEvaluation]],
 ) -> Response | None:
     """Review a credential request of the running exec; returns the denial, or None to go ahead.
 
@@ -962,11 +962,12 @@ async def _gate_credential_request(
 
     with _engine.llm_request_recording(active):
         try:
-            evaluation = await review(active.security, active.sentinel, running.command)
+            evaluation = await review(active.security, active.sentinel, running.command, running.boundary_reviewed)
         except (SessionBudgetExceededError, UsageLimitExceeded) as exc:
             return _boundary_denied(str(exc))
     if not sandbox_mgr.is_running(running):
         return _boundary_denied(EXEC_ENDED_REJECTION)
+    running.boundary_reviewed = True
     if not evaluation.allowed:
         return _boundary_denied(evaluation.rejection)
     running.credentials.add(grant)
@@ -994,11 +995,12 @@ async def list_credentials(request: Request, q: str = "") -> Response:
     denial = await _gate_credential_request(
         active,
         (CREDENTIAL_LISTING_PATH, None),
-        lambda security, sentinel, command: evaluate_credential_listing_with(
+        lambda security, sentinel, command, follow_up: evaluate_credential_listing_with(
             security,
             sentinel,
             q,
             command,
+            follow_up=follow_up,
             usage_tracker=active.usage_tracker,
             assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
             usage_limits=_engine._remaining_aux_usage_limits(active),
@@ -1022,8 +1024,11 @@ class UpfrontRequestBody(BaseModel):
     store_path: str | None = None
 
 
-# A host name, or `*.` plus one. A bare `*` would open the proxy to everything.
-_DECLARABLE_DOMAIN = re.compile(r"(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)*")
+# A host name, or `*.` plus a name of at least two labels. A bare `*` would open the proxy to everything,
+# and `*.com` almost as much.
+_DECLARABLE_DOMAIN = re.compile(r"\*\.[a-z0-9-]+(\.[a-z0-9-]+)+|[a-z0-9-]+(\.[a-z0-9-]+)*")
+# The caller's store path reaches the sentinel prompt, so it must not carry text of its own.
+_STORE_PATH = re.compile(r"/nix/store/[0-9a-z]{32}-[^\s/]+")
 
 
 @sandbox_app.post("/gate")
@@ -1040,6 +1045,8 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
     domains = sorted({domain.strip().lower() for domain in body.domains})
     if invalid := [domain for domain in domains if not _DECLARABLE_DOMAIN.fullmatch(domain)]:
         return Response(status_code=400, content=f"not a domain: {invalid[0]}", media_type="text/plain")
+    if body.store_path is not None and not _STORE_PATH.fullmatch(body.store_path):
+        return Response(status_code=400, content="not a Nix store path", media_type="text/plain")
     vault_paths = sorted(set(body.credentials))
     if not domains and not vault_paths:
         return Response(status_code=400, content="nothing requested", media_type="text/plain")
@@ -1078,6 +1085,7 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
                 active.sentinel,
                 UpfrontRequest(domains=pending_domains, credentials=credentials, store_path=body.store_path),
                 running.command,
+                follow_up=running.boundary_reviewed,
                 usage_tracker=active.usage_tracker,
                 assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
                 usage_limits=_engine._remaining_aux_usage_limits(active),
@@ -1086,6 +1094,7 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
             return _boundary_denied(str(exc))
     if not sandbox_mgr.is_running(running):
         return _boundary_denied(EXEC_ENDED_REJECTION)
+    running.boundary_reviewed = True
     if not evaluation.allowed:
         return _boundary_denied(evaluation.rejection)
     running.domains.update(pending_domains)
@@ -1160,7 +1169,7 @@ async def fetch_credential(
         denial = await _gate_credential_request(
             active,
             (vault_path, kind),
-            lambda security, sentinel, command: evaluate_credential_with(
+            lambda security, sentinel, command, follow_up: evaluate_credential_with(
                 security,
                 sentinel,
                 vault_path,
@@ -1168,6 +1177,7 @@ async def fetch_credential(
                 meta.description,
                 f"`ccred get` ({kind})",
                 command,
+                follow_up=follow_up,
                 usage_tracker=active.usage_tracker,
                 assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
                 usage_limits=_engine._remaining_aux_usage_limits(active),

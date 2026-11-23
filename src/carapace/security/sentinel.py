@@ -256,11 +256,11 @@ def _truncate_text(text: str, limit: int = 80) -> str:
     return collapsed[: limit - 3] + "..." if len(collapsed) > limit else collapsed
 
 
-def _boundary_origin(session: SessionSecurity, command: str) -> str:
-    """Where a boundary request comes from: the running exec, or only a note for a follow-up of the same exec."""
-    call = session.current_parent_tool_id
-    if call is not None and call == session.boundary_reviewed_call:
-        return "Follow-up: the exec of your last boundary decision now also wants this (command not repeated)."
+def _boundary_origin(command: str, *, follow_up: bool) -> str:
+    """Where a boundary request comes from: the running exec, or only a note for a later request of an exec
+    the sentinel already decided on."""
+    if follow_up:
+        return "Follow-up: an exec you already decided on in this session now also wants this (command not repeated)."
     return f"Running exec: {command}"
 
 
@@ -518,7 +518,6 @@ class Sentinel:
         kind: str,
         subject: str,
         agent_reads_verdict: bool,
-        boundary: bool = False,
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
         usage_limits: UsageLimits | None = None,
@@ -530,7 +529,6 @@ class Sentinel:
                 kind=kind,
                 subject=subject,
                 agent_reads_verdict=agent_reads_verdict,
-                boundary=boundary,
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,
                 usage_limits=usage_limits,
@@ -546,7 +544,6 @@ class Sentinel:
         kind: str,
         subject: str,
         agent_reads_verdict: bool,
-        boundary: bool,
         usage_tracker: UsageTracker | None,
         assert_llm_budget_available: Callable[[], None] | None,
         usage_limits: UsageLimits | None,
@@ -606,8 +603,6 @@ class Sentinel:
 
         stats = self._end_eval_logging()
         session.record_sentinel_evaluation(result.all_messages(), synced_entries=synced_entries)
-        if boundary:
-            session.boundary_reviewed_call = session.current_parent_tool_id
 
         if usage_tracker:
             own, compaction = split_provider_compaction_usage(result.usage)
@@ -788,6 +783,7 @@ class Sentinel:
         domain: str,
         command: str,
         *,
+        follow_up: bool,
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
         usage_limits: UsageLimits | None = None,
@@ -796,7 +792,7 @@ class Sentinel:
             prompt_parts = _action_log_prompt(session)
 
             prompt_parts.append(f"\nEVALUATE domain_access_request:\nDomain: {domain}")
-            prompt_parts.append(_boundary_origin(session, command))
+            prompt_parts.append(_boundary_origin(command, follow_up=follow_up))
 
             prompt = "\n".join(prompt_parts)
             return await self._run_evaluation(
@@ -805,7 +801,6 @@ class Sentinel:
                 kind="domain_access",
                 subject=f"{domain} via {_truncate(command, 100)}",
                 agent_reads_verdict=False,
-                boundary=True,
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,
                 usage_limits=usage_limits,
@@ -824,9 +819,9 @@ class Sentinel:
             prompt_parts = _action_log_prompt(session)
 
             prompt_parts.append("\nEVALUATE domain_access_batch_request:")
-            prompt_parts.append(f"Domains: {', '.join(sorted(domain_commands))}")
-            # A batch never outlives the tool call it was collected in, so all its domains come from one command.
-            prompt_parts.append(_boundary_origin(session, next(iter(domain_commands.values()))))
+            for domain, command in sorted(domain_commands.items()):
+                prompt_parts.append(f"Domain: {domain}")
+                prompt_parts.append(f"Running exec: {command}")
             prompt_parts.append("Apply one verdict to the entire batch of domains.")
 
             prompt = "\n".join(prompt_parts)
@@ -836,7 +831,6 @@ class Sentinel:
                 kind="domain_access_batch",
                 subject=f"{len(domain_commands)} domains",
                 agent_reads_verdict=False,
-                boundary=True,
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,
                 usage_limits=usage_limits,
@@ -851,6 +845,7 @@ class Sentinel:
         asked_by: str,
         command: str,
         *,
+        follow_up: bool,
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
         usage_limits: UsageLimits | None = None,
@@ -862,7 +857,7 @@ class Sentinel:
             if description:
                 prompt_parts.append(f"Description: {description}")
             prompt_parts.append(f"Asked by: {asked_by}")
-            prompt_parts.append(_boundary_origin(session, command))
+            prompt_parts.append(_boundary_origin(command, follow_up=follow_up))
 
             prompt = "\n".join(prompt_parts)
             return await self._run_evaluation(
@@ -871,7 +866,6 @@ class Sentinel:
                 kind="credential_access",
                 subject=f"{vault_path} ({name})",
                 agent_reads_verdict=False,
-                boundary=True,
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,
                 usage_limits=usage_limits,
@@ -883,6 +877,7 @@ class Sentinel:
         query: str,
         command: str,
         *,
+        follow_up: bool,
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
         usage_limits: UsageLimits | None = None,
@@ -893,7 +888,7 @@ class Sentinel:
             prompt_parts.append("\nEVALUATE credential_listing_request:")
             prompt_parts.append(f"Query: {query!r}" if query else "Query: none, lists every credential")
             prompt_parts.append("Returns names, vault paths and descriptions of the matching credentials, no values.")
-            prompt_parts.append(_boundary_origin(session, command))
+            prompt_parts.append(_boundary_origin(command, follow_up=follow_up))
 
             prompt = "\n".join(prompt_parts)
             return await self._run_evaluation(
@@ -902,7 +897,6 @@ class Sentinel:
                 kind="credential_listing",
                 subject=f"query={query!r}",
                 agent_reads_verdict=False,
-                boundary=True,
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,
                 usage_limits=usage_limits,
@@ -914,6 +908,7 @@ class Sentinel:
         request: UpfrontRequest,
         command: str,
         *,
+        follow_up: bool,
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
         usage_limits: UsageLimits | None = None,
@@ -934,7 +929,7 @@ class Sentinel:
                     for c in request.credentials
                 )
             prompt_parts.append(_store_path_line(request.store_path))
-            prompt_parts.append(_boundary_origin(session, command))
+            prompt_parts.append(_boundary_origin(command, follow_up=follow_up))
             prompt_parts.append("One verdict for everything listed; an approval holds until this exec ends.")
 
             prompt = "\n".join(prompt_parts)
@@ -944,7 +939,6 @@ class Sentinel:
                 kind="upfront_request",
                 subject=f"{len(request.domains)} domains, {len(request.credentials)} credentials",
                 agent_reads_verdict=False,
-                boundary=True,
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,
                 usage_limits=usage_limits,

@@ -472,10 +472,10 @@ class SessionApprovalMixin:
         security: SessionSecurity,
         sentinel: Sentinel,
         active: ActiveSession,
-    ) -> Callable[[str, str], Awaitable[BoundaryEvaluation]]:
+    ) -> Callable[[str, str, bool], Awaitable[BoundaryEvaluation]]:
         """Build a callback for SandboxManager.request_domain_approval."""
 
-        async def _eval(domain: str, command: str) -> BoundaryEvaluation:
+        async def _eval(domain: str, command: str, follow_up: bool) -> BoundaryEvaluation:
             with self.llm_request_recording(active):
                 try:
                     return await security_mod.evaluate_domain_with(
@@ -483,6 +483,7 @@ class SessionApprovalMixin:
                         sentinel,
                         domain,
                         command,
+                        follow_up=follow_up,
                         usage_tracker=active.usage_tracker,
                         assert_llm_budget_available=lambda: self._assert_llm_budget_available(active),
                         usage_limits=self._remaining_aux_usage_limits(active),

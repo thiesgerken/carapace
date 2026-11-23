@@ -14,7 +14,8 @@ from .file_ops import ContextFileCredential, WrittenContextFile
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult, NetworkTunnel
 from .session_lifecycle import SessionContainer
 
-type DomainApprovalCallback = Callable[[str, str], Awaitable[BoundaryEvaluation]]
+# (domain, command of the running exec, whether the sentinel already saw that exec) -> decision
+type DomainApprovalCallback = Callable[[str, str, bool], Awaitable[BoundaryEvaluation]]
 type DomainNotifyCallback = Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None]
 type AfterExecCredentialNotify = Callable[[], None]
 type EnsureSessionCallback = Callable[[str], Awaitable[SessionContainer]]
@@ -60,7 +61,7 @@ EXEC_ENDED_REJECTION = "Denied: the exec that asked ended before the decision ca
 type CredentialGrant = tuple[str, CredentialValueKind | None]
 
 
-@dataclass(eq=False, frozen=True, slots=True)
+@dataclass(eq=False, slots=True)
 class RunningExec:
     """The scope of one exec, captured when a request arrives: approvals land in it only while it still runs."""
 
@@ -68,6 +69,8 @@ class RunningExec:
     command: str
     domains: set[str]
     credentials: set[CredentialGrant]
+    # Once the sentinel has seen this exec in a boundary decision, its later requests are short follow-ups.
+    boundary_reviewed: bool = False
 
 
 # Absolute path: /workspace/.carapace/bin comes first in PATH and holds skill shims.
@@ -88,8 +91,8 @@ class SandboxExecState:
     session_current_contexts: dict[str, list[str]]
     exec_notified_domains: dict[str, set[str]]
     exec_notified_credentials: dict[str, set[str]]
-    # Credentials approved during the running exec; they need no further review until it ends.
-    exec_approved_credentials: dict[str, set[CredentialGrant]]
+    # One per running exec; what it was granted needs no further review until it ends.
+    running_execs: dict[str, RunningExec]
 
 
 class SandboxExecCoordinator:
@@ -263,7 +266,12 @@ class SandboxExecCoordinator:
         self._state.exec_context_skill_domains[session_id] = set(context_domains or ())
         self._state.exec_notified_domains[session_id] = set()
         self._state.exec_notified_credentials[session_id] = set()
-        self._state.exec_approved_credentials[session_id] = set()
+        self._state.running_execs[session_id] = RunningExec(
+            session_id=session_id,
+            command=command,
+            domains=self._state.exec_temp_domains[session_id],
+            credentials=set(),
+        )
         if bypass_proxy:
             self._state.proxy_bypass_sessions.add(session_id)
             logger.info(f"Proxy bypass ENABLED for session {session_id}")
@@ -278,7 +286,7 @@ class SandboxExecCoordinator:
         self._state.exec_context_skill_domains.pop(session_id, None)
         self._state.exec_notified_domains.pop(session_id, None)
         self._state.exec_notified_credentials.pop(session_id, None)
-        self._state.exec_approved_credentials.pop(session_id, None)
+        self._state.running_execs.pop(session_id, None)
 
     def allow_domains(self, session_id: str, domains: set[str]) -> None:
         existing = self._state.allowed_domains.setdefault(session_id, set())
@@ -327,21 +335,14 @@ class SandboxExecCoordinator:
 
     def running_exec(self, session_id: str) -> RunningExec | None:
         """The scope of the running exec, or None between execs."""
-        command = self._state.session_current_command.get(session_id)
-        if command is None:
-            return None
-        return RunningExec(
-            session_id=session_id,
-            command=command,
-            domains=self._state.exec_temp_domains[session_id],
-            credentials=self._state.exec_approved_credentials[session_id],
-        )
+        return self._state.running_execs.get(session_id)
 
     def is_running(self, running: RunningExec) -> bool:
-        # Every exec gets fresh scope sets, so identity tells this exec apart from a later one.
+        # Every exec gets its own scope objects, so identity tells this exec apart from a later one. The
+        # domain set is checked too: session teardown drops it without knowing about running execs.
         return (
-            self._state.exec_temp_domains.get(running.session_id) is running.domains
-            and self._state.exec_approved_credentials.get(running.session_id) is running.credentials
+            self._state.running_execs.get(running.session_id) is running
+            and self._state.exec_temp_domains.get(running.session_id) is running.domains
         )
 
     def notify_domain_access(self, session_id: str, domain: str, allowed: bool) -> None:
@@ -393,10 +394,11 @@ class SandboxExecCoordinator:
             logger.info(f"Denying {domain} for session {session_id}: no active exec (orphaned request)")
             return BoundaryEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
 
-        evaluation = await cb(domain, running.command)
+        evaluation = await cb(domain, running.command, running.boundary_reviewed)
         if not self.is_running(running):
             logger.info(f"Denying {domain} for session {session_id}: its exec ended during the review")
             return BoundaryEvaluation(allowed=False, rejection=EXEC_ENDED_REJECTION)
+        running.boundary_reviewed = True
         if evaluation.allowed:
             running.domains.add(domain)
             logger.info(f"Security approved {domain} for session {session_id}")
@@ -409,4 +411,4 @@ class SandboxExecCoordinator:
         self._state.domain_notify_cbs.pop(session_id, None)
         self._state.exec_notified_domains.pop(session_id, None)
         self._state.exec_notified_credentials.pop(session_id, None)
-        self._state.exec_approved_credentials.pop(session_id, None)
+        self._state.running_execs.pop(session_id, None)

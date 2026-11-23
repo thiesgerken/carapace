@@ -40,7 +40,7 @@ class SandboxSessionLifecycleState:
     exec_temp_domains: dict[str, set[str]]
     exec_context_skill_domains: dict[str, set[str]]
     session_current_command: dict[str, str]
-    domain_approval_cbs: dict[str, Callable[[str, str], Awaitable[BoundaryEvaluation]]]
+    domain_approval_cbs: dict[str, Callable[[str, str, bool], Awaitable[BoundaryEvaluation]]]
     domain_notify_cbs: dict[
         str,
         Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],

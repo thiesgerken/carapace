@@ -322,9 +322,6 @@ class SessionSecurity:
         ) = None
         self._credential_notify_suppress: Callable[[str], bool] | None = None
         self.current_parent_tool_id: str | None = None
-        # The tool call whose exec the sentinel last saw in a boundary request: later requests of that exec
-        # only say what they add, instead of repeating the command.
-        self.boundary_reviewed_call: str | None = None
         # Sentinel comments on allowed operations, until the agent's next model request carries them.
         self._comments_for_agent: list[str] = []
         self._domain_scope_lock = asyncio.Lock()
