@@ -228,11 +228,11 @@ class AgentConfig(ConfigModel):
 
     max_parallel_llm: int = 2
 
-    # Maximum number of sentinel-backed proxy domain review batches one tool call can trigger.
+    # Maximum number of sentinel-backed proxy domain review batches one exec can trigger.
     # 0 disables the cap.
-    max_sentinel_calls_per_tool_call: int = 10
+    max_sentinel_calls_per_exec: int = 10
 
-    # Debounce window for coalescing proxy domain requests within a tool call.
+    # Debounce window for coalescing proxy domain requests within an exec.
     sentinel_domain_batch_window_ms: int = 100
 
     # Max wall-clock time for one sentinel LLM review.
@@ -243,8 +243,8 @@ class AgentConfig(ConfigModel):
 
     @model_validator(mode="after")
     def _defaults_listed_in_available_models(self) -> AgentConfig:
-        if self.max_sentinel_calls_per_tool_call < 0:
-            raise ValueError("agent.max_sentinel_calls_per_tool_call must be >= 0")
+        if self.max_sentinel_calls_per_exec < 0:
+            raise ValueError("agent.max_sentinel_calls_per_exec must be >= 0")
         if self.sentinel_domain_batch_window_ms < 0:
             raise ValueError("agent.sentinel_domain_batch_window_ms must be >= 0")
         catalog = {e.model_id: e for e in self.available_models}

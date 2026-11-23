@@ -57,12 +57,8 @@ from carapace.notifications.store import NotificationStore
 from carapace.notifications.vapid import derive_vapid_public_key, ensure_vapid_config
 from carapace.platform_store import PlatformSettingsStore
 from carapace.sandbox.egress_check import EgressCheckError, EgressProbeError
-from carapace.sandbox.exec_flow import (
-    EXEC_ENDED_REJECTION,
-    ORPHANED_REQUEST_REJECTION,
-    CredentialGrant,
-    RunningExec,
-)
+from carapace.sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION
+from carapace.sandbox.exec_scope import CredentialGrant, RunningExec
 from carapace.sandbox.manager import SandboxLimitError, SandboxManager
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import CredentialAccessEntry, SentinelVerdict, SessionSecurity
@@ -1081,7 +1077,7 @@ def test_admin_platform_settings_preserves_existing_agent_scalars(client, admin_
                 title_model="anthropic:claude-haiku-4-5",
                 available_models=[AvailableModelEntry.model_validate("anthropic:claude-haiku-4-5")],
                 max_parallel_llm=7,
-                max_sentinel_calls_per_tool_call=3,
+                max_sentinel_calls_per_exec=3,
                 sentinel_domain_batch_window_ms=250,
                 sentinel_timeout_seconds=42,
                 tool_output_max_chars=12345,
@@ -1106,7 +1102,7 @@ def test_admin_platform_settings_preserves_existing_agent_scalars(client, admin_
     assert resp.status_code == 200
     scalars = srv._platform_store.load_section("agent")
     assert scalars["max_parallel_llm"] == 7
-    assert scalars["max_sentinel_calls_per_tool_call"] == 3
+    assert scalars["max_sentinel_calls_per_exec"] == 3
     assert scalars["sentinel_domain_batch_window_ms"] == 250
     assert scalars["sentinel_timeout_seconds"] == 42
     assert scalars["tool_output_max_chars"] == 12345

@@ -23,7 +23,7 @@ from carapace.security.sentinel import Sentinel
 
 from .streaming_model import ReplayStreamModel
 
-_REVISE = SentinelVerdict(decision="revise", explanation="Split the commit from the cleanup.", risk_level="low")
+_REVISE = SentinelVerdict(decision="revise", explanation="Activate the staging skill first.", risk_level="low")
 
 
 def _sentinel_returning(verdict: SentinelVerdict) -> MagicMock:
@@ -42,21 +42,21 @@ async def test_revised_tool_call_tells_the_agent_what_to_change() -> None:
         await evaluate_with(
             session,
             _sentinel_returning(_REVISE),
-            "exec",
-            {"command": "git push && rm -rf build"},
+            "use_skill",
+            {"skill_name": "deploy"},
             tool_call_callback=lambda *args: shown.append(args),
             tool_call_id="call_1",
         )
 
-    assert str(raised.value) == "Sentinel requests changes (no threat detected): Split the commit from the cleanup."
+    assert str(raised.value) == "Sentinel requests changes (no threat detected): Activate the staging skill first."
     assert session.action_log[-1] == ToolCallEntry(
-        tool="exec",
-        args={"command": "git push && rm -rf build"},
+        tool="use_skill",
+        args={"skill_name": "deploy"},
         decision="changes_requested",
-        explanation="Split the commit from the cleanup.",
+        explanation="Activate the staging skill first.",
     )
     _tool, _args, _detail, source, verdict, explanation, tool_call_id, comment = shown[-1]
-    assert (source, verdict, explanation, comment) == ("sentinel", "revise", "Split the commit from the cleanup.", None)
+    assert (source, verdict, explanation, comment) == ("sentinel", "revise", "Activate the staging skill first.", None)
     assert tool_call_id == "call_1"
 
 
@@ -69,9 +69,9 @@ async def test_revised_push_is_rejected_with_the_change_request() -> None:
     )
 
     assert evaluation.allowed is False
-    assert evaluation.rejection == "Sentinel requests changes (no threat detected): Split the commit from the cleanup."
+    assert evaluation.rejection == "Sentinel requests changes (no threat detected): Activate the staging skill first."
     assert session.action_log[-1] == GitPushEntry(
-        ref="refs/heads/main", decision="changes_requested", explanation="Split the commit from the cleanup."
+        ref="refs/heads/main", decision="changes_requested", explanation="Activate the staging skill first."
     )
 
 
@@ -101,7 +101,7 @@ async def test_sentinel_cannot_revise_requests_whose_explanation_never_reaches_t
     sentinel, requests = _sentinel(tmp_path, ["revise", "deny"])
 
     verdict = await sentinel.evaluate_domain_access(
-        SessionSecurity("s"), "example.com", "curl example.com", follow_up=False
+        SessionSecurity("s"), ["example.com"], "curl example.com", follow_up=False
     )
 
     assert verdict.decision == "deny"
