@@ -60,7 +60,7 @@ from ..notifications.store import NotificationStore
 from ..notifications.vapid import ensure_vapid_config
 from ..platform_store import PlatformSettingsStore
 from ..prompt_prefix import shared_prompt_prefix
-from ..sandbox.egress_check import EgressCheckError
+from ..sandbox.egress_check import EgressCheckError, EgressProbeError
 from ..sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION, CredentialGrant
 from ..sandbox.manager import SandboxLimitError, SandboxManager
 from ..sandbox.proxy import ProxyServer, domain_allowed
@@ -485,12 +485,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if removed:
             logger.info(f"Cleaned up {removed} orphaned sandbox(es)")
 
-    try:
-        await _sandbox_mgr.verify_no_direct_egress()
-    except EgressCheckError as exc:
-        logger.error(_egress_check_failure(exc, _config.sandbox.runtime, sandbox_network))
-        raise SystemExit(1) from exc
-
     # Warm pool is provisioned by _warm_pool_loop (background task) so it never
     # blocks API startup; its first iteration runs immediately.
 
@@ -603,6 +597,16 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         port=proxy_port,
     )
     await proxy.start()
+
+    # After the proxy starts, which the probe connects to as its positive control; before anything is served.
+    try:
+        await _sandbox_mgr.verify_no_direct_egress()
+    except EgressCheckError as exc:
+        logger.error(_egress_check_failure(exc, _config.sandbox.runtime, sandbox_network))
+        raise SystemExit(1) from exc
+    except EgressProbeError as exc:
+        logger.error(str(exc))
+        raise SystemExit(1) from exc
 
     # Start sandbox-facing API server (Basic Auth, accessible by containers)
     sandbox_server = uvicorn.Server(

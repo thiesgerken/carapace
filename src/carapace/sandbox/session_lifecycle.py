@@ -17,7 +17,7 @@ from ..database.engine import SessionFactory
 from ..database.models import SandboxTokenRow
 from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
 from ..spans import span
-from .egress_check import PROBE_SCRIPT, raise_for_leaks
+from .egress_check import PROBE_SCRIPT, EgressProbeError, probe_env, raise_for_leaks
 from .runtime import ContainerRuntime, DuplicateSandboxError, PoolSandbox, SandboxConfig
 from .state import load_sandbox_snapshot
 
@@ -577,9 +577,14 @@ class SandboxSessionLifecycle:
     async def verify_no_direct_egress(self) -> None:
         """Probe from a throwaway sandbox that nothing leaves it except through the session proxy.
 
-        Raises ``EgressCheckError`` when the probe got out. The probe is a real sandbox, so it sits
-        behind the same network, labels and NetworkPolicy as every session's.
+        Raises ``EgressCheckError`` when the probe got out, ``EgressProbeError`` when it could not tell.
+        The probe is a real sandbox, so it sits behind the same network, labels and NetworkPolicy as every
+        session's. The session proxy must already listen: it is the probe's positive control.
         """
+        proxy_host = await self._runtime.get_host_ip(self._network_name)
+        if proxy_host is None:
+            raise EgressProbeError(f"no address of the session proxy on network '{self._network_name}'")
+        env = probe_env(proxy_host, self._proxy_port, Path("/etc/resolv.conf").read_text())
         probe_id = self._EGRESS_CHECK_ID
         name = self.sandbox_name_for_id(probe_id)
         with span("sandbox", "egress check"):
@@ -598,7 +603,7 @@ class SandboxSessionLifecycle:
             )
             try:
                 await self.wait_for_ready(container_id, probe_id)
-                result = await self._runtime.exec(container_id, ["bash", "-c", PROBE_SCRIPT], timeout=60)
+                result = await self._runtime.exec(container_id, ["bash", "-c", PROBE_SCRIPT], timeout=60, env=env)
             finally:
                 await self._runtime.destroy_sandbox(probe_id, name, container_id)
         raise_for_leaks(result)

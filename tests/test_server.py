@@ -56,7 +56,7 @@ from carapace.notifications.presence import NotificationPresenceRegistry
 from carapace.notifications.store import NotificationStore
 from carapace.notifications.vapid import derive_vapid_public_key, ensure_vapid_config
 from carapace.platform_store import PlatformSettingsStore
-from carapace.sandbox.egress_check import EgressCheckError
+from carapace.sandbox.egress_check import EgressCheckError, EgressProbeError
 from carapace.sandbox.exec_flow import (
     EXEC_ENDED_REJECTION,
     ORPHANED_REQUEST_REJECTION,
@@ -775,6 +775,16 @@ async def test_lifespan_initializes_knowledge_repo_registry_module_state(tmp_pat
 async def test_lifespan_refuses_to_start_when_a_sandbox_has_direct_egress(tmp_path, monkeypatch):
     sandbox_mgr = _patch_lifespan_dependencies(tmp_path, monkeypatch)
     sandbox_mgr.verify_no_direct_egress.side_effect = EgressCheckError(["DNS lookup of example.com succeeded"])
+
+    with pytest.raises(SystemExit):
+        async with srv._lifespan(app):
+            pass
+
+
+@pytest.mark.anyio
+async def test_lifespan_refuses_to_start_when_the_egress_probe_cannot_run(tmp_path, monkeypatch):
+    sandbox_mgr = _patch_lifespan_dependencies(tmp_path, monkeypatch)
+    sandbox_mgr.verify_no_direct_egress.side_effect = EgressProbeError("positive control failed")
 
     with pytest.raises(SystemExit):
         async with srv._lifespan(app):
