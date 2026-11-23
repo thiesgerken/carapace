@@ -81,6 +81,7 @@ spec:
               value: redis://{{ .Release.Name }}-redis:6379/0
           {{- end }}
           {{- include "carapace.databaseUrlEnv" . | nindent 12 }}
+          {{- include "carapace.builderEnv" . | nindent 12 }}
           {{- if .Values.sandbox.sessionPvc.storageClass }}
             - name: CARAPACE_SANDBOX_K8S_SESSION_PVC_STORAGE_CLASS
               value: {{ .Values.sandbox.sessionPvc.storageClass | quote }}

@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import httpx
 import logfire
 import loguru
 import uvicorn
@@ -36,6 +37,7 @@ from ..api_keys import ApiKeyStore
 from ..artifact_shares import ArtifactShareStore
 from ..auth import AuthStore
 from ..bootstrap import ensure_data_dir, ensure_knowledge_dir
+from ..builder.client import BuilderClient
 from ..cache import SessionListCache
 from ..codex_auth import CodexAccounts, CodexCredentialStore
 from ..config import build_config
@@ -50,7 +52,7 @@ from ..memory.handlers import DigestHandler, MirrorHandler, SessionExtractHandle
 from ..memory.models import DigestLevel, TaskKind
 from ..memory.service import MemoryService
 from ..memory.store import MemoryStore
-from ..models.config import Config
+from ..models.config import BuilderConfig, Config
 from ..models.credentials import CredentialMetadata, CredentialValueKind
 from ..models.user import UserConfig
 from ..notifications.presence import NotificationPresenceRegistry
@@ -134,6 +136,7 @@ _artifact_share_store: ArtifactShareStore
 _platform_store: PlatformSettingsStore
 _codex_accounts: CodexAccounts
 _memory_service: MemoryService
+_builder: BuilderClient | None
 
 
 def _enabled_user_git_configs(auth_store: AuthStore) -> dict[str, KnowledgeGitConfig]:
@@ -194,6 +197,21 @@ async def _bootstrap_user_knowledge_repo(
 _SESSION_COMMIT_SWEEP_SECONDS = 15 * 60
 _APP_VERSION = get_version()
 _verify_ws_token = verify_ws_token
+
+
+async def _connect_builder(config: BuilderConfig) -> BuilderClient | None:
+    if config.url is None:
+        logger.warning("No skill builder configured (CARAPACE_BUILDER_URL); skills with commands are not built")
+        return None
+    assert config.token is not None, "BuilderConfig requires a token with a URL"
+    client = BuilderClient(config.url, config.token.get_secret_value(), config.timeout_seconds)
+    try:
+        await client.check_system()
+    except httpx.HTTPError as exc:
+        # Not fatal: the builder may come up after the server, and the first build checks again.
+        # A builder for another architecture is: BuilderSystemMismatchError stops the start.
+        logger.warning(f"Skill builder at {config.url} is unreachable ({exc}); checking again on first use")
+    return client
 
 
 def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
@@ -375,7 +393,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         _artifact_share_store, \
         _platform_store, \
         _codex_accounts, \
-        _memory_service
+        _memory_service, \
+        _builder
 
     # 1. Build config from env (CARAPACE_DATA_DIR + CARAPACE_* subsections; no config file)
     _config = build_config()
@@ -431,6 +450,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             f"Or pull it with: docker pull {base_image}"
         )
         raise SystemExit(1)
+
+    _builder = await _connect_builder(_config.builder)
 
     sandbox_network = _config.sandbox.network_name
     if _config.sandbox.runtime == "docker":
@@ -698,6 +719,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     for _, registry in _user_credential_registries.values():
         await registry.close()
     await _sandbox_mgr.cleanup_all()
+    if _builder is not None:
+        await _builder.aclose()
     await _session_list_cache.close()
     _engine_db.dispose()
     price_updater.stop()

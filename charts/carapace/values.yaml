@@ -50,6 +50,33 @@ server:
       initialDelaySeconds: 5
       periodSeconds: 10
 
+builder:
+  # -- Deploy the skill builder in the cluster. Set to false and use externalUrl for a builder on
+  # another machine (see docs/builder.md).
+  enabled: true
+  # -- URL of a builder outside the cluster, used when enabled is false
+  externalUrl: ""
+  image:
+    registry: ghcr.io
+    repository: thiesgerken/carapace-builder
+    tag: "" # defaults to appVersion
+    pullPolicy: IfNotPresent
+  auth:
+    # -- Secret holding the builder token under the key `token`. Generated for the in-cluster
+    # builder when empty; required with externalUrl.
+    existingSecret: ""
+  persistence:
+    # -- The builder's Nix store: built skills, their dependencies and nixpkgs sources
+    size: 20Gi
+    # -- Leave empty to use the cluster default StorageClass
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      memory: 4Gi
+
 sandbox:
   image:
     registry: ghcr.io

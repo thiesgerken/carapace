@@ -122,3 +122,40 @@ Standalone Bitwarden resource name for one instance.
 {{ printf "%s-bitwarden-%s" $root.Release.Name $instance.name | trunc 63 | trimSuffix "-" }}
 {{- end -}}
 {{- end }}
+
+{{/*
+Builder image with tag defaulting to appVersion
+*/}}
+{{- define "carapace.builderImage" -}}
+{{ .Values.builder.image.registry }}/{{ .Values.builder.image.repository }}:{{ .Values.builder.image.tag | default .Chart.AppVersion }}
+{{- end }}
+
+{{/*
+Builder token Secret name (generated for the in-cluster builder, or the user-provided existingSecret).
+*/}}
+{{- define "carapace.builder.secretName" -}}
+{{- .Values.builder.auth.existingSecret | default (printf "%s-builder" .Release.Name) -}}
+{{- end }}
+
+{{/*
+CARAPACE_BUILDER_URL and _TOKEN for the server: the in-cluster builder, or one on another machine.
+*/}}
+{{- define "carapace.builderEnv" -}}
+{{- if .Values.builder.enabled -}}
+- name: CARAPACE_BUILDER_URL
+  value: {{ printf "http://%s-builder:8330" .Release.Name | quote }}
+- name: CARAPACE_BUILDER_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "carapace.builder.secretName" . }}
+      key: token
+{{- else if .Values.builder.externalUrl -}}
+- name: CARAPACE_BUILDER_URL
+  value: {{ .Values.builder.externalUrl | quote }}
+- name: CARAPACE_BUILDER_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "builder.auth.existingSecret is required with builder.externalUrl" .Values.builder.auth.existingSecret }}
+      key: token
+{{- end -}}
+{{- end }}

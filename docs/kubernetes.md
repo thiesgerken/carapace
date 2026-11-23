@@ -8,6 +8,7 @@ carapace supports Kubernetes as a sandbox runtime. Instead of Docker containers,
 - **RWO StorageClass** — any standard ReadWriteOnce provisioner. The server pod has its own data PVC; sandbox sessions each get a dedicated PVC.
 - **Container images** pushed to a registry accessible by the cluster (GHCR by default)
 - **Helm 3** installed locally
+- **User namespaces for pods** on the nodes that run the [skill builder](builder.md#kubernetes) (`hostUsers: false`, `procMount: Unmasked`), and a Pod Security level of `privileged` in its namespace. Or run the builder on a separate machine and set `builder.enabled: false`.
 - Published application images support **Linux x64**; native ARM Linux builds are a local development target.
 
 ## Quick start
@@ -246,6 +247,9 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`            | `carapace-sandboxes`      | Required `Sandboxes` owner; set `null`/`""` for Deployment |
 | `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`    | `carapace`                | Server Deployment name (Helm sets to release name)         |
 | `CARAPACE_SANDBOX_NETWORK_NAME`                  | `carapace-sandbox`        | Docker network name (Docker only)                          |
+| `CARAPACE_BUILDER_URL`                           | (none: no builder)        | [Skill builder](builder.md) API URL (Helm sets it)         |
+| `CARAPACE_BUILDER_TOKEN`                         | (required with a URL)     | Builder token (Helm reads it from the builder Secret)      |
+| `CARAPACE_BUILDER_TIMEOUT_SECONDS`               | `1800`                    | Upper bound for one build request                          |
 
 ## Storage
 
@@ -256,6 +260,7 @@ The server uses a single RWO PVC (`carapace-data`) for its own data (config, ses
 | Server              | `carapace-data` (RWO)                 | `/data`      | RW   |
 | Sandbox StatefulSet | `session-data` (per-session PVC, RWO) | `/workspace` | RW   |
 | Sandbox StatefulSet | `session-data` (per-session PVC, RWO) | `/tmp`       | RW   |
+| Skill builder       | `<release>-builder` (RWO, 20Gi)       | `/nix`       | RW   |
 
 Sandbox pods have **no access** to the server's data PVC. The per-session PVC is mounted twice with `subPath`s (`workspace` and `tmp`) so workspace contents and temp files survive StatefulSet scale-down without a second claim. The workspace is populated via `git clone` from the server's Git HTTP backend on first start. Changes are persisted back via `git push`.
 

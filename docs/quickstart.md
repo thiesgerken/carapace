@@ -20,12 +20,15 @@ Fill in the required values:
 # Required
 ANTHROPIC_API_KEY=sk-ant-...
 CARAPACE_TOKEN=pick-a-bootstrap-admin-password
+CARAPACE_BUILDER_TOKEN=pick-a-random-builder-token
 
 # Optional — uncomment if needed
 # GOOGLE_API_KEY=...
 ```
 
 If no enabled admin user exists yet, `CARAPACE_TOKEN` becomes the bootstrap `admin` user's initial password and must be at least 16 characters long. After startup, normal web UI, CLI, REST, WebSocket, and admin access uses username/password login and an HttpOnly session cookie.
+
+`CARAPACE_BUILDER_TOKEN` authenticates the server to the [skill builder](builder.md); any long random string works (`openssl rand -hex 20`).
 
 ## 2. Pull and start
 
@@ -38,6 +41,7 @@ This starts:
 
 - **Proxy** at `http://localhost:3001`, serving the frontend and routing `/api` to the backend container internally
 - **Redis** for mandatory session-list caching
+- **Skill builder**, which builds skill flakes for the server ([builder](builder.md)); its Nix store lives in the `builder-nix` volume
 - **Sandbox image** is pulled with the other images
 
 Log in to the web UI as `admin` with the `CARAPACE_TOKEN` value, then open **Settings** -> **Admin** -> **Users** to create your normal user. carapace is multi-user by default: sessions, jobs, notification subscriptions, Matrix channels, Git remotes, model defaults, and credential backends are owned by the authenticated user. You can also use the admin API after logging in and storing the session cookie:

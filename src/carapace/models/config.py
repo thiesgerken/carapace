@@ -378,6 +378,23 @@ class SandboxConfig(BaseSettings):
     cleanup_orphans_on_startup: bool = True
 
 
+class BuilderConfig(BaseSettings):
+    """Where the skill builder is; see docs/builder.md. No URL means no builder."""
+
+    model_config = SettingsConfigDict(env_prefix="CARAPACE_BUILDER_", extra="forbid")
+
+    url: str | None = None
+    token: SecretStr | None = None
+    # A build blocks its request until it ends, and a cold uv skill takes minutes.
+    timeout_seconds: float = Field(default=1800, gt=0)
+
+    @model_validator(mode="after")
+    def _token_with_url(self) -> BuilderConfig:
+        if self.url is not None and not (self.token and self.token.get_secret_value()):
+            raise ValueError("CARAPACE_BUILDER_TOKEN is required when CARAPACE_BUILDER_URL is set")
+        return self
+
+
 class SessionCommitConfig(ConfigModel):
     enabled: bool = True
     path_prefix: str = "sessions"
@@ -474,6 +491,7 @@ class Config(ConfigModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     sessions: SessionsConfig = Field(default_factory=SessionsConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
+    builder: BuilderConfig = Field(default_factory=BuilderConfig)
     # Absolute data root (sessions, auth secrets, sqlite, vapid keys, knowledges/). Sourced
     # from CARAPACE_DATA_DIR via config.build_config; default "./data".
     data_dir: str = "./data"

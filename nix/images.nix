@@ -4,6 +4,7 @@
   nodejs,
   server,
   mcpBridgeEnv,
+  builder,
   tokenizerCache,
   frontend,
 }:
@@ -71,6 +72,7 @@ let
   '';
 in
 {
+  builder-image = import ./builder.nix { inherit pkgs builder; };
   sandbox-image = import ./sandbox.nix {
     inherit
       pkgs

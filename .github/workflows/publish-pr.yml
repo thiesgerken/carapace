@@ -82,7 +82,7 @@ jobs:
           done
           {
             echo "## PR preview for ${HEAD_SHA}"
-            echo "Images: ghcr.io/${REGISTRY_OWNER}/{carapace,carapace-frontend,carapace-bitwarden-cli,carapace-sandbox}:pr${PR_NUMBER}"
+            echo "Images: ghcr.io/${REGISTRY_OWNER}/{carapace,carapace-frontend,carapace-bitwarden-cli,carapace-sandbox,carapace-builder}:pr${PR_NUMBER}"
             echo "Chart: oci://ghcr.io/${REGISTRY_OWNER}/charts/carapace"
             echo "- --version ${chart_version} follows the PR"
             echo "- --version ${chart_version_sha} pins this commit"

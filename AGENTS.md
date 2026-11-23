@@ -16,7 +16,7 @@ carapace is a security-first personal AI agent with LLM-powered security gating.
 - Run type checks: `uv run pyrefly check`
 - Run tests: `uv run pytest`
 - Run single test: `uv run pytest tests/test_cli.py -k test_help`
-- Build runtime images: `nix build .#packages.<system>.{server,frontend,bitwarden,sandbox}-image`; use `aarch64-linux` via the native Linux builder on Apple Silicon.
+- Build runtime images: `nix build .#packages.<system>.{server,frontend,bitwarden,sandbox,builder}-image`; use `aarch64-linux` via the native Linux builder on Apple Silicon.
 - Nix checks: `nix flake check` on Linux, or `nix flake check --system aarch64-linux` through the builder. See `docs/development.md`.
 
 ## Code style
@@ -72,6 +72,10 @@ src/carapace/          # main package
     __init__.py        # re-exports (GitHttpHandler, GitStore)
     http.py            # Git HTTP Smart Protocol handler (git http-backend CGI)
     store.py           # Git CLI wrapper (init, commit, push, pull, hooks)
+  builder/
+    app.py             # skill builder service (carapace-builder): build API, start-up sandbox probe
+    nix.py             # the nix build/eval subprocesses behind it
+    client.py          # the server's client for the builder
   memory/
     service.py         # MemoryService facade: long-term memory tasks, worker, queries (see docs/memory.md)
   security/

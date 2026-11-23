@@ -73,7 +73,12 @@
           images = import ./nix/images.nix {
             inherit pkgs nixpkgs;
             inherit (tools) nodejs;
-            inherit (backend) server tokenizerCache mcpBridgeEnv;
+            inherit (backend)
+              server
+              builder
+              tokenizerCache
+              mcpBridgeEnv
+              ;
             inherit (frontend) frontend;
           };
           # The version comes from the committed Chart.yaml, which the release commit bumps.
@@ -256,6 +261,7 @@
                   carapace-frontend = artifacts.frontend-image;
                   carapace-bitwarden-cli = artifacts.bitwarden-image;
                   carapace-sandbox = artifacts.sandbox-image;
+                  carapace-builder = artifacts.builder-image;
                 };
             oci-helm.carapace = ghcr // {
               repository = "ghcr.io/thiesgerken/charts/carapace";
@@ -273,6 +279,7 @@
                 docker pull ghcr.io/thiesgerken/carapace-frontend:{{ version }}
                 docker pull ghcr.io/thiesgerken/carapace-sandbox:{{ version }}
                 docker pull ghcr.io/thiesgerken/carapace-bitwarden-cli:{{ version }}
+                docker pull ghcr.io/thiesgerken/carapace-builder:{{ version }}
                 ```
 
                 ## Helm Chart
