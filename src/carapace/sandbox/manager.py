@@ -1178,6 +1178,9 @@ class SandboxManager:
     async def cleanup_all(self) -> None:
         await self._session_lifecycle.cleanup_all(self.cleanup_session)
 
+    async def verify_no_direct_egress(self) -> None:
+        await self._session_lifecycle.verify_no_direct_egress()
+
     async def cleanup_orphaned_sandboxes(self, known_sessions: set[str]) -> int:
         return await self._session_lifecycle.cleanup_orphaned_sandboxes(known_sessions)
 

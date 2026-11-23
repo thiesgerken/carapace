@@ -204,6 +204,19 @@ A denied request gets a `403 Forbidden` whose body carries the explanation (see 
 
 Where the sandbox network isolation is enforced (Docker's internal network, or on Kubernetes a NetworkPolicy the CNI enforces), the sandbox cannot resolve names, so a DNS lookup cannot carry data past the proxy and its domain checks; see [No DNS from the sandbox](sandbox.md#no-dns-from-the-sandbox).
 
+## Start-up egress self-test
+
+Every domain check above assumes that sandbox traffic has to pass the session proxy. That assumption breaks silently: a Kubernetes CNI that does not enforce NetworkPolicy, another policy that grants sandbox pods wider egress, or a Docker sandbox network that is not internal. Without `exec` review the network boundary is the only layer, so carapace checks it before it serves anything.
+
+At start the server creates one throwaway sandbox (`carapace-sandbox-egress-check`) with the same image, network, labels and therefore NetworkPolicy as a session's sandbox, but without proxy settings. Inside it, it tries:
+
+- direct TCP connections to `1.1.1.1:443`, `8.8.8.8:53` and `9.9.9.9:443`, each with a 5-second timeout,
+- a DNS lookup of `example.com`.
+
+Every one of them must fail. If any succeeds, the server logs what got out, the likely cause and the fix for its runtime, and exits with status 1. The probe sandbox is removed either way, and a leftover from a server that stopped mid-check is removed before the next one starts. The check is not configurable: a deployment where it fails is not safe to run.
+
+The probe needs `bash`, `timeout` and `getent` in the sandbox image, and fails the start when they are missing instead of passing. Its targets are fixed: a network that blocks exactly these addresses but nothing else would pass. On Kubernetes the check adds the creation of one sandbox pod to the server's start-up time.
+
 ## Git push evaluation
 
 When the agent pushes changes from a sandbox container back to the knowledge repository, the push is gated by a **pre-receive hook** that routes each ref update through the sentinel. The sentinel sees the branch, commit log, and diff, and decides whether to allow the push.
