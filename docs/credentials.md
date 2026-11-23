@@ -133,27 +133,32 @@ ccred get <backend>/<id> --json
 ccred get <backend>/<id> -o ~/.ssh/id_ed25519
 ```
 
-- `list`/`search` return metadata only (name, vault path, optional description).
+- `list`/`search` return metadata only (name, vault path, optional description). They still enumerate the vault, so the sentinel reviews them like `get`.
 - `get` returns the raw password/value by default (or writes it to `-o` with mode `0400`).
 - `--login` returns the provider login name when supported. Bitwarden supports it; unsupported providers fail with a non-zero exit code.
 - `--json` returns the complete provider-specific item. Every provider supports this.
 - `--login` and `--json` are mutually exclusive and go through normal credential approval rather than skill-context approval.
-- `get` blocks until the user approves, then continues.
+- Every command blocks until the sentinel (or the user, if it escalates) decides. A denial exits with status 1 and prints the reason on stderr, e.g. `error: Sentinel denied this operation. <explanation>`; the calling script decides how to continue.
+- An approval holds for the rest of the `exec`: asking again for the same credential in the same `exec` returns without another review, the next `exec` asks again.
 
 `ccred` reads `CARAPACE_API_URL` from the sandbox environment to reach the sandbox API with session auth.
 
 ## API surface (sandbox-only)
 
-- `GET /credentials?q=<query>`: list/search metadata
-- `GET /credentials/{vault_path}?kind=password|login|json`: fetch the selected representation (approval-gated per session)
+- `GET /credentials?q=<query>`: list/search metadata (approval-gated per exec)
+- `GET /credentials/{vault_path}?kind=password|login|json`: fetch the selected representation (approval-gated per exec)
+
+A denial is a `403` with the explanation as a plain-text body.
 
 These endpoints are served on the sandbox API port (`8322`) and require Basic auth (`session_id:token`).
 
 ## Approval and audit behavior
 
-- **Every** credential access goes through the sentinel LLM for evaluation — there is no session-wide short-circuit.
+- Credential requests are boundary requests: the sentinel decides them on their own, with the `exec` calls since its last decision in view, not as a check behind an already reviewed `exec` (see [security.md](security.md#boundary-requests)).
+- **Per-exec approval**: an approved credential (or listing) needs no further review until the `exec` ends. There is no session-wide short-circuit.
 - **Context fast path**: If the credential is covered by a context grant from an activated skill, and the current exec has that skill in its `contexts`, access is allowed with `approval_source="skill"` without sentinel evaluation.
-- **No context match**: Credentials accessed outside a matching context always go through the sentinel, which may allow, deny, or escalate to the user.
+- **No context match**: Credentials accessed outside a matching context go through the sentinel, which may allow, deny, or escalate to the user.
+- **No running exec**: a request from a process an earlier `exec` left behind is refused without a review.
 - All access attempts are visible in the UI: skill-granted (teal badge), sentinel-allowed (green), user-approved (purple), or denied (red).
 - Access attempts are appended to the session action log as `credential_access`.
 

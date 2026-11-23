@@ -97,8 +97,13 @@ Your verdicts:
   explanation goes to the agent as a change request, so say what to change.
 - `escalate`: the user decides.
 - `deny`: the operation is blocked as a threat.
-`comment` and `revise` only exist for tool calls and git pushes: the agent
-never sees anything of proxy domain and credential evaluations.
+`comment` and `revise` only exist for tool calls and git pushes.
+
+Proxy domain and credential requests are decisions of their own. No earlier
+review covers them: they come from a command that is already running, and
+the action log shows the exec calls that ran since your last decision. The
+command that asked gets your verdict and explanation back and decides how to
+continue, so write a denial's explanation for it.
 SECURITY.md below says when to choose which.
 
 Pushes to the knowledge repo (`/workspace/knowledge`) get their own git_push
@@ -677,8 +682,8 @@ class Sentinel:
     def _check_what_reaches_the_agent(ctx: RunContext[SentinelDeps], output: _SentinelOutput) -> _SentinelOutput:
         if not ctx.deps.agent_reads_verdict and (output.decision == "revise" or output.comment):
             raise ModelRetry(
-                "`revise` and `comment` are not available here: the agent never sees anything of this kind of "
-                + "request. Choose another verdict, without a comment."
+                "`revise` and `comment` are not available here: the command that asked gets only the verdict and "
+                + "its explanation. Choose another verdict, without a comment."
             )
         if output.comment and output.decision != "allow":
             raise ModelRetry("`comment` only goes with `allow`. Put everything else into the explanation.")
@@ -839,6 +844,36 @@ class Sentinel:
                 prompt,
                 kind="credential_access",
                 subject=f"{vault_path} ({name})",
+                agent_reads_verdict=False,
+                usage_tracker=usage_tracker,
+                assert_llm_budget_available=assert_llm_budget_available,
+                usage_limits=usage_limits,
+            )
+
+    async def evaluate_credential_listing(
+        self,
+        session: SessionSecurity,
+        query: str,
+        trigger: str,
+        *,
+        usage_tracker: UsageTracker | None = None,
+        assert_llm_budget_available: Callable[[], None] | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> SentinelVerdict:
+        async with self._lock:
+            prompt_parts = _action_log_prompt(session)
+
+            prompt_parts.append("\nEVALUATE credential_listing_request:")
+            prompt_parts.append(f"Query: {query!r}" if query else "Query: none, lists every credential")
+            prompt_parts.append("Returns names, vault paths and descriptions of the matching credentials, no values.")
+            prompt_parts.append(f"Triggered by: {trigger}")
+
+            prompt = "\n".join(prompt_parts)
+            return await self._run_evaluation(
+                session,
+                prompt,
+                kind="credential_listing",
+                subject=f"query={query!r}",
                 agent_reads_verdict=False,
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,

@@ -14,7 +14,7 @@ from carapace.database.models import SandboxTokenRow
 from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
 from carapace.models.skills import SkillCarapaceConfig
-from carapace.sandbox.exec_flow import SandboxExecCoordinator, SandboxExecState
+from carapace.sandbox.exec_flow import ORPHANED_REQUEST_REJECTION, SandboxExecCoordinator, SandboxExecState
 from carapace.sandbox.manager import _CONTEXT_TUNNEL_HELPER
 from carapace.sandbox.manager import SandboxManager as _SandboxManager
 from carapace.sandbox.proxy import ProxyServer, domain_matches
@@ -24,6 +24,7 @@ from carapace.sandbox.runtime import (
     NetworkTunnel,
 )
 from carapace.sandbox.session_lifecycle import SessionContainer
+from carapace.security.context import DomainEvaluation
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillDocumentError, SkillRegistry
 from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, make_runtime_mock
@@ -998,6 +999,7 @@ async def test_exec_cleanup_tunnel_error_does_not_mask_command_error_or_skip_cre
         session_current_contexts={},
         exec_notified_domains={},
         exec_notified_credentials={},
+        exec_approved_credentials={},
     )
     coordinator = SandboxExecCoordinator(runtime=runtime, state=state)
     sc1 = SessionContainer(container_id="container-1", session_id="sess-1", created_at=0, last_used=0)
@@ -1046,6 +1048,7 @@ def _make_exec_state(**overrides) -> SandboxExecState:
         session_current_contexts={},
         exec_notified_domains={},
         exec_notified_credentials={},
+        exec_approved_credentials={},
     )
     base.update(overrides)
     return SandboxExecState(**base)
@@ -1054,13 +1057,13 @@ def _make_exec_state(**overrides) -> SandboxExecState:
 @pytest.mark.anyio
 async def test_request_domain_approval_denies_orphaned_request_without_sentinel():
     """No live exec → deny without invoking the sentinel callback (orphaned process)."""
-    cb = AsyncMock(return_value=True)
+    cb = AsyncMock(return_value=DomainEvaluation(allowed=True, rejection=""))
     state = _make_exec_state(domain_approval_cbs={"sess-1": cb})
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
 
-    allowed = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
+    evaluation = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
 
-    assert allowed is False
+    assert evaluation == DomainEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
     cb.assert_not_awaited()
     assert "registry.npmjs.org" not in state.exec_temp_domains.get("sess-1", set())
 
@@ -1068,18 +1071,86 @@ async def test_request_domain_approval_denies_orphaned_request_without_sentinel(
 @pytest.mark.anyio
 async def test_request_domain_approval_consults_sentinel_during_live_exec():
     """Live exec (command recorded) → callback is consulted as before."""
-    cb = AsyncMock(return_value=True)
+    cb = AsyncMock(return_value=DomainEvaluation(allowed=True, rejection=""))
     state = _make_exec_state(
         domain_approval_cbs={"sess-1": cb},
         session_current_command={"sess-1": "npm ci"},
     )
     coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
 
-    allowed = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
+    evaluation = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
 
-    assert allowed is True
+    assert evaluation.allowed is True
     cb.assert_awaited_once_with("registry.npmjs.org", "npm ci")
     assert "registry.npmjs.org" in state.exec_temp_domains["sess-1"]
+
+
+@pytest.mark.anyio
+async def test_credential_approval_lasts_until_the_exec_ends():
+    state = _make_exec_state()
+    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    sc = SessionContainer(container_id="container-1", session_id="sess-1", created_at=0, last_used=0)
+    seen_during_exec: list[bool] = []
+
+    async def exec_in_container(*_args: Any, **_kwargs: Any) -> ExecResult:
+        coordinator.approve_credential("sess-1", "vault/token")
+        seen_during_exec.append(coordinator.is_credential_approved("sess-1", "vault/token"))
+        return ExecResult(exit_code=0, output="", stdout="")
+
+    await coordinator.exec(
+        "sess-1",
+        "ccred get vault/token",
+        ensure_session=AsyncMock(return_value=sc),
+        recreate_session=AsyncMock(),
+        log_container_tail=AsyncMock(),
+        exec_in_container=exec_in_container,
+        prepare_context_tunnels=AsyncMock(),
+        cleanup_context_tunnels=AsyncMock(),
+        write_context_file_credentials=AsyncMock(return_value=[]),
+        delete_context_file_credentials=AsyncMock(),
+    )
+
+    assert seen_during_exec == [True]
+    assert coordinator.is_credential_approved("sess-1", "vault/token") is False
+    with pytest.raises(RuntimeError, match="no exec is running"):
+        coordinator.approve_credential("sess-1", "vault/token")
+
+
+@pytest.mark.anyio
+async def test_denied_connect_answers_with_the_rejection_in_the_body():
+    proxy = ProxyServer(
+        verify_session_token=lambda sid, tok: True,
+        get_allowed_domains=lambda sid: set(),
+        attach_sandbox_call=lambda sid: contextlib.nullcontext(),
+        request_approval=AsyncMock(
+            return_value=DomainEvaluation(allowed=False, rejection="Sentinel denied this operation. Not needed.")
+        ),
+    )
+
+    class FakeWriter:
+        def __init__(self) -> None:
+            self.writes: list[bytes] = []
+
+        def write(self, data: bytes) -> None:
+            self.writes.append(data)
+
+        async def drain(self) -> None:
+            return None
+
+    writer = FakeWriter()
+    await proxy._handle_connect(
+        AsyncMock(),  # type: ignore[arg-type]
+        writer,  # type: ignore[arg-type]
+        "sess-1",
+        "127.0.0.1",
+        "evil.example.com:443",
+    )
+
+    response = b"".join(writer.writes)
+    head, _, body = response.partition(b"\r\n\r\n")
+    assert head.startswith(b"HTTP/1.1 403 Forbidden")
+    assert f"Content-Length: {len(body)}".encode() in head
+    assert body == b"Sentinel denied this operation. Not needed.\n"
 
 
 # ── Proxy token extraction ───────────────────────────────────────────

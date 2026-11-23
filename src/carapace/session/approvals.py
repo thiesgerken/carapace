@@ -17,6 +17,7 @@ from ..notifications.router import NotificationRouter, build_escalation_notifica
 from ..security.context import (
     ApprovalSource,
     ApprovalVerdict,
+    DomainEvaluation,
     SessionSecurity,
     UserEscalationDecision,
     normalize_optional_message,
@@ -466,10 +467,10 @@ class SessionApprovalMixin:
         security: SessionSecurity,
         sentinel: Sentinel,
         active: ActiveSession,
-    ) -> Callable[[str, str], Awaitable[bool]]:
+    ) -> Callable[[str, str], Awaitable[DomainEvaluation]]:
         """Build a callback for SandboxManager.request_domain_approval."""
 
-        async def _eval(domain: str, command: str) -> bool:
+        async def _eval(domain: str, command: str) -> DomainEvaluation:
             with self.llm_request_recording(active):
                 try:
                     return await security_mod.evaluate_domain_with(
@@ -483,9 +484,9 @@ class SessionApprovalMixin:
                     )
                 except SessionBudgetExceededError as exc:
                     logger.info(f"Session budget blocked domain evaluation for {active.state.session_id}: {exc}")
-                    return False
+                    return DomainEvaluation(allowed=False, rejection=str(exc))
                 except UsageLimitExceeded as exc:
                     logger.info(f"Usage limits blocked domain evaluation for {active.state.session_id}: {exc}")
-                    return False
+                    return DomainEvaluation(allowed=False, rejection=str(exc))
 
         return _eval

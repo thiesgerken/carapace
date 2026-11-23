@@ -8,12 +8,12 @@ from dataclasses import dataclass
 
 from loguru import logger
 
-from ..security.context import ApprovalSource, ApprovalVerdict
+from ..security.context import ApprovalSource, ApprovalVerdict, DomainEvaluation
 from .file_ops import ContextFileCredential, WrittenContextFile
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult, NetworkTunnel
 from .session_lifecycle import SessionContainer
 
-type DomainApprovalCallback = Callable[[str, str], Awaitable[bool]]
+type DomainApprovalCallback = Callable[[str, str], Awaitable[DomainEvaluation]]
 type DomainNotifyCallback = Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None]
 type AfterExecCredentialNotify = Callable[[], None]
 type EnsureSessionCallback = Callable[[str], Awaitable[SessionContainer]]
@@ -50,6 +50,9 @@ done
 kill -9 -1 2>/dev/null || true
 echo "$leftover"
 """
+# A process that outlived its exec asks for nothing: what it was granted ended with that exec.
+ORPHANED_REQUEST_REJECTION = "Denied: no exec is running, the request comes from a process an earlier exec left behind."
+
 # Absolute path: /workspace/.carapace/bin comes first in PATH and holds skill shims.
 KILL_LEFTOVER_PROCESSES_COMMAND = ["/bin/bash", "-c", KILL_LEFTOVER_PROCESSES_SCRIPT]
 
@@ -68,6 +71,8 @@ class SandboxExecState:
     session_current_contexts: dict[str, list[str]]
     exec_notified_domains: dict[str, set[str]]
     exec_notified_credentials: dict[str, set[str]]
+    # Vault paths approved during the running exec; they need no further review until it ends.
+    exec_approved_credentials: dict[str, set[str]]
 
 
 class SandboxExecCoordinator:
@@ -241,6 +246,7 @@ class SandboxExecCoordinator:
         self._state.exec_context_skill_domains[session_id] = set(context_domains or ())
         self._state.exec_notified_domains[session_id] = set()
         self._state.exec_notified_credentials[session_id] = set()
+        self._state.exec_approved_credentials[session_id] = set()
         if bypass_proxy:
             self._state.proxy_bypass_sessions.add(session_id)
             logger.info(f"Proxy bypass ENABLED for session {session_id}")
@@ -255,6 +261,7 @@ class SandboxExecCoordinator:
         self._state.exec_context_skill_domains.pop(session_id, None)
         self._state.exec_notified_domains.pop(session_id, None)
         self._state.exec_notified_credentials.pop(session_id, None)
+        self._state.exec_approved_credentials.pop(session_id, None)
 
     def allow_domains(self, session_id: str, domains: set[str]) -> None:
         existing = self._state.allowed_domains.setdefault(session_id, set())
@@ -301,6 +308,19 @@ class SandboxExecCoordinator:
         notified.add(vault_path)
         return False
 
+    def current_command(self, session_id: str) -> str | None:
+        """The command of the running exec, or None between execs."""
+        return self._state.session_current_command.get(session_id)
+
+    def is_credential_approved(self, session_id: str, vault_path: str) -> bool:
+        return vault_path in self._state.exec_approved_credentials.get(session_id, set())
+
+    def approve_credential(self, session_id: str, vault_path: str) -> None:
+        approved = self._state.exec_approved_credentials.get(session_id)
+        if approved is None:
+            raise RuntimeError(f"Cannot approve credential {vault_path}: no exec is running in session {session_id}")
+        approved.add(vault_path)
+
     def notify_domain_access(self, session_id: str, domain: str, allowed: bool) -> None:
         cb = self._state.domain_notify_cbs.get(session_id)
         if cb is None:
@@ -336,30 +356,31 @@ class SandboxExecCoordinator:
         else:
             self._state.domain_notify_cbs[session_id] = cb
 
-    async def request_domain_approval(self, session_id: str, domain: str) -> bool:
+    async def request_domain_approval(self, session_id: str, domain: str) -> DomainEvaluation:
         cb = self._state.domain_approval_cbs.get(session_id)
         if cb is None:
             logger.warning(f"No domain approval callback for session {session_id}, denying {domain}")
-            return False
+            return DomainEvaluation(allowed=False, rejection="No approval path is set up for this session.")
 
         # No live exec: the request comes from a process orphaned by a cancelled
         # exec (e.g. an interrupted skill install still hitting registry.npmjs.org).
         # Deny without invoking the sentinel so orphaned traffic can't burn tokens.
-        if session_id not in self._state.session_current_command:
+        command = self.current_command(session_id)
+        if command is None:
             logger.info(f"Denying {domain} for session {session_id}: no active exec (orphaned request)")
-            return False
+            return DomainEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
 
-        command = self._state.session_current_command.get(session_id, "")
-        allowed = await cb(domain, command)
-        if allowed:
+        evaluation = await cb(domain, command)
+        if evaluation.allowed:
             self._state.exec_temp_domains.setdefault(session_id, set()).add(domain)
             logger.info(f"Security approved {domain} for session {session_id}")
         else:
             logger.info(f"Security denied {domain} for session {session_id}")
-        return allowed
+        return evaluation
 
     def cleanup_tracking(self, session_id: str) -> None:
         self._state.domain_approval_cbs.pop(session_id, None)
         self._state.domain_notify_cbs.pop(session_id, None)
         self._state.exec_notified_domains.pop(session_id, None)
         self._state.exec_notified_credentials.pop(session_id, None)
+        self._state.exec_approved_credentials.pop(session_id, None)
