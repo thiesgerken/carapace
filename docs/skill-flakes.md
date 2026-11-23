@@ -2,7 +2,7 @@
 
 A skill that has commands is a Nix flake: `flake.nix` and `flake.lock` live in the skill directory next to its `SKILL.md`. The flake's package holds one wrapper per command, nothing else. The Carapace builder builds it whenever the skill changes, and every session gets the commands on its `PATH`. A skill without commands needs no flake.
 
-The functions below come from the Carapace flake. Three working examples live in [`nix/skills/examples`](../nix/skills/examples): uv, npm and pnpm.
+The functions below come from the skills subflake of the Carapace repo, `github:thiesgerken/carapace?dir=nix/skills` ([`nix/skills/flake.nix`](../nix/skills/flake.nix)). It has only `nixpkgs` and the uv2nix stack as inputs, so a skill's `flake.lock` stays small. Three working examples live in [`nix/skills/examples`](../nix/skills/examples): uv, npm and pnpm. CI builds them against the helpers of the current checkout.
 
 ## The flake
 
@@ -55,7 +55,7 @@ The functions below come from the Carapace flake. Three working examples live in
 ```
 
 - Each skill locks its own `nixpkgs`, so one skill can move to a newer one without touching the others. `inputs.nixpkgs.follows` makes the Carapace helpers use the same one.
-- `carapace` pins a released Carapace commit in `flake.lock`. The helpers keep working when Carapace moves on; a skill updates its pin when it wants something new.
+- `carapace` pins a released Carapace commit in `flake.lock`. The helpers keep working when Carapace moves on, because their arguments only grow; a skill updates its pin when it wants something new.
 - `flake.lock` must be committed and complete: the builder never writes locks. Run `nix flake lock` after changing inputs.
 - The build sees nothing but the skill directory (`nix build path:<dir>`). Evaluation runs with import-from-derivation off, which all helpers support.
 - `forSkillSystems` covers `x86_64-linux` and `aarch64-linux`, the architectures sandboxes run on.
