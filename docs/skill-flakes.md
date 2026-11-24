@@ -2,7 +2,7 @@
 
 A skill that has commands is a Nix flake: `flake.nix` and `flake.lock` live in the skill directory next to its `SKILL.md`. The flake's package holds one wrapper per command, nothing else. The Carapace builder builds it whenever the skill changes, and every session gets the commands on its `PATH`. A skill without commands needs no flake.
 
-The functions below come from the skills subflake of the Carapace repo, `github:thiesgerken/carapace?dir=nix/skills` ([`nix/skills/flake.nix`](../nix/skills/flake.nix)). It has only `nixpkgs` and the uv2nix stack as inputs, so a skill's `flake.lock` stays small. Three working examples live in [`nix/skills/examples`](../nix/skills/examples): uv, npm and pnpm. CI builds them against the helpers of the current checkout.
+The functions below come from the skills subflake of the Carapace repo, `github:thiesgerken/carapace?dir=nix/skills` ([`nix/skills/flake.nix`](../nix/skills/flake.nix)). It has only `nixpkgs` and the uv2nix stack as inputs, so a skill's `flake.lock` stays small. Three working examples live in [`nix/skills/examples`](../nix/skills/examples): uv, npm and pnpm. CI builds them against the helpers of the current checkout. The bundled skills with commands (`src/carapace/assets/skills`) are flakes too; CI builds them both against the commit their `flake.lock` pins and against the current helpers.
 
 ## The flake
 
@@ -198,4 +198,4 @@ npm needs no such hash: `package-lock.json` carries the integrity of every packa
 
 ## Developing a skill
 
-`nix shell ./skills/<name> -c <command>` builds a skill from the workspace and runs one of its commands, without pushing it. The `cgate` request then reports the workspace build's store path, which does not match what the builder built for the committed skill, and the sentinel sees that.
+`nix shell path:./skills/<name> -c <command>` builds a skill from the workspace and runs one of its commands, without pushing it. `path:` matters: inside the knowledge repo a plain `./skills/<name>` is a Git flake that only sees committed files. After changing inputs, `nix flake lock path:./skills/<name>` writes the lock file to commit. The `cgate` request then reports the workspace build's store path, which does not match what the builder built for the committed skill, and the sentinel sees that.

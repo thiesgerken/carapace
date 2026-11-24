@@ -1,6 +1,6 @@
 ---
 name: web
-# Before enabling, store a Brave Search API key at vault/brave-api-key or update the vault reference.
+# Before enabling, store a Brave Search API key at vault/brave-api-key or change the vault path in flake.nix.
 description: >-
   Search the web and fetch page content. Use web_search to find information
   across the web via Brave Search. Use web_fetch to retrieve and extract
@@ -9,18 +9,6 @@ description: >-
 metadata:
   carapace:
     disabled: true
-    network:
-      domains:
-        - api.search.brave.com
-    credentials:
-      - vault_path: vault/brave-api-key
-        description: Brave Search carapace API Key
-        env_var: BRAVE_API_KEY
-    commands:
-      - name: web_search
-        command: uv run --directory /workspace/skills/web web_search
-      - name: web_fetch
-        command: uv run --directory /workspace/skills/web web_fetch
 ---
 
 # Web Skill

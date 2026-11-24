@@ -72,7 +72,7 @@ The commands of every built skill are on the agent's `PATH`, as if it sat in a d
 - **The killer.** The sync is an ordinary process, so the killer before the next `exec` kills it like any other; there is no exemption that a root agent could borrow. A sync that is still computing its plan is cancelled with it. The server starts the sync again right after the killer. The sync runs code the agent can influence (`/bin/nix-env` and the store live in the writable container layer), so it gets nothing an `exec` does not get: no proxy bypass, only the builder's cache. `read_skill` runs its sync under the exec lock, so no killer interrupts it. A killed `nix-env` keeps every path it substituted and never switches the profile halfway, so each run continues where the last one stopped and the profile converges. An agent that runs commands back to back slows a large first sync down; that is accepted and measured in [#580](https://github.com/thiesgerken/carapace/issues/580).
 - **Disk.** The skill set's store paths take 2 to 8 GB in the container layer. On Kubernetes, sandboxes request `CARAPACE_SANDBOX_K8S_RESOURCE_REQUESTS_EPHEMERAL_STORAGE` (default `2Gi`, Helm `sandbox.resources.requests.ephemeral-storage`); raise it for large skill sets, keeping in mind that every warm-pool and idle sandbox reserves it. A limit (`…_LIMITS_EPHEMERAL_STORAGE`) is off by default, because exceeding it evicts the pod.
 
-`nix run ./skills/<name>#<cmd>` always works as well, evaluating and building in the sandbox: the development loop for changes that are not pushed yet.
+`nix shell path:./skills/<name> -c <cmd>` always works as well, evaluating and building in the sandbox: the development loop for changes that are not pushed yet (see [skill flakes](skill-flakes.md#developing-a-skill)).
 
 ## Mounts
 
@@ -173,7 +173,7 @@ cgate request --domain api.example.com --domain '*.cdn.example.com' \
 
 After approval the domains are reachable and `ccred get` returns the credentials without another review, until the `exec` ends. A domain or credential that was not declared still works: it reaches the sentinel through the proxy or `ccred` as a short follow-up that does not repeat the command. Follow-ups are tracked per `exec`, so the first request of the next `exec` always shows its command, also when parallel tool calls run their `exec`s one after the other.
 
-A declaration is a batching hint and carries no trust. The sentinel judges it like the single requests, and sees the caller's store path together with whether it matches what was built for the current head. Until skills are built by the builder that match is reported as unknown. A process in the sandbox can claim any store path; the check covers the honest development case, where `nix run ./skills/x#cmd` runs workspace code that differs from the committed skill.
+A declaration is a batching hint and carries no trust. The sentinel judges it like the single requests, and sees the caller's store path together with whether it matches what was built for the current head. Until skills are built by the builder that match is reported as unknown. A process in the sandbox can claim any store path; the check covers the honest development case, where `nix shell path:./skills/x -c cmd` runs workspace code that differs from the committed skill.
 
 ### CLI contract
 

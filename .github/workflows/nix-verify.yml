@@ -41,6 +41,12 @@ jobs:
           time result-build-tool/bin/nix-fast-build --no-nom --option log-lines 1000 \
             --flake .#ciBuilds.x86_64-linux --systems x86_64-linux --skip-cached \
             --out-link result-ci --result-file dist/ci-results.json
+      # The checks above build them against this checkout's helpers; this against the commit each one pins.
+      - name: Build bundled skills against their locked helpers
+        run: |
+          for flake in src/carapace/assets/skills/*/flake.nix; do
+            time nix build --no-link --no-update-lock-file --print-build-logs "path:$(dirname "$flake")#packages.x86_64-linux.default"
+          done
       # --skip-cached links only what it built; the tools and images are still needed here.
       - name: Fetch cached outputs used below
         run: |
