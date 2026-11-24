@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""carapace-tunnel: forward TCP connections to HOST:PORT through the session's HTTP proxy.
+
+Usage:
+    carapace-tunnel LISTEN_ADDRESS:PORT HOST:PORT READY_FILE
+
+The Carapace server starts one per tunnel a command asked for with `cgate request --tunnel`, and stops it
+when that exec ends. Each accepted connection becomes a CONNECT through $HTTP_PROXY, so the proxy decides
+about HOST like about any domain. READY_FILE is written once the listener is bound.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import contextlib
+import os
+import sys
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
+
+_MAX_RESPONSE_HEAD = 65536
+
+
+async def _close(writer: asyncio.StreamWriter) -> None:
+    writer.close()
+    with contextlib.suppress(OSError):
+        await writer.wait_closed()
+
+
+async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    """Copy until EOF, then pass the EOF on: the other direction may still be talking."""
+    try:
+        while chunk := await reader.read(65536):
+            writer.write(chunk)
+            await writer.drain()
+        if writer.can_write_eof():
+            writer.write_eof()
+    except OSError:
+        pass
+
+
+async def _connect(proxy_url: str, host: str, port: int) -> tuple[bytes, asyncio.StreamReader, asyncio.StreamWriter]:
+    """Open a CONNECT tunnel to host:port; returns what the proxy sent past its response head."""
+    proxy = urlsplit(proxy_url)
+    if not proxy.hostname:
+        raise RuntimeError("HTTP_PROXY has no host")
+    reader, writer = await asyncio.open_connection(proxy.hostname, proxy.port or 80)
+    head = [f"CONNECT {host}:{port} HTTP/1.1", f"Host: {host}:{port}"]
+    if proxy.username or proxy.password:
+        credentials = f"{unquote(proxy.username or '')}:{unquote(proxy.password or '')}"
+        head.append(f"Proxy-Authorization: Basic {base64.b64encode(credentials.encode()).decode()}")
+    writer.write(("\r\n".join(head) + "\r\n\r\n").encode("latin-1"))
+    await writer.drain()
+
+    response = b""
+    while b"\r\n\r\n" not in response:
+        chunk = await reader.read(4096)
+        if not chunk:
+            raise RuntimeError("the proxy closed the connection before answering")
+        response += chunk
+        if len(response) > _MAX_RESPONSE_HEAD:
+            raise RuntimeError("the proxy's answer is too large")
+    head_block, rest = response.split(b"\r\n\r\n", 1)
+    status = head_block.split(b"\r\n", 1)[0].decode("latin-1", errors="replace")
+    if status.split(" ", 2)[1:2] != ["200"]:
+        # A denial carries the reason as its body; the client of this tunnel only sees the connection close.
+        body = rest.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"the proxy refused {host}:{port}: {status}" + (f": {body}" if body else ""))
+    return rest, reader, writer
+
+
+async def _forward(
+    client_reader: asyncio.StreamReader, client_writer: asyncio.StreamWriter, proxy_url: str, host: str, port: int
+) -> None:
+    try:
+        rest, upstream_reader, upstream_writer = await _connect(proxy_url, host, port)
+    except (OSError, RuntimeError) as exc:
+        print(f"carapace-tunnel {host}:{port}: {exc}", file=sys.stderr, flush=True)
+        await _close(client_writer)
+        return
+    if rest:
+        client_writer.write(rest)
+    try:
+        await asyncio.gather(_pipe(client_reader, upstream_writer), _pipe(upstream_reader, client_writer))
+    finally:
+        await _close(upstream_writer)
+        await _close(client_writer)
+
+
+def _address(raw: str) -> tuple[str, int]:
+    host, _, port = raw.rpartition(":")
+    return host, int(port)
+
+
+async def _serve(listen: str, target: str, ready_file: str) -> None:
+    proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+    if not proxy_url:
+        raise SystemExit("carapace-tunnel: HTTP_PROXY is not set")
+    listen_host, listen_port = _address(listen)
+    host, port = _address(target)
+    server = await asyncio.start_server(
+        lambda reader, writer: _forward(reader, writer, proxy_url, host, port), listen_host, listen_port
+    )
+    Path(ready_file).write_text("ready\n")
+    async with server:
+        await server.serve_forever()
+
+
+def main() -> None:
+    if len(sys.argv) != 4:
+        raise SystemExit(__doc__)
+    asyncio.run(_serve(*sys.argv[1:]))
+
+
+if __name__ == "__main__":
+    main()

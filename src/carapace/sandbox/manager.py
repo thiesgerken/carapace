@@ -36,6 +36,7 @@ from .state import (
     save_sandbox_snapshot,
     session_owner,
 )
+from .tunnels import Tunnel
 
 _READ_ERROR_TAIL_CHARS = 2000
 FILE_READ_SCRIPT = file_ops.FILE_READ_SCRIPT
@@ -693,6 +694,13 @@ class SandboxManager:
 
     def running_exec(self, session_id: str) -> RunningExec | None:
         return self._exec_coordinator.running_exec(session_id)
+
+    async def open_tunnels(self, running: RunningExec, tunnels: list[Tunnel]) -> str | None:
+        """Open *tunnels* until the running exec ends; why they could not be opened, or None.
+
+        Raises ``ExecEndedError`` when the exec ended first.
+        """
+        return await self._exec_coordinator.open_tunnels(running, tunnels)
 
     def is_running(self, running: RunningExec) -> bool:
         return self._exec_coordinator.is_running(running)

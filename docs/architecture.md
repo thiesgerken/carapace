@@ -305,7 +305,8 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `sandbox/__init__.py`          | Sandbox package namespace.                                                                 |
 | `sandbox/container_scripts.py` | Python snippets executed inside sandboxes for setup and helper operations.                 |
 | `sandbox/docker.py`            | Docker runtime implementation.                                                             |
-| `sandbox/exec_flow.py`         | Exec orchestration, command metadata, context handling, and tunnel lifecycle coordination. |
+| `sandbox/exec_flow.py`         | Exec orchestration: leftover killer, exec scope, opening and closing its tunnels.          |
+| `sandbox/tunnels.py`           | `cgate --tunnel` tunnels: host:port parsing, loopback addresses, open and close scripts.   |
 | `sandbox/exec_scope.py`        | `RunningExec`: what one running exec has been granted, and its id for exec-scoped reviews. |
 | `sandbox/file_ops.py`          | Read/write/replace file operation helpers and size/window limits.                          |
 | `sandbox/k8s_exec_v5.py`       | Pod exec with stdin over the `v5.channel.k8s.io` websocket subprotocol.                    |

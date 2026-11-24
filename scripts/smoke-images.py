@@ -146,6 +146,8 @@ set -euo pipefail
 command -v cgate getent > /dev/null
 # The MCP bridge loads its SDK from its own environment, not the agent's python3.
 mcp --help | grep -q -- --list-tools
+# The tunnel forwarder runs by absolute path on the same environment.
+{ /bin/carapace-tunnel || true; } 2>&1 | grep -q 'LISTEN_ADDRESS:PORT HOST:PORT READY_FILE'
 ! compgen -G '/bin/python*' > /dev/null || { ls /bin/python*; exit 1; }
 # The server's start-up egress probe needs bash's /dev/tcp, timeout and getent.
 timeout 5 bash -c 'exec 3<>/dev/tcp/example.com/80'

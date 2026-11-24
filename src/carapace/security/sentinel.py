@@ -847,6 +847,11 @@ class Sentinel:
                     f"- {c.vault_path} ({c.name})" + (f": {c.description}" if c.description else "")
                     for c in request.access_tokens
                 )
+            if request.tunnels:
+                prompt_parts.append(
+                    "TCP tunnels (non-HTTP connections through the proxy; each one also allows its host as a domain): "
+                    + ", ".join(request.tunnels)
+                )
             prompt_parts.append(_store_path_line(request.store_path))
             prompt_parts.append(_boundary_origin(command, follow_up=follow_up))
             prompt_parts.append("One verdict for everything listed; an approval holds until this exec ends.")
@@ -858,7 +863,7 @@ class Sentinel:
                 kind="upfront_request",
                 subject=(
                     f"{len(request.domains)} domains, {len(request.credentials)} credentials, "
-                    f"{len(request.access_tokens)} access tokens"
+                    f"{len(request.access_tokens)} access tokens, {len(request.tunnels)} tunnels"
                 ),
                 agent_reads_verdict=False,
                 usage_tracker=usage_tracker,
