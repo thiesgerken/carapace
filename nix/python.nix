@@ -53,6 +53,8 @@ let
   # Only the bridge's own interpreter sees it; the agent's python3 is python-build-standalone.
   mcpBridgeEnv = pythonSet.mkVirtualEnv "carapace-mcp-bridge-env" { mcp = [ ]; };
   builder = pythonSet.mkVirtualEnv "carapace-builder" { carapace = [ "builder" ]; };
+  # The base package is the CLI client; the bundled carapace skill wraps it.
+  cli = pythonSet.mkVirtualEnv "carapace-cli" workspace.deps.default;
   dev = pythonSet.mkVirtualEnv "carapace-checks" workspace.deps.all;
   encodingCacheEntry =
     name: sha256:
@@ -123,6 +125,7 @@ in
   inherit
     server
     builder
+    cli
     tokenizerCache
     mcpBridgeEnv
     ;
