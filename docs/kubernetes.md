@@ -248,6 +248,7 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`    | `carapace`                | Server Deployment name (Helm sets to release name)         |
 | `CARAPACE_SANDBOX_NETWORK_NAME`                  | `carapace-sandbox`        | Docker network name (Docker only)                          |
 | `CARAPACE_BUILDER_URL`                           | (none: no builder)        | [Skill builder](builder.md) API URL (Helm sets it)         |
+| `CARAPACE_BUILDER_CACHE_URL`                     | (required with a URL)     | Builder [binary cache](builder.md#binary-cache) URL (Helm sets it) |
 | `CARAPACE_BUILDER_TOKEN`                         | (required with a URL)     | Builder token (Helm reads it from the builder Secret)      |
 | `CARAPACE_BUILDER_TIMEOUT_SECONDS`               | `1800`                    | Upper bound for one build request                          |
 
@@ -315,6 +316,8 @@ The included `networkpolicy.yaml` restricts sandbox pods:
 - **Ingress**: only from the server pod (for exec)
 
 This mirrors the Docker setup where sandbox containers are on an internal network with no direct internet access.
+
+A second policy covers the [skill builder](builder.md#kubernetes): ingress only from the server pod, on ports 8330 (build API) and 8331 (binary cache). Sandboxes reach the cache only through the server's session proxy, never directly.
 
 > **⚠️ SECURITY WARNING — NetworkPolicy is critical to carapace's security model**
 >

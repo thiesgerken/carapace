@@ -6,10 +6,14 @@ import platform
 
 import httpx
 
-from .models import BuilderInfo, BuildResult
+from .models import CACHE_HOST, BuilderInfo, BuildResult
 
 
 class BuilderSystemMismatchError(RuntimeError):
+    pass
+
+
+class BuilderUnavailableError(RuntimeError):
     pass
 
 
@@ -29,21 +33,46 @@ class BuilderClient:
         self._client = httpx.AsyncClient(
             base_url=url, headers={"Authorization": f"Bearer {token}"}, timeout=timeout_seconds
         )
-        self._system_checked = False
+        self._info: BuilderInfo | None = None
 
-    async def check_system(self) -> None:
-        """Raise if the builder builds for another system than the sandboxes run on."""
+    async def check_system(self) -> BuilderInfo:
+        """Fetch `/info`; raise if the builder builds for another system than the sandboxes run on."""
         response = await self._client.get("/info")
         response.raise_for_status()
-        builder = BuilderInfo.model_validate(response.json()).system
+        info = BuilderInfo.model_validate(response.json())
         expected = sandbox_system()
-        if builder != expected:
-            raise BuilderSystemMismatchError(f"The builder builds for {builder}, but sandboxes run on {expected}")
-        self._system_checked = True
+        if info.system != expected:
+            raise BuilderSystemMismatchError(f"The builder builds for {info.system}, but sandboxes run on {expected}")
+        self._info = info
+        return info
 
     async def _ensure_system(self) -> None:
-        if not self._system_checked:
+        if self._info is None:
             await self.check_system()
+
+    async def sandbox_nix_config(self) -> str:
+        """`NIX_CONFIG` for a new sandbox: the builder's cache as the only substituter.
+
+        Fetches the keys on every call, so a builder with a new key (a wiped volume) is picked up.
+        A builder that does not answer fails the sandbox start: falling back to another substituter
+        would quietly put every download behind the domain gate.
+        """
+        try:
+            info = await self.check_system()
+        except httpx.HTTPError as exc:
+            raise BuilderUnavailableError(
+                f"The skill builder is configured but unreachable ({exc}); sandboxes need its cache keys"
+            ) from exc
+        return "\n".join(
+            [
+                f"substituters = http://{CACHE_HOST}",
+                f"trusted-public-keys = {' '.join(info.cache_public_keys)}",
+                # Fastest and smallest on a sandbox's single CPU (#548).
+                "max-substitution-jobs = 1",
+                # Nix otherwise remembers a missing path for an hour, past the build that adds it.
+                "narinfo-cache-negative-ttl = 30",
+            ]
+        )
 
     async def get(self, tree: str) -> BuildResult | None:
         await self._ensure_system()

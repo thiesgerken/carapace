@@ -53,12 +53,18 @@ spec:
           ports:
             - name: build-api
               containerPort: 8330
+            - name: cache
+              containerPort: 8331
           env:
             - name: CARAPACE_BUILDER_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "carapace.builder.secretName" . }}
                   key: token
+            {{- with .Values.builder.upstreamCaches }}
+            - name: CARAPACE_BUILDER_UPSTREAM_CACHES
+              value: {{ toJson . | quote }}
+            {{- end }}
           volumeMounts:
             - name: nix
               mountPath: /nix
