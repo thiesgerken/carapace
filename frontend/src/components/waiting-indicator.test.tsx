@@ -9,7 +9,9 @@ import type { LlmActivity } from "@/lib/types";
 
 import { WaitingIndicator } from "./waiting-indicator";
 
-const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+// The clock is frozen at NOW, so the elapsed time does not depend on how long the test runs.
+const NOW = Date.parse("2026-01-01T12:00:00Z");
+const ago = (ms: number) => new Date(NOW - ms).toISOString();
 
 async function text(activity: LlmActivity | null, locale: "en" | "de" = "en"): Promise<string> {
   const view = await renderReact(
@@ -22,7 +24,8 @@ async function text(activity: LlmActivity | null, locale: "en" | "de" = "en"): P
   return content;
 }
 
-test("WaitingIndicator names the phase and counts time and approximate tokens", async () => {
+test("WaitingIndicator names the phase and counts time and approximate tokens", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
   const restore = installDom();
   try {
     const activity: LlmActivity = { request_id: "r1", source: "agent", phase: "generating", started_at: ago(78_500), streamed_chars: 7_300 };
