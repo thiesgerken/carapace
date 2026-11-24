@@ -248,42 +248,4 @@ in
         inherit nodejs;
       }
     );
-
-  # The same for pnpm. pnpm-lock.yaml lacks the hashes Nix needs, so the dependencies are a
-  # fixed-output derivation: `hash` changes whenever the lock file does (build once with
-  # `lib.fakeHash`, then take the hash from the error).
-  pnpmApp =
-    {
-      root,
-      hash,
-      nodejs ? pkgs.nodejs,
-      pnpm ? pkgs.pnpm,
-    }:
-    let
-      src = lockFiles root [
-        "package.json"
-        "pnpm-lock.yaml"
-      ];
-    in
-    nodeApp root (
-      pkgs.stdenvNoCC.mkDerivation {
-        name = "skill-node-modules";
-        inherit src;
-        nativeBuildInputs = [
-          nodejs
-          pnpm
-          pkgs.pnpmConfigHook
-        ];
-        pnpmDeps = pkgs.fetchPnpmDeps {
-          pname = "skill-node-modules";
-          version = "0";
-          inherit src pnpm hash;
-          fetcherVersion = 5;
-        };
-        installPhase = ''
-          mkdir -p $out
-          cp -r node_modules $out/
-        '';
-      }
-    );
 }

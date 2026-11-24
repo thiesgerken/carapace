@@ -1,9 +1,0 @@
-{
-  "name": "demo-pnpm-skill",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "picocolors": "^1.1.1"
-  }
-}

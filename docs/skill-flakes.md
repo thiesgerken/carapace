@@ -2,7 +2,7 @@
 
 A skill that has commands is a Nix flake: `flake.nix` and `flake.lock` live in the skill directory next to its `SKILL.md`. The flake's package holds one wrapper per command, nothing else. The Carapace builder builds it whenever the skill changes, and every session gets the commands on its `PATH`. A skill without commands needs no flake.
 
-The functions below come from the skills subflake of the Carapace repo, `github:thiesgerken/carapace?dir=nix/skills` ([`nix/skills/flake.nix`](../nix/skills/flake.nix)). It has only `nixpkgs` and the uv2nix stack as inputs, so a skill's `flake.lock` stays small. Three working examples live in [`nix/skills/examples`](../nix/skills/examples): uv, npm and pnpm. CI builds them against the helpers of the current checkout. The bundled skills with commands (`src/carapace/assets/skills`) are flakes too; CI builds them both against the commit their `flake.lock` pins and against the current helpers.
+The functions below come from the skills subflake of the Carapace repo, `github:thiesgerken/carapace?dir=nix/skills` ([`nix/skills/flake.nix`](../nix/skills/flake.nix)). It has only `nixpkgs` and the uv2nix stack as inputs, so a skill's `flake.lock` stays small. Three working examples live in [`nix/skills/examples`](../nix/skills/examples): uv, npm and plain nixpkgs. CI builds them against the helpers of the current checkout. The bundled skills with commands (`src/carapace/assets/skills`) are flakes too; CI builds them both against the commit their `flake.lock` pins and against the current helpers.
 
 ## The flake
 
@@ -183,21 +183,25 @@ env = skill.uvEnv {
 
 A build that fails with `No module named 'setuptools'` (or `hatchling`, `flit_core`, …) for one package needs such an entry.
 
-## Node with npm or pnpm
+## Node with npm
 
-`npmApp { root = ./.; }` installs the dependencies from `package.json` and `package-lock.json`. `pnpmApp { root = ./.; hash = "sha256-…"; }` does the same from `pnpm-lock.yaml`. Both return the skill directory with `node_modules` linked in, so a command is `"${pkgs.nodejs}/bin/node ${app}/src/main.mjs"`.
+`npmApp { root = ./.; }` installs the dependencies from `package.json` and `package-lock.json`. It returns the skill directory with `node_modules` linked in, so a command is `"${pkgs.nodejs}/bin/node ${app}/src/main.mjs"`.
 
-`node_modules` is its own derivation, built from the lock files only. Editing the skill's code does not install the dependencies again.
+`node_modules` is its own derivation, built from the two lock files only. Editing the skill's code does not install the dependencies again.
 
-pnpm needs one thing npm does not: `pnpm-lock.yaml` lacks the hashes Nix needs, so the dependencies are fetched as a fixed-output derivation whose `hash` sits in `flake.nix`. It changes whenever the lock file does. Set it to `pkgs.lib.fakeHash`, build once, and copy the hash from the error:
+## Plain nixpkgs
 
-```text
-error: hash mismatch in fixed-output derivation '…-skill-node-modules-pnpm-deps.drv':
-         specified: sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-            got:    sha256-nWi4zyIaLKHD6wrM+k7SiWreZEkS8TGfToIvH8HJ628=
+A command that only glues tools together needs no language package manager. nixpkgs pins every tool, and `exec` can point at any store path: a nixpkgs binary directly, or a script from `pkgs.writeShellApplication`, which puts its `runtimeInputs` on `PATH` and runs ShellCheck at build time.
+
+```nix
+pages = pkgs.writeShellApplication {
+  name = "pdf-pages";
+  runtimeInputs = [ pkgs.qpdf pkgs.jq ];
+  text = ''qpdf --warning-exit-0 --json --json-key=pages "$1" | jq '.pages | length' '';
+};
 ```
 
-npm needs no such hash: `package-lock.json` carries the integrity of every package.
+The commands are then `exec = "${pages}/bin/pdf-pages";` and `exec = "${pkgs.jq}/bin/jq";`. See the [`nix` example](../nix/skills/examples/nix).
 
 ## Developing a skill
 
