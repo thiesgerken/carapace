@@ -44,8 +44,8 @@ class BraveBackend:
         if not self._api_key:
             print(
                 "Error: BRAVE_API_KEY is not set.\n"
-                "Get a key at https://brave.com/search/api/ and declare it in metadata.carapace "
-                "or export BRAVE_API_KEY in your environment.",
+                "Get a key at https://brave.com/search/api/, store it in the vault and point the web "
+                "skill's flake.nix (needs.credentials.BRAVE_API_KEY) at it, or export BRAVE_API_KEY.",
                 file=sys.stderr,
             )
             sys.exit(1)

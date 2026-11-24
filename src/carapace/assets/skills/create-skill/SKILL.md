@@ -20,13 +20,13 @@ Produce a skill that is easy for another agent to activate and follow.
 Keep the information an activated agent should know before acting:
 
 - what the skill does and when to use it
-- a short list of exposed commands near the top of the body when the skill ships command aliases
+- a short list of exposed commands near the top of the body when the skill has commands
 - hard constraints and safety rules
 - the normal workflow or command entrypoints
 - how the skill CLI is supposed to be invoked
 - domain facts the agent needs to act correctly, such as project names, folder names, common labels, IDs, account context, or user-specific conventions
 - common command examples and syntax traps that prevent mistakes
-- a short note that credentials or setup are handled automatically, if applicable
+- a short note that commands ask for their domains and credentials themselves, if applicable
 - links to sidecar docs when deeper implementation detail exists
 
 The guiding question is: would the agent make worse decisions, run the wrong command, or need to pause and load another file during normal use without this? If yes, keep it in `SKILL.md`.
@@ -38,10 +38,9 @@ Do not turn `SKILL.md` into developer documentation for the skill itself, but do
 Prefer a sidecar markdown file only for content that can safely be loaded on demand:
 
 - provider file layouts and lockfile rules
-- full `metadata.carapace` schemas and examples
-- authentication wiring and credential internals, beyond a short activation note
-- packaging details for Python or Node helpers
-- implementation internals of wrappers and setup hooks
+- how `flake.nix` builds the commands and what they declare
+- authentication wiring and credential internals, beyond a one-line note
+- packaging details for Python or Node
 - exhaustive API references and maintainer troubleshooting notes
 
 Do not move runtime-critical facts out of `SKILL.md` just because they are long, tabular, or user-specific.
@@ -57,14 +56,14 @@ Good filenames are `REFERENCE.md`, `CONFIG.md`, or `references/*.md`.
    - `name` matches the folder name exactly.
    - `description` says what the skill does and when to use it.
 5. Write the body for the agent who will use the skill, including the operational facts needed for safe normal use.
-6. If the skill exposes command aliases, add an `Exposed Commands` section near the top of `SKILL.md`. List the real aliases there in the body, not in frontmatter.
-7. If the skill needs network access, credentials, code, or setup hooks, add the supporting files next to it and summarize the activation behavior in `SKILL.md`.
-8. If setup, implementation, or reference material is not needed for normal use, add a sidecar markdown file and link it from `SKILL.md`.
-9. Tell the user the skill will show up in `/skills` and be available in new sessions.
+6. If the skill has commands, it is a flake: write `flake.nix` with the commands and what they need, lock it, and commit `flake.lock` (see `REFERENCE.md`). Add an `Exposed Commands` section near the top of `SKILL.md` with the real command names.
+7. Build and run every command from the workspace before pushing: `nix shell path:./skills/<name> -c <command> …`.
+8. If implementation or reference material is not needed for normal use, add a sidecar markdown file and link it from `SKILL.md`.
+9. Commit and push. Tell the user the builder builds the skill after the push, the Knowledge view shows its build state, and its commands are available in new sessions once built.
 
 ## Setup Guidance
 
-If a skill needs credentials or network access, note that activation handles them automatically after approval. Do not inline credential wiring, secret-handling procedures, or large `metadata.carapace` schema walkthroughs in `SKILL.md`.
+If a command needs credentials or network access, declare them in `flake.nix`; the command asks for them itself when it runs. Say that in one line in `SKILL.md`. Do not inline credential wiring, vault paths, or build details there.
 
 ## Template
 
@@ -85,8 +84,8 @@ One short paragraph describing the skill.
 
 ## Exposed Commands
 
-- `<command-alias>`: <What it does>
-- `<command-alias>`: <What it does>
+- `<command>`: <What it does>
+- `<command>`: <What it does>
 
 ## Workflow
 
@@ -101,9 +100,9 @@ One short paragraph describing the skill.
 
 ## Setup
 
-If this skill needs extra setup, note that activation handles it automatically and point to `REFERENCE.md` or `CONFIG.md`.
+If a command asks for a credential, say which vault entry the user has to create and point to `REFERENCE.md` or `CONFIG.md` for details.
 ```
 
 ## Reference
 
-IMPORTANT: Read [REFERENCE.md](REFERENCE.md) before authoring a skill. It contains the required maintainer guidance for file layout, frontmatter, sidecar docs, provider manifests, and common failure modes.
+IMPORTANT: Read [REFERENCE.md](REFERENCE.md) before authoring a skill. It contains the required maintainer guidance for file layout, frontmatter, sidecar docs, skill flakes, the development loop, and common failure modes.

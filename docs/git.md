@@ -52,7 +52,7 @@ For every enabled user, startup runs the same sequence against that user's repo:
 1. Initialize or open the local repo at `$CARAPACE_DATA_DIR/knowledges/<normalized-user>/`.
 2. If `config.git.remote` is set, add or update the `origin` remote for that repo.
 3. Pull the configured remote branch before any bootstrap seeding.
-4. Seed default files such as `SECURITY.md`, `SOUL.md`, `USER.md`, and bundled example skills only if they are still missing.
+4. Seed default files such as `SECURITY.md`, `SOUL.md`, `USER.md`, and bundled skills only if they are still missing.
 5. If bootstrap created new files, commit them and push them to that user's remote.
 
 Users without a remote still get a local Git-backed repo. They skip the remote add, pull, and upstream push steps.
