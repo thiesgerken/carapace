@@ -63,17 +63,22 @@
           ;
       };
       # Built against this checkout's lib, as the skills of a knowledge repo are against their pinned one.
-      skillExamples = forLinux (
-        system:
-        nixpkgs.lib.mapAttrs' (
-          name: _:
-          nixpkgs.lib.nameValuePair "skill-example-${name}"
-            ((import ./nix/skills/examples/${name}/flake.nix).outputs {
-              inherit nixpkgs;
-              carapace.lib = skillLib;
-            }).packages.${system}.default
-        ) (builtins.readDir ./nix/skills/examples)
-      );
+      # CI also builds the bundled ones against their own flake.lock (.github/workflows/nix-verify.yml).
+      skillFlakes =
+        prefix: dir:
+        forLinux (
+          system:
+          nixpkgs.lib.mapAttrs' (
+            name: _:
+            nixpkgs.lib.nameValuePair "${prefix}-${name}"
+              ((import "${dir}/${name}/flake.nix").outputs {
+                inherit nixpkgs;
+                carapace.lib = skillLib;
+              }).packages.${system}.default
+          ) (nixpkgs.lib.filterAttrs (name: _: builtins.pathExists "${dir}/${name}/flake.nix") (builtins.readDir dir))
+        );
+      skillExamples = skillFlakes "skill-example" ./nix/skills/examples;
+      bundledSkills = skillFlakes "skill-bundled" ./src/carapace/assets/skills;
       project = forSystems (
         system:
         let
@@ -153,6 +158,7 @@
         p.backend.checks
         // p.frontend.checks
         // skillExamples.${system}
+        // bundledSkills.${system}
         // {
           skill-wrapper-contract = import ./nix/skills/tests.nix {
             inherit (p) pkgs;
@@ -167,6 +173,22 @@
               [ "$(${examples.skill-example-uv}/bin/demo-usage Ada)" = "hello, Ada" ]
               ${examples.skill-example-npm}/bin/demo-npm-hello Ada | grep -q "hello, Ada"
               ${examples.skill-example-pnpm}/bin/demo-pnpm-hello Ada | grep -q "hello, Ada"
+              touch $out
+            '';
+          # The bundled commands start: their wrappers ask cgate and ccred first, stubbed here.
+          skill-bundled-run =
+            let
+              bundled = bundledSkills.${system};
+              cgate = p.pkgs.writeShellScriptBin "cgate" "exit 0";
+              ccred = p.pkgs.writeShellScriptBin "ccred" "echo demo-secret";
+            in
+            p.pkgs.runCommand "skill-bundled-run" { nativeBuildInputs = [ cgate ccred ]; } ''
+              # Into a file: grep -q would stop reading and fail the writer with SIGPIPE under pipefail.
+              shows_usage() { "$1" --help > help.txt; grep -qi usage help.txt; }
+              shows_usage ${bundled.skill-bundled-wikipedia}/bin/wiki-search
+              shows_usage ${bundled.skill-bundled-web}/bin/web_search
+              shows_usage ${bundled.skill-bundled-web}/bin/web_fetch
+              shows_usage ${bundled.skill-bundled-carapace}/bin/carapace
               touch $out
             '';
           helm =
