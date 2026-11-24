@@ -31,7 +31,7 @@ carapace is a self-hosted AI agent with a web UI, CLI, and Matrix channel for op
 ## Highlights
 
 - 🛡️ Sentinel-gated boundary. Whatever a command wants from outside the sandbox is reviewed by a dedicated security agent that keeps session context, not a static allowlist spreadsheet.
-- ❄️ Skills are Nix flakes. carapace's own builder builds a skill's commands from its pinned `flake.lock`, and sandboxes only substitute the finished store paths from the builder's cache. Nothing is installed at run time and dependencies don't drift, so skills break less often. The images are built with Nix too. See [docs/skill-flakes.md](docs/skill-flakes.md).
+- ❄️ Nix-based skills. carapace's own builder builds a skill's commands from its pinned `flake.lock`, and sandboxes only substitute the finished store paths from the builder's cache. Nothing is installed at run time and dependencies don't drift, so skills break less often. The images are built with Nix too. See [docs/skill-flakes.md](docs/skill-flakes.md).
 - ☸️ Kubernetes-ready sandboxes. Docker and Kubernetes runtimes are both supported, with StatefulSet-backed sandbox sessions, per-session PVCs, idle-to-zero scaling, and an optional warm pool of prestarted base sandboxes for faster Kubernetes claims.
 - 🗃️ Git-native per-user knowledge repos. `SOUL.md`, `USER.md`, `SECURITY.md`, skills, and archived sessions live in files you can inspect, diff, sync, and push upstream.
 - 🚫 No-direct-internet sandboxes. Sandbox workloads do not get ambient internet access; outbound traffic is forced through the proxy path.
