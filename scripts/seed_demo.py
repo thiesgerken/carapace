@@ -798,7 +798,6 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
         thinking=(0.8, 1.3),
     )
     skill_tool = span("demo-tool-skill", root, "tool", "read_skill", 1.8, 5.0)
-    span("demo-gate-skill", skill_tool, "gate", "read_skill", 1.8, 1.9)
     span("demo-skill-build", skill_tool, "skill", "build wait", 2.0, 3.6, skill="web")
     span("demo-skill-sync", skill_tool, "skill", "profile sync", 3.6, 4.9, paths=4)
     request(
@@ -813,8 +812,6 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
         5.6,
     )
     search = span("demo-tool-search", root, "tool", "exec", 5.9, 14.0)
-    # exec is safe-listed: its gate decides at once, and only the boundary requests reach the sentinel.
-    span("demo-gate-search", search, "gate", "exec", 5.9, 6.0)
     search_exec = span("demo-exec-search", search, "exec", "exec", 6.0, 14.0, command=_SEARCH, exit_code=0)
     sandbox = span("demo-sandbox", search_exec, "sandbox", "ensure", 6.0, 7.2)
     span("demo-sandbox-resume", sandbox, "sandbox", "resume", 6.0, 6.5)
@@ -843,7 +840,6 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
         14.7,
     )
     fetch = span("demo-tool-fetch", root, "tool", "exec", 15.1, 21.0)
-    span("demo-gate-fetch", fetch, "gate", "exec", 15.1, 15.2)
     fetch_exec = span("demo-exec-fetch", fetch, "exec", "exec", 15.2, 21.0, command=_FETCH, exit_code=0)
     fetch_domain = span(
         "demo-domain-fetch",
