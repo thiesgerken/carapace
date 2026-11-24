@@ -206,6 +206,19 @@ Frontend fonts are licensed variable WOFF2 inputs committed in `frontend/src/fon
 
 The only Python source-build override supplies setuptools to `http-ece`, whose release has no wheel. Keep overrides tied to observed build failures.
 
+### Bundled skill pins
+
+The bundled skills with commands (`src/carapace/assets/skills/*/flake.nix`) pin a Carapace commit for their helpers and, in the `carapace` skill, the CLI. After every release, point them at the release commit in a regular commit, which then ships with the next release:
+
+```sh
+rev=$(git rev-parse vX.Y.Z^{commit})
+for flake in src/carapace/assets/skills/*/flake.nix; do
+  nix flake lock "path:$(dirname "$flake")" --override-input carapace "github:thiesgerken/carapace/$rev?dir=nix/skills"
+done
+```
+
+A release commit cannot pin itself, so this cannot be part of the release commit. CI builds every bundled skill against its pin and against the current helpers, so a pin that falls behind still has to build.
+
 ## CI and publishing
 
 [CI](../.github/workflows/ci.yml) calls [Nix verification](../.github/workflows/nix-verify.yml). Workflows read the public [`thiesgerken` Cachix cache](https://thiesgerken.cachix.org) and skip outputs already in it; only release runs push to it, so PR builds never write it. The flake offers the cache to local builds through `nixConfig` (accept it when Nix asks; it takes effect for trusted users). It holds only x86_64-linux outputs. PR verification has read-only repository access, smoke-tests loaded images, and uploads the verified x64 image archives and chart data.

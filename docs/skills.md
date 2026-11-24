@@ -365,10 +365,11 @@ These are seeded into every knowledge repo on first run and can be edited or del
 | `carapace`     | Drive a carapace server over its JSON CLI (sessions, approvals, jobs).         |
 | `create-skill` | Write and refine skills.                                                       |
 | `credentials`  | List, fetch, and use secrets from the vault.                                   |
-| `example`      | Reference skill showing Python and Node providers, tunnels, and setup scripts.  |
 | `ferret`       | Personal indexed-source discovery over native HTTP MCP. Disabled by default; [setup](../src/carapace/assets/skills/ferret/SETUP.md). |
 | `mermaid`      | Write Mermaid diagrams; the web UI renders ` ```mermaid ` fences as pictures.   |
 | `web`          | Web search and page fetch. Disabled by default; requires a Brave Search API key at `vault/brave-api-key` before enabling. |
 | `wikipedia`    | Wikipedia search and article fetch.                                            |
+
+`carapace`, `web` and `wikipedia` have commands, so they are [skill flakes](skill-flakes.md) that pin a Carapace commit in their `flake.lock`; the others are a `SKILL.md` with references. Examples of the helpers live in [`nix/skills/examples`](../nix/skills/examples).
 
 Configure disabled bundled skills in their copied `SKILL.md`, set `metadata.carapace.disabled: false`, and start a new session. Normal bootstrap seeds missing bundled skill directories without overwriting existing copies or user edits, including Web copies without a disabled flag. Explicit `reset-assets` overwrites bundled customization and restores shipped opt-out defaults.
