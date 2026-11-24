@@ -297,7 +297,7 @@ Slash commands are the user's control interface for managing sessions. Interacti
 | Command                                         | Effect                                                         |
 | ----------------------------------------------- | -------------------------------------------------------------- |
 | `/help`                                         | Show available commands                                        |
-| `/session`                                      | Show session metadata, context grants, and domain allowlist    |
+| `/session`                                      | Show session metadata and domain allowlist                     |
 | `/skills`                                       | List available skills                                          |
 | `/retitle`                                      | Regenerate session title, or set it explicitly                 |
 | `/budget`                                       | Show or update session budgets: tokens, actual and equivalent cost, tool calls, autonomy |

@@ -413,3 +413,33 @@ async def test_an_unreadable_repo_does_not_stop_the_other_repos_roots(repo: Path
 
     expected = sorted(_git(repo, "rev-parse", f"HEAD:skills/{name}") for name in ("weather", "notes"))
     assert builder.roots == [expected]
+
+
+@pytest.mark.anyio
+async def test_a_cancelled_waiter_leaves_the_build_running_for_the_others(repo: Path) -> None:
+    builder = FakeBuilder()
+    release = asyncio.Event()
+    build = builder.build
+
+    async def held_build(tree: str, archive: bytes, *, retry: bool = False) -> BuildResult:
+        await release.wait()
+        return await build(tree, archive, retry=retry)
+
+    builder.build = held_build  # type: ignore[method-assign]
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    trace = TurnTrace("t1", on_change=lambda _span: None)
+    root = trace.start("turn", "turn", parent_id=None, attrs={})
+    with attach(trace, root.span_id):
+        stopped = asyncio.create_task(builds.wait_built(repo, "weather"))
+        waiting = asyncio.create_task(builds.wait_built(repo, "weather"))
+    while sum(span.name == "build wait" for span in trace.spans.values()) < 2:
+        await asyncio.sleep(0.01)
+
+    stopped.cancel()
+    await asyncio.sleep(0)
+    release.set()
+    weather, _ = await waiting
+
+    assert stopped.cancelled()
+    assert weather is not None and weather.state == "succeeded"
+    assert len(builder.built) == 2
