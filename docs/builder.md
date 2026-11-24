@@ -11,9 +11,11 @@ The build API listens on port 8330. Every route except `/healthz` requires `Auth
 | `GET /healthz` | Liveness, unauthenticated |
 | `GET /info` | `{"system": "x86_64-linux", "cache_public_keys": ["carapace-builder-1:…", "cache.nixos.org-1:…"]}`: the Nix system the builder builds for, and the keys sandboxes trust for its [cache](#binary-cache) |
 | `GET /builds/{tree}` | The stored result for a skill tree, or 404 |
-| `PUT /builds/{tree}` | Body: the skill directory as a tar archive (gzip or plain), e.g. `git archive <tree>`. Builds, stores and returns the result |
+| `PUT /builds/{tree}` | Body: the skill directory as a tar archive (gzip or plain), e.g. `git archive <tree>`. Builds, stores and returns the result. `?retry=true` builds a tree again whose stored result failed |
+| `PUT /roots` | Body: `{"trees": [...]}`, the skill trees the current heads reference (see [garbage collection](#garbage-collection)). 204 |
+| `POST /gc` | Runs garbage collection now and returns `{"dropped": [trees], "log_tail": "…"}` |
 
-`{tree}` is the Git tree hash of the skill directory (SHA-1 or SHA-256). It is the cache key: a tree that has a result, succeeded or failed, is answered from it without building, and its archive is not even read. The key is the caller's claim: the builder does not recompute it from the archive. The server is trusted to send `git archive <tree>` for `<tree>`, and keeping that invariant is the caller's job. A wrong key sticks until the tree is retried or collected.
+`{tree}` is the Git tree hash of the skill directory (SHA-1 or SHA-256). It is the cache key: a tree that has a result, succeeded or failed, is answered from it without building (unless it failed and `retry` is set), and its archive is not even read. The key is the caller's claim: the builder does not recompute it from the archive. The server is trusted to send `git archive <tree>` for `<tree>`, and keeping that invariant is the caller's job. A wrong key sticks until the tree is retried or collected.
 
 `PUT` blocks until the build ends, which takes seconds for a small change and a few minutes for a cold uv skill. Requests for the same tree wait for each other; different trees build in parallel. Callers must not hold up a push or a session on it.
 
@@ -76,7 +78,23 @@ Sandboxes reach the cache only through their session proxy, as `http://cache.car
 
 At start, before it listens, the API builds a fresh probe derivation that fails if it can see the store database, which is only visible outside the build sandbox. If the sandbox cannot be set up or is not in effect, the builder exits with the reason in its log.
 
-The store lives on a volume that replaces `/nix`, so it survives restarts and image updates. Built skills and the dependencies they downloaded stay warm. `carapace-builder-init` runs before every start, with the volume at `/mnt/nix`. It copies the image's own store paths into the volume and roots them, so after an update the volume holds the new image's tools, and the old ones become garbage. Results and GC roots for built trees are under `/nix/var/carapace-builder` on the same volume. Garbage collection comes with [#566](https://github.com/thiesgerken/carapace/issues/566); until then the volume only grows.
+The store lives on a volume that replaces `/nix`, so it survives restarts and image updates. Built skills and the dependencies they downloaded stay warm. `carapace-builder-init` runs before every start, with the volume at `/mnt/nix`. It copies the image's own store paths into the volume and roots them, so after an update the volume holds the new image's tools, and the old ones become garbage. Results and GC roots for built trees are under `/nix/var/carapace-builder` on the same volume.
+
+## Garbage collection
+
+The builder does not know users or heads; the server tells it. At start, hourly and after every sandbox push, the server sends `PUT /roots` with the trees of the flake skills at every user's current head, and the builder notes when it last saw each one. A tree no head has referenced for the grace period loses its stored result and its GC root together, so no result ever names a deleted path. The grace period exists because Nix's GC knows nothing about sandboxes still downloading a path a push just replaced. A tree that was built but never sent starts its grace period at the first GC run after the build.
+
+GC runs every `CARAPACE_BUILDER_GC_INTERVAL_HOURS` (default 24) with a grace period of `CARAPACE_BUILDER_GC_GRACE_HOURS` (default 24), both on the builder. It drops the expired trees and then runs `nix-store --gc` through the daemon, which deletes everything no root keeps: the outputs of dropped trees, and the build-time dependencies of every skill (compilers, nixpkgs sources), which a later rebuild downloads again. The image's own tools are rooted by `carapace-builder-init`. A failing GC run stops the builder, so the store never grows unnoticed. To run it by hand:
+
+```sh
+curl -X POST -H "Authorization: Bearer $CARAPACE_BUILDER_TOKEN" http://builder:8330/gc
+```
+
+The server reaches the builder at least hourly, so an unreachable server only lets roots expire after a whole grace period. If that happens, the next lookup of a skill finds no result and builds it again.
+
+### Sizing the store
+
+What stays after a GC run is the runtime closure of every skill tree the heads reference, about 0.2 to 0.45 GB per uv or npm skill and shared between skills on the same nixpkgs pin, plus about 1 GB for the image's tools. Between runs, each build adds its build-time dependencies on top: about 1.5 GB for a nixpkgs pin the builder has not seen yet, much less for one it has. The chart's default of 20Gi covers a few dozen skills on two or three pins with a daily GC. With many diverging pins, or many pushes per day, give it more disk or shorten the interval.
 
 ## Running it
 

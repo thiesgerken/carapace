@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import tarfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -11,11 +12,15 @@ from fastapi.testclient import TestClient
 from carapace.builder import app as builder_app
 from carapace.builder import client as builder_client
 from carapace.builder import nix
+from carapace.builder import store as builder_store
 from carapace.builder.client import BuilderClient, BuilderSystemMismatchError, BuilderUnavailableError
 from carapace.builder.models import BuilderInfo, BuildResult
+from carapace.builder.store import SkillStore
 
 TOKEN = "builder-test-token"
 TREE = "0123456789abcdef0123456789abcdef01234567"
+OTHER_TREE = "89abcdef0123456789abcdef0123456789abcdef"
+GRACE = timedelta(hours=24)
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
@@ -36,6 +41,7 @@ def builds(monkeypatch: pytest.MonkeyPatch) -> list[set[str]]:
 
     async def fake_build(source: Path, tree: str, system: str, roots: Path) -> BuildResult:
         seen.append({path.name for path in source.iterdir()})
+        (roots / tree).symlink_to(f"/nix/store/{tree}-skill")
         return BuildResult(tree=tree, state="succeeded", store_paths=[f"/nix/store/{tree}-skill"], metadata={"a": 1})
 
     monkeypatch.setattr(nix, "build_skill", fake_build)
@@ -44,7 +50,8 @@ def builds(monkeypatch: pytest.MonkeyPatch) -> list[set[str]]:
 
 @pytest.fixture
 def api(tmp_path: Path) -> TestClient:
-    return TestClient(builder_app.create_app(TOKEN, tmp_path, "x86_64-linux", ["carapace-builder-1:AAAA"]))
+    store = SkillStore(tmp_path, GRACE)
+    return TestClient(builder_app.create_app(TOKEN, store, "x86_64-linux", ["carapace-builder-1:AAAA"]))
 
 
 def test_requires_the_token(api: TestClient) -> None:
@@ -151,3 +158,62 @@ async def test_a_sandbox_does_not_start_while_the_builder_has_not_answered() -> 
 
     with pytest.raises(BuilderUnavailableError, match="configured but unreachable"):
         await client.sandbox_nix_config()
+
+
+def test_a_failed_build_is_retried_on_request(api: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    states = iter(["failed", "succeeded"])
+    attempts: list[str] = []
+
+    async def flaky_build(source: Path, tree: str, system: str, roots: Path) -> BuildResult:
+        attempts.append(tree)
+        return BuildResult(tree=tree, state=next(states))
+
+    monkeypatch.setattr(nix, "build_skill", flaky_build)
+    body = archive({"flake.nix": b"{}"})
+
+    assert api.put(f"/builds/{TREE}", headers=AUTH, content=body).json()["state"] == "failed"
+    assert api.put(f"/builds/{TREE}", headers=AUTH, content=body).json()["state"] == "failed"
+    assert api.put(f"/builds/{TREE}?retry=true", headers=AUTH, content=body).json()["state"] == "succeeded"
+    # A success is never rebuilt, retry or not.
+    assert api.put(f"/builds/{TREE}?retry=true", headers=AUTH, content=body).json()["state"] == "succeeded"
+    assert attempts == [TREE, TREE]
+
+
+def test_gc_drops_a_tree_only_after_no_head_referenced_it_for_the_grace_period(
+    api: TestClient, builds: list[set[str]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = [datetime(2026, 11, 1, tzinfo=UTC)]
+    monkeypatch.setattr(builder_store, "_now", lambda: clock[0])
+    collections: list[None] = []
+
+    async def collect_garbage() -> str:
+        collections.append(None)
+        return "2 store paths deleted, 1.0 KiB freed"
+
+    monkeypatch.setattr(nix, "collect_garbage", collect_garbage)
+    body = archive({"flake.nix": b"{}"})
+    for tree in (TREE, OTHER_TREE):
+        api.put(f"/builds/{tree}", headers=AUTH, content=body)
+    assert api.put("/roots", headers=AUTH, json={"trees": [TREE]}).status_code == 204
+
+    # OTHER_TREE was never referenced, but its grace period only starts now.
+    assert api.post("/gc", headers=AUTH).json()["dropped"] == []
+
+    clock[0] += GRACE - timedelta(minutes=1)
+    api.put("/roots", headers=AUTH, json={"trees": [TREE]})
+    assert api.post("/gc", headers=AUTH).json()["dropped"] == []
+
+    clock[0] += timedelta(minutes=2)
+    assert api.post("/gc", headers=AUTH).json()["dropped"] == [OTHER_TREE]
+
+    assert api.get(f"/builds/{OTHER_TREE}", headers=AUTH).status_code == 404
+    assert not (tmp_path / "roots" / OTHER_TREE).is_symlink()
+    assert api.get(f"/builds/{TREE}", headers=AUTH).status_code == 200
+    assert (tmp_path / "roots" / TREE).is_symlink()
+    assert len(collections) == 3
+
+
+def test_roots_and_gc_require_the_token(api: TestClient) -> None:
+    assert api.put("/roots", json={"trees": []}).status_code == 401
+    assert api.post("/gc").status_code == 401
+    assert api.put("/roots", headers=AUTH, json={"trees": ["not-a-tree"]}).status_code == 422
