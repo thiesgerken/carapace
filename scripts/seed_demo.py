@@ -193,7 +193,7 @@ class Transcript:
     def domain(self, domain: str, parent: str, *, source: str = "safe-list") -> None:
         self.call("proxy_domain", {"domain": domain}, source=source, explanation="allowed", parent=parent)
 
-    def approval_request(self, tool: str, args: dict[str, Any], explanation: str, risk_level: str) -> None:
+    def approval_request(self, tool: str, args: dict[str, Any], explanation: str) -> None:
         self.events.append(
             {
                 "role": "approval_request",
@@ -201,7 +201,6 @@ class Transcript:
                 "tool": tool,
                 "args": args,
                 "explanation": explanation,
-                "risk_level": risk_level,
             }
         )
 
@@ -374,21 +373,25 @@ def _recipe_skill(start: datetime) -> Transcript:
 
 def _blocked_post(start: datetime) -> Transcript:
     t = Transcript(start)
-    t.user("Please perform an HTTP POST to http://dms.example.internal/create")
+    t.user("Please perform an HTTP POST to https://dms.example.com/create")
     t.thinking("A POST creates something on a remote service.", 940)
+    command = "curl -sf -X POST https://dms.example.com/create"
+    post = t.call("exec", {"command": command, "title": "perform HTTP POST request"})
     t.call(
-        "exec",
-        {"command": "curl -X POST http://dms.example.internal/create", "title": "perform HTTP POST request"},
+        "proxy_domain",
+        {"domain": "dms.example.com"},
         source="sentinel",
         verdict="deny",
         explanation=(
             "The session is in ask mode, which prohibits operations that modify external systems. "
-            "An HTTP POST to a /create endpoint changes a remote service and must be denied."
+            "A POST to a /create endpoint changes a remote service."
         ),
+        parent=post,
     )
+    t.result(post, "exec", "curl: (56) CONNECT tunnel failed, response 403", exit_code=56)
     t.assistant(
         "I can't perform that HTTP POST. This session is in **ask mode**, which allows read-only actions and "
-        "sandbox-local changes only. A POST to `/create` would modify a remote service."
+        "sandbox-local changes only, so the sentinel refused the connection to `dms.example.com`."
     )
     return t
 
@@ -401,54 +404,68 @@ def _change_request(start: datetime) -> Transcript:
         {"path": "/workspace/skills/recipes/SKILL.md", "old_string": "- flour\n- flour", "new_string": "- flour"},
     )
     t.result(fix, "str_replace", "Replaced 1 occurrence in /workspace/skills/recipes/SKILL.md")
+    first = t.call("exec", {"command": 'git commit -am "Fix duplicate flour" && git push', "title": "commit and push"})
     t.call(
-        "exec",
-        {
-            "command": 'git commit -am "Fix duplicate flour" && git push && rm -rf /workspace/skills/web/cache',
-            "title": "commit, push and clean up",
-        },
+        "git_push",
+        {"ref": "refs/heads/main", "decision": "revise"},
         source="sentinel",
         verdict="revise",
-        explanation="Committing and pushing the requested fix is fine, but deleting the web skill's cache was not "
-        "asked for. Run the commit and push on their own.",
+        explanation="The commit also rewrites skills/web/SKILL.md, which the user did not ask to change. "
+        "Push the recipes fix on its own.",
+        parent=first,
     )
-    push = t.run(
-        'git commit -am "Fix duplicate flour" && git push',
-        "[main 5be71d2] Fix duplicate flour\n 1 file changed, 1 deletion(-)\n"
-        "[stderr] To http://carapace:8322/git/knowledge\n   3f2a9c1..5be71d2  main -> main",
-        title="commit and push the fix",
-        source="sentinel",
-        explanation="Commits and pushes the fix the user asked for.",
-        comment="`-a` stages every modified tracked file. Add the skill file by path next time, so nothing else "
-        "slips into the commit.",
+    t.result(
+        first,
+        "exec",
+        "[main 9c1e04a] Fix duplicate flour\n 2 files changed, 3 insertions(+), 4 deletions(-)\n"
+        "[stderr] remote: Sentinel requests changes (no threat detected): The commit also rewrites "
+        "skills/web/SKILL.md, which the user did not ask to change. Push the recipes fix on its own.\n"
+        "[stderr]  ! [remote rejected] main -> main (pre-receive hook declined)",
+        exit_code=1,
+    )
+    second = t.call(
+        "exec",
+        {
+            "command": "git reset --soft HEAD~1 && git restore --staged skills/web/SKILL.md && "
+            'git commit -m "Fix duplicate flour" && git push',
+            "title": "push only the recipes fix",
+        },
     )
     t.call(
         "git_push",
         {"ref": "refs/heads/main", "decision": "allow"},
         source="sentinel",
         explanation="The push only removes the duplicate line.",
-        parent=push,
+        comment="The web skill change is still uncommitted in the workspace. Ask the user before pushing it.",
+        parent=second,
     )
-    t.assistant("Fixed and pushed: the pancake ingredients list **flour** once now.")
+    t.result(
+        second,
+        "exec",
+        "[main 5be71d2] Fix duplicate flour\n 1 file changed, 1 deletion(-)\n"
+        "[stderr] To http://carapace:8322/git/knowledge\n   3f2a9c1..5be71d2  main -> main",
+    )
+    t.assistant(
+        "Fixed and pushed: the pancake ingredients list **flour** once now. I also had an unrelated change to the "
+        "web skill in my working copy; it is not pushed. Should I keep it?"
+    )
     return t
 
 
 def _pending_approval(start: datetime) -> Transcript:
     t = Transcript(start)
     t.user("Clean up backups older than 90 days on the NAS.")
-    command = "ssh nas.example.internal 'find /volume1/backups -mtime +90 -delete'"
-    t.call(
-        "exec",
-        {"command": command, "title": "delete old NAS backups"},
-        source="sentinel",
-        verdict="escalate",
-        explanation="Deleting files on a remote host is irreversible. The user should confirm.",
-    )
-    t.approval_request(
-        "exec",
-        {"command": command, "title": "delete old NAS backups"},
-        "Deleting files on a remote host is irreversible. The user should confirm.",
-        "high",
+    t.call("exec", {"command": "nas-backups prune --older-than 90d", "title": "delete old NAS backups"})
+    t.events.append(
+        {
+            "role": "credential_approval",
+            "request_id": "demo-escalation-nas",
+            "vault_paths": ["demo/nas-admin-token"],
+            "names": ["NAS admin token"],
+            "descriptions": ["Admin API token of the NAS"],
+            "domains": ["nas.example.com"],
+            "explanation": "Deleting backups on the NAS is irreversible. The user should confirm.",
+        }
     )
     return t
 
@@ -515,7 +532,6 @@ def _autonomy_limit(start: datetime) -> Transcript:
         "exec",
         {"command": "cd /workspace/api && uv lock --upgrade", "title": "upgrade api dependencies"},
         "Autonomy limit reached (3 tool calls without you)",
-        "",
     )
     return t
 
