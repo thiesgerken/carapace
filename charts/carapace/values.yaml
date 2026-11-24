@@ -62,9 +62,8 @@ builder:
   # Pod Security level `privileged`, and that label applies to every pod in a namespace, sandboxes
   # included, so the builder gets its own. The release namespace itself works with `baseline`.
   namespace: ""
-  # -- Create the builder namespace, labelled `pod-security.kubernetes.io/enforce: privileged`. Helm
-  # keeps it on uninstall, so the store PVC in it survives. Set to false when the namespace is
-  # managed elsewhere (GitOps); it then needs that label.
+  # -- Create the builder namespace, labelled `pod-security.kubernetes.io/enforce: privileged`. Set to
+  # false when the namespace is managed elsewhere (GitOps); it then needs that label.
   createNamespace: true
   image:
     registry: ghcr.io

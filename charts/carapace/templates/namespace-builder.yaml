@@ -7,6 +7,4 @@ metadata:
   labels:
     {{- include "carapace.labels" . | nindent 4 }}
     pod-security.kubernetes.io/enforce: privileged
-  annotations:
-    helm.sh/resource-policy: keep
 {{- end }}

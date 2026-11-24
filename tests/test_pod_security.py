@@ -137,7 +137,6 @@ def test_builder_gets_its_own_privileged_namespace():
     namespace = next(doc for doc in _render_chart() if doc["kind"] == "Namespace")
     assert namespace["metadata"]["name"] == f"{_RELEASE_NAMESPACE}-builder"
     assert namespace["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "privileged"
-    assert namespace["metadata"]["annotations"]["helm.sh/resource-policy"] == "keep"
     # Proves the checker catches what baseline rejects, so the tests above are not vacuous.
     builder = _chart_pods(f"{_RELEASE_NAMESPACE}-builder")
     assert _baseline_violations("builder", builder["Deployment/carapace-builder"])
