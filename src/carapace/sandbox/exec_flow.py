@@ -60,7 +60,6 @@ KILL_LEFTOVER_PROCESSES_COMMAND = ["/bin/bash", "-c", KILL_LEFTOVER_PROCESSES_SC
 @dataclass
 class SandboxExecState:
     sessions: dict[str, SessionContainer]
-    allowed_domains: dict[str, set[str]]
     exec_temp_domains: dict[str, set[str]]
     session_current_command: dict[str, str]
     domain_approval_cbs: dict[str, DomainApprovalCallback]
@@ -243,26 +242,14 @@ class SandboxExecCoordinator:
         self._state.exec_notified_credentials.pop(session_id, None)
         self._state.running_execs.pop(session_id, None)
 
-    def allow_domains(self, session_id: str, domains: set[str]) -> None:
-        existing = self._state.allowed_domains.setdefault(session_id, set())
-        existing.update(domains)
-        logger.info(f"Allowed domains for session {session_id}: {existing}")
-
-    def get_allowed_domains(self, session_id: str) -> set[str]:
-        return self._state.allowed_domains.get(session_id, set())
-
     def get_domain_info(self, session_id: str) -> list[dict[str, str]]:
-        entries: list[dict[str, str]] = []
-        for domain in sorted(self._state.allowed_domains.get(session_id, set())):
-            entries.append({"domain": domain, "scope": "permanent"})
-        for domain in sorted(self._state.exec_temp_domains.get(session_id, set())):
-            entries.append({"domain": domain, "scope": "this exec only"})
-        return entries
+        return [
+            {"domain": domain, "scope": "this exec only"}
+            for domain in sorted(self._state.exec_temp_domains.get(session_id, set()))
+        ]
 
     def get_effective_domains(self, session_id: str) -> set[str]:
-        domains = set(self._state.allowed_domains.get(session_id, set()))
-        domains.update(self._state.exec_temp_domains.get(session_id, set()))
-        return domains
+        return set(self._state.exec_temp_domains.get(session_id, set()))
 
     def mark_credential_notified(self, session_id: str, vault_path: str) -> bool:
         notified = self._state.exec_notified_credentials.get(session_id)

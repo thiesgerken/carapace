@@ -38,7 +38,6 @@ class SandboxSessionLifecycleState:
     sessions: dict[str, SessionContainer]
     token_to_session: dict[str, str]
     session_tokens: dict[str, str]
-    allowed_domains: dict[str, set[str]]
     exec_temp_domains: dict[str, set[str]]
     session_current_command: dict[str, str]
     domain_approval_cbs: dict[str, Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]]
@@ -734,7 +733,6 @@ class SandboxSessionLifecycle:
         token = self._state.session_tokens.pop(session_id, None)
         if token:
             self._state.token_to_session.pop(token, None)
-        self._state.allowed_domains.pop(session_id, None)
         self._state.exec_temp_domains.pop(session_id, None)
         self._state.session_current_command.pop(session_id, None)
         self._state.exec_locks.pop(session_id, None)
@@ -764,7 +762,6 @@ class SandboxSessionLifecycle:
         token = self._state.session_tokens.pop(session_id, None)
         if token:
             self._state.token_to_session.pop(token, None)
-        self._state.allowed_domains.pop(session_id, None)
         self._state.exec_temp_domains.pop(session_id, None)
         self._state.session_current_command.pop(session_id, None)
         self._state.domain_approval_cbs.pop(session_id, None)
