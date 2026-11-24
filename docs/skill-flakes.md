@@ -68,12 +68,12 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 - `description`: one short line, shown to the agent.
 - `needs` (optional): overrides the skill-wide `needs`, per kind. A command that sets `domains = [ ]` asks for no domains, whatever the default says.
 
-`needs` declares what a command will want from outside the sandbox. Any other key, an invalid variable name or a tunnel fails the evaluation, also of the metadata below:
+`needs` declares what a command will want from outside the sandbox. Any other key, an invalid variable name or a malformed tunnel fails the evaluation, also of the metadata below:
 
 - `domains`: host names, or `*.` plus a name of at least two labels.
 - `credentials`: environment variable to vault path. The wrapper exports each one before the command starts. Variable names must be shell identifiers.
 - `oauth`: vault paths of OAuth entries whose access token the command fetches itself with `ccred get --access-token`, as the MCP bridge does. Declared up front, exported nothing.
-- `tunnels`: `"host:port"`. Not supported yet: a non-empty list fails the evaluation.
+- `tunnels`: `"host:port"` with an exact host name, for clients that do not speak HTTP. Requested with `cgate request --tunnel` and open when the command starts; see [sandbox.md](sandbox.md#tunnels).
 
 A command that declares something gets a wrapper that first asks for all of it at once, then fetches the credentials, then runs the command:
 

@@ -181,6 +181,8 @@ class UpfrontRequest:
     credentials: list[CredentialMetadata]
     # OAuth entries whose short-lived access token the command wants; the refresh token stays with Carapace.
     access_tokens: list[CredentialMetadata]
+    # "host:port" of TCP tunnels for clients that do not speak HTTP; each one opens its host like a domain.
+    tunnels: list[str]
     # The caller's own Nix store path, as a generated skill wrapper reports it; None for any other caller.
     store_path: str | None
 

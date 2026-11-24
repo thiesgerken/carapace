@@ -32,13 +32,19 @@ let
       badVars = lib.filter (var: builtins.match "[A-Za-z_][A-Za-z0-9_]*" var == null) (
         lib.attrNames needs.credentials
       );
+      # What `cgate request --tunnel` accepts: an exact host name and a port.
+      badTunnels = lib.filter (
+        tunnel: builtins.match "[a-z0-9-]+(\\.[a-z0-9-]+)*:[0-9]{1,5}" tunnel == null
+      ) needs.tunnels;
     in
     assert lib.assertMsg (unknown == [ ])
       "${where}: unknown kinds in needs: ${lib.concatStringsSep ", " unknown} (known: ${lib.concatStringsSep ", " (lib.attrNames noNeeds)})";
     assert lib.assertMsg (
       badVars == [ ]
     ) "${where}: credential variables must be shell identifiers: ${lib.concatStringsSep ", " badVars}";
-    assert lib.assertMsg (needs.tunnels == [ ]) "${where}: tunnels are not supported by cgate yet";
+    assert lib.assertMsg (
+      badTunnels == [ ]
+    ) "${where}: tunnels must be host:port with an exact host name: ${lib.concatStringsSep ", " badTunnels}";
     needs;
 
   wrapper =
@@ -47,7 +53,8 @@ let
       gateArgs =
         map (domain: "--domain ${lib.escapeShellArg domain}") needs.domains
         ++ map (path: "--credential ${lib.escapeShellArg path}") (lib.attrValues needs.credentials)
-        ++ map (path: "--oauth ${lib.escapeShellArg path}") needs.oauth;
+        ++ map (path: "--oauth ${lib.escapeShellArg path}") needs.oauth
+        ++ map (tunnel: "--tunnel ${lib.escapeShellArg tunnel}") needs.tunnels;
       # Assignment and export apart: `export X="$(…)"` would hide a failing ccred from `set -e`.
       exports = lib.mapAttrsToList (var: path: ''
         ${var}="$(ccred get ${lib.escapeShellArg path})"

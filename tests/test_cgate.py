@@ -52,6 +52,8 @@ def test_request_posts_the_declaration(monkeypatch: pytest.MonkeyPatch) -> None:
         "demo/api-key",
         "--oauth",
         "demo/tracker-oauth",
+        "--tunnel",
+        "imap.example.com:993",
         "--store-path",
         "/nix/store/abc-example",
     )
@@ -64,6 +66,7 @@ def test_request_posts_the_declaration(monkeypatch: pytest.MonkeyPatch) -> None:
         "domains": ["api.example.com", "*.cdn.example.com"],
         "credentials": ["demo/api-key"],
         "oauth": ["demo/tracker-oauth"],
+        "tunnels": ["imap.example.com:993"],
         "store_path": "/nix/store/abc-example",
     }
 
@@ -80,6 +83,14 @@ def test_denial_exits_1_with_the_reason(monkeypatch: pytest.MonkeyPatch, capsys:
     assert capsys.readouterr().err == "error: User denied this operation. Not now.\n"
 
 
-def test_tunnel_is_refused_by_name(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    assert _run(monkeypatch, "request", "--tunnel", "imap.example.com:993") == 2
-    assert "--tunnel is not supported yet" in capsys.readouterr().err
+def test_a_tunnel_that_did_not_open_exits_1_with_the_reason(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fail(_request: urllib.request.Request) -> Any:
+        body = io.BytesIO(b"The tunnels could not be opened: imap.example.com:993 did not start")
+        raise urllib.error.HTTPError("http://carapace/gate", 502, "Bad Gateway", {}, body)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fail)
+
+    assert _run(monkeypatch, "request", "--tunnel", "imap.example.com:993") == 1
+    assert capsys.readouterr().err == "error: The tunnels could not be opened: imap.example.com:993 did not start\n"
