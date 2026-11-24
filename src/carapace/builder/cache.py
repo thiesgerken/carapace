@@ -3,8 +3,9 @@
 Sandboxes substitute only from here, through their session proxy. harmonia serves and signs the
 builder's store on loopback; this listener adds the upstreams behind one URL. An upstream narinfo
 keeps its signature (which does not cover `URL:`), only its NAR URL is rewritten to
-`upstream/<i>/…` so that the NAR comes through here too. Redirects are followed here, never handed
-to a sandbox, and an upstream failure stays a 502: a 404 would make Nix cache the path as missing.
+`upstream/<i>/…` so that the NAR comes through here too. Redirects are followed here, to public
+https hosts only, never handed to a sandbox, and an upstream failure stays a 502: a 404 would
+make Nix cache the path as missing.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 from starlette.background import BackgroundTask
 
+from ..sandbox.destinations import DestinationPolicy, DestinationRefusedError
 from .models import UpstreamCache, cache_path_allowed
 
 HARMONIA_URL = "http://127.0.0.1:5000"
@@ -26,6 +28,25 @@ _PASSED_HEADERS = ("content-type", "content-length", "content-encoding")
 
 class _UpstreamError(Exception):
     pass
+
+
+async def _refuse_internal_redirect(response: httpx.Response) -> None:
+    """Follow an upstream's redirect only to a public https host.
+
+    The builder has unrestricted egress, so a redirect to an internal address would stream that
+    response into a sandbox. The target is resolved here and again when httpx connects, so a DNS
+    answer that changes in between still gets through; this needs a malicious upstream to begin with.
+    """
+    if not response.has_redirect_location:
+        return
+    target = response.url.join(response.headers["location"])
+    try:
+        if target.scheme != "https":
+            raise DestinationRefusedError(f"{target.scheme} is not https")
+        await DestinationPolicy().resolve(target.host, target.port or 443)
+    except (DestinationRefusedError, OSError) as exc:
+        # An httpx error, so callers answer it like any other upstream failure: a 502.
+        raise httpx.RequestError(f"Refused redirect to {target}: {exc}", request=response.request) from exc
 
 
 def _rewrite_nar_url(narinfo: str, index: int) -> str:
@@ -43,7 +64,12 @@ def _rewrite_nar_url(narinfo: str, index: int) -> str:
 def create_cache_app(upstreams: Sequence[UpstreamCache], transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     """*transport* replaces the network for both harmonia and the upstreams (tests)."""
     harmonia = httpx.AsyncClient(base_url=HARMONIA_URL, timeout=60, transport=transport)
-    upstream_client = httpx.AsyncClient(follow_redirects=True, timeout=60, transport=transport)
+    upstream_client = httpx.AsyncClient(
+        follow_redirects=True,
+        timeout=60,
+        transport=transport,
+        event_hooks={"response": [_refuse_internal_redirect]},
+    )
     app = FastAPI(title="Carapace builder cache")
     app.router.on_shutdown.extend([harmonia.aclose, upstream_client.aclose])
 

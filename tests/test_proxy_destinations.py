@@ -252,8 +252,10 @@ async def test_the_builder_cache_is_forwarded_without_a_decision(monkeypatch: py
         ("GET", "/info"),
         ("GET", "/nar/../builds"),
         ("GET", "/upstream/0/builds"),
+        ("GET", "/upstream/0/nar/" + "a" * 53 + ".nar"),
+        ("GET", "/nar/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.nar"),
         ("PUT", NARINFO),
-        ("POST", "/nar/1abc.nar.xz"),
+        ("POST", "/nar/1w1fff338fvdw53sqgamddn1b2xgds473pv6y13gizdbqjv4i5p3.nar.xz"),
     ],
 )
 async def test_the_builder_cache_mapping_passes_only_cache_reads(

@@ -15,9 +15,12 @@ TreeHash = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}([0-9a-f]{24}
 CACHE_HOST = "cache.carapace.internal"
 
 # The only requests the cache listener answers and the proxy forwards: the cache info, narinfos
-# (Nix base32 store hashes), and NARs, the builder's own or an upstream's.
+# (Nix base32 store hashes), and NARs, the builder's own or an upstream's. NAR names are Nix base32
+# hashes too (32 characters from harmonia, 52 for an upstream's sha256): a sandbox-chosen name goes
+# on to the upstreams, so its length bounds what a request can carry there.
+_BASE32 = "[0-9a-df-np-sv-z]"
 _CACHE_PATH = re.compile(
-    r"^/(nix-cache-info|[0-9a-df-np-sv-z]{32}\.narinfo|(upstream/[0-9]+/)?nar/[0-9a-z]+\.nar(\.[a-z0-9]+)?)$"
+    rf"^/(nix-cache-info|{_BASE32}{{32}}\.narinfo|(upstream/[0-9]+/)?nar/{_BASE32}{{32,52}}\.nar(\.(xz|zst|bz2|br))?)$"
 )
 
 
