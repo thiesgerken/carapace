@@ -32,6 +32,7 @@ from carapace.api_keys import Access, ApiKeyGrant, ApiKeyStore, Scope
 from carapace.artifact_shares import ArtifactShareStore
 from carapace.auth import AuthStore
 from carapace.bootstrap import ensure_data_dir
+from carapace.builder.skill_builds import RetryRefusedError, SkillBuild
 from carapace.codex_auth import CodexAccounts, CodexCredentialStore
 from carapace.config import build_config, resolve_user_knowledge_dir
 from carapace.credentials import CredentialBackendError, CredentialRegistry
@@ -5150,3 +5151,78 @@ def test_internal_push_review_shows_flake_input_changes(monkeypatch: pytest.Monk
         '- "skills/demo/flake.lock": input "nixpkgs" moved to another source: '
         f'"github:NixOS/nixpkgs" at "{"a" * 12}" -> "github:other/nixpkgs" at "{"b" * 12}"'
     ) in prompts[-1]
+
+
+def _make_skill(name: str, *, under_skills: bool = True) -> Path:
+    root = srv._knowledge_repo_registry.get_for_user("thies").knowledge_dir
+    directory = root / ("skills" if under_skills else "notes") / name
+    directory.mkdir(parents=True)
+    (directory / "SKILL.md").write_text(f"---\nname: {name}\ndescription: demo\n---\nBody\n")
+    return directory
+
+
+def _builds_reporting(state: str) -> MagicMock:
+    builds = MagicMock()
+    builds.ensure_built = AsyncMock(
+        return_value=[
+            SkillBuild(
+                skill="weather",
+                tree="4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                state=state,  # type: ignore[arg-type]
+                store_paths=[],
+                commands={},
+                detail="error: flake.lock is missing nixpkgs" if state == "failed" else "",
+            )
+        ]
+    )
+    builds.retry = AsyncMock()
+    return builds
+
+
+def test_a_skill_listing_shows_its_build(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _make_skill("weather")
+    _make_skill("weather", under_skills=False)
+    monkeypatch.setattr(srv, "_skill_builds", _builds_reporting("failed"), raising=False)
+
+    build = client.get("/api/knowledge/browse/skills/weather", headers=auth_headers).json()["build"]
+    elsewhere = client.get("/api/knowledge/browse/notes/weather", headers=auth_headers).json()["build"]
+
+    assert build == {
+        "state": "failed",
+        "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "commands": {},
+        "log_tail": "error: flake.lock is missing nixpkgs",
+    }
+    # Only skills directly under skills/ are built.
+    assert elsewhere is None
+
+
+def test_a_failed_skill_build_is_retried(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    builds = _builds_reporting("building")
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+
+    response = client.post("/api/knowledge/skills/weather/build/retry", headers=auth_headers)
+
+    assert (response.status_code, response.json()["state"]) == (200, "building")
+    builds.retry.assert_awaited_once_with(
+        srv._knowledge_repo_registry.get_for_user("thies").knowledge_dir.resolve(), "weather"
+    )
+
+
+def test_a_skill_build_that_did_not_fail_is_not_retried(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    builds = _builds_reporting("succeeded")
+    builds.retry.side_effect = RetryRefusedError("Only a failed build can be retried; weather is succeeded")
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+
+    response = client.post("/api/knowledge/skills/weather/build/retry", headers=auth_headers)
+
+    assert (response.status_code, response.json()["detail"]) == (
+        409,
+        "Only a failed build can be retried; weather is succeeded",
+    )
