@@ -242,7 +242,10 @@ async def test_a_name_that_is_no_skill_directory_is_refused(tmp_path: Path, name
 async def test_a_missing_skill_is_reported(tmp_path: Path) -> None:
     result = await _read_skill(_deps(tmp_path, []), "nowhere")
 
-    assert result == "Error: there is no skill 'nowhere'."
+    assert result == (
+        "Error: there is no skill 'nowhere'. read_skill sees only pushed skills: if skills/nowhere exists in "
+        "/workspace, commit and push it, and the builder builds it after the push."
+    )
 
 
 @pytest.mark.anyio

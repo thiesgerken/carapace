@@ -313,7 +313,11 @@ _SANDBOX_INSTRUCTIONS = (
     "Use `rg` to search archived conversations by session ID, message text, "
     "tool names, or JSON fields when you need prior context.\n"
     "Call `read_skill(skill_name)` before using a skill. A skill with a flake puts its commands on PATH; "
-    "`read_skill` waits until they are there and says what each command asks for when it starts.\n\n"
+    "`read_skill` waits until they are there and says what each command asks for when it starts.\n"
+    "A skill is `skills/<name>/SKILL.md`, optionally with a `flake.nix` that declares its commands. "
+    "The skill list and `read_skill` see only the pushed knowledge repo, so a new or changed skill takes effect "
+    "after commit and push: the sentinel reviews the push, the builder builds it, and `read_skill` then puts its "
+    "commands on PATH in this session too. Before writing or changing a skill, read the `create-skill` skill.\n\n"
     "## Tools\n"
     "The sandbox is built with Nix; there is no `apt`. Preinstalled are the usual shell tools, Git, curl, "
     "jq, `rg`, Node.js with npm, uv and Python. Anything else comes from nixpkgs, from a binary cache "
@@ -478,7 +482,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         registry = SkillRegistry(ctx.deps.knowledge_dir / "skills")
         instructions = registry.get_full_instructions(skill_name)
         if instructions is None:
-            return _emit_tool_result(ctx, "read_skill", f"Error: there is no skill {skill_name!r}.", exit_code=1)
+            # The registry is the server's copy: a skill only in /workspace is not there until it is pushed.
+            return _emit_tool_result(
+                ctx,
+                "read_skill",
+                f"Error: there is no skill {skill_name!r}. read_skill sees only pushed skills: if skills/{skill_name} "
+                "exists in /workspace, commit and push it, and the builder builds it after the push.",
+                exit_code=1,
+            )
         try:
             if registry.is_disabled(skill_name):
                 return _emit_tool_result(
