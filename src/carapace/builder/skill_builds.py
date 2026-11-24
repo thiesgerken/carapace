@@ -112,7 +112,14 @@ class SkillBuilds:
         """
         if self._builder is None:
             return
-        trees = {skill.tree for repo_dir in repo_dirs for skill in await _flake_skills_at_head(repo_dir)}
+        trees: set[str] = set()
+        for repo_dir in repo_dirs:
+            try:
+                trees.update(skill.tree for skill in await _flake_skills_at_head(repo_dir))
+            except RuntimeError as exc:
+                # One broken repo must not stop the others' roots. Its own trees expire after the
+                # grace period and are built again on the next lookup.
+                logger.error(f"Cannot read the skill trees of {repo_dir}; not sending them to the builder: {exc}")
         await self._builder.put_roots(sorted(trees))
         for tree in self._results.keys() - trees:
             del self._results[tree]

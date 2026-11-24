@@ -329,3 +329,21 @@ async def test_a_tree_no_head_references_is_looked_up_again(repo: Path) -> None:
     # The builder may collect the old tree, so its remembered result must not outlive the sync.
     assert old_weather not in builds._results
     assert _git(repo, "rev-parse", "HEAD:skills/notes") in builds._results
+
+
+@pytest.mark.anyio
+async def test_an_unreadable_repo_does_not_stop_the_other_repos_roots(repo: Path, tmp_path: Path) -> None:
+    broken = tmp_path / "broken"
+    broken.mkdir()
+    _git(broken, "init", "-q")
+    _write_skill(broken, "weather")
+    _commit(broken, "skills")
+    # A head that names a missing tree object: git ls-tree fails for this repo only.
+    tree = _git(broken, "rev-parse", "HEAD^{tree}")
+    (broken / ".git" / "objects" / tree[:2] / tree[2:]).unlink()
+    builder = RootsBuilder()
+
+    await SkillBuilds(cast(BuilderClient, builder)).sync_roots([broken, repo])
+
+    expected = sorted(_git(repo, "rev-parse", f"HEAD:skills/{name}") for name in ("weather", "notes"))
+    assert builder.roots == [expected]

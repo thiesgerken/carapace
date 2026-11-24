@@ -343,6 +343,11 @@ async def _idle_cleanup_loop(sandbox_mgr: SandboxManager) -> None:
             logger.warning(f"Sandbox idle cleanup error: {exc}")
 
 
+def _log_loop_crash(task: asyncio.Task[None]) -> None:
+    if not task.cancelled() and (exc := task.exception()) is not None:
+        logger.opt(exception=exc).error(f"Background loop {task.get_name()} crashed")
+
+
 async def _builder_roots_loop() -> None:
     """Send the builder the skill trees of all heads at start and then hourly.
 
@@ -719,7 +724,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     archive_task = asyncio.create_task(_session_archive_loop())
     jobs_task = asyncio.create_task(_jobs_scheduler_loop())
     memory_task = asyncio.create_task(_memory_service.run())
-    roots_task = asyncio.create_task(_builder_roots_loop())
+    roots_task = asyncio.create_task(_builder_roots_loop(), name="builder roots")
+    roots_task.add_done_callback(_log_loop_crash)
 
     def matrix_channel_factory(username: str, user_config: UserConfig) -> MatrixChannelHandle:
         from ..channels.matrix import MatrixChannel
