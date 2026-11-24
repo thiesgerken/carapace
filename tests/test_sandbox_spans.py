@@ -24,7 +24,6 @@ from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ExecResult
 from carapace.security.context import BoundaryEvaluation, SessionSecurity
-from carapace.security.sentinel import Sentinel
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillRegistry
 from carapace.spans import Span, TurnTrace, attach, attach_sandbox_call, current_span_ref, span
@@ -129,7 +128,6 @@ def _deps(tmp_path: Path, sandbox: SandboxManager) -> Deps:
         session_state=SessionState.now(session_id="s1", unattended=False),
         sandbox=sandbox,
         security=SessionSecurity("s1", unattended=False),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",

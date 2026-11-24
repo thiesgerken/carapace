@@ -12,7 +12,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Tool
 from pydantic_ai.models.function import AgentInfo
 
 from carapace.models.credentials import CredentialMetadata
-from carapace.security import evaluate_credential_listing_with, evaluate_upfront_request_with, evaluate_with
+from carapace.security import evaluate_credential_listing_with, evaluate_upfront_request_with, record_tool_call
 from carapace.security.context import (
     SENTINEL_VERDICT_TOOL,
     BoundaryEvaluation,
@@ -65,7 +65,7 @@ async def test_a_boundary_request_shows_every_exec_since_the_last_decision(tmp_p
     security = SessionSecurity("s1")
     security.append(UserMessageEntry(content="Sync my mail"))
     security.append(_exec("ls ~/mail"))
-    await sentinel.evaluate_tool_call(security, "exec", {"command": "ls ~/mail"})
+    await sentinel.evaluate_domain_access(security, ["example.com"], "ls ~/mail", follow_up=False)
 
     security.append(_exec("tar czf /tmp/mail.tgz ~/mail"))
     security.append(ToolResultEntry(tool="exec"))
@@ -86,7 +86,7 @@ async def test_an_exec_is_not_reviewed_but_reaches_the_next_boundary_request(tmp
     sentinel = _sentinel(tmp_path, model)
     security = SessionSecurity("s1")
 
-    await evaluate_with(security, sentinel, "exec", {"command": "tar czf /tmp/mail.tgz ~/mail"}, tool_call_id="c1")
+    record_tool_call(security, "exec", {"command": "tar czf /tmp/mail.tgz ~/mail"}, tool_call_id="c1")
     assert model.prompts == []
 
     await sentinel.evaluate_domain_access(

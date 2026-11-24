@@ -55,8 +55,8 @@ flowchart TB
     SessionEngine --> AgentLoop
     AgentLoop <--> Agent
     Agent <--> SkillRegistry
-    Agent --> SecurityMod
-    SecurityMod -->|safe-list bypass| Agent
+    Agent -->|tool calls, logged| SecurityMod
+    Proxy -->|domain requests| SecurityMod
     SecurityMod --> Sentinel
     Sentinel --> ApprovalGate
     ApprovalGate -.->|approval request| SessionEngine
@@ -89,7 +89,7 @@ flowchart TD
     Server --> Engine[Session Engine]
     Engine --> Agent[Pydantic AI Agent]
     Engine --> Security[Security Module]
-    Security --> SafeList["Safe-list (auto-allow)"]
+    Security --> ActionLog["Action log (tool calls, unreviewed)"]
     Security --> Sentinel["Sentinel Agent (LLM)"]
     Sentinel --> Gate["Approval Gate → subscribers"]
 
@@ -161,7 +161,7 @@ Skill commands are built by the builder and are on `PATH` in every session; they
 
 ### Security Module
 
-The central security gate. Every tool call passes through `security.evaluate()`. A hardcoded safe-list auto-allows known-harmless operations. Everything else is forwarded to the sentinel agent. See [security.md](security.md).
+The security boundary. Agent tool calls are not reviewed: `security.record_tool_call()` puts them into the action log for the sentinel. What leaves the sandbox (proxy domains, credentials, up-front `cgate request`s, git pushes) goes to the sentinel agent. See [security.md](security.md).
 
 ### Sentinel Agent
 
@@ -403,8 +403,8 @@ sequenceDiagram
 
     Note over Agent: Agent decides to use the web-search skill
 
-    Agent->>Security: evaluate(read_skill, "web-search")
-    Security-->>Agent: safe-list: allowed, logged for the sentinel
+    Agent->>Security: record_tool_call(read_skill, "web-search")
+    Security-->>Agent: logged for the sentinel, not reviewed
 
     Note over Agent: Skill read, its command is on PATH
 

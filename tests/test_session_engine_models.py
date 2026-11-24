@@ -10,8 +10,6 @@ from typing import Any
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
-from pydantic_ai import ApprovalRequired
-from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -24,14 +22,11 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
-import carapace.security as security_mod
 import carapace.usage as usage_mod
 from carapace.agent.deps import Deps
 from carapace.llm import DisabledModelError, SlotLimitedModel
 from carapace.models.config import AgentConfig, AvailableModelEntry
 from carapace.models.session import SessionBudget
-from carapace.security.context import SentinelVerdict, SessionSecurity, ToolCallEntry
-from carapace.security.sentinel import Sentinel
 from carapace.session.turns import _non_slash_user_message_count
 from carapace.usage import (
     LlmRequestRecord,
@@ -195,42 +190,6 @@ def test_submit_message_unexpected_output_marks_terminal_error(tmp_path: Path, d
 
     with _patch_sentinel():
         asyncio.run(_run())
-
-
-def test_evaluate_with_usage_limit_exceeded_escalates_to_user(tmp_path: Path):
-    async def _run() -> None:
-        session = SessionSecurity("test-session")
-        sentinel = MagicMock(spec=Sentinel)
-        sentinel.evaluate_tool_call = AsyncMock(
-            side_effect=UsageLimitExceeded("The next request would exceed the request_limit of 5")
-        )
-
-        with pytest.raises(ApprovalRequired) as exc_info:
-            await security_mod.evaluate_with(
-                session,
-                sentinel,
-                "use_skill",
-                {"skill_name": "paperless"},
-                tool_call_id="call_1",
-            )
-
-        metadata = exc_info.value.metadata
-        assert metadata is not None
-        assert metadata["tool"] == "use_skill"
-        assert metadata["args"] == {"skill_name": "paperless"}
-        assert metadata["risk_level"] == "high"
-        assert isinstance(metadata["sentinel_verdict"], SentinelVerdict)
-        assert metadata["sentinel_verdict"].decision == "escalate"
-        assert "request limit" in metadata["explanation"].lower()
-
-        entry = session.action_log[-1]
-        assert isinstance(entry, ToolCallEntry)
-        assert entry.decision == "escalated"
-        assert entry.tool == "use_skill"
-        assert entry.explanation is not None
-        assert "request limit" in entry.explanation.lower()
-
-    asyncio.run(_run())
 
 
 def test_generate_title_skips_when_budget_exhausted(tmp_path: Path, db_factory):

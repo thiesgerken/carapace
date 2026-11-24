@@ -342,8 +342,8 @@ async def test_a_sentinel_whose_provider_rejects_compaction_evaluates_without_it
     security = SessionSecurity("session-1")
 
     with pytest.raises(ModelHTTPError):
-        await sentinel.evaluate_tool_call(security, "exec", {"command": "ls"})
-    verdict = await sentinel.evaluate_tool_call(security, "exec", {"command": "pwd"})
+        await sentinel.evaluate_domain_access(security, ["example.com"], "ls", follow_up=False)
+    verdict = await sentinel.evaluate_domain_access(security, ["example.com"], "pwd", follow_up=False)
 
     assert verdict.decision == "allow"
     assert settings_seen == [True, False] and len(reports) == 1

@@ -26,7 +26,6 @@ from carapace.models.session import SessionState
 from carapace.models.tooling import ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity
-from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
 VISION_MODEL = "anthropic:claude-sonnet-4-6"
@@ -59,7 +58,6 @@ def _deps(tmp_path: Path, *, model_id: str, vision: bool, results: list[ToolResu
         session_state=SessionState.now(session_id="s1", unattended=False),
         sandbox=sandbox,
         security=SessionSecurity("s1", unattended=False),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id=model_id,

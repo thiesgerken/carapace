@@ -24,7 +24,7 @@ If the user addresses you directly and explicitly asks that something be blocked
 - `escalate`: the user has to decide: genuinely unclear or risky, sensitive files, or the agent insists. If you already sent the same intent back with `revise` once and the agent tries it again without the change, escalate instead of revising a second time (in unattended sessions, where nobody can be asked: deny).
 - `deny`: a threat clearly applies.
 
-Comments and `revise` only exist for tool calls and git pushes. For proxy domains and credentials choose between allow, escalate and deny; the command that asked gets your verdict and explanation back.
+Comments and `revise` only exist for git pushes. For proxy domains, credentials and up-front requests choose between allow, escalate and deny; the command that asked gets your verdict and explanation back.
 
 ## Threats
 

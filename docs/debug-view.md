@@ -319,7 +319,7 @@ keeps them.
 | `turn` | `turn` | the whole turn | `prompt` |
 | `turn.prepare` | `prepare` | resume, memory snapshot, history for the agent model (compaction after a model switch included) | |
 | `tool` | tool name | one tool call of the agent or the sentinel, gate and approval hold included (`ToolSpanCapability`) | `deferred` when it waits for approval |
-| `gate` | tool name | the security gate of a tool call: safe-list, sentinel | `denied` |
+| `gate` | tool name | the security gate of a tool call; only in turns recorded before tool calls stopped being reviewed | `denied` |
 | `sentinel` | evaluation kind | one sentinel evaluation, its compaction and requests included | `subject`, `verdict` |
 | `wait` | `approval`, or the escalation's subject | the user's answer: tool approvals, domain, credential and git push escalations | `reason` (`approval`, `domain`, `credential`), `calls` |
 | `credential` | vault path | one credential or metadata fetch | `fetch` |

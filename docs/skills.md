@@ -71,7 +71,7 @@ The agent calls `read_skill(skill_name)` before it uses a skill. Nothing is acti
 
 It waits until the commands are usable. While the skill builds, it waits for the build (a `skill` span `build wait` in the turn's timeline); then it brings the sandbox's [skill profile](sandbox.md#skill-commands-on-path) to the current head and waits for that too (the `skill` span `profile sync`). Both spans nest under the `read_skill` call, and the chat hears them start and end as [`span` messages](websocket-session.md#span). A skill without a flake returns at once.
 
-`read_skill` is on the safe list: it is never reviewed, but the call is in the action log, so the sentinel knows which skill the requests that follow belong to.
+`read_skill` is not reviewed, like every tool, but the call is in the action log, so the sentinel knows which skill the requests that follow belong to.
 
 ## Discovery (progressive disclosure)
 
@@ -104,7 +104,7 @@ A skill with a `flake.nix` next to its `SKILL.md` is built by the [builder](buil
 
 ## Reading a skill as a security event
 
-A `read_skill` call is safe-listed and lands in the action log like any other tool call, so the sentinel knows which skill the agent has in mind when the next boundary request arrives. Reading grants nothing.
+A `read_skill` call is not reviewed and lands in the action log like any other tool call, so the sentinel knows which skill the agent has in mind when the next boundary request arrives. Reading grants nothing.
 
 The sentinel can also read skill files directly (via its `list_skill_files` and `read_skill_file` tools) to understand what a skill's command will actually do, and which other skills a skill builds on. A skill that relies on another one for access (e.g. repo access through a gitea skill) should say so in its `SKILL.md`, ideally already in the `description`.
 

@@ -138,7 +138,7 @@ While the agent model writes a tool call, the client sees it before it runs:
 
 1. `tool_call_start` as soon as the model starts the call.
 2. `tool_call_delta` with the args text written since the previous delta, at most about twenty per second and call. Concatenated, the deltas are the call's JSON args; parsing the partial JSON is up to the client. Providers that hand over args as an object send them as one delta at the end.
-3. `tool_call_end`. `aborted: false` means the args are complete: the call goes to the security gate and shows up as `tool_call` (later `tool_result`) with the same `tool_call_id`, or as an `approval_request`, whose `tool_call_id` is that id too. `aborted: true` means the request was cancelled or failed while the call was still being written; the turn's `cancelled` or `error` follows.
+3. `tool_call_end`. `aborted: false` means the args are complete: the call shows up as `tool_call` (later `tool_result`) with the same `tool_call_id`, or as an `approval_request`, whose `tool_call_id` is that id too. `aborted: true` means the request was cancelled or failed while the call was still being written; the turn's `cancelled` or `error` follows.
 
 Parallel calls in one response each stream under their own `tool_call_id`. Some OpenAI-compatible servers reuse ids (`call_0`) across responses, so a `tool_call_start` with an id the client has already seen starts a new card, and later messages with that id belong to the newest one. A provider that sends a call's id only after its name streams it under a stand-in id the executed call does not carry; the server logs a warning, and the card ends up "not run" next to the real call. A finished call can still never run, for instance when its args fail validation, so a client should mark a card still waiting for its `tool_call` when the turn ends as not run, and keep it visible. `list_skills` sends no `tool_call`, only its `tool_result`. Only the agent role streams calls; sentinel, titler and compaction requests do not. Nothing of this is persisted: history only has the executed call, and a client that connects mid-call sees it from its `tool_call` on.
 
@@ -174,7 +174,9 @@ When present:
 
 - `approval_source`: `safe-list` \| `sentinel` \| `user` \| `skill` \| `bypass` \| `unknown`
 - `approval_verdict`: `allow` \| `revise` \| `deny` \| `escalate`
-- `approval_comment`: what the sentinel told the agent about a tool call or git push it allowed (see [Sentinel comments](security.md#sentinel-comments))
+- `approval_comment`: what the sentinel told the agent about a git push it allowed (see [Sentinel comments](security.md#sentinel-comments))
+
+**`safe-list`** — every agent tool call: none is reviewed by itself (see [Tool calls](security.md#tool-calls)).
 
 **`skill`** — only in sessions from before skills were read instead of activated: the action was covered by a skill's context grant.
 
