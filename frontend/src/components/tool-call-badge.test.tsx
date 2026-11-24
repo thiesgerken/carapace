@@ -167,7 +167,7 @@ test("approval badges: none for an unreviewed call, an icon per verdict, and a t
         </NextIntlClientProvider>,
       );
       const icon = [...view.container.querySelectorAll("[title] > svg")]
-        .map((svg) => svg.getAttribute("class")?.match(/lucide-((?:shield|user)[a-z-]*)/)?.[1])
+        .map((svg) => svg.getAttribute("class")?.match(/lucide-((?:shield|user|ban)[a-z-]*)/)?.[1])
         .find(Boolean);
       const shown = {
         title: icon ? view.container.querySelector(`[title] > svg.lucide-${icon}`)?.parentElement?.getAttribute("title") ?? null : null,
@@ -186,6 +186,10 @@ test("approval badges: none for an unreviewed call, an icon per verdict, and a t
     assert.deepEqual(await badge({ approvalSource: "sentinel", approvalVerdict: "deny", approvalExplanation: "Posts data." }), { title: "Denied by the sentinel: Posts data.", icon: "shield-x" });
     assert.deepEqual(await badge({ approvalSource: "sentinel", approvalVerdict: "escalate", approvalExplanation: "Unclear." }), { title: "The sentinel left this to you: Unclear.", icon: "shield-exclamation-point" });
     assert.deepEqual(await badge({ approvalSource: "user", approvalVerdict: "deny" }), { title: "Denied by you", icon: "user-x" });
+    assert.deepEqual(
+      await badge({ approvalSource: "policy", approvalVerdict: "deny", approvalExplanation: "10.0.0.5 is internal." }),
+      { title: "Refused as an internal destination: 10.0.0.5 is internal.", icon: "ban" },
+    );
   } finally {
     restore();
   }

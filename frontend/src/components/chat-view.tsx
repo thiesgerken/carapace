@@ -35,6 +35,7 @@ import {
   wsUrl,
 } from "@/lib/api";
 import type {
+  ApprovalSource,
   ApprovalVerdict,
   Attachment,
   ChatMessage,
@@ -399,15 +400,7 @@ function applyApprovedApprovalToMessages(
 function isUserApprovedReplay(
   tool: string,
   detail: string | undefined,
-  approvalSource: ChatMessage extends never ? never :
-    | "safe-list"
-    | "sentinel"
-    | "user"
-    | "skill"
-    | "bypass"
-    | "autonomy"
-    | "unknown"
-    | undefined,
+  approvalSource: ApprovalSource | undefined,
   approvalVerdict: ApprovalVerdict | undefined,
 ): boolean {
   return (

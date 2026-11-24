@@ -1004,6 +1004,7 @@
             "bypass": "bypass",
             "denied": "denied",
             "autonomy": "autonomy limit",
+            "policy": "internal",
             "titles": {
                 "sentinelPending": "The sentinel is reviewing this",
                 "sentinel_allow": "Allowed by the sentinel",
@@ -1015,6 +1016,7 @@
                 "skill": "Allowed by an active skill",
                 "autonomy": "Stopped by the autonomy limit",
                 "bypass": "Allowed without review (YOLO mode)",
+                "policy": "Refused as an internal destination",
                 "denied": "Denied"
             }
         },
@@ -1060,6 +1062,7 @@
         },
         "details": {
             "sentinelLabel": "Sentinel:",
+            "proxyLabel": "Proxy:",
             "sentinelReviewing": "Reviewing this tool call.",
             "sentinelRequestsChanges": "Requests changes:",
             "commentForAgent": "Sentinel to the agent:",

@@ -76,7 +76,7 @@ class ProxyServer:
         get_allowed_domains: Callable[[str], set[str]],
         attach_sandbox_call: Callable[[str], contextlib.AbstractContextManager[None]],
         request_approval: Callable[[str, str], Awaitable[BoundaryEvaluation]] | None = None,
-        notify_domain_access: Callable[[str, str, bool], None] | None = None,
+        notify_domain_access: Callable[[str, str, bool, str | None], None] | None = None,
         destinations: DestinationPolicy = _NO_EXCEPTIONS,
         builder_cache_url: str | None = None,
         host: str = "0.0.0.0",
@@ -425,7 +425,7 @@ class ProxyServer:
         except DestinationRefusedError as exc:
             logger.warning(f"Proxy refused internal destination {domain}:{port} (session={session_id}): {exc}")
             if self._notify_domain_access:
-                self._notify_domain_access(session_id, domain, False)
+                self._notify_domain_access(session_id, domain, False, str(exc))
             writer.write(_denied_response(str(exc)))
         except OSError as exc:
             logger.debug(f"Proxy: cannot resolve {domain} — {exc}")
@@ -504,11 +504,11 @@ class ProxyServer:
         """
         if self._is_allowed(session_id, domain):
             if self._notify_domain_access:
-                self._notify_domain_access(session_id, domain, True)
+                self._notify_domain_access(session_id, domain, True, None)
             return BoundaryEvaluation(allowed=True, rejection="")
         if self._request_approval is None:
             if self._notify_domain_access:
-                self._notify_domain_access(session_id, domain, False)
+                self._notify_domain_access(session_id, domain, False, None)
             return _NO_APPROVAL_PATH
         logger.info(f"Proxy: suspending connection to {domain} (session={session_id}), requesting approval")
         # request_approval notifies for sentinel/user outcomes itself; the cases above notify here.

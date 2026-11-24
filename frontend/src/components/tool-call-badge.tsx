@@ -40,7 +40,7 @@ import {
   languageFromFilePath,
   splitReadToolResult,
 } from "@/lib/sandbox-read";
-import type { ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, SentFile } from "@/lib/types";
+import type { ApprovalSource, ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, SentFile } from "@/lib/types";
 import { toolCallStatus } from "@/lib/tool-call-status";
 import { cn } from "@/lib/utils";
 import { getArtifact, knowledgeArtifactUrl, knowledgeRawUrl } from "@/lib/api";
@@ -79,10 +79,6 @@ interface ToolCallBadgeProps {
   /** Set on a successful `show_artifact` call: the card then shows the artifact live. */
   artifactReference?: ArtifactReference;
 }
-
-// "skill" and "safe-list" only appear on tool calls stored by older versions; their transcripts still render.
-// "safe-list" marked every unreviewed tool call, so it gets no badge, like an unreviewed call today.
-type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "unknown";
 
 const TOOL_ICONS: Record<string, LucideIcon> = {
   exec: SquareTerminal,
@@ -422,6 +418,7 @@ function approvalTitleKey(source: ApprovalSource, verdict?: ApprovalVerdict): st
     case "skill":
     case "autonomy":
     case "bypass":
+    case "policy":
       return source;
     default:
       return verdict === "deny" ? "denied" : null;
@@ -519,6 +516,18 @@ function ApprovalBadge({
     );
   }
 
+  if (source === "policy") {
+    return (
+      <span
+        className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400"
+        title={title}
+      >
+        <Ban className="h-2.5 w-2.5" />
+        {t("policy")}
+      </span>
+    );
+  }
+
   return (
     <span
       className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400"
@@ -601,6 +610,7 @@ export function ToolCallBadge({
     : source === "user"
       ? explanation
       : "";
+  const policyExplanation = source === "policy" ? explanation : "";
   const showUserDecision =
     source === "user" && (verdict === "deny" || finalDecisionMessage.length > 0);
   const isError = exitCode != null && exitCode !== 0;
@@ -731,7 +741,7 @@ export function ToolCallBadge({
           </>
         );
       })()}
-      {source && <ApprovalBadge source={source} verdict={verdict} explanation={finalDecisionMessage || sentinelExplanation || undefined} />}
+      {source && <ApprovalBadge source={source} verdict={verdict} explanation={finalDecisionMessage || sentinelExplanation || policyExplanation || undefined} />}
       {approvalComment && (
         <span className="inline-flex shrink-0 items-center text-green-600 dark:text-green-400" title={approvalComment}>
           <MessageSquareText className="h-3 w-3" />
@@ -884,6 +894,16 @@ export function ToolCallBadge({
                 </span>
               )}
               {sentinelExplanation}
+            </div>
+          )}
+
+          {policyExplanation && (
+            <div className="text-[11px] text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground/70">
+                <Ban className="inline h-3 w-3 -translate-y-px mr-1" />
+                {t("details.proxyLabel")}
+              </span>{" "}
+              {policyExplanation}
             </div>
           )}
 

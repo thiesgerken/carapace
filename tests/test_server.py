@@ -57,6 +57,7 @@ from carapace.notifications.presence import NotificationPresenceRegistry
 from carapace.notifications.store import NotificationStore
 from carapace.notifications.vapid import derive_vapid_public_key, ensure_vapid_config
 from carapace.platform_store import PlatformSettingsStore
+from carapace.sandbox.destinations import DestinationPolicy, DestinationRefusedError
 from carapace.sandbox.egress_check import EgressCheckError, EgressProbeError
 from carapace.sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION
 from carapace.sandbox.exec_scope import CredentialGrant, RunningExec
@@ -3752,6 +3753,10 @@ def _gate_setup(monkeypatch, sid: str, verdict: SentinelVerdict, *, command: str
     monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
     running = _running_exec(command)
     srv._engine.sandbox_mgr.get_effective_domains.side_effect = lambda _sid: running.domains if running else set()
+    # Every name resolves to a public address unless a test says otherwise; no real DNS in tests.
+    destinations = MagicMock()
+    destinations.resolve = AsyncMock(return_value=["203.0.113.7"])
+    monkeypatch.setattr(srv, "_destinations", destinations, raising=False)
     return active.sentinel, mock_reg, running
 
 
@@ -3795,6 +3800,53 @@ def test_gate_request_denial_carries_the_explanation(client, auth_headers, monke
 
     assert (resp.status_code, resp.text) == (403, "Sentinel denied this operation. Not for this task.")
     assert running.domains == set()
+
+
+_INTERNAL = "gerken.example is a private or internal address or resolves to one."
+
+
+def test_gate_request_for_an_internal_name_says_so_after_the_review(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    srv._destinations.resolve.side_effect = DestinationRefusedError(_INTERNAL)
+
+    resp = TestClient(sandbox_app).post("/gate", json={"domains": ["gerken.example"]}, headers=_sandbox_basic_auth(sid))
+
+    assert (resp.status_code, resp.text) == (403, _INTERNAL)
+    # Resolved only after the sentinel allowed it: a lookup before would carry the name out unreviewed.
+    sentinel.evaluate_upfront_request.assert_awaited_once()
+    srv._destinations.resolve.assert_awaited_once_with("gerken.example", 443)
+    assert running.domains == set()
+    srv._engine.sandbox_mgr.notify_domain_access.assert_called_once_with(sid, "gerken.example", False, _INTERNAL)
+
+
+def test_gate_request_for_an_internal_address_is_refused_before_the_review(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    monkeypatch.setattr(srv, "_destinations", DestinationPolicy())
+
+    resp = TestClient(sandbox_app).post("/gate", json={"domains": ["192.168.1.60"]}, headers=_sandbox_basic_auth(sid))
+
+    assert resp.status_code == 403
+    assert "CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS" in resp.text
+    assert "sandbox.allowedInternalNetworks" in resp.text
+    sentinel.evaluate_upfront_request.assert_not_awaited()
+    assert running.domains == set()
+
+
+def test_gate_request_for_a_tunnel_to_an_internal_host_is_not_opened(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    _, _, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    srv._destinations.resolve.side_effect = DestinationRefusedError(_INTERNAL)
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"tunnels": ["imap.gerken.example:993"]}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert (resp.status_code, resp.text) == (403, _INTERNAL)
+    srv._destinations.resolve.assert_awaited_once_with("imap.gerken.example", 993)
+    assert running.domains == set()
+    srv._engine.sandbox_mgr.open_tunnels.assert_not_called()
 
 
 def test_gate_request_after_its_exec_ended_grants_nothing(client, auth_headers, monkeypatch):

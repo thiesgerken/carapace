@@ -1004,6 +1004,7 @@
             "bypass": "Bypass",
             "denied": "abgelehnt",
             "autonomy": "Autonomie-Limit",
+            "policy": "intern",
             "titles": {
                 "sentinelPending": "Der Sentinel prüft das gerade",
                 "sentinel_allow": "Vom Sentinel erlaubt",
@@ -1015,6 +1016,7 @@
                 "skill": "Von einem aktiven Skill erlaubt",
                 "autonomy": "Vom Autonomie-Limit gestoppt",
                 "bypass": "Ohne Prüfung erlaubt (YOLO-Modus)",
+                "policy": "Als internes Ziel abgelehnt",
                 "denied": "Abgelehnt"
             }
         },
@@ -1060,6 +1062,7 @@
         },
         "details": {
             "sentinelLabel": "Sentinel:",
+            "proxyLabel": "Proxy:",
             "sentinelReviewing": "Dieser Tool-Aufruf wird geprüft.",
             "sentinelRequestsChanges": "Bittet um Änderungen:",
             "commentForAgent": "Sentinel an den Agenten:",

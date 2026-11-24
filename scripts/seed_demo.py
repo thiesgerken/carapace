@@ -395,6 +395,34 @@ def _blocked_post(start: datetime) -> Transcript:
     return t
 
 
+def _internal_host(start: datetime) -> Transcript:
+    t = Transcript(start)
+    t.user("Is the document server at docs.home.arpa up?")
+    t.thinking("A quick HEAD request answers that.", 620)
+    command = "curl -sI https://docs.home.arpa | head -1"
+    check = t.call("exec", {"command": command, "title": "check document server"})
+    t.call(
+        "proxy_domain",
+        {"domain": "docs.home.arpa"},
+        source="policy",
+        verdict="deny",
+        explanation=(
+            "docs.home.arpa is a private or internal address or resolves to one. The proxy does not connect "
+            "sandboxes to internal destinations unless an operator allows them with "
+            "CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS (CIDRs) or CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS (exact host "
+            "names); in the Helm chart sandbox.allowedInternalNetworks and sandbox.allowedInternalHosts."
+        ),
+        parent=check,
+    )
+    t.result(check, "exec", "curl: (56) CONNECT tunnel failed, response 403", exit_code=56)
+    t.assistant(
+        "I can't reach `docs.home.arpa` from the sandbox: it resolves to an address on your local network, and "
+        "the proxy only connects to internal hosts an operator allowed. Add it to "
+        "`CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS` (Helm: `sandbox.allowedInternalHosts`) if I should check it."
+    )
+    return t
+
+
 def _change_request(start: datetime) -> Transcript:
     t = Transcript(start)
     t.user('The recipes skill says "flour" twice in the pancake ingredients. Please fix that.')
@@ -1032,6 +1060,12 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
             _blocked_post(now - timedelta(hours=3)),
             attributes=SessionAttributes(ask_mode=True),
             usage=_usage(2_500, 300),
+        ),
+        DemoSession(
+            "demo-internal-host",
+            "🏠 Checking The Document Server",
+            _internal_host(now - timedelta(hours=2, minutes=30)),
+            usage=_usage(2_300, 260),
         ),
         DemoSession(
             "demo-change-request",
