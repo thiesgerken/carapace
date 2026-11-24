@@ -272,8 +272,13 @@ class SandboxExecCoordinator:
             and self._state.exec_temp_domains.get(running.session_id) is running.domains
         )
 
-    def notify_domain_access(self, session_id: str, domain: str, allowed: bool) -> None:
-        if not allowed and (cb := self._state.domain_notify_cbs.get(session_id)) is not None:
+    def notify_domain_access(self, session_id: str, domain: str, allowed: bool, refusal: str | None = None) -> None:
+        """Show a denial no reviewer made; *refusal* is the destination policy's reason, if that refused it."""
+        if allowed or (cb := self._state.domain_notify_cbs.get(session_id)) is None:
+            return
+        if refusal is not None:
+            cb(domain, f"[denied] {domain}", "policy", "deny", refusal)
+        else:
             cb(domain, f"[denied] {domain}", "unknown", "deny", "no approval callback configured")
 
     def set_domain_approval_callback(self, session_id: str, cb: DomainApprovalCallback | None) -> None:

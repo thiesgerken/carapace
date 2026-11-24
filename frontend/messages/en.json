@@ -1003,7 +1003,8 @@
             "skill": "skill",
             "bypass": "bypass",
             "denied": "denied",
-            "autonomy": "autonomy limit"
+            "autonomy": "autonomy limit",
+            "policy": "internal"
         },
         "fallbacks": {
             "missingPath": "(missing path)",
@@ -1047,6 +1048,7 @@
         },
         "details": {
             "sentinelLabel": "Sentinel:",
+            "proxyLabel": "Proxy:",
             "sentinelReviewing": "Reviewing this tool call.",
             "sentinelRequestsChanges": "Requests changes:",
             "commentForAgent": "Sentinel to the agent:",

@@ -696,8 +696,8 @@ class SandboxManager:
     def is_running(self, running: RunningExec) -> bool:
         return self._exec_coordinator.is_running(running)
 
-    def notify_domain_access(self, session_id: str, domain: str, allowed: bool) -> None:
-        self._exec_coordinator.notify_domain_access(session_id, domain, allowed)
+    def notify_domain_access(self, session_id: str, domain: str, allowed: bool, refusal: str | None = None) -> None:
+        self._exec_coordinator.notify_domain_access(session_id, domain, allowed, refusal)
 
     # ------------------------------------------------------------------
     # Proxy domain approval
