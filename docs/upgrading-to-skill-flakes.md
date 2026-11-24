@@ -45,7 +45,7 @@ The builder sits only on the default network, out of reach of sandboxes.
 
 ### Kubernetes
 
-The chart deploys the builder by default (`builder.enabled: true`), into its own namespace `<release namespace>-builder`. The chart creates that namespace with the label `pod-security.kubernetes.io/enforce: privileged` and keeps it on `helm uninstall`. A generated Secret holds the token.
+The chart deploys the builder by default (`builder.enabled: true`), into its own namespace `<release namespace>-builder`. The chart creates that namespace with the label `pod-security.kubernetes.io/enforce: privileged`. `helm uninstall` removes it together with the builder's store, which is only a cache. A generated Secret holds the token.
 
 - **Nodes.** The builder pod runs with `hostUsers: false` and `procMount: Unmasked`. The nodes need user namespaces for pods: a recent kernel and container runtime, plus the `UserNamespacesSupport` and `ProcMountType` features ([builder.md](builder.md#kubernetes)). Without them the builder logs that the Nix build sandbox is not effective and exits.
 - **Namespaces managed elsewhere** (GitOps): set `builder.createNamespace: false`, and create the namespace with the `privileged` label yourself.
