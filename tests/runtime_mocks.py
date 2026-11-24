@@ -30,6 +30,7 @@ def make_runtime_mock() -> MagicMock:
     runtime.list_sandboxes = AsyncMock(return_value={})
     runtime.retained_sandbox_session_ids = AsyncMock(return_value=set())
     runtime.list_pool_sandboxes = AsyncMock(return_value={})
+    runtime.list_egress_probes = AsyncMock(return_value={})
     runtime.claim_warm_sandbox = AsyncMock(return_value=False)
     runtime.inspect_sandbox = AsyncMock(
         side_effect=lambda _session_id, _name, container_id=None: SandboxInspection(

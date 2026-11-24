@@ -4,6 +4,8 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel
 
+EGRESS_PROBE_LABEL = "carapace.egress-check"
+
 
 class ContainerGoneError(Exception):
     """Raised when a container no longer exists."""
@@ -113,6 +115,13 @@ class ContainerRuntime(Protocol):
 
     async def list_pool_sandboxes(self) -> dict[str, PoolSandbox]:
         """Return ``{sandbox_id: PoolSandbox}`` for unattached warm-pool sandboxes."""
+        ...
+
+    async def list_egress_probes(self) -> dict[str, str]:
+        """Return ``{sandbox_id: container_or_pod_id}`` for this server's live egress-check probes.
+
+        A server killed during its start-up self-test leaves its probe behind, and the next start removes it.
+        """
         ...
 
     async def claim_warm_sandbox(self, name: str, session_id: str) -> bool:

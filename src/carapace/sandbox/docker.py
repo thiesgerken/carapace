@@ -16,6 +16,7 @@ from docker.utils.socket import consume_socket_output, demux_adaptor, frames_ite
 from loguru import logger
 
 from .runtime import (
+    EGRESS_PROBE_LABEL,
     ContainerConfig,
     ContainerGoneError,
     ContainerRuntime,
@@ -289,6 +290,13 @@ class DockerRuntime(ContainerRuntime):
                 if "carapace.session" in c.labels:
                     result.setdefault(c.labels["carapace.session"], []).append(c.id or "")
             return result
+
+        return await asyncio.to_thread(_list)
+
+    async def list_egress_probes(self) -> dict[str, str]:
+        def _list() -> dict[str, str]:
+            containers = self._client.containers.list(all=True, filters={"label": [f"{EGRESS_PROBE_LABEL}=true"]})
+            return {c.labels["carapace.sandbox"]: c.id or "" for c in containers}
 
         return await asyncio.to_thread(_list)
 

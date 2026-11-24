@@ -123,20 +123,50 @@ def _ready(runtime: MagicMock) -> None:
 async def test_the_check_runs_in_a_throwaway_sandbox_without_proxy(tmp_path: Path, db_factory: Any) -> None:
     runtime = make_runtime_mock()
     _ready(runtime)
-    runtime.sandbox_exists = AsyncMock(return_value="stale-probe")
+    runtime.list_egress_probes = AsyncMock(return_value={"egress-check-stale": "stale-probe"})
     runtime.exec = AsyncMock(return_value=ExecResult(exit_code=0, output="", stdout=""))
 
     await _manager(tmp_path, db_factory, runtime).verify_no_direct_egress(_resolv_conf(tmp_path))
 
     assert runtime.exec.await_args.kwargs["env"] == {"PROXY_TARGET": "172.18.0.1/3128", "DNS_TARGETS": "10.96.0.10/53"}
     config = runtime.create_sandbox.await_args.args[0]
-    assert (config.name, config.environment) == ("carapace-sandbox-egress-check", {})
+    probe_id = config.sandbox_id
+    assert probe_id.startswith("egress-check-")
+    assert (config.name, config.environment) == (f"carapace-sandbox-{probe_id}", {})
+    assert config.labels["carapace.egress-check"] == "true"
     assert "carapace.session" not in config.labels
     assert "setup-proxy.sh" not in config.command[-1]
     assert [call.args for call in runtime.destroy_sandbox.await_args_list] == [
-        ("egress-check", "carapace-sandbox-egress-check", "stale-probe"),
-        ("egress-check", "carapace-sandbox-egress-check", "container-1"),
+        ("egress-check-stale", "carapace-sandbox-egress-check-stale", "stale-probe"),
+        (probe_id, f"carapace-sandbox-{probe_id}", "container-1"),
     ]
+
+
+@pytest.mark.anyio
+async def test_a_restart_does_not_wait_for_the_previous_probe_to_be_deleted(tmp_path: Path, db_factory: Any) -> None:
+    """Kubernetes deletes a StatefulSet asynchronously: its name is taken until the deletion finished."""
+    runtime = make_runtime_mock()
+    _ready(runtime)
+    runtime.exec = AsyncMock(return_value=ExecResult(exit_code=0, output="", stdout=""))
+    being_deleted: set[str] = set()
+
+    async def create(config: Any) -> str:
+        if config.name in being_deleted:
+            raise RuntimeError(f"object is being deleted: {config.name} already exists")
+        return "container-1"
+
+    async def destroy(_sandbox_id: str, name: str, _container_id: str | None) -> None:
+        being_deleted.add(name)
+
+    runtime.create_sandbox = AsyncMock(side_effect=create)
+    runtime.destroy_sandbox = AsyncMock(side_effect=destroy)
+    manager = _manager(tmp_path, db_factory, runtime)
+
+    await manager.verify_no_direct_egress(_resolv_conf(tmp_path))
+    await manager.verify_no_direct_egress(_resolv_conf(tmp_path))
+
+    first, second = (call.args[0].name for call in runtime.create_sandbox.await_args_list)
+    assert first != second
 
 
 @pytest.mark.anyio
@@ -150,4 +180,5 @@ async def test_a_leak_raises_and_the_probe_is_removed(tmp_path: Path, db_factory
         await _manager(tmp_path, db_factory, runtime).verify_no_direct_egress(_resolv_conf(tmp_path))
 
     assert exc_info.value.leaks == ["direct TCP connection to 1.1.1.1:443 succeeded"]
-    runtime.destroy_sandbox.assert_awaited_with("egress-check", "carapace-sandbox-egress-check", "container-1")
+    probe_id = runtime.create_sandbox.await_args.args[0].sandbox_id
+    runtime.destroy_sandbox.assert_awaited_with(probe_id, f"carapace-sandbox-{probe_id}", "container-1")

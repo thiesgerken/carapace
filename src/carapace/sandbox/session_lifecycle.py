@@ -19,7 +19,7 @@ from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluati
 from ..spans import span
 from .egress_check import PROBE_SCRIPT, EgressProbeError, probe_env, raise_for_leaks
 from .exec_scope import RunningExec
-from .runtime import ContainerRuntime, DuplicateSandboxError, PoolSandbox, SandboxConfig
+from .runtime import EGRESS_PROBE_LABEL, ContainerRuntime, DuplicateSandboxError, PoolSandbox, SandboxConfig
 from .state import load_sandbox_snapshot
 
 
@@ -53,8 +53,6 @@ class SandboxSessionLifecycleState:
 
 class SandboxSessionLifecycle:
     _READY_MARKER = "carapace sandbox ready"
-    # The start-up probe sandbox; no session is called this, session IDs start with their creation time.
-    _EGRESS_CHECK_ID = "egress-check"
     _COMMIT_TRAILER_KEY = "carapace-session"
     _WARM_POOL_PREFIX = "pool-"
     _READY_TIMEOUT_SECONDS = 180
@@ -589,18 +587,24 @@ class SandboxSessionLifecycle:
         if proxy_host is None:
             raise EgressProbeError(f"no address of the session proxy on network '{self._network_name}'")
         env = probe_env(proxy_host, self._proxy_port, resolv_conf.read_text())
-        probe_id = self._EGRESS_CHECK_ID
+        # Unique per run: Kubernetes deletes a StatefulSet asynchronously, so a name is not free again right after
+        # the previous run's probe was deleted, and releases sharing a namespace must not share a probe.
+        probe_id = f"egress-check-{secrets.token_hex(4)}"
         name = self.sandbox_name_for_id(probe_id)
         with span("sandbox", "egress check"):
-            # A server stopped during an earlier check leaves its probe behind.
-            await self._runtime.destroy_sandbox(probe_id, name, await self._runtime.sandbox_exists(name))
+            # A server killed during an earlier check left its probe behind.
+            for leftover_id, leftover_container in (await self._runtime.list_egress_probes()).items():
+                await self._runtime.destroy_sandbox(
+                    leftover_id, self.sandbox_name_for_id(leftover_id), leftover_container
+                )
+                logger.info(f"Removed leftover egress-check sandbox {leftover_id}")
             container_id = await self._runtime.create_sandbox(
                 SandboxConfig(
                     name=name,
                     sandbox_id=probe_id,
                     session_id=probe_id,
                     image=self._base_image,
-                    labels={"carapace.sandbox": probe_id, "carapace.managed": "true"},
+                    labels={"carapace.sandbox": probe_id, "carapace.managed": "true", EGRESS_PROBE_LABEL: "true"},
                     environment={},
                     command=self._sandbox_command(configure_proxy=False),
                 )
