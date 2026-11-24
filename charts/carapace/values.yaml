@@ -100,6 +100,9 @@ sandbox:
     requests:
       cpu: 100m
       memory: 128Mi
+      # Skill commands and their store paths live in the container layer: 2 to 8 GB depending on the
+      # skill set. Raise it for large skill sets; every warm-pool and idle sandbox reserves it.
+      ephemeral-storage: 2Gi
     limits:
       # Evaluating nixpkgs for an ad-hoc `nix run` peaks around 1.3 GiB.
       memory: 2Gi

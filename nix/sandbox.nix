@@ -206,6 +206,8 @@ pkgs.dockerTools.buildLayeredImage {
     ln -s ../../bin usr/local/bin
     # uv counts an interpreter as managed only if its real prefix is inside uv's directory, so the
     # files are copied there, as `uv python install` would.
+    # The Carapace-managed skill profile (src/carapace/builder/profile.py); its bin is on PATH below.
+    mkdir -p nix/var/nix/profiles/carapace
     mkdir -p root/.local/share/uv/python
     cp -R ${pythonBuildStandalone} .${uvPythonDir}
     chmod -R u+w .${uvPythonDir}
@@ -215,7 +217,8 @@ pkgs.dockerTools.buildLayeredImage {
     Cmd = [ "/bin/bash" ];
     WorkingDir = "/workspace";
     Env = [
-      "PATH=/workspace/.carapace/bin:/root/.local/bin:/root/.nix-profile/bin:/bin"
+      # Skill commands come last, so a skill cannot shadow a tool of the image or the agent's own.
+      "PATH=/workspace/.carapace/bin:/root/.local/bin:/root/.nix-profile/bin:/bin:/nix/var/nix/profiles/carapace/skills/bin"
       "HOME=/root"
       "USER=root"
       "LANG=C.UTF-8"

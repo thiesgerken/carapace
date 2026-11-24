@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 from carapace.sandbox.exec_flow import SandboxExecCoordinator, SandboxExecState
+from carapace.sandbox.skill_profile import SkillProfileSync
 from carapace.security.context import SentinelVerdict, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from tests.runtime_mocks import make_runtime_mock
@@ -30,7 +31,9 @@ def _coordinator(domain_cb: Any) -> SandboxExecCoordinator:
         exec_notified_credentials={},
         running_execs={},
     )
-    return SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    return SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
+    )
 
 
 def test_parallel_execs_under_one_tool_call_are_each_reviewed(tmp_path: Path, db_factory: Any) -> None:

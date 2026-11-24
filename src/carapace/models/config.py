@@ -379,6 +379,11 @@ class SandboxConfig(BaseSettings):
     k8s_resource_requests_memory: str = ""
     k8s_resource_limits_cpu: str = ""
     k8s_resource_limits_memory: str = ""
+    # The skill profile and its store paths live in the container layer: 2 to 8 GB depending on the skill
+    # set. A modest request keeps warm-pool and idle sandboxes schedulable on small nodes; size it up for
+    # large skill sets. No limit by default, since exceeding one evicts the pod.
+    k8s_resource_requests_ephemeral_storage: str = "2Gi"
+    k8s_resource_limits_ephemeral_storage: str = ""
     # Remove sandbox resources for sessions that no longer exist on disk at startup.
     cleanup_orphans_on_startup: bool = True
 

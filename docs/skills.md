@@ -322,6 +322,8 @@ The opt-out survives an invalid `metadata.carapace`, because `disabled: true` is
 
 ## Building skills
 
+What is built ends up on the agent's `PATH`; see [sandbox.md](sandbox.md#skill-commands-on-path).
+
 A skill with a `flake.nix` next to its `SKILL.md` is built by the [builder](builder.md); a skill without one has no commands and is never built. A disabled skill is not built either.
 
 - **When.** Every result belongs to the Git tree hash of the skill directory, so a skill is built once per content. After a sandbox push is accepted, the server builds the skill trees at the new head that have no result yet: only the skills the push changed. Content that arrived another way (a pull from upstream, the Knowledge UI, bootstrap seeding) is built when something first asks for it. Nothing waits for a build: a push is never held up or rejected by one.

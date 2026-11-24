@@ -163,6 +163,8 @@ class KubernetesRuntime(ContainerRuntime):
         resource_requests_memory: str = "",
         resource_limits_cpu: str = "",
         resource_limits_memory: str = "",
+        resource_requests_ephemeral_storage: str = "",
+        resource_limits_ephemeral_storage: str = "",
     ) -> None:
         self._namespace = namespace
         self._pvc_claim = pvc_claim
@@ -173,10 +175,16 @@ class KubernetesRuntime(ContainerRuntime):
         self._session_pvc_size = session_pvc_size
         self._session_pvc_storage_class = session_pvc_storage_class or None
         self._resource_spec = self._build_resource_spec(
-            resource_requests_cpu,
-            resource_requests_memory,
-            resource_limits_cpu,
-            resource_limits_memory,
+            requests={
+                "cpu": resource_requests_cpu,
+                "memory": resource_requests_memory,
+                "ephemeral-storage": resource_requests_ephemeral_storage,
+            },
+            limits={
+                "cpu": resource_limits_cpu,
+                "memory": resource_limits_memory,
+                "ephemeral-storage": resource_limits_ephemeral_storage,
+            },
         )
         self._want_owner_ref = owner_ref
         self._server_deployment_name = server_deployment_name
@@ -186,23 +194,10 @@ class KubernetesRuntime(ContainerRuntime):
         logger.info(f"KubernetesRuntime initialized (namespace={namespace}, pvc={pvc_claim}, data_dir={data_dir})")
 
     @staticmethod
-    def _build_resource_spec(
-        req_cpu: str,
-        req_mem: str,
-        lim_cpu: str,
-        lim_mem: str,
-    ) -> dict | None:
-        """Build a Kubernetes container resources dict, or None if nothing is set."""
-        requests: dict[str, str] = {}
-        limits: dict[str, str] = {}
-        if req_cpu:
-            requests["cpu"] = req_cpu
-        if req_mem:
-            requests["memory"] = req_mem
-        if lim_cpu:
-            limits["cpu"] = lim_cpu
-        if lim_mem:
-            limits["memory"] = lim_mem
+    def _build_resource_spec(*, requests: dict[str, str], limits: dict[str, str]) -> dict | None:
+        """Build a Kubernetes container resources dict from the set values, or None if nothing is set."""
+        requests = {name: value for name, value in requests.items() if value}
+        limits = {name: value for name, value in limits.items() if value}
         if not requests and not limits:
             return None
         spec: dict = {}

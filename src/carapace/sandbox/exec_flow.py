@@ -13,6 +13,7 @@ from .exec_scope import RunningExec
 from .file_ops import ContextFileCredential, WrittenContextFile
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult, NetworkTunnel
 from .session_lifecycle import SessionContainer
+from .skill_profile import KILLER_MARKER, KILLER_SYNC_PID, SkillProfileSync
 
 type DomainApprovalCallback = Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]
 type DomainNotifyCallback = Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None]
@@ -34,22 +35,27 @@ type DeleteContextFileCredentialsCallback = Callable[[str, list[WrittenContextFi
 # kill(-1) signals everything but PID 1 and the caller in one kernel pass, so a forking
 # process cannot slip through. Zombies are not counted: `sleep infinity` never reaps them.
 # The killer must be the top process of its exec, or kill(-1) would take its wrapper down.
-KILL_LEFTOVER_PROCESSES_SCRIPT = """\
+KILL_LEFTOVER_PROCESSES_SCRIPT = f"""\
 if [[ $PPID != 0 ]]; then
     echo "process killer must not run below another process in the sandbox (parent $PPID)" >&2
     exit 1
 fi
+{KILLER_SYNC_PID}
 leftover=0
 for proc in /proc/[0-9]*; do
-    pid=${proc#/proc/}
+    pid=${{proc#/proc/}}
     [[ $pid == 1 || $pid == $$ ]] && continue
     read -r stat 2>/dev/null < "$proc/stat" || continue
-    state=${stat##*) }
-    [[ ${state%% *} == Z ]] || leftover=$((leftover + 1))
+    read -r state ppid _ <<< "${{stat##*) }}"
+    [[ $state == Z ]] && continue
+    # The skill profile sync dies like every other process, but it is no leftover of the agent's.
+    [[ -n $sync && ($pid == "$sync" || $ppid == "$sync") ]] && continue
+    leftover=$((leftover + 1))
 done
 # As root, kill(-1) only fails with ESRCH: everything counted has exited by itself meanwhile.
 kill -9 -1 2>/dev/null || true
 echo "$leftover"
+{KILLER_MARKER}
 """
 # A process that outlived its exec asks for nothing: what it was granted ended with that exec.
 ORPHANED_REQUEST_REJECTION = "Denied: no exec is running, the request comes from a process an earlier exec left behind."
@@ -79,9 +85,12 @@ class SandboxExecState:
 
 
 class SandboxExecCoordinator:
-    def __init__(self, *, runtime: ContainerRuntime, state: SandboxExecState) -> None:
+    def __init__(self, *, runtime: ContainerRuntime, state: SandboxExecState, profile_sync: SkillProfileSync) -> None:
         self._runtime = runtime
         self._state = state
+        self._profile_sync = profile_sync
+        # What the last killer reported per session, until the sync it interrupted is started again.
+        self._profile_markers: dict[str, str] = {}
 
     def get_exec_lock(self, session_id: str) -> asyncio.Lock:
         if session_id not in self._state.exec_locks:
@@ -127,6 +136,7 @@ class SandboxExecCoordinator:
             if bypass_proxy:
                 self._state.proxy_bypass_sessions.discard(sc.session_id)
                 logger.info(f"Proxy bypass DISABLED for session {sc.session_id}")
+                self._resume_profile_sync(sc)
             if owns_notified_domains:
                 self._state.exec_notified_domains.pop(sc.session_id, None)
 
@@ -167,6 +177,8 @@ class SandboxExecCoordinator:
         async def run_in(container: SessionContainer) -> ExecResult:
             nonlocal written_files, tunnels_prepared
             leftover_processes_killed = await self.kill_leftover_processes(container)
+            if not bypass_proxy:
+                self._resume_profile_sync(container)
             self._grant_exec_scope(session_id, command, contexts, context_domains, bypass_proxy=bypass_proxy)
             if context_tunnels:
                 await prepare_context_tunnels(container, context_tunnels)
@@ -182,6 +194,7 @@ class SandboxExecCoordinator:
                 extra_env=extra_env,
                 stdin=stdin,
             )
+            result = self._profile_sync.with_hint(session_id, result)
             return result.model_copy(update={"leftover_processes_killed": leftover_processes_killed})
 
         async with self.get_exec_lock(session_id):
@@ -208,6 +221,8 @@ class SandboxExecCoordinator:
                 original_exc = sys.exc_info()[1]
                 cleanup_exc: Exception | None = None
                 self._revoke_exec_scope(session_id, bypass_proxy=bypass_proxy)
+                if sc is not None and bypass_proxy:
+                    self._resume_profile_sync(sc)
 
                 if sc is not None and tunnels_prepared and context_tunnels:
                     try:
@@ -225,14 +240,28 @@ class SandboxExecCoordinator:
                     raise cleanup_exc
 
     async def kill_leftover_processes(self, sc: SessionContainer) -> int:
-        """Kill every process in *sc* except PID 1 and return how many were alive."""
+        """Kill every process in *sc* except PID 1 and return how many the agent left behind.
+
+        That includes a running skill profile sync. The caller starts it again with ``_resume_profile_sync``
+        once no proxy bypass is open: right away for an ordinary exec, after the bypass for an activation.
+        """
+        self._profile_sync.stop(sc.session_id)
         result = await self._runtime.exec(sc.container_id, KILL_LEFTOVER_PROCESSES_COMMAND, timeout=30)
         if result.exit_code != 0:
             raise RuntimeError(f"Failed to kill leftover processes in session {sc.session_id}: {result.output}")
-        killed = int(result.stdout)
+        count, _, marker = result.stdout.partition("\n")
+        self._profile_markers[sc.session_id] = marker.strip()
+        killed = int(count)
         if killed:
             logger.info(f"Killed {killed} leftover process(es) in session {sc.session_id}")
         return killed
+
+    def _resume_profile_sync(self, sc: SessionContainer) -> None:
+        """Start the profile sync the killer interrupted. Never during a proxy bypass: the sync runs code the
+        agent can influence (the container layer is writable), which must not see free egress."""
+        marker = self._profile_markers.pop(sc.session_id, None)
+        if marker is not None:
+            self._profile_sync.start(sc.session_id, sc.container_id, marker=marker)
 
     def _grant_exec_scope(
         self,

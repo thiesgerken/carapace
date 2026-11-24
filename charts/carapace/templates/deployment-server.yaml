@@ -104,6 +104,8 @@ spec:
             - name: CARAPACE_SANDBOX_K8S_RESOURCE_REQUESTS_MEMORY
               value: {{ .requests.memory | quote }}
           {{- end }}
+            - name: CARAPACE_SANDBOX_K8S_RESOURCE_REQUESTS_EPHEMERAL_STORAGE
+              value: {{ index .requests "ephemeral-storage" | default "" | quote }}
           {{- end }}
           {{- if .limits }}
           {{- if .limits.cpu }}
@@ -113,6 +115,10 @@ spec:
           {{- if .limits.memory }}
             - name: CARAPACE_SANDBOX_K8S_RESOURCE_LIMITS_MEMORY
               value: {{ .limits.memory | quote }}
+          {{- end }}
+          {{- with index .limits "ephemeral-storage" }}
+            - name: CARAPACE_SANDBOX_K8S_RESOURCE_LIMITS_EPHEMERAL_STORAGE
+              value: {{ . | quote }}
           {{- end }}
           {{- end }}
           {{- end }}

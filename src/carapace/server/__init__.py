@@ -39,6 +39,7 @@ from ..artifact_shares import ArtifactShareStore
 from ..auth import AuthStore
 from ..bootstrap import ensure_data_dir, ensure_knowledge_dir
 from ..builder.client import BuilderClient
+from ..builder.profile import ProfilePlan, profile_plan
 from ..builder.skill_builds import SkillBuilds
 from ..cache import SessionListCache
 from ..codex_auth import CodexAccounts, CodexCredentialStore
@@ -261,6 +262,8 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
             session_pvc_storage_class=config.sandbox.k8s_session_pvc_storage_class,
             resource_requests_cpu=config.sandbox.k8s_resource_requests_cpu,
             resource_requests_memory=config.sandbox.k8s_resource_requests_memory,
+            resource_requests_ephemeral_storage=config.sandbox.k8s_resource_requests_ephemeral_storage,
+            resource_limits_ephemeral_storage=config.sandbox.k8s_resource_limits_ephemeral_storage,
             resource_limits_cpu=config.sandbox.k8s_resource_limits_cpu,
             resource_limits_memory=config.sandbox.k8s_resource_limits_memory,
         )
@@ -523,6 +526,12 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         knowledge_repo_for_session=knowledge_repo_for_session,
         nix_config=_builder.sandbox_nix_config if _builder is not None else None,
     )
+
+    async def skill_profile_plan(session_id: str) -> ProfilePlan:
+        # Also what starts building a tree nobody asked for yet: content that arrived without a push.
+        return profile_plan(await _skill_builds.ensure_built(knowledge_repo_for_session(session_id).knowledge_dir))
+
+    _sandbox_mgr.set_skill_profile_plan_callback(skill_profile_plan)
     logger.info(f"Sandbox enabled (image={base_image}, network={sandbox_network})")
 
     _knowledge_git_runtime = KnowledgeGitRuntime(
