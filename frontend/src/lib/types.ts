@@ -208,6 +208,8 @@ export interface SentFile {
 
 /** The verdict of the sentinel or the user on an action; `revise` sends it back to the agent for changes. */
 export type ApprovalVerdict = "allow" | "revise" | "deny" | "escalate";
+/** Who decided: `policy` is the proxy's destination policy, not a reviewer. */
+export type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "policy" | "unknown";
 
 export interface HistoryMessage {
   role: string;
@@ -233,14 +235,7 @@ export interface HistoryMessage {
   tool?: string;
   args?: Record<string, unknown>;
   detail?: string;
-  approval_source?:
-    | "safe-list"
-    | "sentinel"
-    | "user"
-    | "skill"
-    | "bypass"
-    | "autonomy"
-    | "unknown";
+  approval_source?: ApprovalSource;
   approval_verdict?: ApprovalVerdict;
   approval_explanation?: string;
   /** What the sentinel told the agent about an operation it allowed. */
@@ -368,14 +363,7 @@ export interface ToolCallInfo {
   tool: string;
   args: Record<string, unknown>;
   detail: string;
-  approval_source?:
-    | "safe-list"
-    | "sentinel"
-    | "user"
-    | "skill"
-    | "bypass"
-    | "autonomy"
-    | "unknown";
+  approval_source?: ApprovalSource;
   approval_verdict?: ApprovalVerdict;
   approval_explanation?: string;
   /** What the sentinel told the agent about an operation it allowed. */
@@ -686,14 +674,7 @@ export type ChatMessage =
       tool: string;
       args: Record<string, unknown>;
       detail: string;
-      approvalSource?:
-        | "safe-list"
-        | "sentinel"
-        | "user"
-        | "skill"
-        | "bypass"
-        | "autonomy"
-        | "unknown";
+      approvalSource?: ApprovalSource;
       approvalVerdict?: ApprovalVerdict;
       approvalExplanation?: string;
       approvalComment?: string;
@@ -721,14 +702,7 @@ export type ChatMessage =
         tool: string;
         args: Record<string, unknown>;
         detail: string;
-        approvalSource?:
-          | "safe-list"
-          | "sentinel"
-          | "user"
-          | "skill"
-          | "bypass"
-          | "autonomy"
-          | "unknown";
+        approvalSource?: ApprovalSource;
         approvalVerdict?: ApprovalVerdict;
         approvalExplanation?: string;
         approvalComment?: string;

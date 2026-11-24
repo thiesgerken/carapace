@@ -38,7 +38,7 @@ import {
   languageFromFilePath,
   splitReadToolResult,
 } from "@/lib/sandbox-read";
-import type { ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, SentFile } from "@/lib/types";
+import type { ApprovalSource, ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, SentFile } from "@/lib/types";
 import { toolCallStatus } from "@/lib/tool-call-status";
 import { cn } from "@/lib/utils";
 import { getArtifact, knowledgeArtifactUrl, knowledgeRawUrl } from "@/lib/api";
@@ -79,7 +79,6 @@ interface ToolCallBadgeProps {
 }
 
 // "skill" only appears on tool calls stored before skill contexts were dropped; their transcripts still render.
-type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "unknown";
 
 const TOOL_ICONS: Record<string, LucideIcon> = {
   exec: SquareTerminal,
@@ -520,6 +519,18 @@ function ApprovalBadge({
     );
   }
 
+  if (source === "policy") {
+    return (
+      <span
+        className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400"
+        title={tooltip || undefined}
+      >
+        <Ban className="h-2.5 w-2.5" />
+        {t("policy")}
+      </span>
+    );
+  }
+
   if (verdict === "deny") {
     return (
       <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400">
@@ -596,6 +607,7 @@ export function ToolCallBadge({
     : source === "user"
       ? explanation
       : "";
+  const policyExplanation = source === "policy" ? explanation : "";
   const showUserDecision =
     source === "user" && (verdict === "deny" || finalDecisionMessage.length > 0);
   const isError = exitCode != null && exitCode !== 0;
@@ -726,7 +738,7 @@ export function ToolCallBadge({
           </>
         );
       })()}
-      {source && <ApprovalBadge source={source} verdict={verdict} tooltip={finalDecisionMessage || sentinelExplanation || undefined} />}
+      {source && <ApprovalBadge source={source} verdict={verdict} tooltip={finalDecisionMessage || sentinelExplanation || policyExplanation || undefined} />}
       {approvalComment && (
         <span className="inline-flex shrink-0 items-center text-green-600 dark:text-green-400" title={approvalComment}>
           <MessageSquareText className="h-3 w-3" />
@@ -879,6 +891,16 @@ export function ToolCallBadge({
                 </span>
               )}
               {sentinelExplanation}
+            </div>
+          )}
+
+          {policyExplanation && (
+            <div className="text-[11px] text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground/70">
+                <Ban className="inline h-3 w-3 -translate-y-px mr-1" />
+                {t("details.proxyLabel")}
+              </span>{" "}
+              {policyExplanation}
             </div>
           )}
 

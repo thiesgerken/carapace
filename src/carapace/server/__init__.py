@@ -68,7 +68,7 @@ from ..notifications.store import NotificationStore
 from ..notifications.vapid import ensure_vapid_config
 from ..platform_store import PlatformSettingsStore
 from ..prompt_prefix import shared_prompt_prefix
-from ..sandbox.destinations import DestinationPolicy
+from ..sandbox.destinations import DestinationPolicy, DestinationRefusedError, ip_literal
 from ..sandbox.egress_check import EgressCheckError, EgressProbeError
 from ..sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION
 from ..sandbox.exec_scope import CredentialGrant, RunningExec
@@ -127,6 +127,7 @@ _model_factory: ModelFactory
 _engine_db: Engine
 _session_factory: SessionFactory
 _engine: SessionEngine
+_destinations: DestinationPolicy
 _git_handler: GitHttpHandler
 _knowledge_repo_registry: KnowledgeRepoRegistry
 _knowledge_git_runtime: KnowledgeGitRuntime
@@ -453,7 +454,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         _codex_accounts, \
         _memory_service, \
         _builder, \
-        _skill_builds
+        _skill_builds, \
+        _destinations
 
     # 1. Build config from env (CARAPACE_DATA_DIR + CARAPACE_* subsections; no config file)
     _config = build_config()
@@ -675,13 +677,14 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         on_push_success=_after_push,
     )
 
+    _destinations = _destination_policy(_config.sandbox, list(network_info.values()))
     proxy = ProxyServer(
         verify_session_token=_sandbox_mgr.verify_session_token,
         get_allowed_domains=_sandbox_mgr.get_effective_domains,
         attach_sandbox_call=_engine.attach_sandbox_call,
         request_approval=_sandbox_mgr.request_domain_approval,
         notify_domain_access=_sandbox_mgr.notify_domain_access,
-        destinations=_destination_policy(_config.sandbox, list(network_info.values())),
+        destinations=_destinations,
         builder_cache_url=_config.builder.cache_url,
         host="0.0.0.0",
         port=proxy_port,
@@ -1196,6 +1199,9 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
     token_paths = sorted(set(body.oauth))
     if not domains and not tunnels and not vault_paths and not token_paths:
         return Response(status_code=400, content="nothing requested", media_type="text/plain")
+    # An address is checked without a lookup, so an internal one never reaches the sentinel.
+    if refusal := await _internal_destination(session_id, [(d, 443) for d in domains if ip_literal(d)]):
+        return _boundary_denied(refusal)
 
     try:
         credential_registry = await _credential_registry_for_session(session_id)
@@ -1254,11 +1260,31 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
     running.boundary_reviewed = True
     if not evaluation.allowed:
         return _boundary_denied(evaluation.rejection)
+    # Names are resolved only now, after the decision, like the proxy does: resolving first would let a sandbox
+    # send data out as DNS queries for names nobody approved. The proxy would refuse them on connect anyway;
+    # refusing here tells the command why instead of a bare 403 on its CONNECT.
+    names = [(d, 443) for d in pending_domains if not d.startswith("*.") and not ip_literal(d)]
+    if refusal := await _internal_destination(session_id, names + [(t.host, t.port) for t in pending_tunnels]):
+        return _boundary_denied(refusal)
     running.domains.update(pending_domains)
     running.domains.update(tunnel.host for tunnel in pending_tunnels)
     running.credentials.update((path, "password") for path in pending_paths)
     running.credentials.update((path, "oauth_access_token") for path in pending_tokens)
     return await _open_tunnels(running, tunnels)
+
+
+async def _internal_destination(session_id: str, hosts: list[tuple[str, int]]) -> str | None:
+    """The proxy's refusal for the first internal host the proxy would not connect to, or None."""
+    for host, port in hosts:
+        try:
+            await _destinations.resolve(host, port)
+        except DestinationRefusedError as exc:
+            _engine.sandbox_mgr.notify_domain_access(session_id, host, False, str(exc))
+            return str(exc)
+        except OSError:
+            # Unresolvable now: the proxy answers the connection itself.
+            continue
+    return None
 
 
 async def _open_tunnels(running: RunningExec, tunnels: list[Tunnel]) -> Response:

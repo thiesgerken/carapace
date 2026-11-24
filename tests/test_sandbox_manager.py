@@ -639,6 +639,14 @@ class TestExecNotificationDedupe:
         mgr.notify_domain_access("s1", "evil.com", False)
         assert len(calls) == 2
 
+    def test_a_policy_refusal_carries_its_reason(self, tmp_path: Path, db_factory):
+        """An internal destination is refused by policy, not by a reviewer; the UI shows why."""
+        mgr = self._make_manager(tmp_path, db_factory)
+        calls: list[tuple] = []
+        mgr._domain_notify_cbs["s1"] = lambda *a: calls.append(a)
+        mgr.notify_domain_access("s1", "nas.example", False, "nas.example is internal.")
+        assert calls == [("nas.example", "[denied] nas.example", "policy", "deny", "nas.example is internal.")]
+
     # -- credential dedupe --
 
     def test_mark_credential_notified_outside_exec(self, tmp_path: Path, db_factory):

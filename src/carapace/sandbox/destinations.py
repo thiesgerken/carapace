@@ -86,6 +86,7 @@ class DestinationPolicy:
                     f"{host} is a private or internal address or resolves to one. The proxy does not "
                     "connect sandboxes to internal destinations unless an operator allows them with "
                     "CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS (CIDRs) or CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS "
-                    "(exact host names)."
+                    "(exact host names); in the Helm chart sandbox.allowedInternalNetworks and "
+                    "sandbox.allowedInternalHosts."
                 )
         return [str(address) for address in addresses]
