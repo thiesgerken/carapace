@@ -45,7 +45,7 @@ jobs:
       - name: Build bundled skills against their locked helpers
         run: |
           for flake in src/carapace/assets/skills/*/flake.nix; do
-            time nix build --no-link --print-build-logs "path:$(dirname "$flake")#packages.x86_64-linux.default"
+            time nix build --no-link --no-update-lock-file --print-build-logs "path:$(dirname "$flake")#packages.x86_64-linux.default"
           done
       # --skip-cached links only what it built; the tools and images are still needed here.
       - name: Fetch cached outputs used below

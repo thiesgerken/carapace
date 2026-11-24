@@ -186,6 +186,7 @@
               # Into a file: grep -q would stop reading and fail the writer with SIGPIPE under pipefail.
               shows_usage() { "$1" --help > help.txt; grep -qi usage help.txt; }
               shows_usage ${bundled.skill-bundled-wikipedia}/bin/wiki-search
+              shows_usage ${bundled.skill-bundled-wikipedia}/bin/wiki-fetch
               shows_usage ${bundled.skill-bundled-web}/bin/web_search
               shows_usage ${bundled.skill-bundled-web}/bin/web_fetch
               shows_usage ${bundled.skill-bundled-carapace}/bin/carapace
