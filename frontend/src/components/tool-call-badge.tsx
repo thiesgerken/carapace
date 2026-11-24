@@ -15,7 +15,6 @@ import {
   Hourglass,
   KeyRound,
   MessageSquareText,
-  Plug,
   Puzzle,
   Replace,
   Send,
@@ -51,7 +50,6 @@ interface ToolCallBadgeProps {
   tool: string;
   args: Record<string, unknown>;
   detail: string;
-  contexts?: string[];
   approvalSource?: ApprovalSource;
   approvalVerdict?: ApprovalVerdict;
   approvalExplanation?: string;
@@ -87,7 +85,7 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   read: FileText,
   write: FilePen,
   str_replace: Replace,
-  use_skill: Puzzle,
+  read_skill: Puzzle,
   credential_access: KeyRound,
   proxy_domain: Globe,
   git_push: GitBranch,
@@ -106,7 +104,7 @@ const SHORT_KEYS: Record<string, string> = {
 const OMIT_ARG_LABEL: Record<string, ReadonlySet<string>> = {
   exec: new Set(["command"]),
   read: new Set(["path"]),
-  use_skill: new Set(["skill_name"]),
+  read_skill: new Set(["skill_name"]),
 };
 
 const MAX_SUMMARY_VALUE_CHARS = 4096;
@@ -237,7 +235,7 @@ function formatArgsSummary(
   args: Record<string, unknown>,
   t: TranslateFn,
 ): string {
-  if (tool === "use_skill") return stringArg(args, "skill_name");
+  if (tool === "read_skill") return stringArg(args, "skill_name");
   if (tool === "write") return formatWriteSummary(args, t);
   if (tool === "str_replace") return formatStrReplaceSummary(args, t);
   if (tool === "credential_access") return formatCredentialAccessSummary(args);
@@ -247,8 +245,6 @@ function formatArgsSummary(
   const omit = OMIT_ARG_LABEL[tool];
   const parts: string[] = [];
   for (const [k, v] of Object.entries(args)) {
-    if (k === "contexts") continue;
-
     let vStr = typeof v === "string" ? v : JSON.stringify(v);
     if (vStr.length > MAX_SUMMARY_VALUE_CHARS) {
       vStr = vStr.slice(0, MAX_SUMMARY_VALUE_CHARS - 1) + "…";
@@ -314,13 +310,7 @@ function buildShellTranscript(command: string, output?: string): string {
   return `${fence}shell\n${payload}\n${fence}`;
 }
 
-function getUseSkillName(args: Record<string, unknown>, t: TranslateFn): string {
-  const raw = args.skill_name;
-  if (typeof raw === "string" && raw.trim().length > 0) return raw;
-  return t("fallbacks.missingSkillName");
-}
-
-function formatUseSkillResult(result: string): string {
+function formatSkillResult(result: string): string {
   const normalized = result.replace(/\n+$/, "");
   // Render YAML front matter as fenced YAML for readable syntax highlighting.
   return normalized.replace(
@@ -328,20 +318,6 @@ function formatUseSkillResult(result: string): string {
     (_m, prefix: string, yamlBody: string) =>
       `${prefix}\`\`\`yaml\n${yamlBody.trim()}\n\`\`\``,
   );
-}
-
-/** Split use_skill result into status lines and instructions body. */
-function splitUseSkillResult(result: string): {
-  status: string;
-  instructions: string;
-} {
-  const marker = "\n\nInstructions:\n\n";
-  const idx = result.indexOf(marker);
-  if (idx === -1) return { status: result, instructions: "" };
-  return {
-    status: result.slice(0, idx),
-    instructions: result.slice(idx + marker.length),
-  };
 }
 
 function buildUnifiedDiff(oldText: string, newText: string): string {
@@ -364,7 +340,7 @@ interface ToolLabelOptions {
   isReadTool: boolean;
   isWriteTool: boolean;
   isStrReplaceTool: boolean;
-  isUseSkillTool: boolean;
+  isReadSkillTool: boolean;
   isExecTool: boolean;
   isCredentialAccessTool: boolean;
   isCredentialList: boolean;
@@ -384,7 +360,7 @@ function resolveToolLabel(
     isReadTool,
     isWriteTool,
     isStrReplaceTool,
-    isUseSkillTool,
+    isReadSkillTool,
     isExecTool,
     isCredentialAccessTool,
     isCredentialList,
@@ -399,7 +375,7 @@ function resolveToolLabel(
     if (isReadTool) return t("labels.read");
     if (isWriteTool) return t("labels.wrote");
     if (isStrReplaceTool) return t("labels.replaced");
-    if (isUseSkillTool) return t("labels.activatedSkill");
+    if (isReadSkillTool) return t("labels.readSkill");
     if (isExecTool) return t("labels.executed");
     if (isCredentialAccessTool) {
       if (isCredentialList) return t("labels.listedCredentials");
@@ -418,7 +394,7 @@ function resolveToolLabel(
 
   if (isReadTool) return t("labels.readAction");
   if (isWriteTool) return t("labels.write");
-  if (isUseSkillTool) return t("labels.activateSkill");
+  if (isReadSkillTool) return t("labels.readSkillAction");
   if (isExecTool) return t("labels.execute");
   if (isCredentialAccessTool) {
     return isCredentialList
@@ -555,11 +531,18 @@ function ApprovalBadge({
   return null;
 }
 
+/** What the card says while *step* runs; `read_skill` waits for a build and a profile sync. */
+function stepLabel(step: RunningSpan, t: TranslateFn): string {
+  if (step.kind === "domain") return t("status.domain", { domain: step.name });
+  if (step.kind === "skill" && step.name === "build wait") return t("status.skillBuild");
+  if (step.kind === "skill" && step.name === "profile sync") return t("status.skillProfile");
+  return t(`status.${step.kind}`);
+}
+
 export function ToolCallBadge({
   tool,
   args,
   detail: _detail,
-  contexts,
   approvalSource,
   approvalVerdict,
   approvalExplanation,
@@ -587,7 +570,6 @@ export function ToolCallBadge({
   const isSendFileTool = tool === "send_file";
   const artifactSlug = artifactReference?.slug ?? null;
   const [open, setOpen] = useState(isSendFileTool);
-  const [skillInstructionsOpen, setSkillInstructionsOpen] = useState(false);
   // ponytail: one metadata fetch per reference; dedupe per slug if long artifact sessions get slow.
   const loadArtifact = useCallback(() => getArtifact(server!, artifactSlug!), [server, artifactSlug]);
   const liveArtifact = useKeyedFetch(
@@ -617,19 +599,13 @@ export function ToolCallBadge({
     source === "user" && (verdict === "deny" || finalDecisionMessage.length > 0);
   const isError = exitCode != null && exitCode !== 0;
   const isExecTool = tool === "exec";
-  const isUseSkillTool = tool === "use_skill";
+  const isReadSkillTool = tool === "read_skill";
   const isReadTool = tool === "read";
   const isWriteTool = tool === "write";
   const isStrReplaceTool = tool === "str_replace";
   const isCredentialAccessTool = tool === "credential_access";
   const isProxyDomainTool = tool === "proxy_domain";
   const isGitPushTool = tool === "git_push";
-  // Skill-declared MCP tool calls arrive as `mcp:<server>:<tool>`; the server and
-  // tool are also mirrored into args by the backend gate.
-  const isMcpTool = tool.startsWith("mcp:");
-  const mcpParts = isMcpTool ? tool.split(":") : [];
-  const mcpServer = isMcpTool ? stringArg(args, "server") || mcpParts[1] || "" : "";
-  const mcpTool = isMcpTool ? stringArg(args, "tool") || mcpParts.slice(2).join(":") : "";
   const isAuxiliaryTool = isCredentialAccessTool || isProxyDomainTool || isGitPushTool;
   const readPath = isReadTool && typeof args.path === "string" ? args.path : "";
   const readSplit =
@@ -646,16 +622,7 @@ export function ToolCallBadge({
   const execTranscript = isExecTool
     ? buildShellTranscript(execCommand || t("fallbacks.missingCommand"), result)
     : "";
-  const useSkillName = isUseSkillTool ? getUseSkillName(args, t) : "";
-  const useSkillSplit =
-    isUseSkillTool && result != null ? splitUseSkillResult(result) : null;
-  const useSkillStatus = useSkillSplit?.status ?? "";
-  const useSkillInstructions =
-    useSkillSplit?.instructions
-      ? formatUseSkillResult(useSkillSplit.instructions)
-      : "";
-  const useSkillResult =
-    isUseSkillTool && result != null ? formatUseSkillResult(result) : "";
+  const skillResult = isReadSkillTool && result != null ? formatSkillResult(result) : "";
   const writePath = isWriteTool ? stringArg(args, "path") : "";
   const writeContent = isWriteTool ? stringArg(args, "content") : "";
   const strReplacePath = isStrReplaceTool ? stringArg(args, "path") : "";
@@ -678,10 +645,6 @@ export function ToolCallBadge({
         t(artifactReference.update ? "labels.artifactUpdated" : "labels.artifact", { title: liveArtifactValue?.title ?? artifactReference.slug }),
         ...(artifactMissing ? [t("labels.noLongerExists")] : []),
       ].join(" · ")
-    : isMcpTool
-    ? mcpServer
-      ? `${mcpServer} · ${mcpTool}`
-      : mcpTool
     : resolveToolLabel(
     {
       tool,
@@ -689,7 +652,7 @@ export function ToolCallBadge({
       isReadTool,
       isWriteTool,
       isStrReplaceTool,
-      isUseSkillTool,
+      isReadSkillTool,
       isExecTool,
       isCredentialAccessTool,
       isCredentialList,
@@ -710,16 +673,8 @@ export function ToolCallBadge({
             readSplit,
             t,
           )
-        : isMcpTool
-          ? formatArgsSummary(
-              tool,
-              (args.args && typeof args.args === "object" ? (args.args as Record<string, unknown>) : {}),
-              t,
-            )
-          : formatArgsSummary(tool, args, t);
+        : formatArgsSummary(tool, args, t);
   const shouldClampSummary = argsSummary.length > MULTILINE_SUMMARY_THRESHOLD;
-  const contextCount = contexts?.length ?? 0;
-  const contextTooltip = contexts?.join("\n") ?? "";
   const writeLang = isWriteTool ? languageFromFilePath(writePath) : "text";
   const writeContentMarkdown = isWriteTool
     ? fencedCodeBlock(writeLang, writeContent)
@@ -740,43 +695,17 @@ export function ToolCallBadge({
   const indicators = (
     <span className={cn("ml-auto inline-flex shrink-0 items-center gap-1.5", shouldClampSummary && "pt-0.5")}>
       {(() => {
-        // Count credentials: from use_skill declared_creds + child credential_access events
-        const declaredCredCount = isUseSkillTool && Array.isArray(args.declared_creds)
-          ? args.declared_creds.length : 0;
-        const childCredCount = childCalls?.filter(c => c.tool === "credential_access").length ?? 0;
-        const credCount = declaredCredCount || childCredCount;
-        const credTooltip = isUseSkillTool && Array.isArray(args.declared_creds)
-          ? (args.declared_creds as Array<{ vault_path: string; name?: string }>).map(c => c.name || c.vault_path).join("\n")
-          : childCalls?.filter(c => c.tool === "credential_access").map(c => {
-              const name = c.args.name as string | undefined;
-              const vp = c.args.vault_path as string | undefined;
-              return name || vp || t("fallbacks.credential");
-            }).join("\n") ?? "";
-
-        // Count domains: from use_skill declared_domains + child proxy_domain events
-        const declaredDomainCount = isUseSkillTool && Array.isArray(args.declared_domains)
-          ? args.declared_domains.length : 0;
-        const childDomainCount = childCalls?.filter(c => c.tool === "proxy_domain").length ?? 0;
-        const domainCount = declaredDomainCount || childDomainCount;
-        const domainTooltip = isUseSkillTool && Array.isArray(args.declared_domains)
-          ? (args.declared_domains as string[]).join("\n")
-          : childCalls?.filter(c => c.tool === "proxy_domain").map(c => c.args.domain as string ?? "").join("\n") ?? "";
-
-        // Count MCP servers declared by use_skill
-        const declaredMcp = isUseSkillTool && Array.isArray(args.declared_mcp)
-          ? (args.declared_mcp as Array<{ name: string; url?: string; command?: string }>) : [];
-        const mcpTooltip = declaredMcp.map(s => `${s.name} (${s.command ? `stdio: ${s.command}` : s.url})`).join("\n");
+        const credentialCalls = childCalls?.filter((c) => c.tool === "credential_access") ?? [];
+        const credCount = credentialCalls.length;
+        const credTooltip = credentialCalls
+          .map((c) => (c.args.name as string | undefined) || (c.args.vault_path as string | undefined) || t("fallbacks.credential"))
+          .join("\n");
+        const domainCalls = childCalls?.filter((c) => c.tool === "proxy_domain") ?? [];
+        const domainCount = domainCalls.length;
+        const domainTooltip = domainCalls.map((c) => (c.args.domain as string) ?? "").join("\n");
 
         return (
           <>
-            {declaredMcp.length > 0 && (
-              <span
-                className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
-                title={mcpTooltip}
-              >
-                <Plug className="h-2.5 w-2.5" />{declaredMcp.length}
-              </span>
-            )}
             {credCount > 0 && (
               <span
                 className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
@@ -791,14 +720,6 @@ export function ToolCallBadge({
                 title={domainTooltip}
               >
                 <Globe className="h-2.5 w-2.5" />{domainCount}
-              </span>
-            )}
-            {contextCount > 0 && (
-              <span
-                className="inline-flex items-center gap-0.5 rounded bg-teal-500/15 px-1.5 py-0.5 text-[10px] text-teal-600 dark:text-teal-400"
-                title={contextTooltip}
-              >
-                <Puzzle className="h-2.5 w-2.5" />{contextCount}
               </span>
             )}
           </>
@@ -862,7 +783,7 @@ export function ToolCallBadge({
             )}
           />
           {(() => {
-            const ToolIcon = artifactSlug !== null ? ArtifactIcon : TOOL_ICONS[tool] ?? (isMcpTool ? Plug : undefined);
+            const ToolIcon = artifactSlug !== null ? ArtifactIcon : TOOL_ICONS[tool];
             return ToolIcon ? (
               <ToolIcon className="h-3 w-3 shrink-0 text-foreground/65 dark:text-foreground/70" />
             ) : null;
@@ -913,7 +834,7 @@ export function ToolCallBadge({
 
       {step && (
         <div role="status" className="ml-5 truncate text-[11px] text-muted-foreground">
-          {step.kind === "domain" ? t("status.domain", { domain: step.name }) : t(`status.${step.kind}`)}
+          {stepLabel(step, t)}
         </div>
       )}
 
@@ -935,16 +856,6 @@ export function ToolCallBadge({
               </div>
             </details>
           )}
-          {isUseSkillTool && (
-            <div className="text-muted-foreground">
-              {t("details.activateSkillPromptPrefix")}{" "}
-              <span className="font-mono text-foreground/85">
-                {useSkillName}
-              </span>{" "}
-              {t("details.activateSkillPromptSuffix")}
-            </div>
-          )}
-
           {isSentinelReviewPending && (
             <div className="text-[11px] text-muted-foreground leading-relaxed">
                 <span className="font-medium text-foreground/70">
@@ -987,21 +898,6 @@ export function ToolCallBadge({
             </div>
           )}
 
-          {contexts && contexts.length > 0 && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[11px] font-medium text-muted-foreground">{t("details.contexts")}</span>
-              {contexts.map((ctx) => (
-                <span
-                  key={ctx}
-                  className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400 font-mono"
-                >
-                  <Puzzle className="h-2.5 w-2.5" />
-                  {ctx}
-                </span>
-              ))}
-            </div>
-          )}
-
           {isExecTool ? (
             <>
               {execTitle && (
@@ -1013,118 +909,12 @@ export function ToolCallBadge({
                 <MarkdownContent content={execTranscript} />
               </div>
             </>
-          ) : isUseSkillTool ? (
-            <div className="space-y-3">
-
-              {(() => {
-                const domains = (
-                  Array.isArray(args.declared_domains) ? args.declared_domains : []
-                ) as string[];
-                return domains.length > 0 ? (
-                  <div className="text-[11px] text-muted-foreground">
-                    <span className="font-medium text-foreground/70"><Globe className="inline h-3 w-3 -translate-y-px mr-1" />{t("details.domains")} </span>
-                    {domains.map((d, i) => (
-                      <span key={d}>
-                        {i > 0 && ", "}
-                        <span className="font-mono">{d}</span>
-                      </span>
-                    ))}
-                  </div>
-                ) : null;
-              })()}
-
-              {(() => {
-                const servers = (
-                  Array.isArray(args.declared_mcp) ? args.declared_mcp : []
-                ) as Array<{ name: string; url?: string; command?: string; description?: string }>;
-                return servers.length > 0 ? (
-                  <div className="text-[11px] text-muted-foreground">
-                    <span className="font-medium text-foreground/70"><Plug className="inline h-3 w-3 -translate-y-px mr-1" />{t("details.mcpServers")} </span>
-                    {servers.map((s, i) => (
-                      <span key={s.name} title={s.description || undefined}>
-                        {i > 0 && ", "}
-                        <span className="font-mono">{s.name}</span>
-                        <span className="text-muted-foreground/70"> ({s.command ? `stdio: ${s.command}` : s.url})</span>
-                      </span>
-                    ))}
-                  </div>
-                ) : null;
-              })()}
-
-              {(() => {
-                const creds = (
-                  Array.isArray(args.declared_creds) ? args.declared_creds : []
-                ) as Array<{ vault_path: string; name?: string; description?: string }>;
-                return creds.length > 0 ? (
-                  <div>
-                    <div className="text-[11px] font-medium text-foreground/70 mb-1"><KeyRound className="inline h-3 w-3 -translate-y-px mr-1" />{t("details.credentials")}</div>
-                    <table className="text-[11px] w-full border-collapse">
-                      <thead>
-                        <tr className="text-left text-muted-foreground/70">
-                          <th className="font-medium pr-3 pb-0.5">{t("details.name")}</th>
-                          <th className="font-medium pr-3 pb-0.5">{t("details.path")}</th>
-                          <th className="font-medium pb-0.5">{t("details.description")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {creds.map((c) => (
-                          <tr key={c.vault_path} className="text-muted-foreground">
-                            <td className="pr-3 py-0.5 font-mono text-foreground/85">{c.name || c.vault_path}</td>
-                            <td className="pr-3 py-0.5 font-mono text-muted-foreground/70">{c.name ? c.vault_path : ""}</td>
-                            <td className="py-0.5">{c.description ?? ""}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : null;
-              })()}
-
-              {useSkillStatus && (
-                <div>
-                  <div className="text-[11px] font-medium text-foreground/70 mb-1"><Zap className="inline h-3 w-3 -translate-y-px mr-1" />{t("details.activation")}</div>
-                  <div className="text-[11px] text-muted-foreground whitespace-pre-wrap">
-                    {useSkillStatus}
-                  </div>
-                </div>
-              )}
-
-              {useSkillInstructions && (
-                <div className="rounded-md border border-border/40 overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setSkillInstructionsOpen(!skillInstructionsOpen)}
-                    className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-xs text-left hover:bg-accent/50 transition-colors"
-                  >
-                    <ChevronRight
-                      className={cn(
-                        "h-3 w-3 shrink-0 transition-transform",
-                        skillInstructionsOpen && "rotate-90",
-                      )}
-                    />
-                    <span className="font-medium text-foreground/70">{t("details.skillInstructions")}</span>
-                  </button>
-                  {skillInstructionsOpen && (
-                    <div className="border-t border-border/40">
-                      <MarkdownContent content={useSkillInstructions} />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {result != null && !useSkillSplit && (
-                <div
-                  className={cn(
-                    "rounded-md border overflow-hidden",
-                    isError
-                      ? "border-destructive/30 bg-destructive/5"
-                      : "border-border/40",
-                  )}
-                >
-                  <MarkdownContent content={useSkillResult} />
-                </div>
-              )}
-            </div>
+          ) : isReadSkillTool ? (
+            skillResult && (
+              <div className={cn("rounded-md border overflow-hidden", isError ? "border-destructive/30 bg-destructive/5" : "border-border/40")}>
+                <MarkdownContent content={skillResult} />
+              </div>
+            )
           ) : isReadTool && readSplit?.hasSplit ? (
             <>
               <div

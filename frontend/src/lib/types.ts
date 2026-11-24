@@ -233,7 +233,6 @@ export interface HistoryMessage {
   tool?: string;
   args?: Record<string, unknown>;
   detail?: string;
-  contexts?: string[];
   approval_source?:
     | "safe-list"
     | "sentinel"
@@ -371,7 +370,6 @@ export interface ToolCallInfo {
   tool: string;
   args: Record<string, unknown>;
   detail: string;
-  contexts?: string[];
   approval_source?:
     | "safe-list"
     | "sentinel"
@@ -692,7 +690,6 @@ export type ChatMessage =
       tool: string;
       args: Record<string, unknown>;
       detail: string;
-      contexts?: string[];
       approvalSource?:
         | "safe-list"
         | "sentinel"
@@ -728,7 +725,6 @@ export type ChatMessage =
         tool: string;
         args: Record<string, unknown>;
         detail: string;
-        contexts?: string[];
         approvalSource?:
           | "safe-list"
           | "sentinel"
