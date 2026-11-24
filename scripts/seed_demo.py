@@ -137,22 +137,29 @@ class Transcript:
         tool: str,
         args: dict[str, Any],
         *,
-        source: str = "safe-list",
+        source: str | None = None,
         verdict: str = "allow",
-        explanation: str = "auto-allowed",
+        explanation: str | None = None,
         comment: str | None = None,
         parent: str | None = None,
     ) -> str:
         self._next_tool += 1
         tool_id = f"demo-tool-{self._next_tool:03d}"
-        detail = f"[{source}: {verdict}] {explanation}" if source == "sentinel" else f"[{source}] {explanation}"
+        # An agent tool call carries no decision: nothing reviews it by itself.
+        detail = (
+            ""
+            if source is None
+            else f"[{source}: {verdict}] {explanation}"
+            if source == "sentinel"
+            else f"[{source}] {explanation}"
+        )
         event: dict[str, Any] = {
             "role": "tool_call",
             "tool": tool,
             "args": args,
             "detail": detail,
             "approval_source": source,
-            "approval_verdict": verdict,
+            "approval_verdict": verdict if source is not None else None,
             "approval_explanation": explanation,
             "tool_id": tool_id,
             "timestamp": self._stamp(2),
@@ -184,8 +191,14 @@ class Transcript:
         self.result(tool_id, "exec", output)
         return tool_id
 
-    def domain(self, domain: str, parent: str, *, source: str = "safe-list") -> None:
-        self.call("proxy_domain", {"domain": domain}, source=source, explanation="allowed", parent=parent)
+    def domain(self, domain: str, parent: str) -> None:
+        self.call(
+            "proxy_domain",
+            {"domain": domain},
+            source="sentinel",
+            explanation="The command's stated purpose needs this domain.",
+            parent=parent,
+        )
 
     def approval_request(self, tool: str, args: dict[str, Any], explanation: str) -> None:
         self.events.append(
@@ -280,7 +293,7 @@ def _pancake_recipe(start: datetime) -> Transcript:
     )
     t.result(search, "exec", '[{"title": "Fluffy Pancakes", "url": "https://recipes.example.org/fluffy-pancakes"}]')
     fetch = t.call("exec", {"command": _FETCH})
-    t.domain("recipes.example.org", fetch, source="sentinel")
+    t.domain("recipes.example.org", fetch)
     t.result(
         fetch,
         "exec",

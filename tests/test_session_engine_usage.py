@@ -639,8 +639,8 @@ def test_submit_message_tool_call_budget_exhausted_broadcasts_error(tmp_path: Pa
         ) -> tuple[list[Any], str, str, None]:
             callback = deps.tool_call_callback
             assert callback is not None
-            callback("read", {"path": "README.md"}, "[safe-list] auto-allowed", "safe-list", "allow", "ok")
-            callback("read", {"path": "README.md"}, "[safe-list] auto-allowed", "safe-list", "allow", "ok")
+            callback("read", {"path": "README.md"}, "", None, None, None)
+            callback("read", {"path": "README.md"}, "", None, None, None)
             return [], "done", "", None
 
         with patch("carapace.session.engine.run_agent_turn", new=_fail_on_second_tool_call):

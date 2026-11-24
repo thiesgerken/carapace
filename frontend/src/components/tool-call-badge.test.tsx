@@ -133,7 +133,7 @@ test("read_skill names the skill, says what it waits for, and shows the skill on
   try {
     const card = (props: Partial<Parameters<typeof ToolCallBadge>[0]>) => (
       <NextIntlClientProvider locale="en" messages={messages}>
-        <ToolCallBadge tool="read_skill" args={{ skill_name: "weather" }} detail="" approvalSource="safe-list" {...props} />
+        <ToolCallBadge tool="read_skill" args={{ skill_name: "weather" }} detail="" {...props} />
       </NextIntlClientProvider>
     );
     const tool = { spanId: "t", kind: "tool", name: "read_skill" };
@@ -152,6 +152,44 @@ test("read_skill names the skill, says what it waits for, and shows the skill on
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.match(text(), /The commands are on PATH\./);
     await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("approval badges: none for an unreviewed call, an icon per verdict, and a tooltip that says who decided", async () => {
+  const restore = installDom();
+  try {
+    const badge = async (props: Partial<Parameters<typeof ToolCallBadge>[0]>) => {
+      const view = await renderReact(
+        <NextIntlClientProvider locale="en" messages={messages}>
+          <ToolCallBadge tool="exec" args={{ command: "ls" }} detail="" {...props} />
+        </NextIntlClientProvider>,
+      );
+      const icon = [...view.container.querySelectorAll("[title] > svg")]
+        .map((svg) => svg.getAttribute("class")?.match(/lucide-((?:shield|user|ban)[a-z-]*)/)?.[1])
+        .find(Boolean);
+      const shown = {
+        title: icon ? view.container.querySelector(`[title] > svg.lucide-${icon}`)?.parentElement?.getAttribute("title") ?? null : null,
+        icon: icon ?? null,
+      };
+      await view.unmount();
+      return shown;
+    };
+
+    assert.deepEqual(await badge({}), { title: null, icon: null }, "an unreviewed tool call");
+    assert.deepEqual(await badge({ approvalSource: "safe-list", approvalVerdict: "allow" }), { title: null, icon: null }, "stored by an older version");
+    assert.deepEqual(
+      await badge({ approvalSource: "sentinel", approvalVerdict: "allow", approvalExplanation: "Reads a public page." }),
+      { title: "Allowed by the sentinel: Reads a public page.", icon: "shield-check" },
+    );
+    assert.deepEqual(await badge({ approvalSource: "sentinel", approvalVerdict: "deny", approvalExplanation: "Posts data." }), { title: "Denied by the sentinel: Posts data.", icon: "shield-x" });
+    assert.deepEqual(await badge({ approvalSource: "sentinel", approvalVerdict: "escalate", approvalExplanation: "Unclear." }), { title: "The sentinel left this to you: Unclear.", icon: "shield-exclamation-point" });
+    assert.deepEqual(await badge({ approvalSource: "user", approvalVerdict: "deny" }), { title: "Denied by you", icon: "user-x" });
+    assert.deepEqual(
+      await badge({ approvalSource: "policy", approvalVerdict: "deny", approvalExplanation: "10.0.0.5 is internal." }),
+      { title: "Refused as an internal destination: 10.0.0.5 is internal.", icon: "ban" },
+    );
   } finally {
     restore();
   }

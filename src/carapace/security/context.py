@@ -160,8 +160,9 @@ class UnattendedSentinelVerdict(BaseModel):
     )
 
 
-# Nothing assigns "skill" any more, but tool calls stored before skill contexts were dropped (migration 0018)
-# carry it, and their history still has to load.
+# Nothing assigns "skill" or "safe-list" any more, but stored tool calls carry them: "skill" from before skill
+# contexts were dropped (migration 0018), "safe-list" from when every unreviewed tool call was labelled with it.
+# Their history still has to load. "policy" is the proxy's destination policy, not a reviewer.
 ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "autonomy", "policy", "unknown"]
 ApprovalVerdict = Literal["allow", "revise", "deny", "escalate"]
 type FinalDecision = Literal["auto_allowed", "allowed", "changes_requested", "escalated", "denied"]

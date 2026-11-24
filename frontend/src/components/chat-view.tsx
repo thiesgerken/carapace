@@ -414,11 +414,7 @@ function isUserApprovedReplay(
 type ToolCallMessage = Extract<ChatMessage, { kind: "tool_call" }>;
 type ToolCallChildMessage = NonNullable<ToolCallMessage["children"]>[number];
 
-function isToolCallLoading(
-  tool: string,
-  approvalSource?: ApprovalSource,
-  approvalVerdict?: ApprovalVerdict,
-): boolean {
+function isToolCallLoading(tool: string, approvalVerdict?: ApprovalVerdict): boolean {
   const isGitPush = tool === "git_push";
   if (
     tool === "proxy_domain" ||
@@ -427,10 +423,8 @@ function isToolCallLoading(
   ) {
     return false;
   }
-  if (approvalSource === "sentinel" && approvalVerdict == null) {
-    return true;
-  }
-  return approvalVerdict === "allow";
+  // Nothing reviews a tool call by itself, so one without a decision is running; held back ones carry a deny.
+  return approvalVerdict == null || approvalVerdict === "allow";
 }
 
 function updateToolCallMessageById(
@@ -697,11 +691,7 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
     if (entry.role === "tool_call") {
       const tool = entry.tool ?? "";
       const args = normalizeToolArgs(entry.args);
-      const loading = isToolCallLoading(
-        tool,
-        entry.approval_source,
-        entry.approval_verdict,
-      );
+      const loading = isToolCallLoading(tool, entry.approval_verdict);
 
       // The server usually overwrites the escalated event in place with the approved one, so
       // there may be no escalated message to patch; then render this event as the tool call.
@@ -1466,11 +1456,7 @@ export function ChatView({
           if (shouldOptimisticallyShowPendingSandbox(msg.tool, currentSandbox)) {
             applySandboxSnapshot(optimisticPendingSandbox(currentSandbox));
           }
-          const isLoading = isToolCallLoading(
-            msg.tool,
-            msg.approval_source,
-            msg.approval_verdict,
-          );
+          const isLoading = isToolCallLoading(msg.tool, msg.approval_verdict);
           const newMsg: ChatMessage = {
             kind: "tool_call",
             tool: msg.tool,

@@ -170,13 +170,13 @@ long args stay cheap.
 
 ### `approval_source` / `approval_verdict` (on `tool_call`)
 
-When present:
+Present when something decided about the call. An agent tool call that just runs has neither, since none is reviewed by itself (see [Tool calls](security.md#tool-calls)).
 
-- `approval_source`: `safe-list` \| `sentinel` \| `user` \| `skill` \| `bypass` \| `autonomy` \| `unknown`
+- `approval_source`: `sentinel` \| `user` \| `bypass` \| `autonomy` \| `unknown`, plus `safe-list` and `skill` in history from older versions
 - `approval_verdict`: `allow` \| `revise` \| `deny` \| `escalate`
 - `approval_comment`: what the sentinel told the agent about a git push it allowed (see [Sentinel comments](security.md#sentinel-comments))
 
-**`safe-list`** — every agent tool call, in YOLO mode too: none is reviewed by itself (see [Tool calls](security.md#tool-calls)). The name is historical; there is no list.
+**`safe-list`** — only in sessions from older versions, which labelled every agent tool call with it. The UI shows these calls without a badge, like a call without a decision today.
 
 **`skill`** — only in sessions from before skills were read instead of activated: the action was covered by a skill's context grant.
 

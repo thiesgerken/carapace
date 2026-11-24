@@ -879,9 +879,9 @@
         },
         "yolo": {
             "enabledTitle": "YOLO",
-            "enabledDescription": "Alle Tool-Calls sofort erlauben.",
+            "enabledDescription": "Sentinel-Prüfung abschalten und Zugriffe sofort erlauben.",
             "disabledTitle": "Mit Prüfung",
-            "disabledDescription": "Aktionen weiter durch Safe-List und Sentinel prüfen."
+            "disabledDescription": "Der Sentinel prüft, was Befehle außerhalb der Sandbox anfordern."
         },
         "unattended": {
             "enabledTitle": "Unbeaufsichtigt",
@@ -1004,7 +1004,21 @@
             "bypass": "Bypass",
             "denied": "abgelehnt",
             "autonomy": "Autonomie-Limit",
-            "policy": "intern"
+            "policy": "intern",
+            "titles": {
+                "sentinelPending": "Der Sentinel prüft das gerade",
+                "sentinel_allow": "Vom Sentinel erlaubt",
+                "sentinel_deny": "Vom Sentinel abgelehnt",
+                "sentinel_escalate": "Der Sentinel überlässt dir die Entscheidung",
+                "sentinel_revise": "Der Sentinel bittet um Änderungen",
+                "userAllow": "Von dir erlaubt",
+                "userDeny": "Von dir abgelehnt",
+                "skill": "Von einem aktiven Skill erlaubt",
+                "autonomy": "Vom Autonomie-Limit gestoppt",
+                "bypass": "Ohne Prüfung erlaubt (YOLO-Modus)",
+                "policy": "Als internes Ziel abgelehnt",
+                "denied": "Abgelehnt"
+            }
         },
         "fallbacks": {
             "missingPath": "(Pfad fehlt)",

@@ -159,7 +159,7 @@ async def test_yolo_mode_auto_allows_domain_without_sentinel() -> None:
 
 
 @pytest.mark.anyio
-async def test_reused_allowed_domain_reports_auto_source() -> None:
+async def test_reused_allowed_domain_reports_its_original_source() -> None:
     session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
     domain_updates: list[tuple[str, str, str | None, str | None, str | None]] = []
     sentinel = StubSentinel(verdicts=[SentinelVerdict(decision="allow", explanation="looks fine")])
@@ -176,8 +176,8 @@ async def test_reused_allowed_domain_reports_auto_source() -> None:
 
     assert domain_updates[-1] == (
         "api.example.com",
-        "[cached safe-list: allow] reused earlier decision",
-        "safe-list",
+        "[cached sentinel: allow] reused earlier decision",
+        "sentinel",
         "allow",
         "looks fine",
     )

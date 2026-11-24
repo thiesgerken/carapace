@@ -338,8 +338,8 @@ def test_a_total_budget_stop_does_not_mention_the_autonomy_limit(tmp_path: Path,
     async def _two_tool_calls(_user_input: str, deps: Any, *_args: Any, **_kwargs: Any) -> Any:
         deps.autonomy.count = 5
         callback = deps.tool_call_callback
-        callback("read", {"path": "a"}, "[safe-list] auto-allowed", "safe-list", "allow", "ok")
-        callback("read", {"path": "b"}, "[safe-list] auto-allowed", "safe-list", "allow", "ok")
+        callback("read", {"path": "a"}, "", None, None, None)
+        callback("read", {"path": "b"}, "", None, None, None)
         return [], "done", "", None
 
     async def _run() -> None:
