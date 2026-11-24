@@ -17,6 +17,7 @@ from loguru import logger
 
 from .k8s_exec_v5 import EXEC_V5_PROTOCOL, ExecProtocolError, exec_v5
 from .runtime import (
+    EGRESS_PROBE_LABEL,
     ContainerConfig,
     ContainerGoneError,
     ContainerRuntime,
@@ -608,6 +609,22 @@ class KubernetesRuntime(ContainerRuntime):
             session_id = sts.labels.get("carapace.session")
             if session_id:
                 result.setdefault(session_id, []).append(f"{sts.name}-0")
+        return result
+
+    async def list_egress_probes(self) -> dict[str, str]:
+        api = await self._ensure_api()
+        result: dict[str, str] = {}
+        async for sts in StatefulSet.list(
+            namespace=self._namespace,
+            label_selector=(
+                f"app.kubernetes.io/managed-by=carapace-server,"
+                f"app.kubernetes.io/instance={self._app_instance},{EGRESS_PROBE_LABEL}=true"
+            ),
+            api=api,
+        ):
+            sts = cast(StatefulSet, sts)
+            if not _is_terminating(sts):
+                result[sts.labels["carapace.sandbox"]] = f"{sts.name}-0"
         return result
 
     async def retained_sandbox_session_ids(self) -> set[str]:

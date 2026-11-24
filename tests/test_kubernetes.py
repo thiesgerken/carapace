@@ -610,6 +610,24 @@ async def _list_sandboxes(rt: KubernetesRuntime, *statefulsets: MagicMock) -> di
 
 
 @pytest.mark.asyncio
+async def test_list_egress_probes_selects_this_release_and_skips_terminating() -> None:
+    rt = _make_runtime()
+    rt._ensure_api = AsyncMock(return_value=object())
+
+    async def _statefulsets():
+        yield _statefulset("carapace-sandbox-egress-check-aa", {"carapace.sandbox": "egress-check-aa"})
+        yield _statefulset("carapace-sandbox-egress-check-bb", {"carapace.sandbox": "egress-check-bb"}, deleting=True)
+
+    with patch("carapace.sandbox.kubernetes.StatefulSet.list", return_value=_statefulsets()) as list_sts:
+        probes = await rt.list_egress_probes()
+
+    assert probes == {"egress-check-aa": "carapace-sandbox-egress-check-aa-0"}
+    selector = list_sts.call_args.kwargs["label_selector"].split(",")
+    assert f"app.kubernetes.io/instance={rt._app_instance}" in selector
+    assert "carapace.egress-check=true" in selector
+
+
+@pytest.mark.asyncio
 async def test_list_sandboxes_skips_pool_statefulsets() -> None:
     rt = _make_runtime()
     rt._ensure_api = AsyncMock(return_value=object())
