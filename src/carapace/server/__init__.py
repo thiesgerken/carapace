@@ -1227,10 +1227,7 @@ async def fetch_credential(
     vault_path: str,
     kind: CredentialValueKind = "password",
 ) -> Response:
-    """Fetch a credential value (sentinel-gated, may escalate to user).
-
-    Fast path: the default password/value may use an active skill context.
-    """
+    """Fetch a credential value (sentinel-gated, may escalate to user)."""
     session_id = _authenticate_sandbox(request.headers.get("authorization"))
     if session_id is None:
         raise HTTPException(status_code=401, detail="Unauthorized")

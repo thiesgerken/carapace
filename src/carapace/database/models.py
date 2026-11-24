@@ -101,7 +101,7 @@ class SessionRow(Base):
     archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     pinned: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     favorite: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    # Full session state (attributes, budget, model names, context grants, knowledge
+    # Full session state (attributes, budget, model names, approved operations, knowledge
     # bookkeeping); the scalar columns above are queryable projections kept in sync on write.
     # Nullable only for the rare owner-before-state placeholder (see SessionManager.save_meta).
     state: Mapped[SessionState | None] = mapped_column(PydanticJson(SessionState), nullable=True)
