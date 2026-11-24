@@ -80,14 +80,19 @@ def _rewrite_spans() -> None:
 def _denied_verdict_call(part: dict[str, Any]) -> dict[str, Any]:
     """The verdict tool call with `revise` turned into `deny`; any other part as it is.
 
-    Providers store the arguments either as an object or as the JSON text the model wrote.
+    Providers store the arguments either as an object or as the JSON text the model wrote. That text
+    can be malformed or no object: such a call failed validation and was retried, so it carries no
+    verdict and stays as the model wrote it.
     """
     if part.get("part_kind") != "tool-call" or part.get("tool_name") != _VERDICT_TOOL:
         return part
     args = part.get("args")
     if isinstance(args, str):
-        parsed = json.loads(args)
-        if parsed.get("decision") == "revise":
+        try:
+            parsed = json.loads(args)
+        except json.JSONDecodeError:
+            return part
+        if isinstance(parsed, dict) and parsed.get("decision") == "revise":
             return part | {"args": json.dumps(parsed | {"decision": "deny"})}
     elif isinstance(args, dict) and args.get("decision") == "revise":
         return part | {"args": args | {"decision": "deny"}}

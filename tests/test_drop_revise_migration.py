@@ -41,17 +41,23 @@ _EVENT = {
     "detail": "[sentinel: revise] split it",
 }
 _VERDICT = {"decision": "revise", "explanation": "split it", "risk_level": "low", "comment": ""}
+_BROKEN_ARGS = '{"decision": "revise", "explanation": "split'
 _AUDIT = {"timestamp": _NOW.isoformat(), "kind": "git_push", "args_summary": {}, "sentinel_verdict": _VERDICT}
 
 
 def _shadow_conversation() -> list[dict]:
-    """Two evaluations: one provider stored the verdict arguments as an object, the other as JSON text."""
+    """Two evaluations: one provider stored the verdict arguments as an object, the other as JSON text.
+
+    Plus two retried verdict calls whose text is no JSON object, and another tool's call.
+    """
     messages = [
         ModelRequest(parts=[UserPromptPart(content="git push evaluation #1")]),
         ModelResponse(parts=[ToolCallPart(tool_name="judge", args=dict(_VERDICT), tool_call_id="a")]),
         ModelRequest(parts=[UserPromptPart(content="git push evaluation #2")]),
         ModelResponse(parts=[ToolCallPart(tool_name="judge", args=json.dumps(_VERDICT), tool_call_id="b")]),
         ModelResponse(parts=[ToolCallPart(tool_name="read_skill_file", args={"decision": "revise"}, tool_call_id="c")]),
+        ModelResponse(parts=[ToolCallPart(tool_name="judge", args=_BROKEN_ARGS, tool_call_id="d")]),
+        ModelResponse(parts=[ToolCallPart(tool_name="judge", args='["revise"]', tool_call_id="e")]),
     ]
     return ModelMessagesTypeAdapter.dump_python(messages, mode="json")
 
@@ -139,4 +145,5 @@ def test_a_session_from_before_0019_loads_with_its_change_requests_as_denials(tm
     assert as_object["args"] == _VERDICT | {"decision": "deny"}
     assert json.loads(as_text["args"]) == _VERDICT | {"decision": "deny"}
     assert other_tool["args"] == {"decision": "revise"}, "only the verdict tool's calls carry verdicts"
+    assert [shadow[5]["parts"][0]["args"], shadow[6]["parts"][0]["args"]] == [_BROKEN_ARGS, '["revise"]']
     assert [entry.decision for entry in security.action_log] == ["denied", "allowed"]
