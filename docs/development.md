@@ -15,19 +15,30 @@ uv sync --dev
 
 The shell provides Python 3.14, uv, Node.js 24 (with npm), Git, Helm, Skopeo, and jq. uv manages `.venv`; `UV_PYTHON` selects the Nix interpreter and `UV_PYTHON_DOWNLOADS=never` prevents another interpreter download. With direnv and nix-direnv, run `direnv allow` once in each checkout or worktree to load `.envrc` automatically.
 
-For host iteration, start a disposable Redis, build and load the sandbox image, then run the server:
+For host iteration, start a disposable Redis and the [skill builder](builder.md), build and load the sandbox and builder images, then run the server:
 
 ```sh
 docker run --rm -d --name carapace-dev-redis -p 127.0.0.1:6379:6379 redis:8-alpine
-docker load -i "$(nix build .#packages.aarch64-linux.sandbox-image-lite --no-link --print-out-paths)"  # x86_64-linux.sandbox-image on Linux x64
+docker load -i "$(nix build .#packages.x86_64-linux.sandbox-image --no-link --print-out-paths)"  # aarch64-linux on ARM Linux
+docker load -i "$(nix build .#packages.x86_64-linux.builder-image --no-link --print-out-paths)"  # aarch64-linux on ARM Linux
+export CARAPACE_BUILDER_TOKEN="$(openssl rand -hex 20)"
+docker volume create carapace-dev-builder-nix
+docker run --rm -v carapace-dev-builder-nix:/mnt/nix carapace-builder:local /bin/carapace-builder-init
+docker run -d --name carapace-dev-builder -p 127.0.0.1:8330:8330 -p 127.0.0.1:8331:8331 \
+  -e CARAPACE_BUILDER_TOKEN \
+  --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined \
+  -v carapace-dev-builder-nix:/nix carapace-builder:local
 export CARAPACE_SANDBOX_BASE_IMAGE=carapace-sandbox:local
 export CARAPACE_DATA_DIR=./data/development
 export CARAPACE_CACHE_REDIS_URL=redis://localhost:6379/0
-export CARAPACE_DATABASE_URL=sqlite+pysqlite:///./data/development/carapace.db
+export CARAPACE_BUILDER_URL=http://127.0.0.1:8330
+export CARAPACE_BUILDER_CACHE_URL=http://127.0.0.1:8331
 uv run carapace-server
 ```
 
-Stop the disposable Redis with `docker stop carapace-dev-redis`. The SQLite URL keeps development SQL storage local. For Postgres-backed host iteration, expose a separate development Postgres port and set `CARAPACE_DATABASE_URL` accordingly; keep development data separate from an existing deployment.
+Sandboxes need a Linux Docker host here: they reach the server's proxy and Git endpoint through the gateway of their internal network, which Docker Desktop puts inside its VM, so on a Mac the start-up egress self-test fails. On Apple Silicon, run the stack from [native Linux images](#native-linux-images-on-apple-silicon) instead. The builder's cache on loopback works because the session proxy forwards cache reads to it without the destination check.
+
+The server reads `CARAPACE_TOKEN` and the model keys from `.env` in the working directory (see `.env.example`). The SQLite database defaults to `carapace.db` in the data directory. For Postgres-backed host iteration, expose a separate development Postgres port and set `CARAPACE_DATABASE_URL`; keep development data separate from an existing deployment. Clean up with `docker stop carapace-dev-redis`, `docker rm -f carapace-dev-builder` and `docker volume rm carapace-dev-builder-nix`.
 
 In another shell:
 
