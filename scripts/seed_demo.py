@@ -161,8 +161,6 @@ class Transcript:
             event["parent_tool_id"] = parent
         if comment is not None:
             event["approval_comment"] = comment
-        if isinstance(args.get("contexts"), list):
-            event["contexts"] = args["contexts"]
         self.events.append(event)
         return tool_id
 
@@ -178,14 +176,10 @@ class Transcript:
             }
         )
 
-    def run(
-        self, command: str, output: str, *, title: str | None = None, contexts: list[str] | None = None, **call: Any
-    ) -> str:
+    def run(self, command: str, output: str, *, title: str | None = None, **call: Any) -> str:
         args: dict[str, Any] = {"command": command}
         if title is not None:
             args["title"] = title
-        if contexts is not None:
-            args["contexts"] = contexts
         tool_id = self.call("exec", args, **call)
         self.result(tool_id, "exec", output)
         return tool_id
@@ -273,12 +267,12 @@ def _sandbox_tour(start: datetime) -> Transcript:
 def _pancake_recipe(start: datetime) -> Transcript:
     t = Transcript(start)
     t.user("I really need a pancake recipe", turn_id=PANCAKE_TURN_ID)
-    skill = t.call("use_skill", {"skill_name": "web"})
-    t.result(skill, "use_skill", "Skill 'web' activated.")
+    skill = t.call("read_skill", {"skill_name": "web"})
+    t.result(skill, "read_skill", _WEB_SKILL)
     # Access decisions happen while their exec runs, so they come before its result.
     search = t.call(
         "exec",
-        {"command": _SEARCH, "contexts": ["web"]},
+        {"command": _SEARCH},
         source="sentinel",
         explanation="Searching the web for a recipe is the requested, read-only action.",
     )
@@ -293,7 +287,7 @@ def _pancake_recipe(start: datetime) -> Transcript:
     t.result(search, "exec", '[{"title": "Fluffy Pancakes", "url": "https://recipes.example.org/fluffy-pancakes"}]')
     fetch = t.call(
         "exec",
-        {"command": _FETCH, "contexts": ["web"]},
+        {"command": _FETCH},
         source="sentinel",
         explanation=(
             "The agent fetches a recipe page found in the search results to answer the user's request. "
@@ -327,8 +321,13 @@ def _pancake_recipe(start: datetime) -> Transcript:
 def _recipe_skill(start: datetime) -> Transcript:
     t = Transcript(start)
     t.user("Please write a skill that includes the pancake recipe.")
-    skill = t.call("use_skill", {"skill_name": "create-skill"})
-    t.result(skill, "use_skill", "Skill 'create-skill' activated.")
+    skill = t.call("read_skill", {"skill_name": "create-skill"})
+    t.result(
+        skill,
+        "read_skill",
+        "# Create Skill\n\nCreate or update skills under `skills/<name>/`. Read REFERENCE.md first.\n\n"
+        "The skill has no flake.nix, so it has no commands.",
+    )
     read = t.call("read", {"path": "skills/create-skill/REFERENCE.md", "offset": 0, "limit": 100})
     t.result(read, "read", "# Writing skills\n\nA skill is a folder with a SKILL.md ...")
     t.run("mkdir -p /workspace/skills/recipes", "")
@@ -524,22 +523,20 @@ _EXEC_TOOL = ToolDefinition(
     name="exec",
     description=(
         "Run a shell command in the session **sandbox**.\n\n"
-        "- Every call is reviewed by the sentinel first.\n"
-        "- Pass `contexts` to use the network access of activated skills."
+        "- Domains and credentials it reaches are reviewed by the sentinel."
     ),
     parameters_json_schema={
         "type": "object",
         "properties": {
             "command": {"type": "string", "description": "The command, run with `bash -c`."},
             "title": {"type": "string"},
-            "contexts": {"type": "array"},
         },
         "required": ["command"],
     },
 )
-_USE_SKILL_TOOL = ToolDefinition(
-    name="use_skill",
-    description="Activate a skill so its commands and credentials become available.",
+_READ_SKILL_TOOL = ToolDefinition(
+    name="read_skill",
+    description="Read a skill: its SKILL.md, its commands and whether they are on PATH. Call before using a skill.",
     parameters_json_schema={
         "type": "object",
         "properties": {"skill_name": {"type": "string"}},
@@ -547,6 +544,14 @@ _USE_SKILL_TOOL = ToolDefinition(
     },
 )
 _SEARCH = "web_search 'best fluffy pancake recipe'"
+_WEB_SKILL = (
+    "# Web\n\nSearch the web with `web_search`, read a page with `web_fetch`.\n\n"
+    "# Commands\n"
+    "- `web_fetch`: Fetch a web page as readable text\n"
+    "- `web_search`: Search the web. Asks for: domain search.example.org, "
+    "credential demo/web-search-api-key as $SEARCH_API_KEY.\n\n"
+    "The commands are on PATH."
+)
 _FETCH = "web_fetch 'https://recipes.example.org/fluffy-pancakes'"
 
 
@@ -586,16 +591,14 @@ def _pancake_contexts(prompt: datetime) -> list[LlmContext]:
             "You are carapace, a personal agent. Every tool call is reviewed by the sentinel.",
             [
                 ModelRequest(parts=[UserPromptPart("I really need a pancake recipe")]),
-                ModelResponse(parts=[ToolCallPart("use_skill", {"skill_name": "web"}, tool_call_id="call-1")]),
-                ModelRequest(parts=[ToolReturnPart("use_skill", "Skill 'web' activated.", tool_call_id="call-1")]),
-                ModelResponse(
-                    parts=[ToolCallPart("exec", {"command": _SEARCH, "contexts": ["web"]}, tool_call_id="call-2")]
-                ),
+                ModelResponse(parts=[ToolCallPart("read_skill", {"skill_name": "web"}, tool_call_id="call-1")]),
+                ModelRequest(parts=[ToolReturnPart("read_skill", _WEB_SKILL, tool_call_id="call-1")]),
+                ModelResponse(parts=[ToolCallPart("exec", {"command": _SEARCH}, tool_call_id="call-2")]),
                 ModelRequest(parts=[ToolReturnPart("exec", search_result, tool_call_id="call-2")]),
                 ModelResponse(
                     parts=[
                         ThinkingPart("The first result is a recipe page; fetch it."),
-                        ToolCallPart("exec", {"command": _FETCH, "contexts": ["web"]}, tool_call_id="call-3"),
+                        ToolCallPart("exec", {"command": _FETCH}, tool_call_id="call-3"),
                     ]
                 ),
                 ModelRequest(
@@ -626,7 +629,7 @@ def _pancake_contexts(prompt: datetime) -> list[LlmContext]:
                 model_name=DEMO_MODEL,
                 provider_name="anthropic",
             ),
-            tools=[_EXEC_TOOL, _USE_SKILL_TOOL],
+            tools=[_EXEC_TOOL, _READ_SKILL_TOOL],
             seconds=78,
         ),
         _context(
@@ -638,7 +641,7 @@ def _pancake_contexts(prompt: datetime) -> list[LlmContext]:
                     parts=[
                         UserPromptPart(
                             "New action log entries:\n- user: I really need a pancake recipe\n"
-                            f"- tool_call exec: {_FETCH} (contexts: web)\n\nJudge the last tool call."
+                            f"- tool_call exec: {_FETCH}\n\nJudge the last tool call."
                         )
                     ]
                 )
@@ -790,9 +793,10 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
         0.8,
         thinking=(0.8, 1.3),
     )
-    skill_tool = span("demo-tool-skill", root, "tool", "use_skill", 1.8, 5.0)
-    span("demo-gate-skill", skill_tool, "gate", "use_skill", 1.8, 1.9)
-    span("demo-skill", skill_tool, "skill", "activate", 2.0, 4.9, skill="web", exit_code=0)
+    skill_tool = span("demo-tool-skill", root, "tool", "read_skill", 1.8, 5.0)
+    span("demo-gate-skill", skill_tool, "gate", "read_skill", 1.8, 1.9)
+    span("demo-skill-build", skill_tool, "skill", "build wait", 2.0, 3.6, skill="web")
+    span("demo-skill-sync", skill_tool, "skill", "profile sync", 3.6, 4.9, paths=4)
     request(
         earlier(
             "agent",
