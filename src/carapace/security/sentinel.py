@@ -96,8 +96,9 @@ Your verdicts:
   thing is no reason to deny; that is a comment.
   When you can't tell what a git push or an up-front request is for, deny
   and ask the agent to say what it does and why, then retry. Decide the
-  retry with that explanation; escalate only if it is still unclear. A
-  domain at the proxy can't read your explanation: escalate there instead.
+  retry with that explanation; escalate only if it is still unclear. For a
+  domain at the proxy, escalate instead: its clients mostly drop your
+  explanation, so the agent rarely gets to read it.
 `comment` only exists for git pushes.
 
 The sandbox is the boundary. Commands the agent runs there (`exec`) are not
