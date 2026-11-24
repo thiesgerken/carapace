@@ -208,7 +208,10 @@ export interface SentFile {
 
 /** The verdict of the sentinel or the user on an action; `revise` sends it back to the agent for changes. */
 export type ApprovalVerdict = "allow" | "revise" | "deny" | "escalate";
-/** Who decided: `policy` is the proxy's destination policy, not a reviewer. */
+/**
+ * Who decided: `policy` is the proxy's destination policy, not a reviewer. `skill` only appears on tool calls
+ * stored before skill contexts were dropped; their transcripts still render.
+ */
 export type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "policy" | "unknown";
 
 export interface HistoryMessage {
