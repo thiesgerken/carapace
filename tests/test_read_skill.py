@@ -20,6 +20,7 @@ from carapace.git.store import GitStore
 from carapace.models.config import Config
 from carapace.models.session import SessionState
 from carapace.sandbox.manager import SandboxLimitError, SandboxManager
+from carapace.sandbox.runtime import ExecResult
 from carapace.security.context import SessionSecurity, ToolCallEntry
 from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
@@ -31,6 +32,12 @@ _WEATHER = SkillCommand(
     ),
 )
 _PLAIN = SkillCommand(description="Offline forecast.", needs=SkillNeeds(domains=[], credentials={}, tunnels=[]))
+_TRACKER = SkillCommand(
+    description="Issues in the example tracker.",
+    needs=SkillNeeds(domains=["mcp.example.com"], credentials={}, tunnels=[], oauth=["demo/tracker-oauth"]),
+    mcp=True,
+)
+_TOOLS = "search\tFind issues by text\ncreate\tOpen an issue\n"
 
 
 def _build(skill: str, state: BuildState, **commands: SkillCommand) -> SkillBuild:
@@ -53,6 +60,7 @@ def _deps(tmp_path: Path, builds: list[SkillBuild]) -> Deps:
     skill_builds.wait_built = AsyncMock(side_effect=wait_built)
     sandbox = MagicMock(spec=SandboxManager)
     sandbox.sync_skill_profile = AsyncMock(return_value=None)
+    sandbox.exec_command = AsyncMock(return_value=ExecResult(stdout=_TOOLS, exit_code=0, output=_TOOLS))
     return Deps(
         config=Config(),
         data_dir=tmp_path,
@@ -103,6 +111,50 @@ async def test_a_built_skill_lists_its_commands_and_waits_for_the_profile(tmp_pa
     )
     assert result.endswith("The commands are on PATH.")
     _sync(deps).assert_awaited_once_with("s1")
+    cast(AsyncMock, cast(Any, deps.sandbox).exec_command).assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_an_mcp_server_lists_its_tools_through_its_own_command(tmp_path: Path) -> None:
+    _write_skill(tmp_path, "tracker")
+    deps = _deps(tmp_path, [_build("tracker", "succeeded", tracker=_TRACKER, forecast=_PLAIN)])
+    calls: list[str] = []
+
+    async def exec_command(_session_id: str, command: str, **_kwargs: object) -> ExecResult:
+        # The profile is synced first: the server's command has to be on PATH.
+        _sync(deps).assert_awaited_once()
+        calls.append(command)
+        return ExecResult(stdout=_TOOLS, exit_code=0, output=_TOOLS)
+
+    cast(Any, deps.sandbox).exec_command = AsyncMock(side_effect=exec_command)
+
+    result = await _read_skill(deps, "tracker")
+
+    assert calls == ["tracker --list-tools"]
+    assert "- `tracker`: Issues in the example tracker. An MCP server: `tracker <tool> --flag value`" in result
+    assert result.endswith(
+        "The commands are on PATH.\n\n# Tools of `tracker`\n\nsearch\tFind issues by text\ncreate\tOpen an issue"
+    )
+
+
+@pytest.mark.anyio
+async def test_a_denied_listing_is_reported_and_the_rest_still_returns(tmp_path: Path) -> None:
+    _write_skill(tmp_path, "tracker")
+    deps = _deps(tmp_path, [_build("tracker", "succeeded", tracker=_TRACKER)])
+    denial = "error: Sentinel denied this operation. Not for this task.\n[exit code: 1]"
+    cast(Any, deps.sandbox).exec_command = AsyncMock(
+        return_value=ExecResult(stdout="", exit_code=1, output=denial, leftover_processes_killed=2)
+    )
+
+    result = await _read_skill(deps, "tracker")
+
+    assert result.startswith("---\nname: tracker")
+    assert "The commands are on PATH." in result
+    assert result.endswith(
+        "# Tools of `tracker`\n\nThe tools could not be listed; the server may still answer a call: "
+        + denial
+        + "\n\nListing them killed 2 leftover process(es) from earlier commands."
+    )
 
 
 @pytest.mark.anyio
@@ -207,8 +259,15 @@ async def test_a_disabled_skill_is_not_read(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_a_broken_skill_md_is_reported_with_its_text(tmp_path: Path) -> None:
-    _write_skill(tmp_path, "ideas", "metadata:\n  carapace:\n    network:\n      domains: [ideas.example]\n")
+@pytest.mark.parametrize(
+    "moved",
+    [
+        "    network:\n      domains: [ideas.example]\n",
+        "    mcp:\n      - name: ideas\n        url: https://ideas.example/mcp\n",
+    ],
+)
+async def test_a_broken_skill_md_is_reported_with_its_text(tmp_path: Path, moved: str) -> None:
+    _write_skill(tmp_path, "ideas", f"metadata:\n  carapace:\n{moved}")
     deps = _deps(tmp_path, [])
 
     result = await _read_skill(deps, "ideas")
