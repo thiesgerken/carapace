@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from ..api_keys import Access, Scope
 from ..artifacts import artifact_index, artifact_title, is_artifact_slug
 from ..auth import UserIdentity
+from ..builder.skill_builds import BuildState, RetryRefusedError, SkillBuilds, SkillCommand
 from ..git.store import GitStore
 from ..knowledge import contained_target
 from ..models.git import FileCommit
@@ -116,6 +117,16 @@ class KnowledgeSkill(BaseModel):
     error: str | None = None
 
 
+class KnowledgeSkillBuild(BaseModel):
+    """How the skill's flake at HEAD is built; uncommitted edits are not built."""
+
+    state: BuildState
+    tree: str
+    commands: dict[str, SkillCommand]
+    # Why it failed or is unavailable: the end of the build log, or what went wrong before it.
+    log_tail: str
+
+
 class ArtifactSession(BaseModel):
     session_id: str
     title: str | None = None
@@ -138,6 +149,8 @@ class KnowledgeDirListing(BaseModel):
     doc_name: str | None = None
     doc: str | None = None
     skill: KnowledgeSkill | None = None
+    # Only for a flake skill directly under skills/ at HEAD: those are the ones that get built.
+    build: KnowledgeSkillBuild | None = None
     artifact: KnowledgeArtifact | None = None
 
 
@@ -309,6 +322,29 @@ async def attach_artifact_sessions(
         artifact.updated_in = artifact_session(updated, session_mgr, owner)
 
 
+async def skill_build(builds: SkillBuilds, repo_dir: Path, name: str) -> KnowledgeSkillBuild | None:
+    """The build of skill *name* at HEAD; looking starts the build of a tree that has no result yet."""
+    build = next((build for build in await builds.ensure_built(repo_dir) if build.skill == name), None)
+    if build is None:
+        return None
+    return KnowledgeSkillBuild(state=build.state, tree=build.tree, commands=build.commands, log_tail=build.detail)
+
+
+@router.post("/knowledge/skills/{name}/build/retry")
+async def retry_skill_build(
+    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.write))],
+    name: str,
+) -> KnowledgeSkillBuild:
+    root = server._knowledge_repo_registry.get_for_user(user.username).knowledge_dir.resolve()
+    try:
+        await server._skill_builds.retry(root, name)
+    except RetryRefusedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    build = await skill_build(server._skill_builds, root, name)
+    assert build is not None, "retry() accepted a skill that ensure_built() does not list"
+    return build
+
+
 @router.get("/knowledge/browse", response_model=None)
 @router.get("/knowledge/browse/{path:path}", response_model=None)
 async def browse_knowledge(
@@ -334,6 +370,8 @@ async def browse_knowledge(
             shared = server._artifact_share_store.shared_slugs(user.username)
             for entry in listing.entries:
                 entry.shared = entry.kind == "artifact" and entry.name in shared
+        if listing.kind == "skill" and target.parent == root / "skills":
+            listing.build = await skill_build(server._skill_builds, root, target.name)
         return listing
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Not found")

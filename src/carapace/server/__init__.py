@@ -227,6 +227,8 @@ async def _after_push(owner: str) -> None:
     """A sandbox push was accepted: build the skills it changed ahead of use, then mirror it upstream."""
     try:
         await _skill_builds.ensure_built(_knowledge_repo_registry.get_for_user(owner).knowledge_dir)
+        # The replaced trees start their grace period now rather than at the next hourly sync.
+        await _skill_builds.sync_roots(repo.knowledge_dir for repo in _knowledge_repo_registry.existing())
     finally:
         await _knowledge_git_runtime.push_if_configured(owner)
 
@@ -342,6 +344,26 @@ async def _idle_cleanup_loop(sandbox_mgr: SandboxManager) -> None:
             await sandbox_mgr.cleanup_idle()
         except Exception as exc:
             logger.warning(f"Sandbox idle cleanup error: {exc}")
+
+
+def _log_loop_crash(task: asyncio.Task[None]) -> None:
+    if not task.cancelled() and (exc := task.exception()) is not None:
+        logger.opt(exception=exc).error(f"Background loop {task.get_name()} crashed")
+
+
+async def _builder_roots_loop() -> None:
+    """Send the builder the skill trees of all heads at start and then hourly.
+
+    Hourly is well inside the builder's grace period (24 hours by default), so a reachable server
+    never lets a referenced tree expire. A sandbox push syncs right away (`_after_push`).
+    """
+    while True:
+        try:
+            await _skill_builds.sync_roots(repo.knowledge_dir for repo in _knowledge_repo_registry.existing())
+        except httpx.HTTPError as exc:
+            # The builder may be down or not up yet; its grace period covers the gap.
+            logger.warning(f"Cannot send GC roots to the skill builder ({exc}); retrying in an hour")
+        await asyncio.sleep(3600)
 
 
 async def _warm_pool_loop(sandbox_mgr: SandboxManager, target_size: int) -> None:
@@ -711,6 +733,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     archive_task = asyncio.create_task(_session_archive_loop())
     jobs_task = asyncio.create_task(_jobs_scheduler_loop())
     memory_task = asyncio.create_task(_memory_service.run())
+    roots_task = asyncio.create_task(_builder_roots_loop(), name="builder roots")
+    roots_task.add_done_callback(_log_loop_crash)
 
     def matrix_channel_factory(username: str, user_config: UserConfig) -> MatrixChannelHandle:
         from ..channels.matrix import MatrixChannel
@@ -748,6 +772,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     archive_task.cancel()
     jobs_task.cancel()
     memory_task.cancel()
+    roots_task.cancel()
     await _matrix_channel_manager.stop_all()
     sandbox_server.should_exit = True
     internal_server.should_exit = True

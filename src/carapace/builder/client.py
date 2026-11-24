@@ -6,7 +6,7 @@ import platform
 
 import httpx
 
-from .models import CACHE_HOST, BuilderInfo, BuildResult
+from .models import CACHE_HOST, BuilderInfo, BuildResult, Roots
 
 
 class BuilderSystemMismatchError(RuntimeError):
@@ -82,15 +82,21 @@ class BuilderClient:
         response.raise_for_status()
         return BuildResult.model_validate(response.json())
 
-    async def build(self, tree: str, archive: bytes) -> BuildResult:
+    async def build(self, tree: str, archive: bytes, *, retry: bool = False) -> BuildResult:
         """Build a skill directory archive (`git archive` of its tree). Blocks until the build ends.
 
-        Builds can take minutes; callers must not hold up a push or a session on this.
+        A stored result is returned as it is, unless it is a failure and *retry* is set. Builds can
+        take minutes; callers must not hold up a push or a session on this.
         """
         await self._ensure_system()
-        response = await self._client.put(f"/builds/{tree}", content=archive)
+        response = await self._client.put(f"/builds/{tree}", content=archive, params={"retry": retry})
         response.raise_for_status()
         return BuildResult.model_validate(response.json())
+
+    async def put_roots(self, trees: list[str]) -> None:
+        """Tell the builder which skill trees the current heads reference; the rest may be collected."""
+        response = await self._client.put("/roots", json=Roots(trees=trees).model_dump())
+        response.raise_for_status()
 
     async def aclose(self) -> None:
         await self._client.aclose()

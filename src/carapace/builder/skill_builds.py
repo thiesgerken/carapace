@@ -8,6 +8,7 @@ The skill catalog never reads from here: it is part of the cached prompt prefix 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -77,6 +78,10 @@ class _FlakeSkill:
 _BUILDING = _Outcome(state="building")
 
 
+class RetryRefusedError(Exception):
+    """Only a failed build of a flake skill at head can be retried."""
+
+
 class SkillBuilds:
     def __init__(self, builder: BuilderClient | None) -> None:
         self._builder = builder
@@ -117,6 +122,47 @@ class SkillBuilds:
             with span("skill", "build wait", skill=skill):
                 await self._running[build.tree]
 
+    async def sync_roots(self, repo_dirs: Iterable[Path]) -> None:
+        """Tell the builder which trees the heads of *repo_dirs* reference; it may collect the others.
+
+        Results of other trees are forgotten here, so a later lookup asks the builder again instead of
+        trusting store paths that its garbage collection may have deleted by then.
+        """
+        if self._builder is None:
+            return
+        trees: set[str] = set()
+        for repo_dir in repo_dirs:
+            try:
+                trees.update(skill.tree for skill in await _flake_skills_at_head(repo_dir))
+            except RuntimeError as exc:
+                # One broken repo must not stop the others' roots. Its own trees expire after the
+                # grace period and are built again on the next lookup.
+                logger.error(f"Cannot read the skill trees of {repo_dir}; not sending them to the builder: {exc}")
+        await self._builder.put_roots(sorted(trees))
+        for tree in self._results.keys() - trees:
+            del self._results[tree]
+
+    async def retry(self, repo_dir: Path, name: str) -> None:
+        """Build the failed skill *name* at the head of *repo_dir* again, in the background."""
+        skill = next((skill for skill in await _flake_skills_at_head(repo_dir) if skill.name == name), None)
+        if skill is None:
+            raise RetryRefusedError(f"{name} is not a flake skill at the head of the knowledge repo")
+        if skill.error:
+            raise RetryRefusedError(f"{name} cannot be built until its SKILL.md is fixed: {skill.error}")
+        if self._builder is None or skill.tree in self._running:
+            raise RetryRefusedError(f"{name} is not waiting for a retry")
+        result = self._results.get(skill.tree)
+        if result is None or result.state != "failed":
+            state = result.state if result else "not looked up yet"
+            raise RetryRefusedError(f"Only a failed build can be retried; {name} is {state}")
+        del self._results[skill.tree]
+        self._start(self._builder, repo_dir, skill.tree, retry=True)
+
+    def _start(self, builder: BuilderClient, repo_dir: Path, tree: str, *, retry: bool = False) -> None:
+        task = asyncio.create_task(self._build(builder, repo_dir, tree, retry=retry))
+        task.add_done_callback(lambda done: _log_crash(done, tree))
+        self._running[tree] = task
+
     def _outcome(self, repo_dir: Path, skill: _FlakeSkill) -> _Outcome:
         if skill.error:
             return _Outcome(state="failed", detail=skill.error)
@@ -127,27 +173,26 @@ class SkillBuilds:
             return result
         # Unavailable is the builder's state, not the skill's: every request tries again.
         if skill.tree not in self._running:
-            task = asyncio.create_task(self._build(self._builder, repo_dir, skill.tree))
-            task.add_done_callback(lambda done: _log_crash(done, skill.tree))
-            self._running[skill.tree] = task
+            self._start(self._builder, repo_dir, skill.tree)
         return result or _BUILDING
 
-    async def _build(self, builder: BuilderClient, repo_dir: Path, tree: str) -> None:
+    async def _build(self, builder: BuilderClient, repo_dir: Path, tree: str, *, retry: bool) -> None:
         try:
-            self._results[tree] = await _build_outcome(builder, repo_dir, tree)
+            self._results[tree] = await _build_outcome(builder, repo_dir, tree, retry=retry)
         finally:
             del self._running[tree]
 
 
-async def _build_outcome(builder: BuilderClient, repo_dir: Path, tree: str) -> _Outcome:
+async def _build_outcome(builder: BuilderClient, repo_dir: Path, tree: str, *, retry: bool) -> _Outcome:
     try:
-        result = await builder.get(tree)
+        # A retry skips the stored result: it is the failure being retried.
+        result = None if retry else await builder.get(tree)
         if result is None:
             try:
                 archive = await _git(repo_dir, "archive", tree)
             except RuntimeError as exc:
                 return _Outcome(state="failed", detail=str(exc))
-            result = await builder.build(tree, archive)
+            result = await builder.build(tree, archive, retry=retry)
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         # The builder refused this skill (an archive its filter rejects, one too large): asking again won't help.

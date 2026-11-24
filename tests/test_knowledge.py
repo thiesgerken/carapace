@@ -61,3 +61,13 @@ def test_knowledge_repo_registry_rejects_noncanonical_owner(tmp_path: Path) -> N
 
     with pytest.raises(ValueError, match="username must be lowercase"):
         registry.get_for_user("Thies")
+
+
+def test_knowledge_repo_registry_lists_the_repos_that_exist(tmp_path: Path) -> None:
+    registry = KnowledgeRepoRegistry(tmp_path)
+    assert registry.existing() == []
+
+    registry.ensure_user_repo("thies")
+    registry.ensure_user_repo("ada")
+
+    assert [repo.owner for repo in registry.existing()] == ["ada", "thies"]

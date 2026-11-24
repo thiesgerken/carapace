@@ -75,18 +75,6 @@ async def _drain_warm_refill(mgr: SandboxManager) -> None:
         await asyncio.gather(*tasks)
 
 
-# ── ContextGrant model ──────────────────────────────────────────────
-
-
-# ── ContextGrantEntry (action log) ──────────────────────────────────
-
-
-# ── SessionState context_grants field ────────────────────────────────
-
-
-# ── SandboxManager credential cache ─────────────────────────────────
-
-
 class TestSandboxManagerLifecycle:
     def _make_manager(self, tmp_path: Path, db_factory) -> SandboxManager:
         runtime = make_runtime_mock()
@@ -610,9 +598,6 @@ class TestSandboxManagerLifecycle:
             "carapace-sandbox-warm-1",
             "carapace-sandbox-warm-1-0",
         )
-
-
-# ── SandboxManager context tracking ─────────────────────────────────
 
 
 # ── ApprovalSource type ─────────────────────────────────────────────

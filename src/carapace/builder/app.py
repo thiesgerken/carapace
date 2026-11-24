@@ -8,7 +8,7 @@ import os
 import secrets
 import tarfile
 import tempfile
-from collections import defaultdict
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -20,7 +20,8 @@ from pydantic import TypeAdapter
 
 from . import nix
 from .cache import create_cache_app
-from .models import BuilderInfo, BuildResult, TreeHash, UpstreamCache
+from .models import BuilderInfo, BuildResult, GcResult, Roots, TreeHash, UpstreamCache
+from .store import SkillStore
 
 PORT = 8330
 CACHE_PORT = 8331
@@ -43,28 +44,10 @@ def _extract(archive: bytes, destination: Path) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid skill archive: {exc}") from exc
 
 
-def create_app(token: str, state_dir: Path, system: str, cache_public_keys: list[str]) -> FastAPI:
-    builds_dir = state_dir / "builds"
-    roots_dir = state_dir / "roots"
-    work_dir = state_dir / "work"
-    for directory in (builds_dir, roots_dir, work_dir):
-        directory.mkdir(parents=True, exist_ok=True)
-    # One build per tree at a time; a second request for the same tree waits and gets the result.
-    locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-
+def create_app(token: str, store: SkillStore, system: str, cache_public_keys: list[str]) -> FastAPI:
     def authorize(credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)]) -> None:
         if not secrets.compare_digest(credentials.credentials.encode(), token.encode()):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid builder token")
-
-    def stored(tree: str) -> BuildResult | None:
-        path = builds_dir / f"{tree}.json"
-        return BuildResult.model_validate_json(path.read_text()) if path.exists() else None
-
-    def store(result: BuildResult) -> None:
-        path = builds_dir / f"{result.tree}.json"
-        partial = path.with_suffix(".partial")
-        partial.write_text(result.model_dump_json())
-        partial.replace(path)
 
     app = FastAPI(title="Carapace skill builder")
     authorized = [Depends(authorize)]
@@ -79,31 +62,40 @@ def create_app(token: str, state_dir: Path, system: str, cache_public_keys: list
 
     @app.get("/builds/{tree}", dependencies=authorized)
     async def get_build(tree: TreeHash) -> BuildResult:
-        result = stored(tree)
+        result = store.result(tree)
         if result is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"No build for tree {tree}")
         return result
 
     @app.put("/builds/{tree}", dependencies=authorized)
-    async def build(tree: TreeHash, request: Request) -> BuildResult:
+    async def build(tree: TreeHash, request: Request, retry: bool = False) -> BuildResult:
         """Build the skill directory archive in the body (tar, optionally compressed).
 
-        Blocks until the build finished. A tree that has a result, succeeded or failed, is
-        answered from it without building.
+        Blocks until the build finished. A tree that has a result is answered from it without
+        building, unless the result is a failure and *retry* is set.
         """
-        async with locks[tree]:
-            if (result := stored(tree)) is not None:
+        # A second request for the same tree waits for the first and gets its result.
+        async with store.locked(tree):
+            if (result := store.result(tree)) is not None and not (retry and result.state == "failed"):
                 return result
             archive = await request.body()
             if len(archive) > MAX_ARCHIVE_BYTES:
                 raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Skill archive too large")
-            with tempfile.TemporaryDirectory(dir=work_dir) as source:
+            with tempfile.TemporaryDirectory(dir=store.work) as source:
                 _extract(archive, Path(source))
                 logger.info(f"Building skill tree {tree}")
-                result = await nix.build_skill(Path(source), tree, system, roots_dir)
+                result = await nix.build_skill(Path(source), tree, system, store.roots)
             logger.info(f"Skill tree {tree}: {result.state}")
-            store(result)
+            store.save(result)
             return result
+
+    @app.put("/roots", status_code=status.HTTP_204_NO_CONTENT, dependencies=authorized)
+    async def put_roots(roots: Roots) -> None:
+        store.referenced(roots.trees)
+
+    @app.post("/gc", dependencies=authorized)
+    async def gc() -> GcResult:
+        return await store.collect_garbage()
 
     return app
 
@@ -115,13 +107,19 @@ async def _start_checks() -> str:
     return system
 
 
-async def _serve(token: str, upstreams: list[UpstreamCache]) -> None:
+async def _serve(token: str, upstreams: list[UpstreamCache], gc_grace: timedelta, gc_interval: timedelta) -> None:
     system = await _start_checks()
     keys = [CACHE_PUBLIC_KEY.read_text().strip(), *(upstream.public_key for upstream in upstreams)]
+    store = SkillStore(STATE_DIR, gc_grace)
     # The build API and the cache are separate listeners: the session proxy forwards to the cache only.
-    api = uvicorn.Server(uvicorn.Config(create_app(token, STATE_DIR, system, keys), host="0.0.0.0", port=PORT))
+    api = uvicorn.Server(uvicorn.Config(create_app(token, store, system, keys), host="0.0.0.0", port=PORT))
     cache = uvicorn.Server(uvicorn.Config(create_cache_app(upstreams), host="0.0.0.0", port=CACHE_PORT))
-    await asyncio.gather(api.serve(), cache.serve())
+    # A failed GC run stops the builder rather than letting the store grow unnoticed.
+    await asyncio.gather(api.serve(), cache.serve(), store.collect_garbage_every(gc_interval))
+
+
+def _hours(name: str, default: float) -> timedelta:
+    return timedelta(hours=float(os.environ.get(name, default)))
 
 
 def main() -> None:
@@ -130,4 +128,6 @@ def main() -> None:
     if not token:
         raise SystemExit("CARAPACE_BUILDER_TOKEN must be set")
     upstreams = TypeAdapter(list[UpstreamCache]).validate_json(os.environ["CARAPACE_BUILDER_UPSTREAM_CACHES"])
-    asyncio.run(_serve(token, upstreams))
+    grace = _hours("CARAPACE_BUILDER_GC_GRACE_HOURS", 24)
+    interval = _hours("CARAPACE_BUILDER_GC_INTERVAL_HOURS", 24)
+    asyncio.run(_serve(token, upstreams, grace, interval))

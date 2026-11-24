@@ -29,6 +29,7 @@ import { ArtifactPreview } from "@/components/artifact-preview";
 import { useAppLocale } from "@/components/locale-provider";
 import { GlobalGitPanel, KNOWLEDGE_GIT_CHANGED_EVENT, useGlobalGit } from "@/components/git-sync";
 import { MarkdownContent } from "@/components/markdown-content";
+import { SkillBuildPanel } from "@/components/skill-build-panel";
 import {
   browseKnowledge,
   knowledgeArtifactUrl,
@@ -577,6 +578,16 @@ export function KnowledgeView() {
               </div>
             )}
             {result.skill ? <div className="mt-6"><SkillCard skill={result.skill} vaultStatus={result.vault_status} /></div> : null}
+            {result.build ? (
+              <div className="mt-4">
+                <SkillBuildPanel
+                  key={`${result.path}:${result.build.tree}`}
+                  server={server}
+                  skill={result.path.split("/").pop() ?? ""}
+                  initial={result.build}
+                />
+              </div>
+            ) : null}
             {result.doc ? (
               <section className="mt-6">
                 <h2 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">

@@ -72,6 +72,14 @@ async def verify_sandbox(system: str) -> None:
         )
 
 
+async def collect_garbage() -> str:
+    """Delete every store path no GC root keeps alive; the daemon allows this for untrusted users."""
+    code, stdout, stderr = await _run("nix-store", "--gc")
+    if code != 0:
+        raise RuntimeError(f"nix-store --gc failed: {_tail(stderr)}")
+    return _tail(stdout + stderr)
+
+
 def _failed(tree: str, log: str) -> BuildResult:
     return BuildResult(tree=tree, state="failed", log_tail=_tail(log))
 
