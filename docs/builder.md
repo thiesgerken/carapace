@@ -125,6 +125,8 @@ A Pod Security label covers every pod in its namespace, and the server creates s
 
 The chart puts the builder's Deployment, PVC, Service and NetworkPolicy into the builder namespace, writes the token Secret into both namespaces, and points the server at `http://<release>-builder.<builder namespace>:8330` (and `:8331`). The NetworkPolicy admits only server pods from the release namespace. With `builder.auth.existingSecret`, create that Secret in both namespaces.
 
+The chart only ships the ingress side and adds no egress policy for the server. If the release namespace denies egress by default, or only allows it within the namespace, allow server pods egress to cluster DNS, the API server (it manages sandboxes through it) and the builder namespace on ports 8330 and 8331, on top of its outbound traffic to model providers and the domains it proxies for sandboxes. Without the builder rule, every sandbox start fails with `The skill builder is configured but unreachable`.
+
 When namespaces are managed elsewhere (GitOps), set `builder.createNamespace: false` and create the namespace with the label yourself:
 
 ```sh
