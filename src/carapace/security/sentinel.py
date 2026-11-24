@@ -905,6 +905,12 @@ class Sentinel:
                     f"- {c.vault_path} ({c.name})" + (f": {c.description}" if c.description else "")
                     for c in request.credentials
                 )
+            if request.access_tokens:
+                prompt_parts.append("OAuth access tokens (short-lived; the refresh token stays with Carapace):")
+                prompt_parts.extend(
+                    f"- {c.vault_path} ({c.name})" + (f": {c.description}" if c.description else "")
+                    for c in request.access_tokens
+                )
             prompt_parts.append(_store_path_line(request.store_path))
             prompt_parts.append(_boundary_origin(command, follow_up=follow_up))
             prompt_parts.append("One verdict for everything listed; an approval holds until this exec ends.")
@@ -914,7 +920,10 @@ class Sentinel:
                 session,
                 prompt,
                 kind="upfront_request",
-                subject=f"{len(request.domains)} domains, {len(request.credentials)} credentials",
+                subject=(
+                    f"{len(request.domains)} domains, {len(request.credentials)} credentials, "
+                    f"{len(request.access_tokens)} access tokens"
+                ),
                 agent_reads_verdict=False,
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,

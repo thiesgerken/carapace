@@ -80,7 +80,7 @@ The store lives on a volume that replaces `/nix`, so it survives restarts and im
 
 ## Running it
 
-The server finds the builder through `CARAPACE_BUILDER_URL`, `CARAPACE_BUILDER_CACHE_URL` (its cache, port 8331) and `CARAPACE_BUILDER_TOKEN`; the two URLs come together. Without them there is no builder, and skills with commands are not built. The server logs a warning at start. `CARAPACE_BUILDER_TIMEOUT_SECONDS` (default 1800) bounds one request.
+The server builds a skill tree after a push that changes it and otherwise on first use (see [skills.md](skills.md#building-skills)). It finds the builder through `CARAPACE_BUILDER_URL`, `CARAPACE_BUILDER_CACHE_URL` (its cache, port 8331) and `CARAPACE_BUILDER_TOKEN`; the two URLs come together. Without them there is no builder, and skills with commands are not built. The server logs a warning at start. `CARAPACE_BUILDER_TIMEOUT_SECONDS` (default 1800) bounds one request.
 
 ### Docker Compose
 

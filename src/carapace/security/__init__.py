@@ -855,6 +855,8 @@ async def evaluate_upfront_request_with(
 
     The declaration only bundles requests and carries no trust; the sentinel judges it like the single requests.
     """
+    # Toward the user and the audit log an access token is a credential request like any other.
+    credentials = [*request.credentials, *request.access_tokens]
     if session.yolo_mode:
         outcome = _BoundaryOutcome(
             verdict=SentinelVerdict(decision="allow", explanation="YOLO mode bypassed sentinel."),
@@ -867,7 +869,7 @@ async def evaluate_upfront_request_with(
     else:
         for domain in request.domains:
             session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
-        for credential in request.credentials:
+        for credential in credentials:
             session.notify_credential_review(
                 credential.vault_path, "[sentinel] reviewing", name=credential.name, approval_source="sentinel"
             )
@@ -883,12 +885,12 @@ async def evaluate_upfront_request_with(
         outcome = await _decide_boundary_request(
             session,
             verdict,
-            subject=", ".join([*request.domains, *(c.vault_path for c in request.credentials)]),
+            subject=", ".join([*request.domains, *(c.vault_path for c in credentials)]),
             what="the up-front request",
             items=_AccessItems(
-                vault_paths=[c.vault_path for c in request.credentials],
-                names=[c.name for c in request.credentials],
-                descriptions=[c.description for c in request.credentials],
+                vault_paths=[c.vault_path for c in credentials],
+                names=[c.name for c in credentials],
+                descriptions=[c.description for c in credentials],
                 domains=request.domains,
             ),
         )
@@ -910,7 +912,7 @@ async def evaluate_upfront_request_with(
                 explanation=outcome.verdict.explanation,
             )
         )
-    for credential in request.credentials:
+    for credential in credentials:
         _record_credential_outcome(
             session,
             outcome,

@@ -49,7 +49,7 @@ def test_get_prints_http_error(
     monkeypatch.setattr(urllib.request, "urlopen", fail)
 
     with pytest.raises(SystemExit) as exc_info:
-        namespace["cmd_get"](argparse.Namespace(vault_path="files/key", kind="login", output=None))
+        namespace["cmd_get"](argparse.Namespace(vault_path="files/key", kind="login", refresh=False, output=None))
 
     assert exc_info.value.code == 1
     assert capsys.readouterr().err == f"error: {expected}\n"
@@ -71,3 +71,27 @@ def test_list_prints_the_denial(monkeypatch: pytest.MonkeyPatch, capsys: pytest.
 
     assert exc_info.value.code == 1
     assert capsys.readouterr().err == "error: User denied this operation.\n"
+
+
+@pytest.mark.parametrize(
+    ("refresh", "url"),
+    [(False, "http://carapace/oauth-token/demo/oauth"), (True, "http://carapace/oauth-token/demo/oauth?refresh=true")],
+)
+def test_an_access_token_comes_from_its_own_endpoint(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], refresh: bool, url: str
+) -> None:
+    namespace = runpy.run_path(str(Path(__file__).parents[1] / "sandbox" / "ccred"))
+    requested: list[str] = []
+
+    def answer(request: urllib.request.Request) -> Any:
+        requested.append(request.full_url)
+        return io.BytesIO(b"access-token")
+
+    monkeypatch.setenv("CARAPACE_API_URL", "http://carapace")
+    monkeypatch.setattr(urllib.request, "urlopen", answer)
+
+    namespace["cmd_get"](
+        argparse.Namespace(vault_path="demo/oauth", kind="oauth_access_token", refresh=refresh, output=None)
+    )
+
+    assert (requested, capsys.readouterr().out) == ([url], "access-token")
