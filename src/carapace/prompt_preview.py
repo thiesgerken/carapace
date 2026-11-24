@@ -27,6 +27,7 @@ from pydantic_ai.tools import ToolDefinition
 from .agent.autonomy import AutonomyStreak
 from .agent.deps import Deps
 from .agent.tools import agent_instructions, build_session_info, create_agent
+from .builder.skill_builds import SkillBuilds
 from .credentials import CredentialRegistry
 from .knowledge import KnowledgeRepoHandle
 from .memory.llm import structured_agent
@@ -128,6 +129,8 @@ async def _agent(inputs: PreviewInputs) -> PromptPreview:
         sentinel=_sentinel_for(inputs, state),
         git_store=inputs.repo.git_store,
         skill_catalog=inputs.repo.skill_registry.scan(),
+        # The preview records the first request and runs no tool.
+        skill_builds=SkillBuilds(None),
         agent_model=_recording_model(),
         agent_model_id=model,
         usage_tracker=UsageTracker(),

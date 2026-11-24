@@ -123,7 +123,7 @@ Debug view to refetch its timeline.
 
 The same envelope is used for normal agent tools and for security-side notifications. Examples:
 
-- Regular tools: `tool` matches the agent tool name (`read`, `exec`, `use_skill`, …).
+- Regular tools: `tool` matches the agent tool name (`read`, `exec`, `read_skill`, …).
 - Domain decisions: `tool` is `proxy_domain`, `args` includes `domain`.
 - Git push summary: `tool` is `git_push`.
 - Credential decision summary: `tool` is `credential_access`, `args` includes `vault_path`.
@@ -176,9 +176,9 @@ When present:
 - `approval_verdict`: `allow` \| `revise` \| `deny` \| `escalate`
 - `approval_comment`: what the sentinel told the agent about a tool call or git push it allowed (see [Sentinel comments](security.md#sentinel-comments))
 
-**`skill`** — the action was allowed because it's covered by a context grant from an activated skill (e.g., domain access or credential fetch within a matching `contexts` exec).
+**`skill`** — only in sessions from before skills were read instead of activated: the action was covered by a skill's context grant.
 
-**`bypass`** — the action was silently allowed without sentinel evaluation (e.g., proxy bypass during sandbox-provided skill activation).
+**`bypass`** — the action was allowed without sentinel evaluation because the session is in YOLO mode.
 
 ## Turn-control messages
 

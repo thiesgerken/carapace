@@ -169,8 +169,6 @@ Set the server log level via `logLevel` (default `info`; `debug`, `warning`, `er
 
 `sandbox.maxPerUser` (default `100`) caps how many sandboxes one user holds, running or scaled down. Each keeps its session PVC until the session is deleted or its sandbox is reset. At the limit, starting a sandbox for a session that has none fails until the user deletes old sessions; resuming an existing one always works. `sandbox.warnPerUser` (default `20`) is the count at which the sidebar starts warning. `0` disables either.
 
-Sandbox images must contain an executable at `/usr/local/bin/carapace-skill-activator`. The official image provides it; custom images must implement the same [activator contract](../../docs/sandbox.md#custom-sandbox-skill-activator-contract). No Helm setting selects the executable.
-
 ### Application configuration
 
 The chart no longer accepts application `config.yaml` through Helm values and does not render a ConfigMap for it. Platform and user settings are managed from the web UI after install:

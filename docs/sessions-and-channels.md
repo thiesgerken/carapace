@@ -17,8 +17,6 @@ class SessionState(BaseModel):
     title_model_name: str | None
   attributes: SessionAttributes  # private / archived / pinned / favorite / unattended / ask_mode / yolo_mode
     approved_operations: list[str]
-    activated_skills: list[str]
-    context_grants: dict[str, ContextGrant]  # per-skill domain & credential grants
     budget: SessionBudget
     created_at: datetime
     last_active: datetime
@@ -299,7 +297,7 @@ Slash commands are the user's control interface for managing sessions. Interacti
 | Command                                         | Effect                                                         |
 | ----------------------------------------------- | -------------------------------------------------------------- |
 | `/help`                                         | Show available commands                                        |
-| `/session`                                      | Show session metadata, context grants, and domain allowlist    |
+| `/session`                                      | Show session metadata and domain allowlist                     |
 | `/skills`                                       | List available skills                                          |
 | `/retitle`                                      | Regenerate session title, or set it explicitly                 |
 | `/budget`                                       | Show or update session budgets: tokens, actual and equivalent cost, tool calls, autonomy |

@@ -100,7 +100,6 @@ class SessionApprovalMixin:
         match_args: dict[str, Any] | None = None,
     ) -> str:
         normalized_args = normalize_tool_call_args(tool, args)
-        contexts_raw = normalized_args.get("contexts")
         matching_args = normalize_tool_call_args(tool, match_args) if match_args is not None else normalized_args
         event: dict[str, Any] = {
             "role": "tool_call",
@@ -115,8 +114,6 @@ class SessionApprovalMixin:
             event["parent_tool_id"] = parent_tool_id
         if approval_comment is not None:
             event["approval_comment"] = approval_comment
-        if isinstance(contexts_raw, list):
-            event["contexts"] = list(contexts_raw)
 
         is_pending_sentinel_update = approval_source == "sentinel" and approval_verdict is None
         should_update_existing = approval_source in {"sentinel", "user"} and (

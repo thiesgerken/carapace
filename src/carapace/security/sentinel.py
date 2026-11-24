@@ -37,13 +37,11 @@ from .context import (
     ActionLogEntry,
     AgentResponseEntry,
     ApprovalEntry,
-    ContextGrantEntry,
     CredentialAccessEntry,
     GitPushEntry,
     RewindEntry,
     SentinelVerdict,
     SessionSecurity,
-    SkillActivatedEntry,
     ToolCallEntry,
     ToolResultEntry,
     UnattendedSentinelVerdict,
@@ -119,23 +117,8 @@ what a script does when you see the agent running skill commands,
 and how skills relate to each other: a skill often documents that it
 builds on another skill or command, e.g. a notes skill that gets its
 repo access from a gitea skill. Before you revise, escalate or deny a
-step that looks out of scope, read the SKILL.md of the skills active
-in the session.
-
-About use_skill: when you see a use_skill call, the `declared_domains`,
-`declared_creds`, and `declared_mcp` fields are NOT requested by the agent — they are
-declared by the skill itself in its SKILL.md `metadata.carapace` frontmatter and
-automatically bundled into the call for your review. Approving
-use_skill implicitly grants all declared domains, credentials, and MCP
-server connections for the duration of that skill's usage. Your job is
-to judge whether activating the skill makes sense for the user's
-request, not whether each individual credential or domain is justified
-separately.
-
-MCP tool calls appear as tools named `mcp:<server>:<tool>`. The server
-connection itself was approved with use_skill, but each individual call
-still comes to you: judge whether the specific tool and arguments fit
-the user's request.
+step that looks out of scope, read the SKILL.md of the skills the agent
+read in the session (its `read_skill` calls in the action log).
 
 Always respond using the requested structured output schema.
 
@@ -199,13 +182,6 @@ def _format_entry(entry: ActionLogEntry) -> str:
             return f"[agent]: {text!r}"
         case ApprovalEntry(tool=tool, args=args, decision=decision):
             return f"[user_decision]: user {decision} {tool}({_format_args(args)})"
-        case SkillActivatedEntry(skill_name=name, description=desc, declared_domains=domains):
-            parts = [f"[skill]: {name} activated"]
-            if desc:
-                parts.append(f"(desc: {desc!r})")
-            if domains:
-                parts.append(f"(domains: {domains})")
-            return " ".join(parts)
         case UserVouchedEntry():
             return "[user_vouched]: user confirmed agent is trustworthy"
         case GitPushEntry(ref=ref, decision=decision, explanation=explanation):
@@ -218,15 +194,6 @@ def _format_entry(entry: ActionLogEntry) -> str:
             if explanation:
                 line += f" ({explanation})"
             return line
-        case ContextGrantEntry(skill_name=name, domains=domains, vault_paths=vault_paths, mcp_servers=mcp_servers):
-            parts = [f"[context_grant]: {name}"]
-            if domains:
-                parts.append(f"domains={sorted(domains)}")
-            if vault_paths:
-                parts.append(f"credentials={sorted(vault_paths)}")
-            if mcp_servers:
-                parts.append(f"mcp_servers={sorted(mcp_servers)}")
-            return " ".join(parts)
         case RewindEntry(user_message=user_message, removed_turns=removed_turns):
             target = (
                 f"the turn of user message {_truncate_text(user_message, 200)!r}"

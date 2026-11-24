@@ -182,8 +182,6 @@ class SessionManager:
                 yolo_mode=yolo_mode,
             ),
             approved_operations=[],
-            activated_skills=[],
-            context_grants={},
             budget=budget.model_copy(deep=True) if budget is not None else SessionBudget(),
             created_at=now,
             last_active=now,

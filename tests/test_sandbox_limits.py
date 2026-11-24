@@ -33,7 +33,6 @@ def _manager(tmp_path: Path, db_factory, *, retained: set[str], max_per_user: in
         session_factory=db_factory,
         max_sandboxes_per_user=max_per_user,
     )
-    mgr._rerun_activated_skill_setup = AsyncMock()
     return mgr
 
 

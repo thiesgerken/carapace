@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from loguru import logger
 
 from ..models.config import Config
-from ..models.skills import SkillInfo, context_grants_session_summary
+from ..models.skills import SkillInfo
 from ..sandbox.manager import SandboxManager
 from ..usage import BudgetMetric, SessionUsageDetails
 from ..ws_models import SLASH_COMMANDS
@@ -77,17 +77,11 @@ class SessionCommandMixin:
             return {"command": "help", "data": {"commands": SLASH_COMMANDS}}
 
         if cmd == "/session":
-            grants_summary = context_grants_session_summary(
-                session_id,
-                active.state.context_grants,
-                self._sandbox_mgr.get_cached_credential,
-            )
             return {
                 "command": "session",
                 "data": {
                     "session_id": session_id,
                     "channel_type": active.state.channel_type,
-                    "context_grants": grants_summary,
                     "allowed_domains": self._sandbox_mgr.get_domain_info(session_id),
                 },
             }

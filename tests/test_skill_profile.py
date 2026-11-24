@@ -23,7 +23,7 @@ from carapace.sandbox.exec_flow import (
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.runtime import ExecResult
 from carapace.sandbox.session_lifecycle import SessionContainer
-from carapace.sandbox.skill_profile import SYNC_PID_FILE, SkillProfileSync
+from carapace.sandbox.skill_profile import KILLER_MARKER, SYNC_PID_FILE, SkillProfileSync
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillRegistry
 from tests.runtime_mocks import make_runtime_mock
@@ -82,20 +82,28 @@ class SandboxStub:
         self.profile: tuple[str, ...] = ()
         self.syncs = 0
         self.interrupt_next = False
-        self.bypass_open = lambda: False
-        self.synced_during_bypass = False
+        self.fail_with = ""
+        # Set: `nix-env` runs until the test releases it.
+        self.hold: asyncio.Event | None = None
 
     async def exec(self, _container_id: str, command: Any, *_args: object, **_kwargs: object) -> ExecResult:
         if command == KILL_LEFTOVER_PROCESSES_COMMAND:
             return ExecResult(stdout=f"0\n{self.marker}", exit_code=0, output="")
+        if command == ["/bin/sh", "-c", KILLER_MARKER]:
+            return ExecResult(stdout=self.marker, exit_code=0, output=self.marker)
         if command[:2] == ["/bin/bash", "-c"] and "nix-env" in command[2]:
             self.syncs += 1
-            self.synced_during_bypass |= self.bypass_open()
+            # What this run installs: the script carries the plan it was made from.
+            plan = self.plan
+            if self.hold is not None:
+                await self.hold.wait()
+            if self.fail_with:
+                return ExecResult(stdout="", exit_code=1, output=self.fail_with)
             if self.interrupt_next:
                 # The next exec's killer ended it; profile and marker stay as they were.
                 self.interrupt_next = False
                 return ExecResult(stdout="", exit_code=137, output="Killed")
-            self.profile, self.marker = self.plan.store_paths, self.plan.digest
+            self.profile, self.marker = plan.store_paths, plan.digest
             return ExecResult(stdout="", exit_code=0, output="")
         return ExecResult(stdout="", exit_code=0, output="")
 
@@ -113,18 +121,14 @@ def _coordinator(stub: SandboxStub) -> tuple[SandboxExecCoordinator, SkillProfil
         sessions={},
         allowed_domains={},
         exec_temp_domains={},
-        exec_context_skill_domains={},
         session_current_command={},
         domain_approval_cbs={},
         domain_notify_cbs={},
         exec_locks={},
-        proxy_bypass_sessions=set(),
-        session_current_contexts={},
         exec_notified_domains={},
         exec_notified_credentials={},
         running_execs={},
     )
-    stub.bypass_open = lambda: "s1" in state.proxy_bypass_sessions
     return SandboxExecCoordinator(runtime=runtime, state=state, profile_sync=sync), sync
 
 
@@ -238,17 +242,6 @@ def test_paths_that_are_not_store_paths_are_refused() -> None:
 
 
 @pytest.mark.anyio
-async def test_a_bypass_exec_resumes_the_sync_only_after_the_bypass() -> None:
-    stub = SandboxStub(ProfilePlan(store_paths=(_path("a-skill"),), excluded={}))
-    coordinator, sync = _coordinator(stub)
-
-    await coordinator.exec_in_container(_SC, "carapace-skill-activator", bypass_proxy=True)
-    await _idle_tasks(sync)
-
-    assert (stub.syncs, stub.synced_during_bypass) == (1, False)
-
-
-@pytest.mark.anyio
 async def test_the_killer_cancels_a_sync_that_has_not_started_nix_env_yet() -> None:
     stub = SandboxStub(ProfilePlan(store_paths=(_path("a-skill"),), excluded={}))
     runtime = make_runtime_mock()
@@ -304,3 +297,47 @@ def _run(script: str) -> str:
 async def _idle_tasks(sync: SkillProfileSync) -> None:
     while any(not task.done() for task in sync._tasks.values()):
         await asyncio.sleep(0)
+
+
+@pytest.mark.anyio
+async def test_a_waited_sync_returns_once_the_profile_holds_the_plan() -> None:
+    stub = SandboxStub(ProfilePlan(store_paths=(_path("a-skill"),), excluded={}))
+    coordinator, _sync = _coordinator(stub)
+    ensure_session = AsyncMock(return_value=_SC)
+
+    assert await coordinator.sync_skill_profile("s1", ensure_session=ensure_session) is None
+    assert (stub.profile, stub.syncs) == ((_path("a-skill"),), 1)
+
+    # The marker matches the plan now: nothing runs again.
+    assert await coordinator.sync_skill_profile("s1", ensure_session=ensure_session) is None
+    assert stub.syncs == 1
+
+
+@pytest.mark.anyio
+async def test_a_waited_sync_lets_a_running_one_finish_and_then_syncs_a_newer_plan() -> None:
+    stub = SandboxStub(ProfilePlan(store_paths=(_path("a-skill"),), excluded={}))
+    coordinator, sync = _coordinator(stub)
+    stub.hold = asyncio.Event()
+    sync.start("s1", "container-1", marker=None)
+    while not stub.syncs:
+        await asyncio.sleep(0)
+    stub.plan = ProfilePlan(store_paths=(_path("a-skill"), _path("b-skill")), excluded={})
+
+    waited = asyncio.create_task(coordinator.sync_skill_profile("s1", ensure_session=AsyncMock(return_value=_SC)))
+    await asyncio.sleep(0)
+    assert (stub.syncs, waited.done()) == (1, False)
+    stub.hold.set()
+
+    assert await waited is None
+    assert (stub.profile, stub.syncs) == ((_path("a-skill"), _path("b-skill")), 2)
+
+
+@pytest.mark.anyio
+async def test_a_waited_sync_reports_why_it_failed() -> None:
+    stub = SandboxStub(ProfilePlan(store_paths=(_path("a-skill"),), excluded={}))
+    stub.fail_with = "error: cannot substitute path"
+    coordinator, _sync = _coordinator(stub)
+
+    failure = await coordinator.sync_skill_profile("s1", ensure_session=AsyncMock(return_value=_SC))
+
+    assert failure == "The skill profile sync failed: error: cannot substitute path"

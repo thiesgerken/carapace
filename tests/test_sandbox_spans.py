@@ -14,6 +14,7 @@ from pydantic_ai.usage import RunUsage
 from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps
 from carapace.agent.tools import create_agent
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
@@ -121,6 +122,7 @@ def test_a_domain_decision_waiting_on_the_user_is_a_wait_inside_the_domain_check
 
 def _deps(tmp_path: Path, sandbox: SandboxManager) -> Deps:
     return Deps(
+        skill_builds=SkillBuilds(None),
         config=Config.model_validate({}),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
@@ -171,7 +173,6 @@ def _manager(tmp_path: Path, db_factory) -> SandboxManager:
         knowledge_repo_for_session=lambda _session_id: handle,
         session_factory=db_factory,
     )
-    mgr._rerun_activated_skill_setup = AsyncMock()
     return mgr
 
 

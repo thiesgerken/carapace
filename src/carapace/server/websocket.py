@@ -143,15 +143,11 @@ class WebSocketSubscriber:
         tool_call_id: str | None = None,
         approval_comment: str | None = None,
     ) -> None:
-        normalized_args = normalize_tool_call_args(tool, args)
-        contexts_raw = normalized_args.get("contexts")
-        contexts = list(contexts_raw) if isinstance(contexts_raw, list) else []
         await self._safe_send(
             ToolCallInfo(
                 tool=tool,
-                args=normalized_args,
+                args=normalize_tool_call_args(tool, args),
                 detail=detail,
-                contexts=contexts,
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,

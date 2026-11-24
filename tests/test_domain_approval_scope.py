@@ -20,13 +20,10 @@ def _coordinator(domain_cb: Any) -> SandboxExecCoordinator:
         sessions={},
         allowed_domains={},
         exec_temp_domains={},
-        exec_context_skill_domains={},
         session_current_command={},
         domain_approval_cbs={"s1": domain_cb},
         domain_notify_cbs={},
         exec_locks={},
-        proxy_bypass_sessions=set(),
-        session_current_contexts={},
         exec_notified_domains={},
         exec_notified_credentials={},
         running_execs={},
@@ -49,9 +46,9 @@ def test_parallel_execs_under_one_tool_call_are_each_reviewed(tmp_path: Path, db
         coordinator = _coordinator(engine._make_domain_eval_cb(security, sentinel, active))
 
         for command in ("curl https://api.example.com/a", "curl https://api.example.com/b"):
-            coordinator._grant_exec_scope("s1", command, [], None, bypass_proxy=False)
+            coordinator._grant_exec_scope("s1", command)
             assert (await coordinator.request_domain_approval("s1", "api.example.com")).allowed
-            coordinator._revoke_exec_scope("s1", bypass_proxy=False)
+            coordinator._revoke_exec_scope("s1")
 
         assert sentinel.evaluate_domain_access.await_count == 2
 

@@ -8,11 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from carapace.agent.tools import _cache_skill_credentials, _mcp_bearer_token
 from carapace.credentials.oauth import NotOAuthStateError, OAuthStateRefusedError, access_token, fetch_for_sandbox
 from carapace.credentials.protocol import CredentialBackendError
-from carapace.models.credentials import CredentialMetadata
-from carapace.models.skills import SkillCredentialDecl, SkillMcpBearerAuth, SkillMcpDecl
 
 _BASE_BLOB = {"token_url": "https://issuer.example.com/token", "client_id": "cid", "refresh_token": "rt"}
 
@@ -60,21 +57,6 @@ async def test_other_values_go_to_the_sandbox_in_the_kind_asked_for() -> None:
 
     assert await fetch_for_sandbox(vault, "demo/login") == '{"user": "a", "password": "b"}'
     assert await fetch_for_sandbox(vault, "demo/login", "json") == "json of demo/login"
-
-
-async def test_use_skill_never_caches_an_oauth_entry() -> None:
-    ctx = MagicMock()
-    ctx.deps.credential_registry = _FakeVault(_BASE_BLOB)
-    ctx.deps.credential_registry.fetch_metadata = AsyncMock(
-        return_value=CredentialMetadata(vault_path="demo/oauth", name="OAuth", description="")
-    )
-    ctx.deps.append_session_events = None
-    decl = SkillCredentialDecl(vault_path="demo/oauth", description="OAuth", env_var="TOKEN")
-
-    message, _ = await _cache_skill_credentials(ctx, [decl], "tracker")
-
-    assert "refresh token" in message
-    ctx.deps.sandbox.cache_credential.assert_not_called()
 
 
 async def test_a_missing_access_token_is_refreshed_and_written_back() -> None:
@@ -134,16 +116,3 @@ async def test_a_near_miss_is_refused_but_cannot_be_refreshed_either() -> None:
 
     with pytest.raises(NotOAuthStateError):
         await access_token(vault, "demo/google", refresh=False)
-
-
-async def test_an_mcp_bearer_token_is_never_an_oauth_entry() -> None:
-    ctx = MagicMock()
-    ctx.deps.credential_registry = _FakeVault(_BASE_BLOB)
-    ctx.deps.sandbox.get_cached_credential = MagicMock(return_value=None)
-    decl = SkillMcpDecl(
-        name="tracker", url="https://mcp.example.com/mcp", auth=SkillMcpBearerAuth(vault_path="demo/oauth")
-    )
-
-    with pytest.raises(OAuthStateRefusedError):
-        await _mcp_bearer_token(ctx, decl)
-    ctx.deps.sandbox.cache_credential.assert_not_called()

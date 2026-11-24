@@ -16,10 +16,8 @@ from ..api_keys import Access, Scope
 from ..artifacts import artifact_index, artifact_title, is_artifact_slug
 from ..auth import UserIdentity
 from ..builder.skill_builds import BuildState, RetryRefusedError, SkillBuilds, SkillCommand
-from ..credentials import UnknownBackendError
 from ..git.store import GitStore
 from ..knowledge import contained_target
-from ..models.credentials import CredentialRegistryProtocol
 from ..models.git import FileCommit
 from ..models.skills import SkillCarapaceConfig
 from ..session.manager import SessionManager
@@ -154,9 +152,6 @@ class KnowledgeDirListing(BaseModel):
     # Only for a flake skill directly under skills/ at HEAD: those are the ones that get built.
     build: KnowledgeSkillBuild | None = None
     artifact: KnowledgeArtifact | None = None
-    # Per secret vault_path referenced by the skill (credentials + mcp auth):
-    # "present" | "absent" | "error" (vault unreachable). Empty unless a skill dir.
-    vault_status: dict[str, str] = {}
 
 
 class KnowledgeFileInfo(BaseModel):
@@ -327,34 +322,6 @@ async def attach_artifact_sessions(
         artifact.updated_in = artifact_session(updated, session_mgr, owner)
 
 
-def _skill_secret_refs(cfg: SkillCarapaceConfig) -> list[str]:
-    """All vault paths a skill references (credentials + MCP auth), de-duplicated."""
-    refs = {c.vault_path for c in cfg.credentials}
-    refs |= {m.auth.vault_path for m in cfg.mcp if m.auth is not None}
-    return sorted(refs)
-
-
-async def resolve_vault_status(cfg: SkillCarapaceConfig, registry: CredentialRegistryProtocol) -> dict[str, str]:
-    """Check each referenced vault path for existence (metadata only, never values).
-
-    Status per path: ``present`` (a loaded backend has it), ``absent`` (a loaded
-    backend lacks it), ``unconfigured`` (the named backend is not registered — e.g.
-    the file backend is disabled), or ``error`` (backend reachable but failed).
-    """
-    status: dict[str, str] = {}
-    for ref in _skill_secret_refs(cfg):
-        try:
-            await registry.fetch_metadata(ref)
-            status[ref] = "present"
-        except UnknownBackendError:
-            status[ref] = "unconfigured"
-        except KeyError:
-            status[ref] = "absent"
-        except Exception:
-            status[ref] = "error"
-    return status
-
-
 async def skill_build(builds: SkillBuilds, repo_dir: Path, name: str) -> KnowledgeSkillBuild | None:
     """The build of skill *name* at HEAD; looking starts the build of a tree that has no result yet."""
     build = next((build for build in await builds.ensure_built(repo_dir) if build.skill == name), None)
@@ -405,12 +372,6 @@ async def browse_knowledge(
                 entry.shared = entry.kind == "artifact" and entry.name in shared
         if listing.kind == "skill" and target.parent == root / "skills":
             listing.build = await skill_build(server._skill_builds, root, target.name)
-        if listing.skill is not None and listing.skill.carapace is not None:
-            try:
-                registry = await server._credential_registry_for_user(user.username)
-                listing.vault_status = await resolve_vault_status(listing.skill.carapace, registry)
-            except Exception as exc:
-                logger.warning(f"Vault status lookup failed for skill '{target.name}': {exc}")
         return listing
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Not found")

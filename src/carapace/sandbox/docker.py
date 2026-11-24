@@ -413,7 +413,7 @@ class DockerRuntime(ContainerRuntime):
                 container = self._client.containers.get(container_id)
             except NotFound as err:
                 raise ContainerGoneError(f"Container {container_id[:12]} no longer exists") from err
-            # Absolute path: /workspace/.carapace/bin comes first in PATH and holds skill shims.
+            # Absolute path: the agent can write to the directories on PATH.
             cmd = ["/bin/bash", "-c", command] if isinstance(command, str) else command
 
             try:
