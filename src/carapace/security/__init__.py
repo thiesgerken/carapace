@@ -40,6 +40,9 @@ SAFE_TOOLS: frozenset[str] = frozenset(
         "write",
         "str_replace",
         "list_skills",
+        # Reading a skill grants nothing; the call stays in the action log so the sentinel knows what later
+        # requests are about.
+        "read_skill",
         "send_file",
         # Shows an already pushed artifact (the push itself was gated) and sends nothing out.
         "show_artifact",
@@ -52,11 +55,7 @@ SAFE_TOOLS: frozenset[str] = frozenset(
 )
 
 
-def _is_safe(tool_name: str, args: dict[str, Any]) -> bool:
-    # `contexts` hands an exec its skills' credentials, domains and tunnels without a boundary request, so
-    # such an exec is still reviewed. Goes away with context grants (#574).
-    if tool_name == "exec" and args.get("contexts"):
-        return False
+def _is_safe(tool_name: str) -> bool:
     return tool_name in SAFE_TOOLS
 
 
@@ -110,7 +109,7 @@ async def evaluate_with(
         )
         return
 
-    if _is_safe(tool_name, args):
+    if _is_safe(tool_name):
         entry = ToolCallEntry(tool=tool_name, args=args, decision="auto_allowed")
         session.append(entry)
         session.write_audit(

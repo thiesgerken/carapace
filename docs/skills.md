@@ -2,24 +2,22 @@
 
 carapace uses the open [AgentSkills](https://agentskills.io/) format for skills. This makes skills portable to any AgentSkills-compatible agent (Claude Code, Cursor, Gemini CLI, etc.) while carapace adds its own security layer on top.
 
-Skills with commands are moving to Nix flakes that the Carapace builder builds; [skill-flakes.md](skill-flakes.md) describes how to write one. Until that migration lands, the format below is the one sessions use.
+A skill with commands is a Nix flake that the Carapace builder builds; [skill-flakes.md](skill-flakes.md) describes how to write one. Its commands are on the agent's `PATH` in every session, and they ask for what they need when they start.
 
 ## Skill structure
 
-A skill is a directory with a `SKILL.md` file (Markdown instructions with YAML frontmatter) plus optional `scripts/`, `references/`, and `assets/` directories.
-
-Carapace adds optional `metadata.carapace` frontmatter for network domains, credentials, command aliases, and MCP servers. Runtime preparation is supplied by the sandbox image, not by the AgentSkills format or Carapace.
+A skill is a directory with a `SKILL.md` file (Markdown instructions with YAML frontmatter), optionally a `flake.nix` and `flake.lock` that build its commands, and whatever else it needs (`scripts/`, `references/`, sources the flake builds from).
 
 ```text
 skills/
   my-skill/
     SKILL.md             # required: instructions and optional metadata.carapace
-    scripts/             # optional executable code
+    flake.nix            # optional: builds the skill's commands (skill-flakes.md)
+    flake.lock           # required next to flake.nix
     references/          # optional detailed documentation
-    assets/              # optional supporting files
 ```
 
-The [official sandbox activator](#official-sandbox-activator) recognizes Python and Node manifests and `setup.sh`. Custom images may use different runtime inputs without changing the skill metadata schema.
+A skill without a flake has no commands: its instructions are all there is to it.
 
 ## SKILL.md (AgentSkills standard)
 
@@ -31,29 +29,17 @@ name: web-search
 description: >
   Search the web using SearXNG. Use when the user asks to look
   something up, find information, or research a topic.
-metadata:
-  author: user
-  version: "1.0"
 ---
 
 # Web Search
 
-## When to use
-
-Use this skill when the user wants to search the web.
-
-## How to search
-
-Run the search script:
-scripts/search.py --query "<search terms>"
-
-Returns JSON with title, URL, and snippet for each result.
-Summarize the top results for the user.
+Run `web-search "<search terms>"`. It prints JSON with title, URL and
+snippet for each result. Summarize the top results for the user.
 ```
 
 ## carapace metadata
 
-Declare carapace-specific metadata in `SKILL.md` frontmatter under `metadata.carapace`.
+`metadata.carapace` in the frontmatter holds what Carapace needs beyond the AgentSkills fields:
 
 ```yaml
 ---
@@ -61,262 +47,46 @@ name: web-search
 description: Search the web.
 metadata:
   carapace:
-    network:
-      domains:
-        - api.searxng.example.com
-        - "*.search.example.com"
-      tunnels:
-        - host: imap.zoho.eu
-          remote_port: 993
-          local_port: 1993
-          description: Zoho IMAP over the carapace CONNECT proxy
-    credentials:
-      - vault_path: dev/searxng-url
-        description: Base URL for the SearXNG instance
-        env_var: SEARXNG_URL
-      - vault_path: dev/searxng-cert
-        description: Optional client certificate
-        file: ~/.config/searxng/client.pem
-    commands:
-      - name: web-search
-        command: uv run --directory /workspace/skills/web-search scripts/search.py
-    mcp:
-      - name: linear
-        url: https://mcp.linear.app/mcp
-        description: Linear issue tracking
-        auth:
-          type: bearer
-          vault_path: dev/linear-mcp-token
-      - name: karakeep
-        command: npx -y @karakeep/mcp
-        description: Karakeep bookmarks (stdio server, runs in the sandbox)
+    disabled: true
 ---
 ```
 
-### Fields
+**`disabled`** — optional boolean, default `false`. Set `metadata.carapace.disabled: true` to exclude a skill from automatic discovery, agent catalogs, shared prompts, prompt previews and builds; `read_skill` refuses it. The files remain browsable and editable in the Knowledge UI/API. Set it to `false` (or remove it) to opt in, then start a new session: the catalog of a running session does not change.
 
-**`disabled`** — optional boolean, default `false`. Set `metadata.carapace.disabled: true` to exclude a skill from automatic discovery, agent catalogs, shared prompts, and prompt previews, and reject direct `use_skill` activation before credential access, approvals, MCP connections, sandbox preparation, or grants. The files remain browsable and editable in the Knowledge UI/API. Set it to `false` (or remove it) to opt in, then start a new session. This controls discovery and future activation, not live revocation: already-active skills, tools, and grants remain available, including in resumed sessions.
+**`hints`** — optional map of strings, extra metadata for tooling.
 
-**`network.domains`** — list of domains the skill needs to access. These are registered as a **context grant** when the skill is activated. The domains are only allowed during commands that explicitly request the skill's context (see [Context-scoped access](#context-scoped-access) below). Supports wildcard matching (`*.example.com`).
+**`mcp`** — still accepted, but nothing reads it any more: MCP servers are flake commands now ([skill-flakes.md](skill-flakes.md#mcp-servers)). The field goes away with [#578](https://github.com/thiesgerken/carapace/issues/578).
 
-**`network.tunnels`** — list of exec-scoped TCP tunnels the skill needs. Each tunnel declaration has:
+`network`, `credentials` and `commands` moved into the skill's flake, where each command declares the domains, credentials and OAuth entries it needs ([skill-flakes.md](skill-flakes.md#commands-and-what-they-need)). A `SKILL.md` that still has one of them is [broken](#invalid-frontmatter), with a message that points there.
 
-- `host` — exact remote hostname. Wildcards, IP literals, loopback names, Docker special hostnames, and Kubernetes/internal service names (`*.svc`, `*.cluster.local`, etc.) are not allowed.
-- `remote_port` — target port on the remote host.
-- `local_port` — unprivileged local port inside the sandbox used for the duration of the exec.
-- `description` — optional human-readable explanation for approvals and docs.
+## Reading a skill (`read_skill`)
 
-carapace manages these tunnels itself during `exec(..., contexts=[...])`. Skills do not start background processes. Tunnel setup is temporary and is re-established if the sandbox has to be recreated before the command retry.
+The agent calls `read_skill(skill_name)` before it uses a skill. Nothing is activated or granted: the agent could read the file anyway, and its commands ask for what they need when they start, through [`cgate`](sandbox.md#declaring-needs-up-front-cgate) and `ccred`, reviewed per `exec`.
 
-`network.domains` and `network.tunnels` may refer to the same hostname. That is intentional: HTTP and HTTPS through the proxy still work normally, while direct socket connections to the tunneled hostname are shadowed during that exec.
+`read_skill` returns:
 
-**`credentials`** — list of credentials the skill needs. Each entry has:
+- the full `SKILL.md`,
+- the skill's commands with their descriptions and what each one asks for when it starts (domains, credentials, OAuth tokens), read from the build's `passthru.carapace`,
+- whether the commands are on `PATH`; if not, why: the build failed (with the end of its log), the builder is unavailable, two skills expose the same command name, or the profile sync failed.
 
-- `vault_path` — path in the password manager
-- `description` — human-readable explanation shown in approval prompts
-- `env_var` — environment variable name for per-exec injection (optional)
-- `file` — file path for per-exec injection with mode `0400` (optional)
-- `base64` — if `true`, the stored value is base64-decoded before injection (optional, default `false`). Useful for multi-line secrets (e.g. kubeconfig) that cannot be stored verbatim in a single-line password field.
+It waits until the commands are usable. While the skill builds, it waits for the build (a `skill` span `build wait` in the turn's timeline); then it brings the sandbox's [skill profile](sandbox.md#skill-commands-on-path) to the current head and waits for that too (the `skill` span `profile sync`). Both spans nest under the `read_skill` call, and the chat hears them start and end as [`span` messages](websocket-session.md#span). A skill without a flake returns at once.
 
-> **Note**: Credential declarations are implemented. See [credentials.md](credentials.md) for approval flow, backend config, and `ccred` usage.
-
-**`commands`** — optional list of command aliases the skill exposes. Each entry has:
-
-- `name` — the exact alias token, for example `web-search`
-- `command` — a single-line shell command to run for that alias
-
-When the skill is activated, carapace writes a generated wrapper script for each alias into `/workspace/.carapace/bin/`, marks it executable, and exposes that directory on `PATH`. Agents should invoke the plain alias token such as `web-search`, not the absolute shim path. The wrapper looks like this conceptually:
-
-```sh
-#!/bin/sh
-exec <configured command> "$@"
-```
-
-Notes:
-
-- The wrapper preserves the caller's working directory. Do not rely on it changing cwd to the skill directory.
-- Extra arguments are forwarded with `"$@"`.
-- The wrapper uses shell `exec` so the launcher shell is replaced by the real command.
-- `command` must be a single non-empty line.
-- Alias names must be unique across active skills. If an active skill already owns an alias, activating another skill with the same alias fails.
-
-**`mcp`** — optional list of MCP servers the skill connects to. While the skill is active, each server's tools are exposed to the agent as regular, typed tools named `<name>_<tool>` (built from the server's own JSON Schemas). Each entry is one of two transports.
-
-Common fields:
-
-- `name` — server name, used as the tool-name prefix. Must start with a letter and contain only letters, numbers, or underscores.
-- `description` — optional human-readable explanation for approvals and docs.
-
-**HTTP transport** — set `url`:
-
-- `url` — the server's HTTP(S) endpoint (streamable HTTP transport).
-- `auth` — optional authentication (a tagged union on `type`):
-  - `type: bearer` with a `vault_path`: the token is read from the vault at activation and sent as `Authorization: Bearer <token>`.
-  - `type: oauth` with a `vault_path`: the vault entry holds a JSON OAuth-state blob; carapace injects the access token, refreshes it via the refresh-token grant when missing/near-expiry/rejected (401), and **writes the rotated blob back to the vault**. See "OAuth servers" below.
-- The connection is made by the **backend process**; the URL is pinned to the declared value.
-
-**stdio transport** — set `command`:
-
-- `command` — a shell command that starts the MCP server (e.g. `npx -y @karakeep/mcp`, `uv run --directory /workspace/skills/foo mcp-server`).
-- The server process runs **inside the sandbox**, one spawn per operation (once to enumerate tools at activation, once per tool call), bridged by the baked-in `carapace-mcp-bridge`. Nothing persists between calls, so the process model matches an ordinary `exec` — no long-lived connection.
-- `auth` does not apply. The server inherits the skill's context-injected credentials, so declare any secrets it needs under `credentials` with an `env_var` (or `file`); they are injected into the bridge exec under this skill's context.
-- The server may reach the skill's declared `network.domains` (the bridge runs under the skill context), and stateful servers that expect a session across calls are not supported (each call is a fresh process — same limitation as invoking mcp2cli per call).
-
-Notes (both transports):
-
-- The declared servers are part of the `use_skill` approval, like domains and credentials. Every individual MCP tool call is still reviewed by the sentinel (shown as `mcp:<server>:<tool>`), with the usual escalate-to-user path.
-- Oversized text results are spilled to a file in the sandbox (same mechanism as `exec` output). If that write fails, the call fails: the agent never gets a truncated preview whose full output is lost.
-- Server tools disappear when the session ends; there is no explicit deactivation, matching context grants.
-- **Prompt cache**: adding the server tools changes the agent's tool definitions, which invalidates the cached prompt, conversation included, on the next request. Each activation that adds MCP tools pays one full cache write of the session so far. This is a known, unwanted cost (see [persistent-context.md](persistent-context.md#known-breaks)); prefer `commands` aliases via `mcp2cli` for skills activated late in long sessions.
-- **Graceful degradation**: MCP servers are connected/enumerated at `use_skill` time. If a server fails (missing/expired credential, unreachable endpoint, refresh failure), the skill **still activates** — the `use_skill` result tells the agent that server is unavailable and why, and only its `<server>_*` tools are absent.
-- Skills that need full control (stateful sessions, custom output shaping) can still wrap a server as a CLI with `mcp2cli` and a `commands` alias instead; `mcp` is the shortcut for the common case.
-
-### OAuth servers (`type: oauth`)
-
-The vault entry for an OAuth MCP server holds a compact JSON blob:
-
-```json
-{"token_url":"https://issuer/oauth2/token","client_id":"...","client_secret":"...","refresh_token":"...","access_token":"...","expires_at":1750000000,"scope":"..."}
-```
-
-Only `token_url`, `client_id`, and `refresh_token` are required (`client_secret` is omitted for public/PKCE clients; `access_token`/`expires_at` are filled in by carapace on first refresh). At connection carapace refreshes the token if it is missing or within a minute of expiry, retries once on a 401, and writes the updated blob (including a rotated `refresh_token`, if the provider returns one) back to the vault — so **the vault backend must support writes** (Bitwarden/Vaultwarden does; the file backend does too but is disabled by default).
-
-The one-time authorization that produces the initial `refresh_token` (typically DCR + PKCE + a browser login) is done **out-of-band** — carapace only refreshes. Assemble the blob with `scripts/mcp_oauth_blob.py` and store it at the `auth.vault_path`:
-
-```sh
-python scripts/mcp_oauth_blob.py --token-url https://issuer/oauth2/token \
-    --client-id <id> --refresh-token <token> > blob.json
-# then store blob.json's contents in the vault entry the skill points at
-```
-
-## Context-scoped access
-
-Skill-declared domains and credentials are **not globally available** in the session. Instead, they're scoped to individual `exec` calls via the `contexts` parameter.
-
-### How it works
-
-1. **Activation** creates a context grant: `use_skill("moneydb")` registers the skill's declared domains and credential vault paths as a grant keyed by `"moneydb"`.
-2. **Exec requests contexts**: The agent passes `contexts=["moneydb"]` when running commands that need the skill's resources.
-3. **Per-exec injection**: Domains are temporarily allowed in the proxy. Credential values are injected as env vars or written as files for the duration of that single exec. File-based credentials are deleted immediately after the command completes.
-   Tunnel declarations are also applied here: carapace temporarily shadows the declared hostnames inside the sandbox, starts trusted CONNECT-backed tunnel helpers, and tears them down again after the exec.
-4. **No context = no access**: An exec without `contexts` (or with unrelated contexts) does not get the skill's domains or credentials. The sentinel evaluates any credential access without a matching context.
-
-For command aliases declared in `metadata.carapace`, carapace also recognizes the alias at the start of an `exec` command. If the owning skill is already active but missing from `contexts`, carapace adds that context automatically, resolves the command through the generated shim on `PATH`, and warns the agent to pass the context explicitly next time while continuing to use the plain alias.
-
-### Matching semantics
-
-- **Subset matching**: `contexts=["moneydb", "example"]` matches grants for both `"moneydb"` and `"example"` (union of both grants' resources).
-- **Validation**: Every context string must correspond to an activated skill. Unknown context names are rejected.
-- **Piping**: When piping output between skill scripts, pass all relevant contexts: `contexts=["moneydb", "web-search"]`.
-
-## Sandbox-provided activation
-
-Every sandbox image provides `/usr/local/bin/carapace-skill-activator`. Carapace invokes it after `use_skill` approval with all declared commands and the exact committed source revision. The image determines how to prepare the runtime. For example, a custom Nix image can realize commands from a locked root flake instead of installing dependencies in each skill directory.
-
-### Lifecycle and command overrides
-
-Activation runs on `use_skill` and is repeated for active skills whenever the sandbox is recreated or resumed. Workspace edits do not trigger automatic reactivation. The activator selects its inputs from the supplied source revision; Carapace does not reset the skill directory.
-
-The activator may override declared command aliases. Omitted aliases retain their original commands. Carapace validates the complete response before registering the command shims, keeping command invocation independent of how the image prepares dependencies.
-
-### Credentials and network access
-
-Skill credentials are approved and cached before activation. Successfully resolved declarations with `env_var` or `file` are injected for the invocation; temporary credential files are removed afterwards. The proxy temporarily allows all destinations during activation. Activators and their child processes must never print secrets.
-
-### Failure behavior
-
-Missing activators, invalid responses, nonzero exits, and timeouts fail automatic setup. The skill's instructions and context grant remain available, but new shims are not installed after activation failure. Filesystem side effects are not rolled back. Recreation retains best-effort setup behavior.
-
-See the [sandbox activator contract](sandbox.md#custom-sandbox-skill-activator-contract) for protocol, timeout, source fetching, and image integrity requirements.
-
-## Official sandbox activator
-
-The official image contains an activator implementing the following file conventions. These are not requirements for custom images.
-
-### Provider order and restoration
-
-The activator detects matching provider inputs in the committed source revision and runs these steps in order:
-
-1. `pyproject.toml` + `uv.lock` → `uv sync --locked`
-2. `package.json` + `package-lock.json` (without `pnpm-lock.yaml`) → `npm ci`
-3. `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
-4. `setup.sh` → `sh ./setup.sh`
-
-If the source revision is missing locally, the activator fetches it from `GIT_REPO_URL`. Before execution, it restores only matching provider inputs and, when setup or commands are present, the tracked `SKILL.md`. It reads raw Git blobs without checkout hooks, filters, or index updates. Symlinked directory components are rejected; destination file symlinks are replaced rather than followed. It does not reset the complete skill directory. Generated environments and unrelated workspace files remain in place. Restoration protects these specific files, not every transitive file a build or hook might read.
-
-The official activator returns status summaries without command overrides or raw hook output.
-
-### Python dependencies
-
-The official image contains **uv**. Include both `pyproject.toml` and a committed `uv.lock` to enable its locked dependency-installation step.
-
-#### Lifecycle
-
-1. **Activation** (`use_skill`): with the official sandbox activator, committed `pyproject.toml` and `uv.lock` files run `uv sync --locked` in `/workspace/skills/<name>/`. The proxy is temporarily bypassed during install.
-2. **Runtime**: Scripts should be invoked with `uv run --directory /workspace/skills/<name> scripts/<script>.py` so they run inside the venv.
-3. **Persistence**: Skills are persisted via Git — changes in `/workspace/skills/` are committed and pushed to the workspace repository.
-4. **Container restart**: Venvs are rebuilt for all activated skills automatically when the sandbox is recreated or resumed, for example after idle timeout.
-
-#### Managing dependencies
-
-Inside the sandbox, use standard `uv` commands:
-
-```bash
-# Add a dependency (updates pyproject.toml + uv.lock)
-uv add --directory /workspace/skills/my-skill httpx
-
-# Remove a dependency
-uv remove --directory /workspace/skills/my-skill httpx
-
-# Install from existing lock file
-uv sync --directory /workspace/skills/my-skill
-```
-
-Always commit a `uv.lock` alongside `pyproject.toml` to ensure reproducible installs.
-
-### Node dependencies
-
-Skills can also use Node-based tooling. The official sandbox image and activator include `npm` and `pnpm` for skill activation.
-
-#### Supported lockfile workflows
-
-- `package.json` + `package-lock.json` → `npm ci`
-- `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
-
-If both lockfiles are present in the source revision, the official activator uses pnpm and skips `npm ci`.
-
-As with Python skills, commit the lockfile alongside the manifest so activation is reproducible.
-
-### setup.sh
-
-With the official sandbox activator, a committed `setup.sh` runs after the dependency providers above.
-
-Use it for local, deterministic post-processing such as:
-
-- Materializing approved credentials into config files consumed by a CLI or SDK
-- Generating derived files that depend on injected secrets
-- Finalizing a tool-specific workspace layout after dependency installation
-
-Keep `setup.sh` idempotent. It runs on first activation and again after sandbox recreation.
-
-Because it runs automatically and may execute with approved credentials available, `setup.sh` should be treated like code, not documentation. The official activator restores the copy from the source revision selected by Carapace before execution.
-
-Like dependency installation, `setup.sh` receives approved activation credentials and runs during the proxy-bypass window. Never print secrets. Use it to generate tool-specific configuration from approved inputs, such as a `.npmrc` or API client config.
+`read_skill` is on the safe list: it is never reviewed, but the call is in the action log, so the sentinel knows which skill the requests that follow belong to.
 
 ## Discovery (progressive disclosure)
 
 At startup, carapace loads only `name` and `description` from each enabled skill's frontmatter (~100 tokens per skill). These are injected into the agent's system prompt as a skill catalog. The agent sees what's available without the full instructions consuming context. Skills with `metadata.carapace.disabled: true` are omitted.
 
-The full `SKILL.md` body is loaded only when the agent decides a skill is relevant — via the `use_skill` tool.
+The full `SKILL.md` is loaded only when the agent decides a skill is relevant, with `read_skill`.
 
 ### Invalid frontmatter
 
 A `SKILL.md` without frontmatter is valid: its directory name becomes the skill name. Frontmatter that cannot be read (invalid YAML such as an unquoted value containing a colon followed by a space, a missing closing `---`, a non-string `name` or `description`, a non-mapping `metadata`) or an invalid `metadata.carapace` makes the skill broken:
 
 - The catalog still lists it under its directory name, with a description that says it is broken and why, so the agent can fix it. The server logs the error.
-- `use_skill` refuses to activate it and names the file and the error. No approval, credentials, grants, or sandbox setup happen.
+- `read_skill` returns the error together with the file's text.
+- The builder does not build it; its build state is failed with the error.
 - The Knowledge UI shows the error on the skill card; for invalid YAML it renders the raw file.
-- If an active skill breaks, `exec` keeps working but warns that the skill's command aliases are not resolved, and its sandbox setup after recreation fails.
 
 The opt-out survives an invalid `metadata.carapace`, because `disabled: true` is read from the raw mapping. Invalid YAML cannot carry an opt-out, so such a skill is listed as broken (directory name and error position only, no file content) until it is fixed.
 
@@ -331,26 +101,24 @@ A skill with a `flake.nix` next to its `SKILL.md` is built by the [builder](buil
 - **What it reads.** The skill directory at `HEAD`, from Git objects rather than the working tree, so the tree hash, the archive the builder gets and the checks (`flake.nix` present, not disabled) all describe the same content.
 - **The catalog stays out of it.** The skill catalog is read from frontmatter only, never waits for the builder and never contains build state, because it is part of the cached prompt prefix ([persistent-context.md](persistent-context.md)).
 
-## Skill activation as a security event
+## Reading a skill as a security event
 
-When the agent activates a skill (loads its full `SKILL.md` into context), a `SkillActivatedEntry` is recorded in the action log. The `use_skill` tool call goes through the sentinel (not the safe-list); the activation is logged so the sentinel has context for evaluating subsequent actions.
+A `read_skill` call is safe-listed and lands in the action log like any other tool call, so the sentinel knows which skill the agent has in mind when the next boundary request arrives. Reading grants nothing.
 
-For example, after the agent reads skill instructions describing email credentials, the sentinel will be more cautious about outbound network requests — it knows the agent now has knowledge that could be exfiltrated.
-
-The sentinel can also read skill files directly (via its `list_skill_files` and `read_skill_file` tools) to understand what a skill-related tool call will actually do, and which other skills an active skill builds on. A skill that relies on another one for access (e.g. repo access through a gitea skill) should say so in its `SKILL.md`, ideally already in the `description`, which the sentinel sees with every activation.
+The sentinel can also read skill files directly (via its `list_skill_files` and `read_skill_file` tools) to understand what a skill's command will actually do, and which other skills a skill builds on. A skill that relies on another one for access (e.g. repo access through a gitea skill) should say so in its `SKILL.md`, ideally already in the `description`.
 
 ## Self-improvement
 
-The agent can create new skills by writing files to `/workspace/skills/` in the sandbox (SKILL.md, scripts, optional pyproject.toml/package.json/setup.sh provider files) and then committing and pushing them via Git.
+The agent can create new skills by writing files to `/workspace/skills/` in the sandbox (`SKILL.md`, and a flake with its sources for commands) and then committing and pushing them via Git.
 
 The workflow for the agent to create a skill via chat:
 
 1. User asks for a new skill (or the agent proposes one)
-2. Agent plans the skill (SKILL.md, scripts, optional provider files such as pyproject/package.json/setup.sh)
+2. Agent plans the skill (`SKILL.md`, and for commands a flake with its sources)
 3. Agent writes the files in the sandbox at `/workspace/skills/<skill-name>/`
-4. Agent tests the skill in the sandbox
+4. Agent tests the skill in the sandbox (`nix run ./skills/<name>#<command>`)
 5. Agent commits and pushes via Git — the sentinel evaluates the push via the pre-receive hook
-6. On approval, the skill is persisted in the workspace repository and becomes available in future sessions
+6. On approval, the skill is persisted in the workspace repository, the builder builds it, and its commands reach `PATH` in every session; new sessions also list it in their catalog
 
 A built-in `create-skill` skill is seeded on first run to guide the agent through this process.
 

@@ -104,7 +104,7 @@ Set **`CARAPACE_SANDBOX_K8S_OWNER_REF=false`** to omit `ownerReferences` entirel
 
 ### Idle lifecycle
 
-When a session is idle (configurable timeout, default 60 min), the StatefulSet is scaled to **0 replicas**. The PVC is retained (`whenScaled: Retain`), preserving the workspace, skill venvs, and all session files. When the session resumes, the StatefulSet is scaled back to 1 replica — the pod mounts the existing PVC, so no git clone is needed. The image-provided activator still reruns for active skills, which restores anything kept outside the PVC (see [sandbox.md](sandbox.md#container-lifecycle)).
+When a session is idle (configurable timeout, default 60 min), the StatefulSet is scaled to **0 replicas**. The PVC is retained (`whenScaled: Retain`), preserving the workspace and all session files. When the session resumes, the StatefulSet is scaled back to 1 replica — the pod mounts the existing PVC, so no git clone is needed. Anything kept outside the PVC is gone; the skill commands come back with the profile sync (see [sandbox.md](sandbox.md#container-lifecycle)).
 
 If `CARAPACE_SANDBOX_WARM_POOL_SIZE` is greater than `0`, the server also keeps that many unattached generic warm sandboxes ready. New sessions can claim one of those prestarted StatefulSets instead of waiting for a full cold start. After a successful claim, carapace immediately refills the pool toward the configured target. The claimed sandbox keeps its original unique `sandbox_id` such as `pool-3f9c…`, which is persisted in the session snapshot and shown in the web UI's sandbox inspector. If a claim fails (for example the knowledge repo clone fails), the claimed pool StatefulSet is deleted and the session falls back to a cold-created sandbox. StatefulSets that are already being deleted are ignored when resolving a session's sandbox. Two live StatefulSets labelled with the same session are treated as an error for that session only: starting its sandbox fails until one of them is removed manually, while other sessions are unaffected. Startup orphan cleanup removes every StatefulSet of a deleted session.
 
@@ -232,7 +232,6 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | ------------------------------------------------ | ------------------------- | ---------------------------------------------------------- |
 | `CARAPACE_SANDBOX_RUNTIME`                       | `docker`                  | `docker` or `kubernetes`                                   |
 | `CARAPACE_SANDBOX_BASE_IMAGE`                    | `carapace-sandbox:latest` | Sandbox container image (pin version)                      |
-| `CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS` | `600`                   | Whole-skill activator timeout                              |
 | `CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES`          | `60`                      | Idle sandbox cleanup interval                              |
 | `CARAPACE_SANDBOX_WARM_POOL_SIZE`                | `0`                       | Number of generic warm sandboxes to keep ready             |
 | `CARAPACE_SANDBOX_MAX_PER_USER`                  | `100`                     | Sandboxes one user may hold; `0` disables                  |

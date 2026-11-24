@@ -8,7 +8,6 @@ from decimal import Decimal
 from pathlib import Path
 
 from carapace.models.session import SessionAttributes, SessionBudget
-from carapace.models.skills import ContextGrant, SkillCredentialDecl
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import (
     SessionSecurity,
@@ -133,17 +132,12 @@ def test_list_sessions_filters_by_owner_skips_missing_meta(tmp_path: Path, db_fa
 def test_save_and_resume_state(tmp_path: Path, db_factory):
     mgr = SessionManager(db_factory, tmp_path)
     state = mgr.create_session(user="thies")
-    state.context_grants["my-skill"] = ContextGrant(
-        skill_name="my-skill",
-        domains={"example.com"},
-        credential_decls=[SkillCredentialDecl(vault_path="dev/test", description="test cred")],
-    )
+    state.approved_operations.append("git push")
     mgr.save_state(state)
 
     resumed = mgr.resume_session(state.session_id)
     assert resumed is not None
-    assert "my-skill" in resumed.context_grants
-    assert "dev/test" in resumed.context_grants["my-skill"].vault_paths
+    assert resumed.approved_operations == ["git push"]
 
 
 def test_session_manager_calls_on_change_for_state_mutations(tmp_path: Path, db_factory) -> None:

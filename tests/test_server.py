@@ -22,7 +22,6 @@ from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.providers.openai_codex import OpenAICodexCredentials, OpenAICodexOAuthFlow
 from pydantic_ai.usage import RunUsage
-from sqlalchemy import select
 
 # We patch the server module globals directly for testing
 import carapace.server as srv
@@ -32,11 +31,12 @@ from carapace.api_keys import Access, ApiKeyGrant, ApiKeyStore, Scope
 from carapace.artifact_shares import ArtifactShareStore
 from carapace.auth import AuthStore
 from carapace.bootstrap import ensure_data_dir
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.codex_auth import CodexAccounts, CodexCredentialStore
 from carapace.config import build_config, resolve_user_knowledge_dir
 from carapace.credentials import CredentialBackendError, CredentialRegistry
 from carapace.credentials.protocol import UnsupportedCredentialValueKindError
-from carapace.database.models import ArtifactRow, SessionAuditRow
+from carapace.database.models import ArtifactRow
 from carapace.git.store import GitStore
 from carapace.jobs import JobsScheduler, JobsStore
 from carapace.knowledge import KnowledgeRepoRegistry
@@ -159,6 +159,7 @@ def _setup_server(tmp_path, monkeypatch, db_factory):
         data_dir=tmp_path,
         session_mgr=session_mgr,
         sandbox_mgr=sandbox_mgr,
+        skill_builds=SkillBuilds(None),
         credential_registry_for_session=credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
         memory_block_for=lambda _user, _state: "",
@@ -2601,7 +2602,7 @@ def test_update_session_privacy_updates_active_session_state(client, auth_header
     sid = create_resp.json()["session_id"]
     active = srv._engine.get_or_activate(sid)
     original_state = active.state
-    active.state.activated_skills.append("demo-skill")
+    active.state.approved_operations.append("git push")
     assert active.state.attributes.private is False
 
     resp = client.patch(
@@ -2613,7 +2614,7 @@ def test_update_session_privacy_updates_active_session_state(client, auth_header
     assert resp.status_code == 200
     assert active.state is original_state
     assert active.state.attributes.private is True
-    assert active.state.activated_skills == ["demo-skill"]
+    assert active.state.approved_operations == ["git push"]
 
 
 def test_update_session_allows_unattended_mode_change(client, auth_headers):
@@ -3073,7 +3074,6 @@ def test_fork_session_creates_new_session_from_turn(client, auth_headers):
     sid = create_resp.json()["session_id"]
     state = srv._engine.session_mgr.load_state(sid)
     state.title = "Fork me"
-    state.activated_skills = ["web"]
     state.channel_type = "matrix"
     state.channel_ref = "!room:example.com"
     srv._engine.session_mgr.save_state(state)
@@ -3103,7 +3103,6 @@ def test_fork_session_creates_new_session_from_turn(client, auth_headers):
     forked_sid = data["session_id"]
     forked_state = srv._engine.session_mgr.load_state(forked_sid)
     assert forked_state is not None
-    assert forked_state.activated_skills == ["web"]
     assert srv._engine.session_mgr.load_events(forked_sid)[-1]["content"] == "world"
     assert srv._engine.session_mgr.load_events(sid)[-1]["content"] == "next"
 
@@ -3630,12 +3629,11 @@ def test_sandbox_list_credentials_backend_error_returns_503(client, auth_headers
     assert resp.json() == {"detail": "Bitwarden backend unavailable"}
 
 
-def test_sandbox_fetch_credential_alternate_kind_uses_sentinel(client, auth_headers, monkeypatch):
+def test_sandbox_fetch_credential_kind_reaches_the_sentinel(client, auth_headers, monkeypatch):
     create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
     active = srv._engine.get_or_activate(sid)
     active.sentinel = MagicMock()
-    active.state.context_grants["demo"] = MagicMock(vault_paths=["bw/id-1"])
 
     mock_reg = MagicMock()
     mock_reg.fetch_metadata = AsyncMock(return_value=CredentialMetadata(vault_path="bw/id-1", name="Example"))
@@ -3644,23 +3642,10 @@ def test_sandbox_fetch_credential_alternate_kind_uses_sentinel(client, auth_head
     evaluate = AsyncMock(return_value=MagicMock(allowed=True))
     monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
     monkeypatch.setattr(srv, "evaluate_credential_with", evaluate)
-    srv._engine.sandbox_mgr.get_current_contexts.return_value = ["demo"]
     _running_exec("demo-sync")
     headers = _sandbox_basic_auth(sid)
     sb_client = TestClient(sandbox_app)
 
-    resp = sb_client.get("/credentials/bw/id-1", headers=headers)
-
-    assert resp.status_code == 200
-    evaluate.assert_not_awaited()
-    with srv._session_factory() as db:
-        audit_rows = db.scalars(select(SessionAuditRow).where(SessionAuditRow.session_id == sid)).all()
-    skill_audit = next(
-        row.data for row in audit_rows if row.data.get("args_summary", {}).get("source") == "skill_context"
-    )
-    assert skill_audit["args_summary"]["value_kind"] == "password"
-
-    mock_reg.fetch.reset_mock()
     resp = sb_client.get("/credentials/bw/id-1?kind=json", headers=headers)
 
     assert resp.status_code == 200
@@ -3688,7 +3673,6 @@ def _gated_credential(monkeypatch, sid: str, verdict: SentinelVerdict) -> tuple[
     mock_reg.fetch = AsyncMock(return_value="s3cret")
     mock_reg.require_supported = MagicMock()
     monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
-    srv._engine.sandbox_mgr.get_current_contexts.return_value = []
     return active.sentinel, mock_reg
 
 
@@ -3765,7 +3749,6 @@ def _gate_setup(monkeypatch, sid: str, verdict: SentinelVerdict, *, command: str
     mock_reg.fetch = AsyncMock(return_value="s3cret")
     mock_reg.require_supported = MagicMock()
     monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
-    srv._engine.sandbox_mgr.get_current_contexts.return_value = []
     running = _running_exec(command)
     srv._engine.sandbox_mgr.get_effective_domains.side_effect = lambda _sid: running.domains if running else set()
     return active.sentinel, mock_reg, running

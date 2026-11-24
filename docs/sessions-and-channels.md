@@ -17,8 +17,6 @@ class SessionState(BaseModel):
     title_model_name: str | None
   attributes: SessionAttributes  # private / archived / pinned / favorite / unattended / ask_mode / yolo_mode
     approved_operations: list[str]
-    activated_skills: list[str]
-    context_grants: dict[str, ContextGrant]  # per-skill domain & credential grants
     budget: SessionBudget
     created_at: datetime
     last_active: datetime

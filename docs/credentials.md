@@ -5,7 +5,7 @@ carapace keeps credentials in external vault backends and exposes them to sandbo
 ## Design: pull, not push
 
 - Credentials are fetched by sandbox workloads via the sandbox API (`/credentials`).
-- Skill-declared credentials are cached at `use_skill` time, then injected per-exec via the `contexts` parameter.
+- A skill command declares the credentials it needs in its flake; its wrapper asks for them with `cgate request` and fetches them with `ccred get` when it starts.
 - The agent should use credentials without printing them.
 
 In short: credentials are consumed inside the sandbox, not returned to the user-facing agent response.
@@ -85,40 +85,11 @@ users:
 
 Hidden credentials are treated as not found.
 
-## Skill-declared credentials (`metadata.carapace`)
+## Skill-declared credentials
 
-Skills can declare credentials for auto-injection:
+A skill declares the credentials its commands need in its flake (`needs.credentials`, see [skill-flakes.md](skill-flakes.md#commands-and-what-they-need)), not in its `SKILL.md`. The generated wrapper asks for all of them with `cgate request` before the command starts, then exports each one with `ccred get`. Nothing is cached on the server and nothing is injected from outside: the values reach the sandbox only through `ccred`, reviewed per `exec`.
 
-```yaml
-metadata:
-  carapace:
-    credentials:
-      - vault_path: personal/9742101e-68b8-4a07-b5b1-9578b5f88e6f
-        description: Gmail app password
-        env_var: GMAIL_APP_PASSWORD
-      - vault_path: personal/7063feab-4b10-472e-b64c-785e2b870b92
-        description: SSH deploy key
-        file: ~/.ssh/id_ed25519
-```
-
-On `use_skill`:
-
-1. Credential vault paths are included in the gated `use_skill` decision.
-2. After approval, carapace fetches and **caches** the values from the configured backend (in memory only, never persisted to disk).
-3. A **context grant** is registered for the skill, recording which vault paths and injection mappings are available.
-4. Credentials are **not injected** into the session environment. They are only available during `exec` calls that explicitly request the skill's context (see [skills.md — Context-scoped access](skills.md#context-scoped-access)).
-
-### Per-exec injection
-
-When the agent runs `exec(command, contexts=["skill-name"])`:
-
-- `env_var` entries are injected as environment variables for that single command.
-- `file` entries are written inside the sandbox with mode `0400` before the command, then deleted immediately after it completes (in a `finally` block).
-- If `base64: true` is set on a credential, the stored value is base64-decoded before injection (for either `env_var` or `file`).
-
-### Container restart
-
-Cached credential values are re-fetched from the vault when the session is reloaded. File-based credentials are re-written only for the next exec that requests the context.
+A command that needs a credential in a file writes it itself (`ccred get <vault_path> -o <file>`) and removes it when done.
 
 ## On-demand use with `ccred`
 
@@ -139,7 +110,7 @@ ccred get <backend>/<id> -o ~/.ssh/id_ed25519
 - `--login` returns the provider login name when supported. Bitwarden supports it; unsupported providers fail with a non-zero exit code.
 - `--json` returns the complete provider-specific item. Every provider supports this.
 - `--access-token` returns a short-lived access token of an OAuth entry, which Carapace refreshes; `--refresh` forces a new one, once per `exec`. The entry itself (it holds the refresh token) is refused in every other form. See [skill-flakes.md](skill-flakes.md#oauth) for its format.
-- `--login`, `--json` and `--access-token` are mutually exclusive and go through normal credential approval rather than skill-context approval.
+- `--login`, `--json` and `--access-token` are mutually exclusive.
 - Every command blocks until the sentinel (or the user, if it escalates) decides. A denial exits with status 1 and prints the reason on stderr, e.g. `error: Sentinel denied this operation. <explanation>`; the calling script decides how to continue.
 - An approval holds for the rest of the `exec`, for the representation that was asked for: asking again for the same credential in the same form returns without another review, while `--login` or `--json` after an approved password is reviewed again. The next `exec` asks again.
 
@@ -161,12 +132,9 @@ These endpoints are served on the sandbox API port (`8322`) and require Basic au
 
 - Credential requests are boundary requests: the sentinel decides them on their own, with the `exec` calls since its last decision in view, not as a check behind an already reviewed `exec` (see [security.md](security.md#boundary-requests)).
 - **Per-exec approval**: an approved credential (per vault path and representation) or listing needs no further review until the `exec` ends. There is no session-wide short-circuit.
-- **Context fast path**: If the credential is covered by a context grant from an activated skill, and the current exec has that skill in its `contexts`, access is allowed with `approval_source="skill"` without sentinel evaluation.
-- **No context match**: Credentials accessed outside a matching context go through the sentinel, which may allow, deny, or escalate to the user.
+- Every first request in an `exec` goes to the sentinel, which may allow, deny, or escalate to the user.
 - **No running exec**: a request from a process an earlier `exec` left behind is refused without a review. A decision that comes back after its `exec` ended is not granted either.
-- The first request per credential and `exec` is reviewed and recorded: visible in the UI (skill-granted teal badge, sentinel-allowed green, user-approved purple, denied red), appended to the session action log as `credential_access` and to the audit log. Repeats of an approved request within the same `exec` are not recorded again.
-
-Use `/session` to inspect context grants and cached credentials for the current session.
+- The first request per credential and `exec` is reviewed and recorded: visible in the UI (sentinel-allowed green, user-approved purple, denied red), appended to the session action log as `credential_access` and to the audit log. Repeats of an approved request within the same `exec` are not recorded again.
 
 ## Security notes
 

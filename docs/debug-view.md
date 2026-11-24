@@ -335,12 +335,11 @@ escalation waits with reason `approval`. The title is generated after the turn a
 | Kind | Name | Where | Attrs |
 | --- | --- | --- | --- |
 | `exec` | `exec` | the `exec` tool's sandbox call | `command` (≤ 200 chars), `exit_code` |
-| `exec` | `mcp:<server>` | a stdio MCP bridge call (list or tool call) | `skill`, `mode`, `tool`, `exit_code` |
 | `file` | `read`, `write`, `str_replace`, `send_file` | the file tools' sandbox calls | `path` (≤ 200 chars) |
 | `sandbox` | `ensure` | a sandbox start, resume or re-attach before a call can run | |
 | `sandbox` | `create`, `resume`, `warm claim`, `wait_for_ready`, `knowledge clone`, `hooks`, `proxy setup`, `git identity` | the steps of a start, under `ensure` | `claimed` on `warm claim`, `ready` on `wait_for_ready` |
-| `skill` | `activate` | the sandbox skill activator, also when a restart reruns it | `skill`, `exit_code` |
-| `skill` | `mcp prewarm` | `use_skill` connecting the skill's MCP servers | `skill` |
+| `skill` | `build wait` | `read_skill` waiting for the skill's build | `skill` |
+| `skill` | `profile sync` | bringing the sandbox's skill profile to the owner's head ([sandbox.md](sandbox.md#skill-commands-on-path)) | `paths` |
 | `domain` | the domain (≤ 200 chars) | a proxy domain check | `domain` (≤ 200 chars), `allowed` |
 
 A sandbox that is already running gets no `ensure` span, so the common case adds no row per call.

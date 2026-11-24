@@ -1,4 +1,4 @@
-"""Tests for context-scoped skill allowlists (context grants)."""
+"""SandboxManager: sandbox lifecycle, warm pool and per-exec notification bookkeeping."""
 
 from __future__ import annotations
 
@@ -13,18 +13,14 @@ from sqlalchemy import select
 from carapace.database.models import SessionAuditRow
 from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
-from carapace.models.session import SessionState
-from carapace.models.skills import ContextGrant, SkillCredentialDecl, context_grants_session_summary
-from carapace.sandbox.exec_flow import KILL_LEFTOVER_PROCESSES_COMMAND
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.runtime import DuplicateSandboxError, ExecResult, PoolSandbox
 from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.sandbox.state import load_sandbox_snapshot
-from carapace.security.context import ApprovalSource, ContextGrantEntry, CredentialAccessEntry, SessionSecurity
-from carapace.security.sentinel import _format_entry
+from carapace.security.context import ApprovalSource, CredentialAccessEntry, SessionSecurity
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillRegistry
-from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, make_runtime_mock
+from tests.runtime_mocks import make_runtime_mock
 
 
 def _sandbox_manager(
@@ -82,169 +78,19 @@ async def _drain_warm_refill(mgr: SandboxManager) -> None:
 # ── ContextGrant model ──────────────────────────────────────────────
 
 
-class TestContextGrantModel:
-    def test_defaults(self):
-        grant = ContextGrant(skill_name="moneydb")
-        assert grant.skill_name == "moneydb"
-        assert grant.domains == set()
-        assert grant.vault_paths == set()
-        assert grant.credential_decls == []
-
-    def test_with_domains_and_creds(self):
-        decl = SkillCredentialDecl(vault_path="dev/token", env_var="TOKEN")
-        grant = ContextGrant(
-            skill_name="moneydb",
-            domains={"api.moneydb.io", "*.storage.googleapis.com"},
-            credential_decls=[decl],
-        )
-        assert "api.moneydb.io" in grant.domains
-        assert "dev/token" in grant.vault_paths
-        assert grant.credential_decls[0].env_var == "TOKEN"
-
-    def test_serialization_roundtrip(self):
-        grant = ContextGrant(
-            skill_name="example",
-            domains={"a.com"},
-            credential_decls=[SkillCredentialDecl(vault_path="dev/key", file="/tmp/key")],
-        )
-        data = grant.model_dump()
-        restored = ContextGrant.model_validate(data)
-        assert restored.skill_name == "example"
-        assert restored.domains == {"a.com"}
-        assert restored.vault_paths == {"dev/key"}
-        assert restored.credential_decls[0].file == "/tmp/key"
-
-    def test_base64_flag_defaults_false(self):
-        decl = SkillCredentialDecl(vault_path="dev/key", file="kube.yaml")
-        assert decl.base64 is False
-
-    def test_base64_flag_roundtrip(self):
-        decl = SkillCredentialDecl(vault_path="dev/key", file="kube.yaml", base64=True)
-        grant = ContextGrant(skill_name="k3s", credential_decls=[decl])
-        data = grant.model_dump()
-        restored = ContextGrant.model_validate(data)
-        assert restored.credential_decls[0].base64 is True
-
-
-def test_context_grants_session_summary():
-    grants = {
-        "moneydb": ContextGrant(
-            skill_name="moneydb",
-            domains={"b.com", "a.com"},
-            credential_decls=[
-                SkillCredentialDecl(vault_path="v/p2"),
-                SkillCredentialDecl(vault_path="v/p1"),
-            ],
-        ),
-    }
-    cached = {"v/p1"}
-
-    def get_cached(session_id: str, vault_path: str) -> str | None:
-        assert session_id == "sess-x"
-        return "secret" if vault_path in cached else None
-
-    summary = context_grants_session_summary("sess-x", grants, get_cached)
-    assert summary["moneydb"]["domains"] == ["a.com", "b.com"]
-    assert summary["moneydb"]["vault_paths"] == ["v/p1", "v/p2"]
-    assert summary["moneydb"]["cached_credentials"] == 1
-
-
 # ── ContextGrantEntry (action log) ──────────────────────────────────
-
-
-class TestContextGrantEntry:
-    def test_defaults(self):
-        entry = ContextGrantEntry(skill_name="moneydb")
-        assert entry.type == "context_grant"
-        assert entry.domains == []
-        assert entry.vault_paths == []
-
-    def test_with_data(self):
-        entry = ContextGrantEntry(
-            skill_name="moneydb",
-            domains=["api.moneydb.io"],
-            vault_paths=["dev/token"],
-        )
-        assert entry.skill_name == "moneydb"
-        assert "api.moneydb.io" in entry.domains
-
-    def test_sentinel_action_log_format(self):
-        line = _format_entry(
-            ContextGrantEntry(
-                skill_name="moneydb",
-                domains=["z.io", "a.io"],
-                vault_paths=["b/v", "a/v"],
-            ),
-        )
-        assert line.startswith("[context_grant]: moneydb")
-        assert "domains=['a.io', 'z.io']" in line
-        assert "credentials=['a/v', 'b/v']" in line
 
 
 # ── SessionState context_grants field ────────────────────────────────
 
 
-class TestSessionStateContextGrants:
-    def _state(self) -> SessionState:
-        return SessionState.now(session_id="test-session")
-
-    def test_empty_by_default(self):
-        state = self._state()
-        assert state.context_grants == {}
-
-    def test_add_and_retrieve(self):
-        state = self._state()
-        grant = ContextGrant(skill_name="moneydb", domains={"api.moneydb.io"})
-        state.context_grants["moneydb"] = grant
-        assert "moneydb" in state.context_grants
-        assert state.context_grants["moneydb"].domains == {"api.moneydb.io"}
-
-    def test_survives_serialization(self):
-        state = self._state()
-        state.context_grants["example"] = ContextGrant(
-            skill_name="example",
-            domains={"a.com"},
-            credential_decls=[SkillCredentialDecl(vault_path="dev/key")],
-        )
-        data = state.model_dump()
-        restored = SessionState.model_validate(data)
-        assert "example" in restored.context_grants
-        assert restored.context_grants["example"].domains == {"a.com"}
-
-
 # ── SandboxManager credential cache ─────────────────────────────────
 
 
-class TestSandboxManagerCredentialCache:
+class TestSandboxManagerLifecycle:
     def _make_manager(self, tmp_path: Path, db_factory) -> SandboxManager:
         runtime = make_runtime_mock()
         return _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-
-    def test_cache_and_retrieve(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        mgr.cache_credential("sess-1", "dev/token", "secret-value")
-        assert mgr.get_cached_credential("sess-1", "dev/token") == "secret-value"
-
-    def test_retrieve_missing_returns_none(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        assert mgr.get_cached_credential("sess-1", "dev/token") is None
-
-    def test_credential_cache_survives_cleanup_tracking(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        mgr.cache_credential("sess-1", "dev/token", "secret-value")
-        # ensure_session error path: container bookkeeping only, not skill cache
-        mgr._cleanup_tracking("sess-1")
-        assert mgr.get_cached_credential("sess-1", "dev/token") == "secret-value"
-
-    @pytest.mark.anyio
-    async def test_credential_cache_cleared_on_destroy_session(self, tmp_path: Path, db_factory):
-        runtime = make_runtime_mock()
-        runtime.destroy_sandbox = AsyncMock()
-        mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-        mgr.cache_credential("sess-1", "dev/token", "secret-value")
-        mgr._sessions["sess-1"] = MagicMock(container_id="c1", session_env={})
-        await mgr.destroy_session("sess-1")
-        assert mgr.get_cached_credential("sess-1", "dev/token") is None
 
     @pytest.mark.anyio
     async def test_reset_session_preserves_token(self, tmp_path: Path, db_factory):
@@ -376,33 +222,6 @@ class TestSandboxManagerCredentialCache:
         assert snapshot.status == "missing"
 
     @pytest.mark.anyio
-    async def test_ensure_session_reruns_skill_setup_after_resume(self, tmp_path: Path, db_factory):
-        runtime = make_runtime_mock()
-        runtime.is_running = AsyncMock(return_value=False)
-        runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-        mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-        mgr._sessions["sess-1"] = SessionContainer(
-            container_id="container-1",
-            session_id="sess-1",
-            ip_address="172.18.0.22",
-            created_at=1.0,
-            last_used=1.0,
-        )
-        mgr._rerun_activated_skill_setup = AsyncMock()
-
-        await mgr.ensure_session("sess-1")
-
-        mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
-        runtime.resume_sandbox.assert_awaited_once_with("carapace-sandbox-sess-1", _BASE_IMAGE)
-        exec_cmds = [call.args[1] for call in runtime.exec.await_args_list]
-        assert any("git config --global user.name" in cmd for cmd in exec_cmds)
-        runtime.write_stdout_log.assert_awaited_once()
-        assert runtime.write_stdout_log.await_args.args[0] == "container-1"
-        assert "event=resume" in runtime.write_stdout_log.await_args.args[1]
-        assert "sandbox_id=sess-1" in runtime.write_stdout_log.await_args.args[1]
-        assert "session_id=sess-1" in runtime.write_stdout_log.await_args.args[1]
-
-    @pytest.mark.anyio
     async def test_ensure_warm_pool_creates_unattached_sandboxes(self, tmp_path: Path, db_factory):
         runtime = make_runtime_mock()
         runtime.runtime_kind = "kubernetes"
@@ -531,12 +350,10 @@ class TestSandboxManagerCredentialCache:
         )
         _seed_session_row(db_factory, tmp_path, "sess-1")
         mgr._session_lifecycle.ensure_warm_pool = AsyncMock(return_value=1)
-        mgr._rerun_activated_skill_setup = AsyncMock()
 
         sc = await mgr.ensure_session("sess-1")
         await _drain_warm_refill(mgr)
 
-        mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
         assert sc.sandbox_id == "warm-1"
         assert sc.container_id == "warm-pod-1"
         runtime.create_sandbox.assert_not_awaited()
@@ -580,12 +397,10 @@ class TestSandboxManagerCredentialCache:
             runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, warm_pool_size=1, session_factory=db_factory
         )
         _seed_session_row(db_factory, tmp_path, "sess-1")
-        mgr._rerun_activated_skill_setup = AsyncMock()
 
         sc = await mgr.ensure_session("sess-1")
         await _drain_warm_refill(mgr)
 
-        mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
         assert sc.sandbox_id == "sess-1"
         assert sc.container_id == "cold-pod-1"
         runtime.destroy_sandbox.assert_awaited_once_with("sess-1", "carapace-sandbox-warm-1", "warm-pod-1")
@@ -644,12 +459,10 @@ class TestSandboxManagerCredentialCache:
         mgr._session_lifecycle.claim_warm_sandbox = AsyncMock(return_value=claimed)
         mgr._session_lifecycle.ensure_warm_pool = AsyncMock(return_value=1)
         _seed_session_row(db_factory, tmp_path, "sess-1")
-        mgr._rerun_activated_skill_setup = AsyncMock()
 
         sc = await mgr.ensure_session("sess-1")
         await _drain_warm_refill(mgr)
 
-        mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
         assert sc is claimed
         mgr._session_lifecycle.ensure_warm_pool.assert_awaited_once_with(1)
 
@@ -664,11 +477,9 @@ class TestSandboxManagerCredentialCache:
         mgr = _sandbox_manager(
             runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, warm_pool_size=1, session_factory=db_factory
         )
-        mgr._rerun_activated_skill_setup = AsyncMock()
 
         sc = await mgr.ensure_session("sess-1")
 
-        mgr._rerun_activated_skill_setup.assert_not_awaited()
         assert sc.container_id == "carapace-sandbox-warm-1-0"
         assert sc.sandbox_id == "warm-1"
         runtime.claim_warm_sandbox.assert_not_awaited()
@@ -687,7 +498,6 @@ class TestSandboxManagerCredentialCache:
         mgr._session_lifecycle.log_assignment = AsyncMock()
         mgr._session_lifecycle.setup_proxy = AsyncMock()
         mgr._session_lifecycle.ensure_warm_pool = AsyncMock(return_value=1)
-        mgr._rerun_activated_skill_setup = AsyncMock()
         clone_started = asyncio.Event()
         release_clone = asyncio.Event()
 
@@ -714,7 +524,6 @@ class TestSandboxManagerCredentialCache:
         assert first_sc is second_sc
         runtime.claim_warm_sandbox.assert_awaited_once_with("carapace-sandbox-warm-1", "sess-1")
         runtime.create_sandbox.assert_not_awaited()
-        mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
 
     @pytest.mark.anyio
     async def test_refresh_git_identities_only_touches_owner_sandboxes(self, tmp_path: Path, db_factory):
@@ -731,28 +540,6 @@ class TestSandboxManagerCredentialCache:
         await mgr.refresh_git_identities("thies")
 
         assert [call.args[0] for call in runtime.exec.await_args_list] == ["container-thies"]
-
-    @pytest.mark.anyio
-    async def test_activate_skill_resume_reruns_setup_for_activated_skills(self, tmp_path: Path, db_factory):
-        runtime = make_runtime_mock()
-        runtime.is_running = AsyncMock(return_value=False)
-        runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-        mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-        mgr._sessions["sess-1"] = SessionContainer(
-            container_id="container-1",
-            session_id="sess-1",
-            created_at=1.0,
-            last_used=1.0,
-        )
-        mgr.set_activated_skills_callback(lambda _sid: ["email"])
-        mgr.rerun_skill_setup = AsyncMock()
-        _seed_session_row(db_factory, tmp_path, "sess-1")
-
-        # The new skill doesn't exist, so activation stops right after the sandbox is up.
-        await mgr.activate_skill("sess-1", "moneta")
-
-        runtime.resume_sandbox.assert_awaited_once_with("carapace-sandbox-sess-1", _BASE_IMAGE)
-        mgr.rerun_skill_setup.assert_awaited_once_with("sess-1", ["email"])
 
     @pytest.mark.anyio
     async def test_ensure_warm_pool_is_noop_for_docker_runtime(self, tmp_path: Path, db_factory):
@@ -828,46 +615,6 @@ class TestSandboxManagerCredentialCache:
 # ── SandboxManager context tracking ─────────────────────────────────
 
 
-class TestSandboxManagerContextTracking:
-    def _make_manager(self, tmp_path: Path, db_factory) -> SandboxManager:
-        runtime = make_runtime_mock()
-        return _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-
-    def test_no_contexts_by_default(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        assert mgr.get_current_contexts("sess-1") == []
-
-    def test_set_and_read_contexts(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        mgr._session_current_contexts["sess-1"] = ["moneydb", "example"]
-        assert mgr.get_current_contexts("sess-1") == ["moneydb", "example"]
-
-    def test_domain_skill_granted_false_by_default(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        assert mgr.is_domain_skill_granted("sess-1", "api.com") is False
-
-    def test_domain_skill_granted_with_entry(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        mgr._exec_context_skill_domains["sess-1"] = {"api.moneydb.io"}
-        assert mgr.is_domain_skill_granted("sess-1", "api.moneydb.io") is True
-        assert mgr.is_domain_skill_granted("sess-1", "evil.com") is False
-
-    def test_cleanup_clears_tracking(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        # _exec_context_skill_domains is cleared in _cleanup_tracking
-        mgr._exec_context_skill_domains["sess-1"] = {"api.com"}
-        mgr._cleanup_tracking("sess-1")
-        assert mgr.is_domain_skill_granted("sess-1", "api.com") is False
-
-    def test_current_contexts_per_exec(self, tmp_path: Path, db_factory):
-        """_session_current_contexts is per-exec, set/cleared in _exec's finally."""
-        mgr = self._make_manager(tmp_path, db_factory)
-        mgr._session_current_contexts["sess-1"] = ["moneydb"]
-        # Simulating exec finally cleanup
-        mgr._session_current_contexts.pop("sess-1", None)
-        assert mgr.get_current_contexts("sess-1") == []
-
-
 # ── ApprovalSource type ─────────────────────────────────────────────
 
 
@@ -896,84 +643,6 @@ class TestExecNotificationDedupe:
         return _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
 
     # -- domain dedupe --
-
-    def test_domain_dedupe_outside_exec(self, tmp_path: Path, db_factory):
-        """Without an active exec, domain notifications always fire."""
-        mgr = self._make_manager(tmp_path, db_factory)
-        calls: list[tuple] = []
-        mgr._domain_notify_cbs["s1"] = lambda *a: calls.append(a)
-        mgr._proxy_bypass_sessions.add("s1")
-        mgr.notify_domain_access("s1", "a.com", True)
-        mgr.notify_domain_access("s1", "a.com", True)
-        # No exec → no notified set → both fire
-        assert len(calls) == 2
-
-    def test_domain_dedupe_bypass_during_exec(self, tmp_path: Path, db_factory):
-        """During an exec, repeated bypass domain notifications are deduped."""
-        mgr = self._make_manager(tmp_path, db_factory)
-        calls: list[tuple] = []
-        mgr._domain_notify_cbs["s1"] = lambda *a: calls.append(a)
-        mgr._proxy_bypass_sessions.add("s1")
-        mgr._exec_notified_domains["s1"] = set()
-        mgr.notify_domain_access("s1", "a.com", True)
-        mgr.notify_domain_access("s1", "a.com", True)
-        mgr.notify_domain_access("s1", "b.com", True)
-        assert len(calls) == 2  # a.com once, b.com once
-
-    @pytest.mark.asyncio
-    async def test_domain_dedupe_bypass_in_container_exec(self, tmp_path: Path, db_factory):
-        """A bypassed exec outside the agent exec path (sandbox restart) dedupes too."""
-        mgr = self._make_manager(tmp_path, db_factory)
-        calls: list[tuple] = []
-        mgr._domain_notify_cbs["s1"] = lambda *a: calls.append(a)
-        sc = MagicMock(container_id="c1", session_id="s1", session_env={})
-
-        async def fake_runtime_exec(_container_id, command, *_a, **_kw):
-            if command == KILL_LEFTOVER_PROCESSES_COMMAND:
-                return NO_LEFTOVER_PROCESSES
-            for domain in ["files.pythonhosted.org", "pypi.org", "files.pythonhosted.org"]:
-                mgr.notify_domain_access("s1", domain, True)
-            return ExecResult(stdout="", exit_code=0, output="")
-
-        mgr._runtime.exec = fake_runtime_exec
-        await mgr._exec_in_container(sc, "pip install x", bypass_proxy=True)
-
-        assert [c[0] for c in calls] == ["files.pythonhosted.org", "pypi.org"]
-        assert "s1" not in mgr._exec_notified_domains
-
-    @pytest.mark.asyncio
-    async def test_domain_dedupe_bypass_in_container_exec_keeps_enclosing_set(self, tmp_path: Path, db_factory):
-        """Inside an exec() (re-activation during recreate_session), the exec's set is reused and kept."""
-        mgr = self._make_manager(tmp_path, db_factory)
-        calls: list[tuple] = []
-        mgr._domain_notify_cbs["s1"] = lambda *a: calls.append(a)
-        enclosing = {"pypi.org"}
-        mgr._exec_notified_domains["s1"] = enclosing
-        sc = MagicMock(container_id="c1", session_id="s1", session_env={})
-
-        async def fake_runtime_exec(_container_id, command, *_a, **_kw):
-            if command == KILL_LEFTOVER_PROCESSES_COMMAND:
-                return NO_LEFTOVER_PROCESSES
-            for domain in ["pypi.org", "files.pythonhosted.org"]:
-                mgr.notify_domain_access("s1", domain, True)
-            return ExecResult(stdout="", exit_code=0, output="")
-
-        mgr._runtime.exec = fake_runtime_exec
-        await mgr._exec_in_container(sc, "pip install x", bypass_proxy=True)
-
-        assert [c[0] for c in calls] == ["files.pythonhosted.org"]
-        assert mgr._exec_notified_domains["s1"] is enclosing
-
-    def test_domain_dedupe_skill_during_exec(self, tmp_path: Path, db_factory):
-        """During an exec, repeated skill-granted domain notifications are deduped."""
-        mgr = self._make_manager(tmp_path, db_factory)
-        calls: list[tuple] = []
-        mgr._domain_notify_cbs["s1"] = lambda *a: calls.append(a)
-        mgr._exec_context_skill_domains["s1"] = {"api.example.com"}
-        mgr._exec_notified_domains["s1"] = set()
-        mgr.notify_domain_access("s1", "api.example.com", True)
-        mgr.notify_domain_access("s1", "api.example.com", True)
-        assert len(calls) == 1
 
     def test_domain_denied_not_deduped(self, tmp_path: Path, db_factory):
         """Denied domain notifications are never deduped."""
@@ -1041,93 +710,3 @@ class TestExecNotificationDedupe:
         mgr._cleanup_tracking("s1")
         assert "s1" not in mgr._exec_notified_domains
         assert "s1" not in mgr._exec_notified_credentials
-
-    @pytest.mark.asyncio
-    async def test_after_exec_credential_notify_runs_before_notified_set_cleared(self, tmp_path: Path, db_factory):
-        """Skill injection UI notify must run while per-exec dedupe is still active."""
-        mgr = self._make_manager(tmp_path, db_factory)
-        sc = MagicMock()
-        sc.container_id = "c1"
-        sc.session_id = "s1"
-        sc.session_env = {}
-
-        async def fake_ensure(sid: str):
-            return sc
-
-        async def fake_rebuild(sid: str) -> None:
-            return None
-
-        post_calls: list[str] = []
-
-        async def fake_exec_in_container(*_a, **_kw):
-            assert mgr._exec_notified_credentials.get("s1") is not None
-            mgr.mark_credential_notified("s1", "dev/token")
-            return ExecResult(stdout="ok", exit_code=0, output="ok")
-
-        mgr.ensure_session = fake_ensure
-        mgr._rebuild_skill_venvs = fake_rebuild
-        mgr._exec_in_container = fake_exec_in_container
-
-        def after_notify() -> None:
-            if mgr.mark_credential_notified("s1", "dev/token"):
-                return
-            post_calls.append("dev/token")
-
-        result = await mgr._exec("s1", "echo", after_exec_credential_notify=after_notify)
-        assert result.exit_code == 0
-        assert post_calls == []
-        assert "s1" not in mgr._exec_notified_credentials
-
-    @pytest.mark.asyncio
-    async def test_after_exec_credential_notify_fires_when_not_pre_notified(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        sc = MagicMock()
-        sc.container_id = "c1"
-        sc.session_id = "s1"
-        sc.session_env = {}
-
-        async def fake_ensure(sid: str):
-            return sc
-
-        async def fake_rebuild(sid: str) -> None:
-            return None
-
-        post_calls: list[str] = []
-
-        async def fake_exec_in_container(*_a, **_kw):
-            return ExecResult(stdout="ok", exit_code=0, output="ok")
-
-        mgr.ensure_session = fake_ensure
-        mgr._rebuild_skill_venvs = fake_rebuild
-        mgr._exec_in_container = fake_exec_in_container
-
-        def after_notify() -> None:
-            if mgr.mark_credential_notified("s1", "dev/token"):
-                return
-            post_calls.append("dev/token")
-
-        await mgr._exec("s1", "echo", after_exec_credential_notify=after_notify)
-        assert post_calls == ["dev/token"]
-
-
-class TestSandboxGitProxyBypass:
-    @pytest.mark.anyio
-    async def test_git_sync_leaves_activation_bypass_alone(self, tmp_path: Path, db_factory):
-        """A git status poll during skill activation must neither open nor close the proxy bypass."""
-        runtime = make_runtime_mock()
-        mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-        sc = SessionContainer(container_id="c1", session_id="s1", ip_address="10.1.1.4", created_at=1.0, last_used=1.0)
-        bypass_during_git: list[bool] = []
-
-        async def fake_exec(*_args, **_kwargs) -> ExecResult:
-            bypass_during_git.append(mgr._exec_coordinator.is_domain_bypass("s1"))
-            return ExecResult(stdout="main\n", exit_code=0, output="main\n")
-
-        runtime.exec = AsyncMock(side_effect=fake_exec)
-
-        await mgr._git_in_workspace(sc, "rev-parse --abbrev-ref HEAD")
-        assert bypass_during_git == [False]
-
-        mgr._proxy_bypass_sessions.add("s1")  # in-flight activation
-        await mgr._git_in_workspace(sc, "rev-parse --abbrev-ref HEAD")
-        assert mgr._exec_coordinator.is_domain_bypass("s1")

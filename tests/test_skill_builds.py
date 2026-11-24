@@ -18,6 +18,7 @@ from carapace.builder import skill_builds
 from carapace.builder.client import BuilderClient
 from carapace.builder.models import BuildResult
 from carapace.builder.skill_builds import SkillBuilds
+from carapace.spans import TurnTrace, attach
 
 _METADATA = {
     "name": "weather",
@@ -269,3 +270,40 @@ async def test_a_skill_that_cannot_be_archived_fails(repo: Path, monkeypatch: py
 
     assert await _settled(builds, repo) == {"notes": "failed", "weather": "failed"}
     assert builder.built == []
+
+
+@pytest.mark.anyio
+async def test_waiting_for_a_build_returns_its_result_and_is_a_span(repo: Path) -> None:
+    builder = FakeBuilder()
+    release = asyncio.Event()
+    build = builder.build
+
+    async def held_build(tree: str, archive: bytes) -> BuildResult:
+        await release.wait()
+        return await build(tree, archive)
+
+    builder.build = held_build  # type: ignore[method-assign]
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    trace = TurnTrace("t1", on_change=lambda _span: None)
+    root = trace.start("turn", "turn", parent_id=None, attrs={})
+
+    with attach(trace, root.span_id):
+        waiting = asyncio.create_task(builds.wait_built(repo, "weather"))
+        await asyncio.sleep(0.05)
+        assert not waiting.done()
+        release.set()
+        weather, every = await waiting
+
+    assert weather is not None and weather.state == "succeeded"
+    assert {build.skill for build in every} == {"notes", "weather"}
+    [wait] = [span for span in trace.spans.values() if span.name == "build wait"]
+    assert (wait.kind, wait.attrs, wait.status) == ("skill", {"skill": "weather"}, "ok")
+
+
+@pytest.mark.anyio
+async def test_waiting_for_a_skill_without_a_flake_returns_none_at_once(repo: Path) -> None:
+    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
+
+    instructions_only, _ = await builds.wait_built(repo, "instructions-only")
+
+    assert instructions_only is None

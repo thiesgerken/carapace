@@ -10,7 +10,6 @@ handling, and model selection. Turn execution itself lives in session.turns;
 from __future__ import annotations
 
 import asyncio
-import base64
 import contextlib
 import secrets
 from collections.abc import Awaitable, Callable
@@ -27,8 +26,8 @@ from pydantic_ai.messages import (
 from ..agent.deps import Deps
 from ..agent.history_compaction import HistoryCompactor
 from ..agent.loop import run_agent_turn as _run_agent_turn
+from ..builder.skill_builds import SkillBuilds
 from ..credentials import SessionCredentialRegistry
-from ..credentials.oauth import OAuthStateRefusedError, fetch_for_sandbox
 from ..git.store import GitStore
 from ..knowledge import KnowledgeRepoHandle, KnowledgeRepoResolver
 from ..llm import ModelFactory, SlotLimitedModel
@@ -36,14 +35,13 @@ from ..models.compaction import SessionCompaction
 from ..models.config import Config
 from ..models.credentials import CredentialRegistryProtocol
 from ..models.session import MemorySnapshot, SessionAttributes, SessionFork, SessionState
-from ..models.skills import SkillCarapaceConfig, SkillInfo
+from ..models.skills import SkillInfo
 from ..models.tooling import ToolCallCallback, ToolResult
 from ..notifications.router import NotificationRouter
 from ..sandbox.manager import SandboxManager
-from ..sandbox.runtime import SkillActivationError, SkillActivationInputs, SkillFileCredential
 from ..security.context import RewindEntry, SessionSecurity, copy_sentinel_state
 from ..security.sentinel import Sentinel
-from ..skills import SkillDocumentError, SkillRegistry
+from ..skills import SkillRegistry
 from ..spans import attach_sandbox_call
 from ..usage import (
     LlmRequestLog,
@@ -138,6 +136,7 @@ class SessionEngine(
         data_dir: Path,
         session_mgr: SessionManager,
         sandbox_mgr: SandboxManager,
+        skill_builds: SkillBuilds,
         credential_registry_for_session: Callable[[str], Awaitable[CredentialRegistryProtocol]],
         knowledge_repo_for_session: KnowledgeRepoResolver,
         memory_block_for: Callable[[str, SessionState], str],
@@ -148,6 +147,7 @@ class SessionEngine(
         self._data_dir = data_dir
         self._session_mgr = session_mgr
         self._sandbox_mgr = sandbox_mgr
+        self._skill_builds = skill_builds
         self._model_factory = model_factory
         self._credential_registry_for_session = credential_registry_for_session
         self._knowledge_repo_for_session = knowledge_repo_for_session
@@ -157,11 +157,6 @@ class SessionEngine(
         self._active: dict[str, ActiveSession] = {}
         self._llm_semaphore = asyncio.Semaphore(config.agent.max_parallel_llm)
         self._provider_compaction_rejected = set()
-
-        # Let SandboxManager retrieve activated skills so automatic setup can rerun on recreation
-        sandbox_mgr.set_activated_skills_callback(self._get_activated_skills)
-        sandbox_mgr.set_skill_activation_inputs_callback(self._skill_activation_inputs)
-        sandbox_mgr.set_skill_command_aliases_callback(self._skill_command_aliases)
 
     async def _resolve_credential_registry(self, session_id: str) -> CredentialRegistryProtocol:
         return await self._credential_registry_for_session(session_id)
@@ -329,73 +324,6 @@ class SessionEngine(
 
         return active
 
-    def _get_activated_skills(self, session_id: str) -> list[str]:
-        """Return activated skills for a session (from in-memory state or disk)."""
-        active = self._active.get(session_id)
-        if active:
-            return list(active.state.activated_skills)
-        state = self._session_mgr.load_state(session_id)
-        if state:
-            return list(state.activated_skills)
-        return []
-
-    async def _skill_activation_inputs(self, session_id: str, skill_name: str) -> SkillActivationInputs:
-        """Return approved env/file inputs for automatic skill activation providers."""
-        carapace_cfg = self._skill_carapace_config(session_id, skill_name)
-        if not carapace_cfg or not carapace_cfg.credentials:
-            return SkillActivationInputs()
-
-        approved_paths = self._credential_vault_paths_for_skill(session_id, skill_name)
-        env: dict[str, str] = {}
-        file_credentials: list[SkillFileCredential] = []
-        for decl in carapace_cfg.credentials:
-            if decl.vault_path not in approved_paths or not (decl.env_var or decl.file):
-                continue
-
-            value = self._sandbox_mgr.get_cached_credential(session_id, decl.vault_path)
-            if not isinstance(value, str):
-                value = None
-            try:
-                if value is None:
-                    registry = self._session_credential_registry(session_id)
-                    value = await fetch_for_sandbox(registry, decl.vault_path)
-                    self._sandbox_mgr.cache_credential(session_id, decl.vault_path, value)
-            except KeyError:
-                logger.warning(f"Credential {decl.vault_path} not found in vault during re-injection")
-                continue
-            except OAuthStateRefusedError as exc:
-                raise SkillActivationError(f"skill {skill_name!r} declares an OAuth entry: {exc}") from exc
-            if decl.base64:
-                value = base64.b64decode(value).decode()
-            if decl.env_var:
-                env[decl.env_var] = value
-            if decl.file:
-                file_credentials.append(SkillFileCredential(path=decl.file, value=value))
-        return SkillActivationInputs(environment=env, file_credentials=file_credentials)
-
-    def _skill_carapace_config(self, session_id: str, skill_name: str) -> SkillCarapaceConfig | None:
-        """Re-read a skill's declarations for sandbox setup, which reports failures as activation errors."""
-        try:
-            return self._skill_registry_for_session(session_id).get_carapace_config(skill_name)
-        except SkillDocumentError as exc:
-            raise SkillActivationError(f"skills/{skill_name}/SKILL.md is invalid: {exc}") from exc
-
-    def _skill_command_aliases(self, session_id: str, skill_name: str) -> list[tuple[str, str]]:
-        """Return validated command aliases declared by a skill."""
-        carapace_cfg = self._skill_carapace_config(session_id, skill_name)
-        if not carapace_cfg:
-            return []
-        return [(command.name, command.command) for command in carapace_cfg.commands]
-
-    def _credential_vault_paths_for_skill(self, session_id: str, skill_name: str) -> set[str]:
-        """Vault paths allowed for file re-injection: that skill's context grant (from ``use_skill``)."""
-        active = self._active.get(session_id)
-        state = active.state if active else self._session_mgr.load_state(session_id)
-        if not state:
-            return set()
-        grant = state.context_grants.get(skill_name)
-        return grant.vault_paths if grant else set()
-
     def get_active(self, session_id: str) -> ActiveSession | None:
         """Return the ``ActiveSession`` if loaded, else ``None``."""
         return self._active.get(session_id)
@@ -532,6 +460,7 @@ class SessionEngine(
             sentinel=active.sentinel,
             git_store=self._git_store_for_session(session_id),
             skill_catalog=self._skill_catalog_for_session(session_id),
+            skill_builds=self._skill_builds,
             agent_model=SlotLimitedModel(agent_model, self._llm_semaphore),
             agent_model_id=agent_model_id,
             tool_call_callback=tool_call_callback,
@@ -546,7 +475,6 @@ class SessionEngine(
             provider_compaction=self.agent_provider_compaction(active),
             reject_provider_compaction=lambda reason: self.reject_provider_compaction(active, agent_model_id, reason),
             sandbox=self._sandbox_mgr,
-            activated_skills=[],
             credential_registry=self._session_credential_registry(session_id),
         )
 

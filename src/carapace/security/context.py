@@ -97,14 +97,6 @@ class ApprovalEntry(BaseModel):
     decision: Literal["approved", "denied"] = "approved"
 
 
-class SkillActivatedEntry(BaseModel):
-    type: Literal["skill_activated"] = "skill_activated"
-    skill_name: str
-    description: str = ""
-    declared_domains: list[str] = []
-    declared_tunnels: list[str] = []
-
-
 class UserVouchedEntry(BaseModel):
     type: Literal["user_vouched"] = "user_vouched"
 
@@ -123,15 +115,6 @@ class CredentialAccessEntry(BaseModel):
     explanation: str = ""
 
 
-class ContextGrantEntry(BaseModel):
-    type: Literal["context_grant"] = "context_grant"
-    skill_name: str
-    domains: list[str] = []
-    tunnels: list[str] = []
-    vault_paths: list[str] = []
-    mcp_servers: list[str] = []
-
-
 class RewindEntry(BaseModel):
     type: Literal["rewind"] = "rewind"
     # The user message of the turn the session was rewound to; None if no turn is left.
@@ -145,11 +128,9 @@ ActionLogEntry = Annotated[
     | ToolResultEntry
     | AgentResponseEntry
     | ApprovalEntry
-    | SkillActivatedEntry
     | UserVouchedEntry
     | GitPushEntry
     | CredentialAccessEntry
-    | ContextGrantEntry
     | RewindEntry,
     Field(discriminator="type"),
 ]

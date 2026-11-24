@@ -15,6 +15,7 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
+from carapace import security
 from carapace.agent.autonomy import (
     AUTONOMY_WRAP_UP,
     AutonomyLimitReachedError,
@@ -328,12 +329,20 @@ def test_unattended_hard_stops_on_the_next_tool_call(tmp_path: Path, db_factory)
     asyncio.run(_run())
 
 
+@pytest.fixture
+def gated_read_skill(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every agent tool is on the safe list; this one stands in for a call the sentinel reviews."""
+    monkeypatch.setattr(security, "SAFE_TOOLS", security.SAFE_TOOLS - {"read_skill"})
+
+
+def _gated_call(call_id: str) -> ToolCallPart:
+    return ToolCallPart(tool_name="read_skill", args={"skill_name": "deploy"}, tool_call_id=call_id)
+
+
+@pytest.mark.usefixtures("gated_read_skill")
 def test_sentinel_denied_attempts_count_toward_the_streak(tmp_path: Path, db_factory) -> None:
     def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
-        call_id = f"c{len(_tool_returns(messages)) + 1}"
-        return ModelResponse(
-            parts=[ToolCallPart(tool_name="use_skill", args={"skill_name": "deploy"}, tool_call_id=call_id)]
-        )
+        return ModelResponse(parts=[_gated_call(f"c{len(_tool_returns(messages)) + 1}")])
 
     async def _run() -> None:
         engine, active, _sub = _engine_with_model(tmp_path, db_factory, respond, limit=2)
@@ -352,10 +361,7 @@ def test_sentinel_denied_attempts_count_toward_the_streak(tmp_path: Path, db_fac
     asyncio.run(_run())
 
 
-def _gated_call(call_id: str) -> ToolCallPart:
-    return ToolCallPart(tool_name="use_skill", args={"skill_name": "deploy"}, tool_call_id=call_id)
-
-
+@pytest.mark.usefixtures("gated_read_skill")
 def test_an_allowed_autonomy_approval_still_goes_through_the_security_gate(tmp_path: Path, db_factory) -> None:
     seen_returns: list[str] = []
 
@@ -386,6 +392,7 @@ def test_an_allowed_autonomy_approval_still_goes_through_the_security_gate(tmp_p
     asyncio.run(_run())
 
 
+@pytest.mark.usefixtures("gated_read_skill")
 def test_denying_the_autonomy_approval_stops_even_when_the_batch_had_other_decisions(
     tmp_path: Path, db_factory
 ) -> None:

@@ -22,6 +22,7 @@ from pydantic_ai.usage import RunUsage
 from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps, TaskDone, TaskFailed
 from carapace.agent.loop import _snapshot_on_failure, run_agent_turn
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models.config import Config
@@ -50,6 +51,7 @@ class _FakeResult:
 def _make_deps(tmp_path: Path, *, unattended: bool) -> Deps:
     session_id = "session-1"
     return Deps(
+        skill_builds=SkillBuilds(None),
         config=Config(),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,

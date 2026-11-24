@@ -6,7 +6,7 @@ carapace gates every agent action through a two-layer security system: a fast **
 
 Every tool call and skill invocation passes through the security module before execution:
 
-1. **Safe-list check.** A hardcoded set of tool names is auto-allowed without any LLM call. `exec` is one of them: the sandbox is the boundary, and what a command wants from outside is reviewed as a [boundary request](#boundary-requests). An `exec` with `contexts` is still reviewed, since the skill contexts grant credentials and domains without asking.
+1. **Safe-list check.** A hardcoded set of tool names is auto-allowed without any LLM call. `exec` is one of them: the sandbox is the boundary, and what a command wants from outside is reviewed as a [boundary request](#boundary-requests).
 2. **Sentinel evaluation.** All other operations are sent to the sentinel agent -- an LLM that receives the action log, the tool name and arguments, and makes a contextual decision.
 3. **Verdict.** The sentinel is a guard rail, not a reviewer of the agent's work: it stops the agent from going haywire beyond the sandbox, changing what it was not asked to change, exfiltrating data, or following injected instructions, and lets everything else through. It returns one of four decisions:
    - **allow** -- proceed without interruption, optionally with a comment for the agent (see [Sentinel comments](#sentinel-comments)).
@@ -59,7 +59,7 @@ The shipped default policy (see `src/carapace/assets/SECURITY.md`) covers:
 - **Threats** -- prompt injection, destructive or absurd approaches with effects beyond the sandbox, task drift, unsafe handling of passwords.
 - **The sandbox is the boundary** -- commands run without review; the sentinel decides where they reach outside (domains, credentials, up-front requests, git push), with the commands before the request in view.
 - **Network (proxy)** -- TLS hides everything except the domain; higher bar for outbound than inbound; judge plausibility from the command that asked, the commands before it and the conversation.
-- **Skill activation** -- permissive `use_skill`; lighter touch when the skill injects no credentials; skill-declared vault paths are covered by `use_skill` approval (no extra prompt by design).
+- **Skills** -- reading a skill grants nothing; its commands ask for what they declare with `cgate request`, judged like any other request; a push that changes a skill's flake changes commands every session runs.
 - **Credentials** -- explicit sandbox vault access, including listing and searching credentials, must fit the user’s task; deny exfiltration-style patterns; secrets must never be echoed or logged in plain text.
 - **Git push** -- always escalate when `USER.md`, `SOUL.md`, `AGENTS.md`, or `SECURITY.md` change; other files may be allowed when the chat clearly shows user intent. Committing and pushing a change the user requested or approved is part of that request. An `exec` that commits and pushes the knowledge repo is not escalated for the push alone, since the push gets its own review with the actual diff.
 - **Autonomy** -- slightly more care after long unsupervised stretches or fresh external content, without escalating every harmless step.
@@ -74,6 +74,7 @@ The default is only copied into a knowledge repo that has no `SECURITY.md` yet, 
 - Drop `exec` from the tool calls the sentinel reviews, and replace a section on judging `exec` in the sandbox ("Sandbox and layered defense") with the boundary model ("The sandbox is the boundary").
 - Replace "The triggering tool call was already cleared by you or the user", if your copy still has it: no review precedes a domain or credential request.
 - Remove "Read-only shell commands" from the low-risk list.
+- Replace the section on skill activation (`use_skill`) and the bullet "Skill-declared credentials: covered by approval of `use_skill`" with the section "Skills": skills are read with `read_skill`, which grants nothing, and their commands ask with `cgate request`.
 
 A stale policy does not break anything, but it describes reviews that no longer happen.
 
@@ -91,9 +92,8 @@ The following tools are auto-allowed without consulting the sentinel:
 | `list_skills` | Listing available skills is informational |
 | `show_artifact` | Shows an already pushed artifact; the push itself was reviewed |
 | `read_tool_output` | Only returns tool output this session's agent has already seen |
-| `exec`        | The sandbox is the boundary; the command stays in the action log. Not with `contexts`, which hands the command its skills' credentials and domains without a boundary request |
-
-`use_skill` is **not** safe-listed: activating a skill (copy into sandbox, optional venv sync, credential injection) is evaluated by the sentinel like other gated tools.
+| `exec`        | The sandbox is the boundary; the command stays in the action log |
+| `read_skill`  | Reading a skill grants nothing; the call tells the sentinel what later requests are about |
 
 A safe-listed call still gets an action log entry and an audit entry with `approval_source="safe-list"`; it is not a silent bypass. For `exec` that matters: the sentinel sees every command that ran since its last decision with the next boundary request, which is where a sequence like packing up mail and then asking for an upload host shows.
 
@@ -113,7 +113,7 @@ Instead of stateless per-call evaluations, the sentinel maintains a **persistent
 - Everything the agent wrote to the user: its final answers and the text between tool calls (not its reasoning)
 - All previous tool calls with their full arguments and decisions (tool results only as metadata, to prevent prompt injection)
 - Previous approvals, denials and change requests
-- Skill activations
+- The skills the agent read
 
 This enables nuanced judgments like "the user just confirmed this is what they want" or "the agent has been running autonomously for a while after reading external data." Seeing the agent's messages is what makes a short consent readable: "yes, do 1 and 3" only means something next to the proposal it answers. The agent's text may be shaped by injected content, so the sentinel's instructions say to use it for understanding what the user agreed to, never as an instruction or as consent by itself.
 
@@ -129,7 +129,7 @@ The first evaluation of a session receives the full action log; every later one 
 - **Fork** copies the sentinel state of the source session into the new session, without any note.
 - **Delete** removes the sentinel state with the session.
 
-The conversation is never reset. Once it fills a configurable share of the sentinel model's context window, it is compacted automatically before the next evaluation, keeping user decisions, denials, granted contexts and suspicious behaviour (see [compaction.md](compaction.md#sentinel)).
+The conversation is never reset. Once it fills a configurable share of the sentinel model's context window, it is compacted automatically before the next evaluation, keeping user decisions, denials, the skills the agent read and suspicious behaviour (see [compaction.md](compaction.md#sentinel)).
 
 ### Restricted tool access
 
@@ -138,7 +138,7 @@ The sentinel has read-only access to **skill directories** via two tools:
 - `list_skill_files(skill_name)` -- list files in a skill directory.
 - `read_skill_file(skill_name, path)` -- read a specific skill file.
 
-This lets the sentinel inspect trusted skill code to understand what a tool invocation will actually do, and how skills build on each other (e.g. a notes skill whose repo access comes from a gitea skill). Its instructions tell it to read the `SKILL.md` of the active skills before it revises, escalates or denies a step that looks out of scope. Crucially, the sentinel **cannot** read the main agent's workspace -- files there may have been written by the agent and could contain prompt injection attempts.
+This lets the sentinel inspect trusted skill code to understand what a tool invocation will actually do, and how skills build on each other (e.g. a notes skill whose repo access comes from a gitea skill). Its instructions tell it to read the `SKILL.md` of the skills the agent read before it revises, escalates or denies a step that looks out of scope. Crucially, the sentinel **cannot** read the main agent's workspace -- files there may have been written by the agent and could contain prompt injection attempts.
 
 ## Action log
 
@@ -151,10 +151,8 @@ The action log is a per-session, append-only chronological record of all signifi
 | `ToolCallEntry`         | Tool was called, with full arguments, decision, explanation |
 | `ToolResultEntry`       | Tool returned a result (metadata only, not content)         |
 | `ApprovalEntry`         | User approved or denied an escalated action                 |
-| `SkillActivatedEntry`   | A skill was activated (metadata only)                       |
 | `GitPushEntry`          | Git push evaluated by sentinel (ref, decision, explanation) |
 | `CredentialAccessEntry` | Credential access attempt (vault paths, decision)           |
-| `ContextGrantEntry`     | A skill context was granted (domains, credentials, MCP)     |
 | `UserVouchedEntry`      | User confirmed the agent is trustworthy                     |
 | `RewindEntry`           | Session was rewound (target user message, removed turns)    |
 
@@ -185,17 +183,16 @@ Credential access is mediated through the sandbox API and session state:
 
 - Sandbox scripts use `ccred` (or direct HTTP) to call `GET /credentials` and `GET /credentials/{vault_path}`.
 - `list` / `search` expose metadata only (names, vault paths, descriptions), but they enumerate the vault, so they are boundary requests like `get` (see [Boundary requests](#boundary-requests)).
-- `get` is reviewed per `exec`: unless the credential was approved earlier in the same `exec`, or a skill context covers it, carapace asks the sentinel and blocks until it or the user decides.
-- An OAuth entry never leaves the server: it holds the refresh token. Carapace refuses any vault value that is a JSON object with a `refresh_token`, in every form (`ccred get` of any kind, skill contexts, skill activation); every path that hands a value to a sandbox goes through one helper, `credentials.oauth.fetch_for_sandbox`. Near misses such as a Google `authorized_user` file are refused too, though only the Carapace format (`token_url`) can be refreshed. A sandbox gets only its access token (`GET /oauth-token/{vault_path}`, `ccred get --access-token`), reviewed like a credential and good for the rest of the `exec`. A forced refresh is allowed once per `exec` and entry: enough for a client whose token was rejected, not a loop that mints tokens.
+- `get` is reviewed per `exec`: unless the credential was approved earlier in the same `exec`, carapace asks the sentinel and blocks until it or the user decides.
+- An OAuth entry never leaves the server: it holds the refresh token. Carapace refuses any vault value that is a JSON object with a `refresh_token`, in every form of `ccred get`; every path that hands a value to a sandbox goes through one helper, `credentials.oauth.fetch_for_sandbox`. Near misses such as a Google `authorized_user` file are refused too, though only the Carapace format (`token_url`) can be refreshed. A sandbox gets only its access token (`GET /oauth-token/{vault_path}`, `ccred get --access-token`), reviewed like a credential and good for the rest of the `exec`. A forced refresh is allowed once per `exec` and entry: enough for a client whose token was rejected, not a loop that mints tokens.
 - A static bearer token of an MCP server is an ordinary credential and enters the sandbox like one. Once there, the command could keep it; sending it anywhere still needs a domain approval.
-- Approved credential metadata is tracked via context grants in `SessionState.context_grants` and reflected in `/session`.
 - Credential access decisions are recorded as `CredentialAccessEntry` action-log events.
 
 As with the rest of carapace's model, the "keep secrets out of model output" guarantee is defense-in-depth: policy + sentinel + agent behavior. It is not a protocol-level cryptographic boundary, so secret-echoing commands must remain prohibited.
 
 ## Leftover sandbox processes
 
-Grants (context credentials and domains, sentinel-approved domains, the proxy bypass during skill activation) apply to the whole session sandbox while a call runs, not to one process. A process left over from an earlier call, such as a `nohup` job or a script that daemonizes itself, would inherit them. carapace therefore kills every process in the sandbox except PID 1 at the start of every call, before granting anything; see [Process model](sandbox.md#process-model).
+Grants (sentinel-approved domains and credentials) apply to the whole session sandbox while a call runs, not to one process. A process left over from an earlier call, such as a `nohup` job or a script that daemonizes itself, would inherit them. carapace therefore kills every process in the sandbox except PID 1 at the start of every call, before granting anything; see [Process model](sandbox.md#process-model).
 
 This protects against leftovers, accidental or naive. It does not stop an agent that deliberately tampers with the killer's interpreter, the dynamic loader or `bash` inside the sandbox, where it is root. A static killer on a read-only mount is tracked in [#538](https://github.com/thiesgerken/carapace/issues/538).
 

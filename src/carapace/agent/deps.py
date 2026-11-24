@@ -9,6 +9,7 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.usage import UsageLimits
 
+from ..builder.skill_builds import SkillBuilds
 from ..git.store import GitStore
 from ..llm import ProviderCompaction
 from ..models.config import Config
@@ -47,16 +48,11 @@ class Deps(BaseModel):
     sentinel: Sentinel
     git_store: GitStore
     skill_catalog: list[SkillInfo] = []
-    activated_skills: list[str] = []
+    skill_builds: SkillBuilds
     agent_model: Model
     agent_model_id: str = Field(
         description="carapace-registered model id (custom id or provider:name); usage keys, not provider wire ids.",
     )
-
-    # Live MCPToolset instances keyed by "<skill>:<server>", built lazily from
-    # active context grants. Cached here so per-run-step toolset evaluation
-    # reuses connections instead of re-handshaking every step.
-    mcp_toolsets: dict[str, Any] = {}
 
     tool_call_callback: ToolCallCallback | None = None
     tool_result_callback: Callable[[ToolResult], None] | None = None

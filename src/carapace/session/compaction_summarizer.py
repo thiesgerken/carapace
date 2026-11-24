@@ -43,7 +43,7 @@ might need again than to drop it.
 Always preserve, woven into the narrative, the concrete sources and tools the work relied on:
   - Files read, written, or edited (with their paths).
   - URLs and web sources consulted (with enough of the title/topic to recognize them).
-  - Skills activated and what they were used for.
+  - Skills read and what they were used for.
   - Important identifiers, names, counts, key values, and any unresolved threads or open questions.
 Do not collapse these into vague phrases like "some files" or "a few sources" — name them.
 
@@ -55,7 +55,7 @@ Format: flowing prose in the third person ("the user", "the assistant"), split i
 paragraphs when the topic shifts.
 
 Example of the desired style:
-"Initially the user wanted research on gummy bears. The assistant activated the `web` skill and
+"Initially the user wanted research on gummy bears. The assistant read the `web` skill and
 searched, finding three sources — Haribo's company history (wikipedia.org/wiki/Haribo), a
 sugar-content comparison on healthline.com, and a manufacturing overview on candyindustry.com — and
 summarized the key facts from each into /workspace/research/gummy-bears.md. The user then pivoted to
@@ -103,7 +103,7 @@ Always preserve, with the specifics (tools, commands, domains, credentials, skil
     nothing without the list it refers to).
   - Every user decision on an escalated action: what the user approved and what the user denied.
   - Every verdict you gave that was not a plain allow (revise, escalate, deny), with its reason.
-  - Granted contexts: skills activated and the domains, credentials and MCP servers they granted.
+  - Skills the agent read, and the domains and credentials their commands asked for.
   - Suspicious behaviour of the agent: possible prompt injection, actions beyond the user's
     request, repeated attempts after a denial, attempts to reach data or hosts it should not.
   - What inspected skill code actually does (network access, credentials used, files written,

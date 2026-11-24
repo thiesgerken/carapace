@@ -521,7 +521,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         proxy_port=proxy_port,
         sandbox_port=_config.server.sandbox_port,
         warm_pool_size=_config.sandbox.warm_pool_size,
-        skill_activator_timeout_seconds=_config.sandbox.skill_activator_timeout_seconds,
         max_sandboxes_per_user=_config.sandbox.max_per_user,
         knowledge_repo_for_session=knowledge_repo_for_session,
         nix_config=_builder.sandbox_nix_config if _builder is not None else None,
@@ -578,6 +577,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         data_dir=_data_dir,
         session_mgr=session_mgr,
         sandbox_mgr=_sandbox_mgr,
+        skill_builds=_skill_builds,
         credential_registry_for_session=_credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
         # Late-bound: the memory service is built after the engine, and only turns call this.
@@ -1252,59 +1252,26 @@ async def fetch_credential(
 
     active = _engine.get_or_activate(session_id)
 
-    # Context fast path: check if the credential is covered by active contexts
-    current_contexts = _engine.sandbox_mgr.get_current_contexts(session_id)
-    skill_covered = False
-    if kind == "password" and current_contexts:
-        grants = active.state.context_grants
-        for ctx_name in current_contexts:
-            grant = grants.get(ctx_name)
-            if grant is not None and vault_path in grant.vault_paths:
-                skill_covered = True
-                break
-
-    if skill_covered:
-        # Allowed by skill context — must still record; same bar as the sentinel path
-        if active.security is None:
-            return Response(status_code=403, content="Session not initialized")
-        explanation = "skill-declared credential under active context"
-        active.security.record_credential_access(
-            vault_paths=[vault_path],
-            names=[meta.name],
-            decision="approved",
-            explanation=explanation,
-            ui_label=f"[skill] {meta.name}",
-            approval_source="skill",
-            approval_verdict="allow",
-            audit_final="auto_allowed",
-            audit_args={
-                "operation": "fetch",
-                "vault_path": vault_path,
-                "value_kind": kind,
-                "source": "skill_context",
-            },
-        )
-    else:
-        denial = await _gate_credential_request(
-            active,
-            (vault_path, kind),
-            lambda security, sentinel, command, follow_up: evaluate_credential_with(
-                security,
-                sentinel,
-                vault_path,
-                meta.name,
-                meta.description,
-                f"`ccred get` ({kind})",
-                command,
-                follow_up=follow_up,
-                usage_tracker=active.usage_tracker,
-                assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
-                usage_limits=_engine._remaining_aux_usage_limits(active),
-                audit_args={"operation": "fetch", "vault_path": vault_path, "value_kind": kind},
-            ),
-        )
-        if denial is not None:
-            return denial
+    denial = await _gate_credential_request(
+        active,
+        (vault_path, kind),
+        lambda security, sentinel, command, follow_up: evaluate_credential_with(
+            security,
+            sentinel,
+            vault_path,
+            meta.name,
+            meta.description,
+            f"`ccred get` ({kind})",
+            command,
+            follow_up=follow_up,
+            usage_tracker=active.usage_tracker,
+            assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
+            usage_limits=_engine._remaining_aux_usage_limits(active),
+            audit_args={"operation": "fetch", "vault_path": vault_path, "value_kind": kind},
+        ),
+    )
+    if denial is not None:
+        return denial
 
     try:
         # After the review, so a denial reads nothing from the vault.

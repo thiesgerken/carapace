@@ -135,7 +135,7 @@ class SkillRegistry:
         return skill_md.exists() and self._load_frontmatter(skill_md, skill_dir).disabled
 
     def get_full_instructions(self, skill_name: str) -> str | None:
-        """Load the full SKILL.md body for a skill (activation)."""
+        """Load the full SKILL.md of a skill (``read_skill``)."""
         skill_dir = self.skills_dir / skill_name
         skill_md = skill_dir / "SKILL.md"
         if not skill_md.exists():
@@ -164,7 +164,7 @@ class SkillRegistry:
             logger.error(f"Skill '{skill_dir.name}' has an invalid SKILL.md: {exc}")
             return SkillInfo(
                 name=skill_dir.name,
-                description=f"BROKEN, cannot be activated until its SKILL.md frontmatter is fixed: {exc}",
+                description=f"BROKEN, cannot be used until its SKILL.md frontmatter is fixed: {exc}",
                 path=skill_dir,
             )
 

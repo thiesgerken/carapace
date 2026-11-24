@@ -24,7 +24,6 @@ from carapace.models.credentials import (
     CredentialValueKind,
     FileCredentialBackendConfig,
 )
-from carapace.models.skills import SkillCredentialDecl
 
 # ---------------------------------------------------------------------------
 # Model tests
@@ -88,18 +87,6 @@ def test_file_backend_env_switch_rejects_invalid_value(monkeypatch: pytest.Monke
 def test_credential_metadata_with_description():
     meta = CredentialMetadata(vault_path="personal/abc-123", name="SSH key", description="Deploy key for prod")
     assert meta.description == "Deploy key for prod"
-
-
-def test_skill_credential_decl_env_var():
-    decl = SkillCredentialDecl(vault_path="dev/token", description="API token", env_var="API_TOKEN")
-    assert decl.env_var == "API_TOKEN"
-    assert decl.file is None
-
-
-def test_skill_credential_decl_file():
-    decl = SkillCredentialDecl(vault_path="dev/ssh", file="/home/sandbox/.ssh/id_ed25519")
-    assert decl.file == "/home/sandbox/.ssh/id_ed25519"
-    assert decl.env_var is None
 
 
 def test_vault_backend_is_protocol():

@@ -17,6 +17,7 @@ from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from ..skills import SkillDocumentError, parse_skill_document
+from ..spans import span
 from .client import BuilderClient, BuilderSystemMismatchError
 from .models import BuildResult
 
@@ -102,6 +103,19 @@ class SkillBuilds:
                 )
             )
         return builds
+
+    async def wait_built(self, repo_dir: Path, skill: str) -> tuple[SkillBuild | None, list[SkillBuild]]:
+        """*skill*'s build once it no longer runs (None for a skill without a flake), and every build.
+
+        A crashed build raises here: asking again would only start it again.
+        """
+        while True:
+            builds = await self.ensure_built(repo_dir)
+            build = next((build for build in builds if build.skill == skill), None)
+            if build is None or build.state != "building":
+                return build, builds
+            with span("skill", "build wait", skill=skill):
+                await self._running[build.tree]
 
     def _outcome(self, repo_dir: Path, skill: _FlakeSkill) -> _Outcome:
         if skill.error:

@@ -25,6 +25,7 @@ from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps
 from carapace.agent.sentinel_comments import SentinelCommentCapability
 from carapace.agent.tools import create_agent
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models.config import Config
@@ -171,6 +172,7 @@ def test_agent_announces_the_system_tag_from_the_first_request(tmp_path: Path) -
     # pydantic-ai's default adds the announcement with the first comment and drops it once compaction
     # folds the comments away; both would re-write the whole cached prompt.
     deps = Deps(
+        skill_builds=SkillBuilds(None),
         config=Config(),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,

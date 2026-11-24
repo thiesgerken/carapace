@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from pydantic_ai.models.test import TestModel
 
 from carapace.bootstrap import ensure_data_dir
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.config import build_config
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
@@ -256,6 +257,7 @@ def _make_engine(
         data_dir=tmp_path,
         session_mgr=session_mgr,
         sandbox_mgr=sandbox_mgr,
+        skill_builds=SkillBuilds(None),
         credential_registry_for_session=credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
         memory_block_for=memory_block_for,
