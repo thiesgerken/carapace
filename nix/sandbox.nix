@@ -103,10 +103,7 @@ let
       curl
       jq
       ripgrep
-      kubectl
-      poppler-utils
       nodejs
-      corepack_24
       uv
       nix
       sandboxScripts

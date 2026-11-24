@@ -226,7 +226,7 @@ The Carapace builder builds the flake whenever the skill changes on the server, 
 - **Python with uv:** `skill.uvEnv { root = ./.; }` builds a virtualenv from `pyproject.toml` and `uv.lock`; commands are the `[project.scripts]` entries under `${env}/bin`. A dependency that ships only an sdist, or a Git dependency, needs its build system named in `overrides` (see `docs/skill-flakes.md`): the error says `No module named 'setuptools'` or similar.
 - **Node with npm:** `skill.npmApp { root = ./.; }` from `package.json` and `package-lock.json`; a command is `"${pkgs.nodejs}/bin/node ${app}/src/main.mjs"`.
 - **Plain nixpkgs:** a command that only glues tools together needs no package manager. `exec` can be a nixpkgs binary (`"${pkgs.jq}/bin/jq"`) or a `pkgs.writeShellApplication { name; runtimeInputs = [ … ]; text; }` script.
-- Nothing is installed at run time: no `uv run`, `npm install` or `nix profile install` in a command. Everything a command needs is in its closure.
+- Nothing is installed at run time: no `uv run`, `npm install`, `nix run` or `nix profile install` in a command. A tool the skill needs every time goes into its flake, so everything a command needs is in its closure.
 
 Minimal `pyproject.toml` for a uv skill:
 
