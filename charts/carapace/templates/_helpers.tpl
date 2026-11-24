@@ -135,7 +135,7 @@ Namespace of the in-cluster builder. Its pod needs Pod Security level `privilege
 namespace grants to all of its pods, sandboxes included; a separate namespace keeps that apart.
 */}}
 {{- define "carapace.builder.namespace" -}}
-{{- .Values.builder.namespace | default .Release.Namespace -}}
+{{- .Values.builder.namespace | default (printf "%s-builder" .Release.Namespace) -}}
 {{- end }}
 
 {{/*
