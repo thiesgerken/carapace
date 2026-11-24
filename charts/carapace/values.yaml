@@ -69,7 +69,8 @@ builder:
     tag: "" # defaults to appVersion
     pullPolicy: IfNotPresent
   # -- Binary caches the builder substitutes from and passes through to sandboxes, in order, as
-  # `{url, public_key}` entries. Replaces the image default (cache.nixos.org) when set.
+  # `{url, public_key}` entries. Replaces the image default (cache.nixos.org) when set, so list
+  # cache.nixos.org too when adding a cache.
   upstreamCaches: []
   auth:
     # -- Secret holding the builder token under the key `token`. Generated for the in-cluster

@@ -317,6 +317,8 @@ The included `networkpolicy.yaml` restricts sandbox pods:
 
 This mirrors the Docker setup where sandbox containers are on an internal network with no direct internet access.
 
+A second policy covers the [skill builder](builder.md#kubernetes): ingress only from the server pod, on ports 8330 (build API) and 8331 (binary cache). Sandboxes reach the cache only through the server's session proxy, never directly.
+
 > **⚠️ SECURITY WARNING — NetworkPolicy is critical to carapace's security model**
 >
 > Sandbox pods must **never** have direct internet access. All outbound traffic is forced through the server's HTTP proxy, which enforces per-session domain allowlisting and the human-in-the-loop approval flow. If a sandbox pod can reach the internet without going through the proxy, an agent can exfiltrate data or interact with external services without any approval.

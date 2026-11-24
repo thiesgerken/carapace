@@ -49,12 +49,12 @@ Builder and sandboxes must share one architecture. The builder reports its syste
 The cache listens on port 8331, without authentication, and is the only substituter of every sandbox. It answers from the builder's own store first, then from the upstream caches in order:
 
 - **Own store:** harmonia serves it on loopback and signs every narinfo with the builder's key (`carapace-builder-1`), generated on first start and kept on the store volume, readable only by root and harmonia. NARs are zstd-compressed when the client accepts it, which Nix does.
-- **Upstreams:** `cache.nixos.org` by default. A narinfo keeps the upstream's signature, which does not cover its `URL:` line, so only that line is rewritten to `upstream/<i>/nar/…`, and the NAR comes through the builder too. Redirects are followed by the builder, never handed to a sandbox. NARs pass through as the upstream compressed them.
+- **Upstreams:** `cache.nixos.org` by default. A narinfo keeps the upstream's signature, which does not cover its `URL:` line, so only that line is rewritten to `upstream/<i>/nar/…`, and the NAR comes through the builder too. Redirects are followed by the builder, to public `https` hosts only (anything else is a 502), never handed to a sandbox. NARs pass through as the upstream compressed them.
 - **Errors:** a 404 only when every source says so. An unreachable or failing source is a 502, because Nix remembers a 404 as a missing path.
 
-Only `GET` and `HEAD` of `/nix-cache-info`, `/<hash>.narinfo`, `/nar/…` and `/upstream/<i>/nar/…` are answered; every other path is a 404 and goes nowhere. The build daemon substitutes from the same upstreams.
+Only `GET` and `HEAD` of `/nix-cache-info`, `/<hash>.narinfo`, `/nar/<name>` and `/upstream/<i>/nar/<name>` are answered, with hashes and NAR names in Nix's base32 (32 characters for a store hash, 32 to 52 for a NAR) and NAR suffixes `.nar`, `.nar.xz`, `.nar.zst`, `.nar.bz2` or `.nar.br`. Every other path is a 404 and goes nowhere. The build daemon substitutes from the same upstreams.
 
-`CARAPACE_BUILDER_UPSTREAM_CACHES` on the builder (Helm: `builder.upstreamCaches`) sets the upstreams, as a JSON list that replaces the default:
+`CARAPACE_BUILDER_UPSTREAM_CACHES` on the builder (Helm: `builder.upstreamCaches`) sets the upstreams, as a JSON list. It replaces the default instead of extending it, so a list that adds a cache has to name `cache.nixos.org` too:
 
 ```env
 CARAPACE_BUILDER_UPSTREAM_CACHES=[{"url": "https://cache.nixos.org", "public_key": "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="}, {"url": "https://nix-community.cachix.org", "public_key": "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="}]
