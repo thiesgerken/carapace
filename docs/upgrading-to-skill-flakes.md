@@ -13,7 +13,7 @@ There is no compatibility mode. Skills that declare `network`, `credentials`, `c
 - Pick a long random builder token, e.g. `openssl rand -hex 20`.
 - Kubernetes: check that the nodes support user namespaces for pods ([below](#kubernetes)).
 - Docker on Ubuntu 23.10 or later: check the AppArmor setting for user namespaces ([below](#docker-compose)).
-- List the skills in your knowledge repos that have a `metadata.carapace` block with `network`, `credentials`, `commands` or `mcp`. Each needs a flake ([below](#converting-a-skill)). Skills that only carry instructions keep working.
+- List the skills in your knowledge repos that have a `metadata.carapace` block with `network`, `credentials`, `commands` or `mcp`. Those with `commands` or `mcp` need a flake ([below](#converting-a-skill)); those with only `network` or `credentials` just lose those fields. Skills that only carry instructions keep working.
 - Running sessions lose their activated skills during the upgrade (see [Sessions](#sessions)). Let long tasks finish first.
 
 ## Deploy the builder
@@ -22,7 +22,7 @@ The server needs the builder to build skill flakes. Without one, the server star
 
 ### Docker Compose
 
-The new `docker-compose.yml` has two more services, `builder-init` and `builder`, and a volume `builder-nix`. If you keep your own Compose file, copy them, along with the server's new `CARAPACE_BUILDER_*` variables.
+The new `docker-compose.yml` has two more services, `builder-init` and `builder`, and a volume `builder-nix`. If you keep your own Compose file, copy them, along with the server's new `CARAPACE_BUILDER_*` variables. Keep its sandbox network `internal: true` as in the shipped file: the server's [egress self-test](security.md#start-up-egress-self-test) runs on Docker too and stops the server if a sandbox can reach the internet directly.
 
 1. Add the token to `.env`:
 
@@ -72,7 +72,7 @@ Run the builder image as in [builder.md](builder.md#on-a-separate-machine), then
 
 ## Settings
 
-- `agent.max_sentinel_calls_per_tool_call` is now `agent.max_sentinel_calls_per_exec`. The database migration carries over a value saved in the platform settings. Anywhere else, the old name fails config validation at start, so rename it there.
+- `agent.max_sentinel_calls_per_tool_call` is now `agent.max_sentinel_calls_per_exec`. The setting lives only in the platform settings, and the database migration renames it there. Nothing to do by hand.
 - `CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS` is gone, because nothing is activated any more. The server ignores it, so you can delete it.
 
 ## Knowledge repos
@@ -85,18 +85,19 @@ Bootstrap only seeds bundled skills that are missing, so an existing repo keeps 
 
 - `carapace`, `web` and `wikipedia` declare commands in their frontmatter, so they show up as broken. Their new versions are flakes.
 - `ferret` declares `mcp`, so it breaks too. It is disabled by default.
+- `create-skill` and `credentials` stay valid but are stale: they still teach frontmatter declarations and `use_skill`.
 - `example` is no longer bundled. The helper examples in [`nix/skills/examples`](../nix/skills/examples) replace it.
 
 To get the new versions, delete the old copies and restart the server. On start, bootstrap seeds every missing bundled skill and commits it:
 
 ```sh
-git rm -r skills/carapace skills/web skills/wikipedia skills/ferret skills/example
+git rm -r skills/carapace skills/web skills/wikipedia skills/ferret skills/create-skill skills/credentials skills/example
 git commit -m "Remove pre-flake bundled skills"
 git push
 # then restart the server
 ```
 
-Re-seeded skills come with their shipped defaults. `web` and `ferret` are disabled again; set `metadata.carapace.disabled: false` to turn them back on. A vault path you had changed in the old frontmatter now goes into the skill's `flake.nix` (`web`: `credentials.BRAVE_API_KEY`). Copies you had changed beyond that need converting like your own skills (below).
+Re-seeded skills come with their shipped defaults. `web` and `ferret` are disabled again; set `metadata.carapace.disabled: false` to turn them back on. A vault path you had changed in the old frontmatter now goes into the skill's `flake.nix` (`web`: `credentials.BRAVE_API_KEY`; `carapace`: the `server` and `apiKey` bindings at the top of its `flake.nix`). Copies you had changed beyond that need converting like your own skills (below).
 
 `CARAPACE_RESET_ASSETS=true` overwrites the bundled skills and `SECURITY.md` in place, but leaves files that the new versions no longer have (`setup.sh`, the old `pyproject.toml` of `carapace`). Prefer deleting the copies.
 

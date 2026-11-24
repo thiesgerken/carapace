@@ -6,7 +6,7 @@ Upgrading an install from before skill flakes? Follow [Upgrading to skill flakes
 
 ## Prerequisites
 
-- **Kubernetes cluster** (1.27+) — tested with k3s, works with any conformant cluster. K8s 1.27+ is required for the `persistentVolumeClaimRetentionPolicy` feature (GA).
+- **Kubernetes cluster** (1.29+) — tested with k3s, works with any conformant cluster. Sandbox file writes need the `v5.channel.k8s.io` exec subprotocol (1.29+, see [Architecture](#architecture)), and the in-cluster builder needs user namespaces for pods (below).
 - **RWO StorageClass** — any standard ReadWriteOnce provisioner. The server pod has its own data PVC; sandbox sessions each get a dedicated PVC.
 - **Container images** pushed to a registry accessible by the cluster (GHCR by default)
 - **Helm 3** installed locally
@@ -60,7 +60,7 @@ See the [chart README](../charts/carapace/README.md) for installation details an
 
 The server, frontend, and Bitwarden pods run as UID/GID/fsGroup **999**, with `runAsNonRoot` and seccomp `RuntimeDefault`. Their containers use a read-only root, disable privilege escalation, drop all capabilities, and mount an `emptyDir` at `/tmp`. The server and Bitwarden data mounts remain writable. The server UID and data-volume fsGroup stay 999. For legacy root-owned Bitwarden files, kubelet's default `fsGroupChangePolicy: Always` recursively applies group 999 and group read/write permissions on mount, so existing PVCs do not need a manual ownership migration.
 
-The server retains its service account token for sandbox lifecycle operations. Frontend and Bitwarden pods disable token automounting. The Bitwarden nginx proxy uses the unprivileged image and listens on 8080; its Service still defaults to 80. The frontend likewise listens on 8080 behind its port-80 Service. Postgres and the root/FHS sandbox image are not changed by this hardening.
+The server retains its service account token for sandbox lifecycle operations. Frontend and Bitwarden pods disable token automounting. The Bitwarden nginx proxy uses the unprivileged image and listens on 8080; its Service still defaults to 80. The frontend likewise listens on 8080 behind its port-80 Service. Postgres and the sandbox image (Nix-built, the agent is root in it) are not changed by this hardening.
 
 Bitwarden API-key login requires Vaultwarden 1.35.5 or newer. If Bitwarden persistence is disabled, its state gets an `emptyDir`, not the read-only root.
 
@@ -83,6 +83,13 @@ graph TD
         PvcB["PVC/session-data-…-bbb-0 (RWO)"]
     end
 
+    subgraph nsb ["Namespace: carapace-builder (Pod Security: privileged)"]
+        Builder["Deployment/carapace-builder<br/>(hostUsers: false)"]
+        SvcBuilder["Service/carapace-builder<br/>(ports 8330 + 8331)"]
+        BuilderPVC["PVC/carapace-builder (Nix store)"]
+        BuilderPol["NetworkPolicy (server only)"]
+    end
+
     Deploy -->|mounts| DataPVC
     Deploy -->|creates via K8s API| StsA & StsB
     StsA -->|volumeClaimTemplate| PvcA
@@ -91,6 +98,10 @@ graph TD
     SvcFront --> Frontend
     Route --> SvcServer & SvcFront
     NetPol -.->|restricts| StsA & StsB
+    Deploy -->|builds skills, proxies the cache| SvcBuilder
+    SvcBuilder --> Builder
+    Builder -->|mounts| BuilderPVC
+    BuilderPol -.->|restricts| Builder
 ```
 
 The server pod manages sandbox StatefulSets directly via the Kubernetes API. Each session gets its own StatefulSet (replicas=1) with a per-session PVC created via `volumeClaimTemplates`. Commands are executed in the pod `{sts-name}-0` via `kubectl exec`. File writes, `str_replace` and uploads pass their data on the exec's stdin, in one exec per file. That needs the `v5.channel.k8s.io` exec subprotocol (Kubernetes 1.29 or newer), the only one that can close stdin. kr8s speaks only v4, so carapace opens that websocket itself and fails loudly if the API server doesn't agree to v5.
@@ -249,6 +260,9 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`            | `carapace-sandboxes`      | Required `Sandboxes` owner; set `null`/`""` for Deployment |
 | `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`    | `carapace`                | Server Deployment name (Helm sets to release name)         |
 | `CARAPACE_SANDBOX_NETWORK_NAME`                  | `carapace-sandbox`        | Docker network name (Docker only)                          |
+| `CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS`        | `[]`                      | CIDRs the proxy may reach despite being [internal](sandbox.md#internal-destinations) (Helm: `sandbox.allowedInternalNetworks`) |
+| `CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS`           | `[]`                      | Host names allowed to resolve to internal addresses (Helm: `sandbox.allowedInternalHosts`) |
+| `CARAPACE_SANDBOX_K8S_RESOURCE_REQUESTS_EPHEMERAL_STORAGE` | `2Gi`           | Sandbox ephemeral storage request, for skill store paths (Helm: `sandbox.resources.requests.ephemeral-storage`) |
 | `CARAPACE_BUILDER_URL`                           | (none: no builder)        | [Skill builder](builder.md) API URL (Helm sets it)         |
 | `CARAPACE_BUILDER_CACHE_URL`                     | (required with a URL)     | Builder [binary cache](builder.md#binary-cache) URL (Helm sets it) |
 | `CARAPACE_BUILDER_TOKEN`                         | (required with a URL)     | Builder token (Helm reads it from the builder Secret)      |
