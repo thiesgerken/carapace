@@ -297,7 +297,7 @@ async def _mcp_tools(ctx: RunContext[Deps], server: str) -> str:
 
 _SANDBOX_INSTRUCTIONS = (
     "# Sandbox Environment\n"
-    "Commands run inside a Docker sandbox container.\n"
+    "Commands run inside an isolated sandbox container.\n"
     "`/workspace/` is a Git repository cloned from the server. "
     "All changes to workspace files, skills, and archived session files must be committed and pushed "
     "(`git add`, `git commit`, `git push`) — this is the only way to persist changes. "
@@ -314,6 +314,13 @@ _SANDBOX_INSTRUCTIONS = (
     "tool names, or JSON fields when you need prior context.\n"
     "Call `read_skill(skill_name)` before using a skill. A skill with a flake puts its commands on PATH; "
     "`read_skill` waits until they are there and says what each command asks for when it starts.\n\n"
+    "## Tools\n"
+    "The sandbox is built with Nix; there is no `apt`. Preinstalled are the usual shell tools, Git, curl, "
+    "jq, `rg`, Node.js with npm, uv and Python. Anything else comes from nixpkgs, from a binary cache "
+    "without a domain review: `nix run nixpkgs#<package> -- <args>` runs a package's main program, "
+    "`nix shell nixpkgs#<package> -c <command>` any of its programs "
+    "(`nix shell nixpkgs#poppler-utils -c pdftotext in.pdf -`). "
+    "Python and JavaScript libraries come from `uv` and `npm`/`npx`.\n\n"
     "## Network Access\n"
     "The sandbox has internet access. Outgoing requests are allowed but subject to "
     "security review by the sentinel: each domain a command reaches is evaluated "
@@ -488,7 +495,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         commands = await _skill_commands(ctx, skill_name)
         return _emit_tool_result(ctx, "read_skill", f"{instructions.rstrip()}\n\n{commands}")
 
-    # --- Filesystem (sandboxed — runs inside the Docker container) ---
+    # --- Filesystem (sandboxed — runs inside the sandbox container) ---
 
     @agent.tool(description=_READ_TOOL_DESCRIPTION_VISION if supports_vision else _READ_TOOL_DESCRIPTION_TEXT)
     async def read(
@@ -676,7 +683,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
     # while it streams. Without strict mode GPT writes the command first; strict decoding keeps the order.
     @agent.tool(strict=True)
     async def exec(ctx: RunContext[Deps], title: str | None = None, *, command: str) -> str:
-        """Run a shell command (typically bash) and return its output. Runs in a Docker sandbox.
+        """Run a shell command (typically bash) and return its output. Runs in the sandbox container.
 
         Background processes do not survive their own exec: every exec starts by killing all
         processes left over from earlier commands. Start a server and its client in the same command.
