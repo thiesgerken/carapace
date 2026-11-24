@@ -2,17 +2,6 @@
 name: wikipedia
 description: >-
   Suche und Lese-Funktion für Wikipedia-Artikel (Deutsch als Standard). Nutze diesen Skill, um nach Artikeln zu suchen oder deren Inhalt abzurufen. Unterstützt Deutsch und Englisch via --lang Flag.
-metadata:
-  carapace:
-    network:
-      domains:
-        - de.wikipedia.org
-        - en.wikipedia.org
-    commands:
-      - name: wiki-search
-        command: uv run --directory /workspace/skills/wikipedia wiki-search
-      - name: wiki-fetch
-        command: uv run --directory /workspace/skills/wikipedia wiki-fetch
 ---
 
 # Wikipedia Search & Fetch

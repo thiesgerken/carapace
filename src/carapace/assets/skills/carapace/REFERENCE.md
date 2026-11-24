@@ -34,9 +34,6 @@ The command declares both: it asks for the domain and the credential when it run
 the key as `CARAPACE_API_KEY` (the CLI reads it from there, never from a command line), and
 points the CLI at `https://<server>`. Commit and push; the builder rebuilds the skill.
 
-The `SKILL.md` frontmatter repeats the domain, the vault path and the command for the
-activation path that is being replaced by the flake; keep it in sync until it goes away.
-
 ## Which CLI
 
 `carapace.lib.carapaceCli` builds the CLI client of the Carapace commit `flake.lock` pins:
@@ -53,8 +50,6 @@ skills/carapace/
   REFERENCE.md     # this file
   flake.nix        # server domain, vault path, the `carapace` command
   flake.lock       # pins nixpkgs and the Carapace commit
-  pyproject.toml   # with setup.sh, the activation path the flake replaces
-  setup.sh
 ```
 
 ## The command
