@@ -164,7 +164,8 @@
             inherit (p) pkgs;
             skillLib = skillLib.skill p.pkgs;
           };
-          # The examples' local commands run: the venv imports its packages, Node finds node_modules.
+          # The examples' local commands run: the venv imports its packages, Node finds node_modules, the
+          # nixpkgs script finds its runtimeInputs.
           skill-examples-run =
             let
               examples = skillExamples.${system};
@@ -172,7 +173,16 @@
             p.pkgs.runCommand "skill-examples-run" { } ''
               [ "$(${examples.skill-example-uv}/bin/demo-usage Ada)" = "hello, Ada" ]
               ${examples.skill-example-npm}/bin/demo-npm-hello Ada | grep -q "hello, Ada"
-              ${examples.skill-example-pnpm}/bin/demo-pnpm-hello Ada | grep -q "hello, Ada"
+              # A hand-written one-page PDF: qpdf adds the missing cross-reference table (exit 3 for its
+              # warnings), then doubles it.
+              printf '%s\n' '%PDF-1.4' '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj' \
+                '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj' \
+                '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 10 10]/Resources<<>>>>endobj' \
+                'trailer<</Size 4/Root 1 0 R>>' '%%EOF' > broken.pdf
+              ${p.pkgs.qpdf}/bin/qpdf broken.pdf one.pdf || [ $? = 3 ]
+              ${p.pkgs.qpdf}/bin/qpdf --empty --pages one.pdf one.pdf -- two.pdf
+              [ "$(${examples.skill-example-nix}/bin/demo-nix-pages two.pdf)" = 2 ]
+              [ "$(echo '{"a":1}' | ${examples.skill-example-nix}/bin/demo-nix-jq .a)" = 1 ]
               touch $out
             '';
           # The bundled commands start: their wrappers ask cgate and ccred first, stubbed here.

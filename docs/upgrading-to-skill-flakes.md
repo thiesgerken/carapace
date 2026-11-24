@@ -162,7 +162,7 @@ default = skill.mkSkill {
 
 The steps:
 
-1. Write `flake.nix`. Python skills with `pyproject.toml` and `uv.lock` use `uvEnv`. Node skills use `npmApp` or `pnpmApp`. Copy from [`nix/skills/examples`](../nix/skills/examples).
+1. Write `flake.nix`. Python skills with `pyproject.toml` and `uv.lock` use `uvEnv`. Node skills use `npmApp` with `package-lock.json`. Skills that only call tools need neither: their commands come straight from nixpkgs. Copy from [`nix/skills/examples`](../nix/skills/examples).
 2. Lock it and try a command from the workspace, without pushing: `nix flake lock path:./skills/<name>`, then `nix shell path:./skills/<name> -c <command>`.
 3. Delete what the flake replaces: `setup.sh`, the old frontmatter fields, and a `.venv` if one was committed.
 4. Commit `flake.nix`, `flake.lock` and the sources, then push. The builder builds the skill after the push, and its Knowledge view shows the build state.
