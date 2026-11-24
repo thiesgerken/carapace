@@ -119,15 +119,20 @@ This switches the restriction off for the whole host, not only for the builder. 
 
 The chart deploys the builder by default (`builder.enabled`). That covers a Deployment with an init container, a PVC (`builder.persistence.size`, default 20Gi), a Service, a NetworkPolicy that admits only the server on ports 8330 and 8331, and a generated token Secret. The pod runs with `hostUsers: false` (root in the pod is an unprivileged host user), `procMount: Unmasked`, and `Unconfined` seccomp and AppArmor profiles. It gets no added capabilities.
 
-The cluster has to support user namespaces for pods. That means a recent kernel and container runtime, plus the `UserNamespacesSupport` and `ProcMountType` features. The settings were verified on k3s 1.37 with containerd 2.3 and kernel 7.3. If the builder logs that the Nix build sandbox is not effective, the node or its runtime lacks one of these. Pod Security Admission levels `restricted` and `baseline` reject the pod (unconfined seccomp, unmasked `/proc`), so the builder needs `privileged`. `hostUsers: false` keeps that from meaning root on the node. A Pod Security label covers every pod in its namespace. Sandboxes run in the release namespace and set only `allowPrivilegeEscalation: false` and dropped capabilities, so labelling that namespace `privileged` lifts admission limits on everything the server's service account may create there: hostPath, host network and privileged pods would all be admitted. The pods the server writes don't change, so this costs a layer of defence, not an open door. The alternatives: give the builder its own namespace (below; the release namespace stays at `baseline`), run it outside the cluster (`builder.enabled: false` + `externalUrl`), or accept the trade-off. A separate namespace:
+The cluster has to support user namespaces for pods. That means a recent kernel and container runtime, plus the `UserNamespacesSupport` and `ProcMountType` features. The settings were verified on k3s 1.37 with containerd 2.3 and kernel 7.3. If the builder logs that the Nix build sandbox is not effective, the node or its runtime lacks one of these. Pod Security Admission levels `restricted` and `baseline` reject the pod (unconfined seccomp, unmasked `/proc`), so the builder needs `privileged`. `hostUsers: false` keeps that from meaning root on the node.
+
+A Pod Security label covers every pod in its namespace, and the server creates sandbox pods in the release namespace. Labelling that namespace `privileged` would lift admission limits on everything the server's service account may create there (hostPath, host network, privileged pods). So the builder gets its own namespace, `<release namespace>-builder` by default (`builder.namespace`). The chart creates it with `pod-security.kubernetes.io/enforce: privileged`, and `helm uninstall` removes it with the store PVC (the store is a cache). The release namespace works with `baseline` (see [Kubernetes](kubernetes.md#pod-security)).
+
+The chart puts the builder's Deployment, PVC, Service and NetworkPolicy into the builder namespace, writes the token Secret into both namespaces, and points the server at `http://<release>-builder.<builder namespace>:8330` (and `:8331`). The NetworkPolicy admits only server pods from the release namespace. With `builder.auth.existingSecret`, create that Secret in both namespaces.
+
+When namespaces are managed elsewhere (GitOps), set `builder.createNamespace: false` and create the namespace with the label yourself:
 
 ```sh
 kubectl create namespace carapace-builder
 kubectl label namespace carapace-builder pod-security.kubernetes.io/enforce=privileged
-helm upgrade … --set builder.namespace=carapace-builder
 ```
 
-The chart then puts the builder's Deployment, PVC, Service and NetworkPolicy there, writes the token Secret into both namespaces, and points the server at `http://<release>-builder.carapace-builder:8330` (and `:8331`). With `builder.auth.existingSecret`, create that Secret in both namespaces.
+Setting `builder.namespace` to the release namespace runs the builder next to the server; that namespace then needs `privileged`. To avoid the privileged namespace altogether, run the builder outside the cluster (`builder.enabled: false` + `externalUrl`, below).
 
 ### On a separate machine
 
