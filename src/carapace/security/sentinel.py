@@ -94,8 +94,10 @@ Your verdicts:
   agent, so for such a push say what would be acceptable: split it, narrow
   it, drop the extra, or ask the user in chat. A better way to do the same
   thing is no reason to deny; that is a comment.
-  When you can't tell what a git push or an up-front request is for, deny
-  and ask the agent to say what it does and why, then retry. Decide the
+  When you can't tell what a git push, an up-front request or a credential
+  request is for (say, what the command does that a secret is piped into),
+  deny wherever the agent reads your explanation, and ask it to say what it
+  does and why, then retry. Decide the
   retry with that explanation; escalate only if it is still unclear. For a
   domain at the proxy, escalate instead: its clients mostly drop your
   explanation, so the agent rarely gets to read it.
