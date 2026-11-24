@@ -1,0 +1,91 @@
+"""Keeps each sandbox's skill profile at what its owner's head resolves to, in the background.
+
+The sync is an ordinary process in the sandbox, so the leftover-process killer before every exec kills it
+like any other (no exemption a root agent could borrow). The killer reports the profile's marker, and the
+sync starts again right after it: a killed `nix-env` keeps every path it substituted, so each run continues
+where the last one stopped, and the profile only ever switches as a whole.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Awaitable, Callable
+
+from loguru import logger
+
+from ..builder.profile import SKILLS_PROFILE, SKILLS_PROFILE_MARKER, ProfilePlan, sync_script
+from .runtime import ContainerGoneError, ContainerRuntime, ExecResult
+
+# The running sync's shell, so the killer can leave it out of the count it reports to the agent.
+SYNC_PID_FILE = f"{SKILLS_PROFILE}.sync-pid"
+# A cold sync of a large skill set takes minutes; one that runs longer is stuck.
+_SYNC_TIMEOUT_SECONDS = 1800
+# bash reports a SIGKILLed child as 128 + 9: the killer before an exec ended this sync.
+_KILLED = 137
+
+_HINT = (
+    "[carapace] Skill commands are still being installed in this sandbox. "
+    "If a skill command was not found, try again in a moment."
+)
+
+type ProfilePlanCallback = Callable[[str], Awaitable[ProfilePlan]]
+
+
+class SkillProfileSync:
+    def __init__(self, runtime: ContainerRuntime) -> None:
+        self._runtime = runtime
+        self._plan_for_session: ProfilePlanCallback | None = None
+        self._tasks: dict[str, asyncio.Task[None]] = {}
+
+    def set_plan_callback(self, plan_for_session: ProfilePlanCallback) -> None:
+        self._plan_for_session = plan_for_session
+
+    def start(self, session_id: str, container_id: str, *, marker: str | None) -> None:
+        """Bring the profile to the session's plan in the background, unless *marker* says it is there.
+
+        *marker* is what the sandbox last finished syncing to; None for a sandbox that just started, which
+        always syncs (`nix-env` is a no-op when nothing changed).
+        """
+        task = asyncio.create_task(self._sync(session_id, container_id, marker))
+        task.add_done_callback(lambda done: _log_crash(done, session_id))
+        self._tasks[session_id] = task
+
+    def is_syncing(self, session_id: str) -> bool:
+        task = self._tasks.get(session_id)
+        return task is not None and not task.done()
+
+    def with_hint(self, session_id: str, result: ExecResult) -> ExecResult:
+        """Point a "command not found" during a running sync at the sync."""
+        if not self.is_syncing(session_id):
+            return result
+        if result.exit_code != 127 and "command not found" not in result.output:
+            return result
+        return result.model_copy(update={"output": f"{result.output}\n{_HINT}"})
+
+    async def _sync(self, session_id: str, container_id: str, marker: str | None) -> None:
+        if self._plan_for_session is None:
+            return
+        plan = await self._plan_for_session(session_id)
+        if plan.digest == marker:
+            return
+        script = f"echo $$ > {SYNC_PID_FILE}\n{sync_script(plan)}rm -f {SYNC_PID_FILE}\n"
+        try:
+            result = await self._runtime.exec(container_id, ["/bin/bash", "-c", script], timeout=_SYNC_TIMEOUT_SECONDS)
+        except ContainerGoneError:
+            logger.debug(f"Sandbox of session {session_id} went away during its skill profile sync")
+            return
+        if result.exit_code == _KILLED:
+            logger.debug(f"Skill profile sync of session {session_id} was interrupted by an exec; it restarts")
+        elif result.exit_code != 0:
+            # The marker stays stale, so the next exec tries again.
+            logger.warning(f"Skill profile sync of session {session_id} failed: {result.output[-2000:]}")
+
+
+def _log_crash(task: asyncio.Task[None], session_id: str) -> None:
+    if not task.cancelled() and (exc := task.exception()) is not None:
+        logger.opt(exception=exc).error(f"Skill profile sync of session {session_id} crashed")
+
+
+# Leftover-process killer additions: skip the sync when counting, then report the marker.
+KILLER_SYNC_PID = f"sync=$(cat {SYNC_PID_FILE} 2>/dev/null || true)"
+KILLER_MARKER = f"cat {SKILLS_PROFILE_MARKER} 2>/dev/null || true"

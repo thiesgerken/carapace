@@ -30,6 +30,7 @@ from carapace.sandbox.runtime import (
     NetworkTunnel,
 )
 from carapace.sandbox.session_lifecycle import SessionContainer
+from carapace.sandbox.skill_profile import SkillProfileSync
 from carapace.security.context import BoundaryEvaluation
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillDocumentError, SkillRegistry
@@ -1009,7 +1010,7 @@ async def test_exec_cleanup_tunnel_error_does_not_mask_command_error_or_skip_cre
         exec_notified_credentials={},
         running_execs={},
     )
-    coordinator = SandboxExecCoordinator(runtime=runtime, state=state)
+    coordinator = SandboxExecCoordinator(runtime=runtime, state=state, profile_sync=SkillProfileSync(runtime))
     sc1 = SessionContainer(container_id="container-1", session_id="sess-1", created_at=0, last_used=0)
     sc2 = SessionContainer(container_id="container-2", session_id="sess-1", created_at=0, last_used=0)
     written_files = [("example", "/workspace/skills/example/.secrets/token.txt")]
@@ -1067,7 +1068,9 @@ async def test_request_domain_approval_denies_orphaned_request_without_sentinel(
     """No live exec → deny without invoking the sentinel callback (orphaned process)."""
     cb = AsyncMock(return_value=BoundaryEvaluation(allowed=True, rejection=""))
     state = _make_exec_state(domain_approval_cbs={"sess-1": cb})
-    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    coordinator = SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
+    )
 
     evaluation = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
 
@@ -1081,7 +1084,9 @@ async def test_request_domain_approval_consults_sentinel_during_live_exec():
     """Live exec (command recorded) → callback is consulted as before."""
     cb = AsyncMock(return_value=BoundaryEvaluation(allowed=True, rejection=""))
     state = _make_exec_state(domain_approval_cbs={"sess-1": cb})
-    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    coordinator = SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
+    )
     _grant(coordinator, "npm ci")
 
     running = coordinator.running_exec("sess-1")
@@ -1096,7 +1101,9 @@ async def test_request_domain_approval_consults_sentinel_during_live_exec():
 @pytest.mark.anyio
 async def test_credential_approval_lasts_until_the_exec_ends():
     state = _make_exec_state()
-    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    coordinator = SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
+    )
     sc = SessionContainer(container_id="container-1", session_id="sess-1", created_at=0, last_used=0)
     captured: list[RunningExec] = []
 
@@ -1131,7 +1138,9 @@ def _grant(coordinator: SandboxExecCoordinator, command: str) -> None:
 @pytest.mark.anyio
 async def test_domain_approval_after_its_exec_ended_is_not_granted():
     state = _make_exec_state()
-    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    coordinator = SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
+    )
     _grant(coordinator, "curl https://api.example.com &")
 
     async def review_outlasting_the_exec(_domain: str, _running: RunningExec) -> BoundaryEvaluation:
@@ -1149,7 +1158,9 @@ async def test_domain_approval_after_its_exec_ended_is_not_granted():
 @pytest.mark.anyio
 async def test_domain_approval_does_not_land_in_the_next_exec():
     state = _make_exec_state()
-    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    coordinator = SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
+    )
     _grant(coordinator, "curl https://api.example.com &")
 
     async def review_until_the_next_exec(_domain: str, _running: RunningExec) -> BoundaryEvaluation:
@@ -1169,7 +1180,9 @@ async def test_domain_approval_does_not_land_in_the_next_exec():
 async def test_only_later_requests_of_the_same_exec_are_follow_ups():
     """Parallel tool calls run their execs one after the other; each exec starts with the full form."""
     state = _make_exec_state()
-    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    coordinator = SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
+    )
     seen: list[tuple[str, str, bool]] = []
 
     async def review(domain: str, running: RunningExec) -> BoundaryEvaluation:

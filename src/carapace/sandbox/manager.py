@@ -38,6 +38,7 @@ from .session_lifecycle import (
     SessionContainer,
 )
 from .skill_activation import SkillActivationRunner
+from .skill_profile import ProfilePlanCallback, SkillProfileSync
 from .state import (
     SessionSandboxSnapshot,
     clear_sandbox_snapshot,
@@ -295,8 +296,10 @@ class SandboxManager:
             knowledge_repo_name_for_session=self._knowledge_repo_name_for_session,
             git_author_for_session=self._git_author_for_session,
         )
+        self._profile_sync = SkillProfileSync(runtime)
         self._exec_coordinator = SandboxExecCoordinator(
             runtime=runtime,
+            profile_sync=self._profile_sync,
             state=SandboxExecState(
                 sessions=self._sessions,
                 allowed_domains=self._allowed_domains,
@@ -332,6 +335,10 @@ class SandboxManager:
             f"SandboxManager initialized (image={base_image}, "
             + f"network={network_name}, proxy_port={proxy_port}, idle_timeout={idle_timeout_minutes}m)"
         )
+
+    def set_skill_profile_plan_callback(self, cb: ProfilePlanCallback) -> None:
+        """What a session's skill profile should hold: its owner's built skills (see builder/profile.py)."""
+        self._profile_sync.set_plan_callback(cb)
 
     def set_activated_skills_callback(self, cb: Callable[[str], list[str]]) -> None:
         """Register a callback to retrieve activated skills for a session (from persisted state)."""
@@ -474,6 +481,9 @@ class SandboxManager:
                     self._save_transient_sandbox_snapshot(session_id, "error", last_error=str(exc))
             raise
 
+        if needs_startup or force_skill_setup:
+            # A sandbox that just started or came back has no profile, or an old one; nothing waits for it.
+            self._profile_sync.start(session_id, ensured_sc.container_id, marker=None)
         if needs_startup:
             try:
                 await self.refresh_sandbox_snapshot(session_id, container_id=ensured_sc.container_id)
