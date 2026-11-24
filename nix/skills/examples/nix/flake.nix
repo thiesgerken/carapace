@@ -23,7 +23,7 @@
               pkgs.qpdf
               pkgs.jq
             ];
-            text = ''qpdf --json --json-key=pages "$1" | jq '.pages | length' '';
+            text = ''qpdf --warning-exit-0 --json --json-key=pages "$1" | jq '.pages | length' '';
           };
           ping = pkgs.writeShellApplication {
             name = "demo-nix-ping";

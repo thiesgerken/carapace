@@ -197,7 +197,7 @@ A command that only glues tools together needs no language package manager. nixp
 pages = pkgs.writeShellApplication {
   name = "pdf-pages";
   runtimeInputs = [ pkgs.qpdf pkgs.jq ];
-  text = ''qpdf --json --json-key=pages "$1" | jq '.pages | length' '';
+  text = ''qpdf --warning-exit-0 --json --json-key=pages "$1" | jq '.pages | length' '';
 };
 ```
 
