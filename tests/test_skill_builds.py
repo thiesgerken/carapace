@@ -237,6 +237,21 @@ async def test_a_repository_without_commits_has_no_skills(tmp_path: Path) -> Non
 
 
 @pytest.mark.anyio
+async def test_a_push_syncs_the_builder_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+    builds = AsyncMock()
+    registry = MagicMock()
+    registry.existing.return_value = [MagicMock(knowledge_dir=Path("/repos/thies"))]
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+    monkeypatch.setattr(srv, "_knowledge_git_runtime", AsyncMock(), raising=False)
+    monkeypatch.setattr(srv, "_knowledge_repo_registry", registry, raising=False)
+
+    await srv._after_push("thies")
+
+    builds.sync_roots.assert_awaited_once()
+    assert list(builds.sync_roots.await_args.args[0]) == [Path("/repos/thies")]
+
+
+@pytest.mark.anyio
 async def test_a_push_is_mirrored_even_when_its_builds_cannot_start(monkeypatch: pytest.MonkeyPatch) -> None:
     builds = AsyncMock()
     builds.ensure_built.side_effect = RuntimeError("git ls-tree failed")
@@ -269,3 +284,48 @@ async def test_a_skill_that_cannot_be_archived_fails(repo: Path, monkeypatch: py
 
     assert await _settled(builds, repo) == {"notes": "failed", "weather": "failed"}
     assert builder.built == []
+
+
+class RootsBuilder(FakeBuilder):
+    def __init__(self) -> None:
+        super().__init__()
+        self.roots: list[list[str]] = []
+
+    async def put_roots(self, trees: list[str]) -> None:
+        self.roots.append(trees)
+
+
+@pytest.mark.anyio
+async def test_the_builder_roots_are_the_flake_skill_trees_of_all_heads(repo: Path, tmp_path: Path) -> None:
+    other = tmp_path / "other"
+    other.mkdir()
+    _git(other, "init", "-q")
+    _write_skill(other, "weather", frontmatter="license: demo\n")
+    _commit(other, "another user's weather")
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    _git(empty, "init", "-q")
+    builder = RootsBuilder()
+
+    await SkillBuilds(cast(BuilderClient, builder)).sync_roots([repo, other, empty])
+
+    expected = {_git(repo, "rev-parse", f"HEAD:skills/{name}") for name in ("weather", "notes")}
+    expected.add(_git(other, "rev-parse", "HEAD:skills/weather"))
+    assert builder.roots == [sorted(expected)]
+
+
+@pytest.mark.anyio
+async def test_a_tree_no_head_references_is_looked_up_again(repo: Path) -> None:
+    builder = RootsBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+    old_weather = _git(repo, "rev-parse", "HEAD:skills/weather")
+
+    (repo / "skills" / "weather" / "flake.nix").write_text("{ outputs = _: { packages = { }; }; }\n")
+    _commit(repo, "change weather")
+    await builds.sync_roots([repo])
+
+    # The builder may collect the old tree, so its remembered result must not outlive the sync.
+    assert old_weather not in builds._results
+    assert _git(repo, "rev-parse", "HEAD:skills/notes") in builds._results

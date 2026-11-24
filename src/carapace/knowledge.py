@@ -69,6 +69,12 @@ class KnowledgeRepoRegistry:
         handle.knowledge_dir.mkdir(parents=True, exist_ok=True)
         return handle
 
+    def existing(self) -> list[KnowledgeRepoHandle]:
+        """The knowledge repos of all users that have one."""
+        if not self._knowledge_repos_dir.is_dir():
+            return []
+        return [self.get_for_user(path.name) for path in sorted(self._knowledge_repos_dir.iterdir()) if path.is_dir()]
+
     def get_for_session(self, session_id: str, resolve_owner: SessionOwnerResolver) -> KnowledgeRepoHandle:
         return self.get_for_user(resolve_owner(session_id))
 

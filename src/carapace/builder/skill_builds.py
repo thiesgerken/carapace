@@ -8,6 +8,7 @@ The skill catalog never reads from here: it is part of the cached prompt prefix 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -102,6 +103,19 @@ class SkillBuilds:
                 )
             )
         return builds
+
+    async def sync_roots(self, repo_dirs: Iterable[Path]) -> None:
+        """Tell the builder which trees the heads of *repo_dirs* reference; it may collect the others.
+
+        Results of other trees are forgotten here, so a later lookup asks the builder again instead of
+        trusting store paths that its garbage collection may have deleted by then.
+        """
+        if self._builder is None:
+            return
+        trees = {skill.tree for repo_dir in repo_dirs for skill in await _flake_skills_at_head(repo_dir)}
+        await self._builder.put_roots(sorted(trees))
+        for tree in self._results.keys() - trees:
+            del self._results[tree]
 
     def _outcome(self, repo_dir: Path, skill: _FlakeSkill) -> _Outcome:
         if skill.error:
