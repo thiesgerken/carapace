@@ -45,6 +45,17 @@ class BuildResult(BaseModel):
     log_tail: str = ""
 
 
+class Roots(BaseModel):
+    # The skill trees the current heads of all knowledge repos reference; replaces the last set.
+    trees: list[TreeHash]
+
+
+class GcResult(BaseModel):
+    # Trees whose results and GC roots were dropped because no head referenced them for the grace period.
+    dropped: list[str]
+    log_tail: str
+
+
 class BuilderInfo(BaseModel):
     # The Nix system the builder builds for, e.g. `x86_64-linux`.
     system: str
