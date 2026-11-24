@@ -108,21 +108,52 @@ class SkillBuilds:
             return _Outcome(state="failed", detail=skill.error)
         if self._builder is None:
             return _Outcome(state="unavailable", detail="No skill builder is configured (CARAPACE_BUILDER_URL).")
-        if (result := self._results.get(skill.tree)) is not None:
+        result = self._results.get(skill.tree)
+        if result is not None and result.state != "unavailable":
             return result
+        # Unavailable is the builder's state, not the skill's: every request tries again.
         if skill.tree not in self._running:
-            self._running[skill.tree] = asyncio.create_task(self._build(self._builder, repo_dir, skill.tree))
-        return _BUILDING
+            task = asyncio.create_task(self._build(self._builder, repo_dir, skill.tree))
+            task.add_done_callback(lambda done: _log_crash(done, skill.tree))
+            self._running[skill.tree] = task
+        return result or _BUILDING
 
     async def _build(self, builder: BuilderClient, repo_dir: Path, tree: str) -> None:
         try:
-            result = await builder.get(tree) or await builder.build(tree, await _git(repo_dir, "archive", tree))
-            self._results[tree] = _read_result(result)
-        except (httpx.HTTPError, BuilderSystemMismatchError) as exc:
-            # No result is kept, so the next request for this tree asks the builder again.
-            logger.error(f"Skill tree {tree} could not be built: {type(exc).__name__}: {exc}")
+            self._results[tree] = await _build_outcome(builder, repo_dir, tree)
         finally:
             del self._running[tree]
+
+
+async def _build_outcome(builder: BuilderClient, repo_dir: Path, tree: str) -> _Outcome:
+    try:
+        result = await builder.get(tree)
+        if result is None:
+            try:
+                archive = await _git(repo_dir, "archive", tree)
+            except RuntimeError as exc:
+                return _Outcome(state="failed", detail=str(exc))
+            result = await builder.build(tree, archive)
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        # The builder refused this skill (an archive its filter rejects, one too large): asking again won't help.
+        # 401 is the server's own token, so that one is the builder's state like any outage.
+        if 400 <= status < 500 and status != 401:
+            return _Outcome(state="failed", detail=f"The builder refused the skill ({status}): {exc.response.text}")
+        return _unavailable(tree, exc)
+    except (httpx.HTTPError, BuilderSystemMismatchError) as exc:
+        return _unavailable(tree, exc)
+    return _read_result(result)
+
+
+def _unavailable(tree: str, exc: Exception) -> _Outcome:
+    logger.error(f"Skill tree {tree} could not be built: {type(exc).__name__}: {exc}")
+    return _Outcome(state="unavailable", detail=f"The skill builder is unavailable: {type(exc).__name__}: {exc}")
+
+
+def _log_crash(task: asyncio.Task[None], tree: str) -> None:
+    if not task.cancelled() and (exc := task.exception()) is not None:
+        logger.opt(exception=exc).error(f"Building skill tree {tree} crashed")
 
 
 def _read_result(result: BuildResult) -> _Outcome:

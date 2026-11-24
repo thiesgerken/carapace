@@ -14,6 +14,7 @@ import httpx
 import pytest
 
 import carapace.server as srv
+from carapace.builder import skill_builds
 from carapace.builder.client import BuilderClient
 from carapace.builder.models import BuildResult
 from carapace.builder.skill_builds import SkillBuilds
@@ -36,6 +37,7 @@ class FakeBuilder:
         self.stored: dict[str, BuildResult] = {}
         self.built: list[tuple[str, set[str]]] = []
         self.unreachable = False
+        self.reject_with: int | None = None
         self.answer = lambda tree: BuildResult(
             tree=tree, state="succeeded", store_paths=[f"/nix/store/{tree[:32]}-skill"], metadata=_METADATA
         )
@@ -48,6 +50,10 @@ class FakeBuilder:
     async def build(self, tree: str, archive: bytes) -> BuildResult:
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
             self.built.append((tree, set(tar.getnames())))
+        if self.reject_with is not None:
+            request = httpx.Request("PUT", f"http://builder/builds/{tree}")
+            response = httpx.Response(self.reject_with, text="archive member escapes the skill directory")
+            raise httpx.HTTPStatusError("rejected", request=request, response=response)
         self.stored[tree] = self.answer(tree)
         return self.stored[tree]
 
@@ -168,16 +174,35 @@ async def test_a_package_without_mkskill_metadata_counts_as_failed(repo: Path) -
 
 
 @pytest.mark.anyio
-async def test_an_unreachable_builder_keeps_no_result_and_is_asked_again(repo: Path) -> None:
+async def test_an_unreachable_builder_reads_unavailable_and_is_asked_again(repo: Path) -> None:
     builder = FakeBuilder()
     builder.unreachable = True
     builds = SkillBuilds(cast(BuilderClient, builder))
     await builds.ensure_built(repo)
 
-    assert await _settled(builds, repo) == {"notes": "building", "weather": "building"}
+    assert await _settled(builds, repo) == {"notes": "unavailable", "weather": "unavailable"}
+    [weather] = [build for build in await builds.ensure_built(repo) if build.skill == "weather"]
+    assert "ConnectError: builder down" in weather.detail
 
     builder.unreachable = False
+    await _settled(builds, repo)
     assert await _settled(builds, repo) == {"notes": "succeeded", "weather": "succeeded"}
+
+
+@pytest.mark.anyio
+async def test_a_skill_the_builder_refuses_fails_and_is_not_sent_again(repo: Path) -> None:
+    builder = FakeBuilder()
+    builder.reject_with = 400
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    [weather] = [build for build in await builds.ensure_built(repo) if build.skill == "weather"]
+    await _settled(builds, repo)
+
+    assert weather.state == "failed"
+    assert weather.detail == "The builder refused the skill (400): archive member escapes the skill directory"
+    assert len(builder.built) == 2
 
 
 @pytest.mark.anyio
@@ -226,3 +251,21 @@ async def test_a_push_is_mirrored_even_when_its_builds_cannot_start(monkeypatch:
 
     builds.ensure_built.assert_awaited_once_with(registry.get_for_user.return_value.knowledge_dir)
     runtime.push_if_configured.assert_awaited_once_with("thies")
+
+
+@pytest.mark.anyio
+async def test_a_skill_that_cannot_be_archived_fails(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    real_git = skill_builds._git
+
+    async def git(repo_dir: Path, *args: str) -> bytes:
+        if args[0] == "archive":
+            raise RuntimeError("git archive failed: fatal: not a tree object")
+        return await real_git(repo_dir, *args)
+
+    monkeypatch.setattr(skill_builds, "_git", git)
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+
+    assert await _settled(builds, repo) == {"notes": "failed", "weather": "failed"}
+    assert builder.built == []
