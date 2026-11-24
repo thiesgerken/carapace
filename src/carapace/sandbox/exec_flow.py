@@ -89,6 +89,8 @@ class SandboxExecCoordinator:
         self._runtime = runtime
         self._state = state
         self._profile_sync = profile_sync
+        # What the last killer reported per session, until the sync it interrupted is started again.
+        self._profile_markers: dict[str, str] = {}
 
     def get_exec_lock(self, session_id: str) -> asyncio.Lock:
         if session_id not in self._state.exec_locks:
@@ -134,6 +136,7 @@ class SandboxExecCoordinator:
             if bypass_proxy:
                 self._state.proxy_bypass_sessions.discard(sc.session_id)
                 logger.info(f"Proxy bypass DISABLED for session {sc.session_id}")
+                self._resume_profile_sync(sc)
             if owns_notified_domains:
                 self._state.exec_notified_domains.pop(sc.session_id, None)
 
@@ -174,6 +177,8 @@ class SandboxExecCoordinator:
         async def run_in(container: SessionContainer) -> ExecResult:
             nonlocal written_files, tunnels_prepared
             leftover_processes_killed = await self.kill_leftover_processes(container)
+            if not bypass_proxy:
+                self._resume_profile_sync(container)
             self._grant_exec_scope(session_id, command, contexts, context_domains, bypass_proxy=bypass_proxy)
             if context_tunnels:
                 await prepare_context_tunnels(container, context_tunnels)
@@ -216,6 +221,8 @@ class SandboxExecCoordinator:
                 original_exc = sys.exc_info()[1]
                 cleanup_exc: Exception | None = None
                 self._revoke_exec_scope(session_id, bypass_proxy=bypass_proxy)
+                if sc is not None and bypass_proxy:
+                    self._resume_profile_sync(sc)
 
                 if sc is not None and tunnels_prepared and context_tunnels:
                     try:
@@ -235,18 +242,26 @@ class SandboxExecCoordinator:
     async def kill_leftover_processes(self, sc: SessionContainer) -> int:
         """Kill every process in *sc* except PID 1 and return how many the agent left behind.
 
-        That includes a running skill profile sync, so the sync starts again right after: it continues where
-        the killed one stopped.
+        That includes a running skill profile sync. The caller starts it again with ``_resume_profile_sync``
+        once no proxy bypass is open: right away for an ordinary exec, after the bypass for an activation.
         """
+        self._profile_sync.stop(sc.session_id)
         result = await self._runtime.exec(sc.container_id, KILL_LEFTOVER_PROCESSES_COMMAND, timeout=30)
         if result.exit_code != 0:
             raise RuntimeError(f"Failed to kill leftover processes in session {sc.session_id}: {result.output}")
         count, _, marker = result.stdout.partition("\n")
-        self._profile_sync.start(sc.session_id, sc.container_id, marker=marker.strip())
+        self._profile_markers[sc.session_id] = marker.strip()
         killed = int(count)
         if killed:
             logger.info(f"Killed {killed} leftover process(es) in session {sc.session_id}")
         return killed
+
+    def _resume_profile_sync(self, sc: SessionContainer) -> None:
+        """Start the profile sync the killer interrupted. Never during a proxy bypass: the sync runs code the
+        agent can influence (the container layer is writable), which must not see free egress."""
+        marker = self._profile_markers.pop(sc.session_id, None)
+        if marker is not None:
+            self._profile_sync.start(sc.session_id, sc.container_id, marker=marker)
 
     def _grant_exec_scope(
         self,

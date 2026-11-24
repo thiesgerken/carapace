@@ -37,6 +37,8 @@ class SkillProfileSync:
         self._runtime = runtime
         self._plan_for_session: ProfilePlanCallback | None = None
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        # Sessions whose `nix-env` runs right now: what the "still being installed" hint means.
+        self._installing: set[str] = set()
 
     def set_plan_callback(self, plan_for_session: ProfilePlanCallback) -> None:
         self._plan_for_session = plan_for_session
@@ -47,13 +49,21 @@ class SkillProfileSync:
         *marker* is what the sandbox last finished syncing to; None for a sandbox that just started, which
         always syncs (`nix-env` is a no-op when nothing changed).
         """
+        self.stop(session_id)
         task = asyncio.create_task(self._sync(session_id, container_id, marker))
         task.add_done_callback(lambda done: _log_crash(done, session_id))
         self._tasks[session_id] = task
 
+    def stop(self, session_id: str) -> None:
+        """Drop the session's sync task, so a sync still computing its plan cannot start `nix-env` later.
+
+        The killer ends a `nix-env` that already runs; this keeps a pending one from starting after it.
+        """
+        if (task := self._tasks.pop(session_id, None)) is not None:
+            task.cancel()
+
     def is_syncing(self, session_id: str) -> bool:
-        task = self._tasks.get(session_id)
-        return task is not None and not task.done()
+        return session_id in self._installing
 
     def with_hint(self, session_id: str, result: ExecResult) -> ExecResult:
         """Point a "command not found" during a running sync at the sync."""
@@ -73,9 +83,13 @@ class SkillProfileSync:
         try:
             # Started from an exec or a sandbox start, so the span lands in that turn's timeline.
             with span("skill", "profile sync", paths=len(plan.store_paths)):
-                result = await self._runtime.exec(
-                    container_id, ["/bin/bash", "-c", script], timeout=_SYNC_TIMEOUT_SECONDS
-                )
+                self._installing.add(session_id)
+                try:
+                    result = await self._runtime.exec(
+                        container_id, ["/bin/bash", "-c", script], timeout=_SYNC_TIMEOUT_SECONDS
+                    )
+                finally:
+                    self._installing.discard(session_id)
         except ContainerGoneError:
             logger.debug(f"Sandbox of session {session_id} went away during its skill profile sync")
             return
