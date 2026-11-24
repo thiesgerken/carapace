@@ -14,6 +14,7 @@ from collections.abc import Awaitable, Callable
 from loguru import logger
 
 from ..builder.profile import SKILLS_PROFILE, SKILLS_PROFILE_MARKER, ProfilePlan, sync_script
+from ..spans import span
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult
 
 # The running sync's shell, so the killer can leave it out of the count it reports to the agent.
@@ -70,7 +71,11 @@ class SkillProfileSync:
             return
         script = f"echo $$ > {SYNC_PID_FILE}\n{sync_script(plan)}rm -f {SYNC_PID_FILE}\n"
         try:
-            result = await self._runtime.exec(container_id, ["/bin/bash", "-c", script], timeout=_SYNC_TIMEOUT_SECONDS)
+            # Started from an exec or a sandbox start, so the span lands in that turn's timeline.
+            with span("skill", "profile sync", paths=len(plan.store_paths)):
+                result = await self._runtime.exec(
+                    container_id, ["/bin/bash", "-c", script], timeout=_SYNC_TIMEOUT_SECONDS
+                )
         except ContainerGoneError:
             logger.debug(f"Sandbox of session {session_id} went away during its skill profile sync")
             return
