@@ -126,7 +126,6 @@ async def _agent(inputs: PreviewInputs) -> PromptPreview:
         session_state=state,
         sandbox=inputs.sandbox,
         security=SessionSecurity(state.session_id),
-        sentinel=_sentinel_for(inputs, state),
         git_store=inputs.repo.git_store,
         skill_catalog=inputs.repo.skill_registry.scan(),
         # The preview records the first request and runs no tool.

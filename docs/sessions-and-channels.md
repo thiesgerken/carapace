@@ -153,18 +153,18 @@ Migration 0010 renamed every stored cost limit (platform default, user defaults,
 
 The **autonomous streak** is the tool calls the agent attempted since the last human interaction. The **autonomy limit** (`SessionBudget.autonomous_tool_calls`, `/budget autonomy N`) caps it. It is loop protection, not security: it applies in YOLO mode too, where nobody watches the agent.
 
-What counts: every tool call attempt, including calls the sentinel denies and skill-blocked calls, since a model looping on denied calls is exactly the case to catch. Output tools (`task_done`, `task_failed`), access decisions nested under a tool call (`proxy_domain`, `credential_access`, `git_push`), and the re-run of a call the user approved don't count. The total `tool_calls` budget is separate and counts allowed calls only.
+What counts: every tool call attempt, including calls whose command then fails or whose boundary request is denied, since a model looping on failing calls is exactly the case to catch. Output tools (`task_done`, `task_failed`), access decisions nested under a tool call (`proxy_domain`, `credential_access`, `git_push`), and the re-run of a call the user approved don't count. The total `tool_calls` budget is separate and counts allowed calls only.
 
 What resets the streak:
 
 - a new user message,
 - any approval or escalation the user resolves, allow or deny, except a deny of an autonomy-limit approval.
 
-Sentinel approvals and safe-listed or skill-declared auto-approvals never reset it. Once the limit stopped the agent (see below), only the next user message lifts the stop; changing the limit lifts it too.
+Sentinel approvals and unreviewed tool calls never reset it. Once the limit stopped the agent (see below), only the next user message lifts the stop; changing the limit lifts it too.
 
 On reaching the limit:
 
-- **Attended sessions** pause. Every call over the limit asks for approval with "Autonomy limit reached (N tool calls without you)", through the normal approval cards (web, CLI, Matrix). Allowing at least one card of a batch resets the streak, and the allowed calls continue to the security gate (safe-list, sentinel, possibly another escalation) exactly as if the limit had not been hit: "continue" is no verdict on the call itself, so it is not recorded as a user decision in the sentinel's action log either. A denied card tells the model "Autonomy limit reached. Stop calling tools and report what you have." If the user allowed none of the autonomy cards of a batch, the next tool call ends the turn with a budget stop (`/budget autonomy N`), whatever else the user decided in that batch.
+- **Attended sessions** pause. Every call over the limit asks for approval with "Autonomy limit reached (N tool calls without you)", through the normal approval cards (web, CLI, Matrix). Allowing at least one card of a batch resets the streak, and the allowed calls run as if the limit had not been hit: "continue" is no verdict on the call itself, so it is not recorded as a user decision in the sentinel's action log. A denied card tells the model "Autonomy limit reached. Stop calling tools and report what you have." If the user allowed none of the autonomy cards of a batch, the next tool call ends the turn with a budget stop (`/budget autonomy N`), whatever else the user decided in that batch.
 - **Unattended sessions** (`attributes.unattended`, the default for jobs) have no one to ask: every call of the batch that crosses the limit is denied with the same wrap-up instruction, so a job still ends with a report. The next tool call ends the turn with a budget stop. Jobs with `persistent_session_id` and Matrix sessions are attended and pause instead.
 
 There is no timeout on the pause, and a pending autonomy approval is closed like any other approval when the server restarts. The streak lives in memory on the active session; a restart resets it. The chat input shows it as the "Autonomy" gauge.
@@ -332,11 +332,11 @@ The WebSocket protocol also supports non-slash turn controls for retry and reset
 
 ## Approval gate
 
-The approval gate handles security escalations. When the sentinel escalates a tool call, the flow is:
+The approval gate holds tool calls over the [autonomy limit](#autonomy-limit) for the user. Tool calls are never escalated by the sentinel; its escalations of boundary requests and pushes have their own messages (domain access, credential access, git push). The flow:
 
 1. Agent loop receives `DeferredToolRequests` (tools that need approval)
 2. `ApprovalRequest` is broadcast to all session subscribers (WebSocket clients, Matrix rooms)
-3. The request includes the sentinel's explanation, risk level, tool name, and arguments
+3. The request includes the reason ("Autonomy limit reached (N tool calls without you)"), tool name, and arguments
 4. Agent loop blocks waiting on the approval queue
 5. User approves or denies via the frontend UI, reaction, or slash command
 6. `ApprovalResponse` is routed back through the approval queue

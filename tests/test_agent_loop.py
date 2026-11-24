@@ -29,7 +29,6 @@ from carapace.models.config import Config
 from carapace.models.session import SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import AgentResponseEntry, SessionSecurity
-from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
 
@@ -58,7 +57,6 @@ def _make_deps(tmp_path: Path, *, unattended: bool) -> Deps:
         session_state=SessionState.now(session_id=session_id, unattended=unattended),
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity(session_id, unattended=unattended),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",

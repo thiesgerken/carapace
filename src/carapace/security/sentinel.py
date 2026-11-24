@@ -52,8 +52,8 @@ from .context import (
 
 SENTINEL_INSTRUCTIONS = """\
 You are the security gate for an AI agent system called carapace.
-You evaluate tool calls, git pushes, proxy domain requests, and credential
-access requests to decide whether they should be allowed, sent back to the
+You evaluate git pushes, proxy domain requests, credential access requests
+and up-front requests to decide whether they should be allowed, sent back to the
 agent for changes, escalated to the user for approval, or denied.
 
 Your job is NOT to review the agent's work on its merits. Whether a command
@@ -87,7 +87,7 @@ Your verdicts:
   the agent: it reads it right after the operation's result. Comment as often
   as it helps, keep each comment short and concrete, and leave it empty
   otherwise. `explanation` stays your reason, for the log.
-- `revise`: no threat, but the call must not run as it is: it bundles an
+- `revise`: no threat, but the operation must not run as it is: it bundles an
   extra the user did not ask for, reaches beyond what was requested, or needs
   the user's say first. Ask the agent to split it, narrow it, drop the extra,
   ask the user in chat, or explain how the step follows from the user's
@@ -96,7 +96,7 @@ Your verdicts:
   explanation goes to the agent as a change request, so say what to change.
 - `escalate`: the user decides.
 - `deny`: the operation is blocked as a threat.
-`comment` and `revise` only exist for tool calls and git pushes.
+`comment` and `revise` only exist for git pushes.
 
 The sandbox is the boundary. Commands the agent runs there (`exec`) are not
 sent to you: they run, and they are in the action log. Whatever a command
@@ -477,7 +477,7 @@ class Sentinel:
     def _timeout_explanation(self) -> str:
         return (
             f"Automatic sentinel review timed out after {self._timeout.total_seconds():g}s. "
-            + "The tool call was blocked so the agent can decide whether to retry."
+            + "The request was blocked so the agent can decide whether to retry."
         )
 
     async def _run_evaluation(
@@ -715,37 +715,6 @@ class Sentinel:
 
         self._register_agent_tools(agent)
         return agent
-
-    async def evaluate_tool_call(
-        self,
-        session: SessionSecurity,
-        tool_name: str,
-        args: dict[str, Any],
-        *,
-        usage_tracker: UsageTracker | None = None,
-        assert_llm_budget_available: Callable[[], None] | None = None,
-        usage_limits: UsageLimits | None = None,
-    ) -> SentinelVerdict:
-        async with self._lock:
-            tool_calls_since_user = session.tool_calls_since_last_user_message()
-
-            prompt_parts = _action_log_prompt(session)
-
-            args_str = _format_args(args)
-            prompt_parts.append(f"\nEVALUATE tool_call:\n{tool_name}({args_str})")
-            prompt_parts.append(f"Last user message was {tool_calls_since_user} tool calls ago.")
-
-            prompt = "\n".join(prompt_parts)
-            return await self._run_evaluation(
-                session,
-                prompt,
-                kind="tool_call",
-                subject=f"{tool_name}({_truncate(args_str, 120)})",
-                agent_reads_verdict=True,
-                usage_tracker=usage_tracker,
-                assert_llm_budget_available=assert_llm_budget_available,
-                usage_limits=usage_limits,
-            )
 
     async def evaluate_domain_access(
         self,

@@ -12,7 +12,7 @@ The agent writes `/workspace/artifacts/<slug>/index.html`, commits and pushes it
 then calls `show_artifact(slug)` to reference it in chat. Every push updates the
 live knowledge view, every chat reference, and any existing shared link.
 `show_artifact` only accepts slugs that exist in the server's knowledge working tree,
-so the agent has to push first. It is safe-listed: the push was already reviewed, and
+so the agent has to push first. Like every tool it runs without review: the push was already reviewed, and
 showing sends nothing out. `send_file` refuses paths under `artifacts/` and points the
 agent to `show_artifact`.
 See the bundled [artifacts skill](../src/carapace/assets/skills/artifacts/SKILL.md)

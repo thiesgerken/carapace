@@ -16,14 +16,6 @@ from ..database.models import SessionActionLogRow, SessionAuditRow, SessionSenti
 from ..models.credentials import CredentialMetadata
 
 
-class SecurityDeniedError(Exception):
-    """Raised when the sentinel denies a tool call."""
-
-
-class ChangesRequestedError(Exception):
-    """Raised when the sentinel wants the agent to change its approach to a tool call (no threat)."""
-
-
 @dataclass(frozen=True, slots=True)
 class UserEscalationDecision:
     allowed: bool
@@ -152,7 +144,7 @@ class SentinelVerdict(BaseModel):
     comment: str = Field(
         "",
         max_length=500,
-        description="Only with `allow`, for tool calls and git pushes: a note the agent reads after the result.",
+        description="Only with `allow`, for git pushes: a note the agent reads after the result.",
     )
 
 
@@ -164,7 +156,7 @@ class UnattendedSentinelVerdict(BaseModel):
     comment: str = Field(
         "",
         max_length=500,
-        description="Only with `allow`, for tool calls and git pushes: a note the agent reads after the result.",
+        description="Only with `allow`, for git pushes: a note the agent reads after the result.",
     )
 
 
@@ -536,15 +528,6 @@ class SessionSecurity:
             row.messages = self.sentinel_messages
             row.synced_entries = self._last_synced_idx
             row.eval_count = self.sentinel_eval_count
-
-    def tool_calls_since_last_user_message(self) -> int:
-        count = 0
-        for entry in reversed(self.action_log):
-            if isinstance(entry, UserMessageEntry):
-                break
-            if isinstance(entry, ToolCallEntry):
-                count += 1
-        return count
 
     def write_audit(self, entry: AuditEntry) -> None:
         if self._session_factory is None:

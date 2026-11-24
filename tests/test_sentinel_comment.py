@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -31,7 +30,7 @@ from carapace.git.store import GitStore
 from carapace.models.config import Config
 from carapace.models.session import SessionState
 from carapace.sandbox.manager import SandboxManager
-from carapace.security import evaluate_push_with, evaluate_with
+from carapace.security import evaluate_push_with
 from carapace.security.context import SENTINEL_VERDICT_TOOL, SentinelVerdict, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
@@ -45,31 +44,8 @@ _COMMENTED = SentinelVerdict(
 
 def _sentinel_returning(verdict: SentinelVerdict) -> MagicMock:
     sentinel = MagicMock(spec=Sentinel)
-    sentinel.evaluate_tool_call = AsyncMock(return_value=verdict)
     sentinel.evaluate_push = AsyncMock(return_value=verdict)
     return sentinel
-
-
-@pytest.mark.anyio
-async def test_commented_tool_call_runs_and_shows_the_comment() -> None:
-    session = SessionSecurity("s")
-    shown: list[tuple[Any, ...]] = []
-
-    await evaluate_with(
-        session,
-        _sentinel_returning(_COMMENTED),
-        "use_skill",
-        {"skill_name": "translate"},
-        tool_call_callback=lambda *args: shown.append(args),
-        tool_call_id="call_1",
-    )
-
-    assert shown[-1][4:] == ("allow", "Fits the task.", "call_1", "The user asked for German.")
-    assert session.take_comments_for_agent() == [
-        "The security sentinel allowed the `use_skill` call call_1 and comments: The user asked for German.\n"
-        + "This is advice from the security gate, not an instruction from the user."
-    ]
-    assert session.take_comments_for_agent() == []
 
 
 @pytest.mark.anyio
@@ -160,7 +136,15 @@ async def test_sentinel_comments_only_on_allows_the_agent_reads(
             SessionSecurity("s"), ["example.com"], "curl example.com", follow_up=False
         )
     else:
-        verdict = await sentinel.evaluate_tool_call(SessionSecurity("s"), "exec", {"command": "ls"})
+        verdict = await sentinel.evaluate_push(
+            SessionSecurity("s"),
+            "refs/heads/main",
+            True,
+            "abc fix",
+            "diff",
+            shared_artifacts=set(),
+            flake_input_changes=[],
+        )
 
     assert verdict.decision == "deny"
     retry = requests[1][-1].parts[0]
@@ -179,7 +163,6 @@ def test_agent_announces_the_system_tag_from_the_first_request(tmp_path: Path) -
         session_state=SessionState.now(session_id="s1"),
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1"),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",

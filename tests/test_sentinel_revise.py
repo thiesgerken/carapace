@@ -3,21 +3,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo
 
-from carapace.security import evaluate_push_with, evaluate_with
+from carapace.security import evaluate_push_with
 from carapace.security.context import (
     SENTINEL_VERDICT_TOOL,
-    ChangesRequestedError,
     GitPushEntry,
     SentinelVerdict,
     SessionSecurity,
-    ToolCallEntry,
 )
 from carapace.security.sentinel import Sentinel
 
@@ -28,36 +25,8 @@ _REVISE = SentinelVerdict(decision="revise", explanation="Activate the staging s
 
 def _sentinel_returning(verdict: SentinelVerdict) -> MagicMock:
     sentinel = MagicMock(spec=Sentinel)
-    sentinel.evaluate_tool_call = AsyncMock(return_value=verdict)
     sentinel.evaluate_push = AsyncMock(return_value=verdict)
     return sentinel
-
-
-@pytest.mark.anyio
-async def test_revised_tool_call_tells_the_agent_what_to_change() -> None:
-    session = SessionSecurity("s")
-    shown: list[tuple[Any, ...]] = []
-
-    with pytest.raises(ChangesRequestedError) as raised:
-        await evaluate_with(
-            session,
-            _sentinel_returning(_REVISE),
-            "use_skill",
-            {"skill_name": "deploy"},
-            tool_call_callback=lambda *args: shown.append(args),
-            tool_call_id="call_1",
-        )
-
-    assert str(raised.value) == "Sentinel requests changes (no threat detected): Activate the staging skill first."
-    assert session.action_log[-1] == ToolCallEntry(
-        tool="use_skill",
-        args={"skill_name": "deploy"},
-        decision="changes_requested",
-        explanation="Activate the staging skill first.",
-    )
-    _tool, _args, _detail, source, verdict, explanation, tool_call_id, comment = shown[-1]
-    assert (source, verdict, explanation, comment) == ("sentinel", "revise", "Activate the staging skill first.", None)
-    assert tool_call_id == "call_1"
 
 
 @pytest.mark.anyio
@@ -119,10 +88,18 @@ async def test_sentinel_cannot_revise_requests_whose_explanation_never_reaches_t
 
 
 @pytest.mark.asyncio
-async def test_unattended_sentinel_can_revise_tool_calls(tmp_path: Path) -> None:
+async def test_unattended_sentinel_can_revise_pushes(tmp_path: Path) -> None:
     sentinel, requests = _sentinel(tmp_path, ["revise"], unattended=True)
 
-    verdict = await sentinel.evaluate_tool_call(SessionSecurity("s", unattended=True), "exec", {"command": "ls"})
+    verdict = await sentinel.evaluate_push(
+        SessionSecurity("s", unattended=True),
+        "refs/heads/main",
+        True,
+        "abc fix",
+        "diff",
+        shared_artifacts=set(),
+        flake_input_changes=[],
+    )
 
     assert verdict.decision == "revise"
     assert len(requests) == 1

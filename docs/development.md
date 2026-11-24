@@ -49,9 +49,9 @@ UI PRs show the pages they change: before and after, light and dark, plus phone 
 | `demo-sandbox-tour` | Getting To Know The Sandbox | thinking, a titled `exec` with a domain access, sandbox panel |
 | `demo-pancake-recipe` | Classic Fluffy Pancake Recipe | `read_skill` waiting for a build and a profile sync, ungated `exec` calls whose domain access the sentinel reviews and whose credential the user releases, the debug view (`&view=debug`) with the turn's timeline and a request timeline per role |
 | `demo-recipe-skill` | Creating A Recipe Skill | file read and write, a git push, code blocks |
-| `demo-blocked-post` | HTTP POST Blocked In Ask Mode | ask mode, a call denied by the sentinel |
-| `demo-change-request` | Fixing The Pancake Ingredients | a call the sentinel sent back for changes (`revise`), then the split call (allowed with a comment for the agent) and its push |
-| `demo-pending-approval` | Cleaning Up NAS Backups | a pending approval card |
+| `demo-blocked-post` | HTTP POST Blocked In Ask Mode | ask mode, a domain the sentinel denied, and the failed `exec` |
+| `demo-change-request` | Fixing The Pancake Ingredients | a push the sentinel sent back for changes (`revise`), then the narrowed push, allowed with a comment for the agent |
+| `demo-pending-approval` | Cleaning Up NAS Backups | a pending escalation of an up-front request (a credential and a domain) |
 | `demo-budget-stop` | Triage Open Issues | a budget stop with the error box |
 | `demo-unexpected-error` | LED Controller Pinout | a turn that stopped on an unexpected error: the failed call and the error box with its traceback |
 | `demo-autonomy-limit` | Checking Outdated Dependencies | an autonomy-limit approval card |

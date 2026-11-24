@@ -297,11 +297,11 @@ async def test_sentinel_evaluation_parents_its_requests_and_skill_file_reads(tmp
     )
     trace, root, _ = _trace()
     with engine.llm_request_recording(active), attach(trace, root.span_id):
-        await sentinel.evaluate_tool_call(SessionSecurity(sid), "exec", {"command": "echo hi"})
+        await sentinel.evaluate_domain_access(SessionSecurity(sid), ["example.com"], "echo hi", follow_up=False)
 
     (evaluation,) = [s for s in trace.spans.values() if s.kind == "sentinel"]
-    assert (evaluation.name, evaluation.parent_id, evaluation.status) == ("tool_call", root.span_id, "ok")
-    assert evaluation.attrs == {"subject": "exec(\"command='echo hi'\")", "verdict": "allow"}
+    assert (evaluation.name, evaluation.parent_id, evaluation.status) == ("domain_access", root.span_id, "ok")
+    assert evaluation.attrs == {"subject": "example.com via 'echo hi'", "verdict": "allow"}
     (read,) = [s for s in trace.spans.values() if s.kind == "tool"]
     assert (read.name, read.parent_id) == ("read_skill_file", evaluation.span_id)
     requests = [r for r in active.llm_request_log.records if r.source == "sentinel"]

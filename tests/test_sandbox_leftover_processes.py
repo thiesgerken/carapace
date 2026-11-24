@@ -23,7 +23,6 @@ from carapace.sandbox.exec_flow import KILL_LEFTOVER_PROCESSES_COMMAND
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.runtime import ExecResult
 from carapace.security.context import SessionSecurity
-from carapace.security.sentinel import Sentinel
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillRegistry
 from carapace.usage import UsageTracker
@@ -73,7 +72,6 @@ def _deps(tmp_path: Path, db_factory, processes: _ProcessTable) -> Deps:
         session_state=SessionState.now(session_id="s1", unattended=False),
         sandbox=sandbox,
         security=SessionSecurity("s1", unattended=False),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",

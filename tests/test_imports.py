@@ -71,7 +71,7 @@ def test_import_ws_models():
 
 
 def test_import_security():
-    from carapace.security import SAFE_TOOLS, CredentialAccessEntry, evaluate_domain_with, evaluate_with  # noqa: F401
+    from carapace.security import CredentialAccessEntry, evaluate_domain_with, record_tool_call  # noqa: F401
     from carapace.security.context import (  # noqa: F401
         ActionLogEntry,
         AuditEntry,

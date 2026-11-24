@@ -22,7 +22,6 @@ from carapace.models.session import SessionState
 from carapace.sandbox.manager import SandboxLimitError, SandboxManager
 from carapace.sandbox.runtime import ExecResult
 from carapace.security.context import SessionSecurity, ToolCallEntry
-from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
 _WEATHER = SkillCommand(
@@ -68,7 +67,6 @@ def _deps(tmp_path: Path, builds: list[SkillBuild]) -> Deps:
         session_state=SessionState.now(session_id="s1"),
         sandbox=sandbox,
         security=SessionSecurity("s1"),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         skill_builds=skill_builds,
         agent_model=MagicMock(spec=Model),
@@ -158,7 +156,7 @@ async def test_a_denied_listing_is_reported_and_the_rest_still_returns(tmp_path:
 
 
 @pytest.mark.anyio
-async def test_reading_a_skill_is_auto_allowed_and_logged_for_the_sentinel(tmp_path: Path) -> None:
+async def test_reading_a_skill_is_logged_for_the_sentinel(tmp_path: Path) -> None:
     _write_skill(tmp_path, "weather")
     deps = _deps(tmp_path, [])
 
@@ -167,7 +165,6 @@ async def test_reading_a_skill_is_auto_allowed_and_logged_for_the_sentinel(tmp_p
     [entry] = deps.security.action_log
     assert isinstance(entry, ToolCallEntry)
     assert (entry.tool, entry.args, entry.decision) == ("read_skill", {"skill_name": "weather"}, "auto_allowed")
-    cast(MagicMock, deps.sentinel).assert_not_called()
 
 
 @pytest.mark.anyio

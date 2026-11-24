@@ -15,7 +15,6 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
-from carapace import security
 from carapace.agent.autonomy import (
     AUTONOMY_WRAP_UP,
     AutonomyLimitReachedError,
@@ -23,7 +22,6 @@ from carapace.agent.autonomy import (
     resolve_user_approvals,
 )
 from carapace.models.session import SessionBudget
-from carapace.security.context import ApprovalEntry, SentinelVerdict
 from carapace.session import SessionEngine
 from carapace.session.types import ActiveSession
 from carapace.ws_models import ApprovalResponse, EscalationResponse
@@ -67,7 +65,7 @@ def test_stopped_streak_continues_after_the_limit_was_changed() -> None:
 def test_only_a_user_message_lifts_a_stop() -> None:
     streak = AutonomyStreak(count=99)
     streak.note_user_decision()  # an escalation answered while the batch was waiting for its cards
-    resolve_user_approvals(streak, {"b": ToolDenied("User denied this operation.")}, {"b"}, 100)
+    resolve_user_approvals(streak, {"b": ToolDenied("User denied this operation.")}, 100)
     streak.note_user_decision()  # another escalation answered before the next tool call
 
     with pytest.raises(AutonomyLimitReachedError):
@@ -80,22 +78,11 @@ def test_only_a_user_message_lifts_a_stop() -> None:
 def test_user_allow_of_an_autonomy_approval_resets_the_streak() -> None:
     streak = AutonomyStreak(count=7)
 
-    decisions = resolve_user_approvals(
-        streak, {"a": True, "b": ToolDenied("User denied this operation.")}, {"a", "b"}, 5
-    )
+    decisions = resolve_user_approvals(streak, {"a": True, "b": ToolDenied("User denied this operation.")}, 5)
 
     assert streak == AutonomyStreak()
     assert decisions["a"] is True
     assert decisions["b"] == ToolDenied(f"User denied this operation. {AUTONOMY_WRAP_UP}")
-
-
-def test_user_deny_of_a_sentinel_escalation_resets_the_streak() -> None:
-    streak = AutonomyStreak(count=7)
-
-    decisions = resolve_user_approvals(streak, {"a": ToolDenied("User denied this operation.")}, set(), 5)
-
-    assert streak == AutonomyStreak()
-    assert decisions == {"a": ToolDenied("User denied this operation.")}
 
 
 def test_user_deny_of_every_autonomy_approval_keeps_the_streak_and_stops_after_it() -> None:
@@ -104,25 +91,10 @@ def test_user_deny_of_every_autonomy_approval_keeps_the_streak_and_stops_after_i
     resolve_user_approvals(
         streak,
         {"a": ToolDenied("User denied this operation. enough"), "b": ToolDenied("User denied this operation.")},
-        {"a", "b"},
         5,
     )
 
     assert streak.count == 7
-    with pytest.raises(AutonomyLimitReachedError):
-        streak.count_attempt("c", 5)
-
-
-def test_other_decisions_in_the_batch_do_not_lift_the_stop() -> None:
-    streak = AutonomyStreak(count=7)
-
-    resolve_user_approvals(
-        streak,
-        {"a": ToolDenied("User denied this operation."), "sentinel": True},
-        {"a"},
-        5,
-    )
-
     with pytest.raises(AutonomyLimitReachedError):
         streak.count_attempt("c", 5)
 
@@ -325,104 +297,6 @@ def test_unattended_hard_stops_on_the_next_tool_call(tmp_path: Path, db_factory)
 
         [error] = sub.errors
         assert error.startswith("Session budget reached: autonomy 3 tool calls / 2 tool calls.")
-
-    asyncio.run(_run())
-
-
-@pytest.fixture
-def gated_read_skill(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every agent tool is on the safe list; this one stands in for a call the sentinel reviews."""
-    monkeypatch.setattr(security, "SAFE_TOOLS", security.SAFE_TOOLS - {"read_skill"})
-
-
-def _gated_call(call_id: str) -> ToolCallPart:
-    return ToolCallPart(tool_name="read_skill", args={"skill_name": "deploy"}, tool_call_id=call_id)
-
-
-@pytest.mark.usefixtures("gated_read_skill")
-def test_sentinel_denied_attempts_count_toward_the_streak(tmp_path: Path, db_factory) -> None:
-    def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
-        return ModelResponse(parts=[_gated_call(f"c{len(_tool_returns(messages)) + 1}")])
-
-    async def _run() -> None:
-        engine, active, _sub = _engine_with_model(tmp_path, db_factory, respond, limit=2)
-        assert active.sentinel is not None
-        active.sentinel.evaluate_tool_call = AsyncMock(
-            return_value=SentinelVerdict(decision="deny", explanation="no", risk_level="high")
-        )
-
-        await engine.submit_message(active.state.session_id, "go")
-        await _wait_until(lambda: bool(active.pending_approval_requests))
-
-        assert _sole_pending_approval(active)["tool_call_id"] == "c3"
-        assert active.sentinel.evaluate_tool_call.await_count == 2
-        await engine.submit_cancel(active.state.session_id)
-
-    asyncio.run(_run())
-
-
-@pytest.mark.usefixtures("gated_read_skill")
-def test_an_allowed_autonomy_approval_still_goes_through_the_security_gate(tmp_path: Path, db_factory) -> None:
-    seen_returns: list[str] = []
-
-    def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
-        returns = _tool_returns(messages)
-        seen_returns[:] = [str(part.content) for part in returns]
-        if len(returns) < 3:
-            return ModelResponse(parts=[_gated_call(f"c{len(returns) + 1}")])
-        return ModelResponse(parts=[TextPart(content="done")])
-
-    async def _run() -> None:
-        engine, active, _sub = _engine_with_model(tmp_path, db_factory, respond, limit=2)
-        sid = active.state.session_id
-        assert active.sentinel is not None and active.security is not None
-        active.sentinel.evaluate_tool_call = AsyncMock(
-            return_value=SentinelVerdict(decision="deny", explanation="destructive", risk_level="high")
-        )
-
-        await engine.submit_message(sid, "go")
-        await _wait_until(lambda: bool(active.pending_approval_requests))
-        await engine.submit_approval(sid, ApprovalResponse(tool_call_id="c3", approved=True))
-        await _finish_turn(active)
-
-        assert active.sentinel.evaluate_tool_call.await_count == 3
-        assert seen_returns[-1] == "Sentinel denied this operation. destructive"
-        assert not any(isinstance(entry, ApprovalEntry) for entry in active.security.action_log)
-
-    asyncio.run(_run())
-
-
-@pytest.mark.usefixtures("gated_read_skill")
-def test_denying_the_autonomy_approval_stops_even_when_the_batch_had_other_decisions(
-    tmp_path: Path, db_factory
-) -> None:
-    def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
-        match len(_tool_returns(messages)):
-            case 0:
-                return _read_calls("c1")
-            case 1:
-                return ModelResponse(parts=[_gated_call("c2"), _gated_call("c3")])
-            case _:
-                return _read_calls("c4")
-
-    async def _run() -> None:
-        engine, active, sub = _engine_with_model(tmp_path, db_factory, respond, limit=2)
-        sid = active.state.session_id
-        assert active.sentinel is not None
-        active.sentinel.evaluate_tool_call = AsyncMock(
-            return_value=SentinelVerdict(decision="escalate", explanation="check", risk_level="medium")
-        )
-
-        await engine.submit_message(sid, "go")
-        await _wait_until(lambda: len(active.pending_approval_requests) == 2)
-        explanations = {request["explanation"] for request in active.pending_approval_requests}
-        assert explanations == {"check", "Autonomy limit reached (2 tool calls without you)"}
-        for request in list(active.pending_approval_requests):
-            await engine.submit_approval(sid, ApprovalResponse(tool_call_id=request["tool_call_id"], approved=False))
-        await _finish_turn(active)
-
-        [error] = sub.errors
-        assert error.startswith("Session budget reached: autonomy")
 
     asyncio.run(_run())
 

@@ -3,7 +3,7 @@
 Separates the core agent/approval loop from transport-specific code
 (WebSocket, Matrix, etc.).  Callers inject two async callbacks:
 
-- ``send_approval_request`` — called for each tool call that needs approval,
+- ``send_approval_request`` — called for each tool call held at the autonomy limit,
   passing the structured :class:`~carapace.ws_models.ApprovalRequest`.
 - ``collect_approvals`` — called with the set of pending ``tool_call_id``
   strings; must return a mapping of id → ``True`` (approved) or a
@@ -31,14 +31,11 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from ..security.context import (
     AgentResponseEntry,
-    ApprovalEntry,
-    AuditEntry,
-    SentinelVerdict,
     UserMessageEntry,
 )
 from ..usage import ProviderCostCapability, split_provider_compaction_usage
 from ..ws_models import ApprovalRequest, FinalStatus, ToolCallStream
-from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, resolve_user_approvals
+from .autonomy import resolve_user_approvals
 from .deps import Deps, TaskDone, TaskFailed
 from .tool_stream import ToolCallStreamer
 from .tools import TASK_DONE_TOOL, TASK_FAILED_TOOL, create_agent
@@ -159,52 +156,18 @@ async def run_agent_turn(
                     tool=meta.get("tool", call.tool_name),
                     args=args,
                     explanation=meta.get("explanation", ""),
-                    risk_level=meta.get("risk_level", ""),
                 )
             )
 
-        pending_ids = {call.tool_call_id for call in requests.approvals}
-        autonomy_call_ids = {
-            call_id for call_id in pending_ids if requests.metadata.get(call_id, {}).get(AUTONOMY_LIMIT_METADATA_KEY)
-        }
-        approvals = resolve_user_approvals(
-            deps.autonomy,
-            await collect_approvals(pending_ids),
-            autonomy_call_ids,
-            deps.session_state.budget.autonomous_tool_calls,
+        # Only the autonomy limit asks the user about a tool call. "Continue" is no verdict on the call
+        # itself, so the sentinel's action log gets no user decision for it.
+        deferred_results.approvals.update(
+            resolve_user_approvals(
+                deps.autonomy,
+                await collect_approvals({call.tool_call_id for call in requests.approvals}),
+                deps.session_state.budget.autonomous_tool_calls,
+            )
         )
-        for tool_call_id, decision in approvals.items():
-            deferred_results.approvals[tool_call_id] = decision
-            if tool_call_id in autonomy_call_ids:
-                # "Continue" is no verdict on the call itself: it runs through the security gate when
-                # released, and the sentinel's shadow log gets no user approval for it.
-                deferred_results.metadata[tool_call_id] = {AUTONOMY_LIMIT_METADATA_KEY: True}
-                continue
-
-            meta = requests.metadata.get(tool_call_id, {})
-            user_decision = "approved" if decision is True else "denied"
-
-            deps.security.append(
-                ApprovalEntry(
-                    tool=meta["tool"],
-                    args=meta["args"],
-                    decision=user_decision,
-                ),
-            )
-
-            # Write the deferred audit entry now that the user has decided.
-            sentinel_verdict = meta.get("sentinel_verdict")
-            if isinstance(sentinel_verdict, SentinelVerdict):
-                deps.security.write_audit(
-                    AuditEntry.now(
-                        kind="tool_call",
-                        tool=meta.get("tool"),
-                        args_summary=meta.get("args_summary", {}),
-                        sentinel_verdict=sentinel_verdict,
-                        final_decision="allowed" if decision is True else "denied",
-                        explanation=meta.get("explanation"),
-                    ),
-                )
 
         if before_llm_call is not None:
             before_llm_call()
