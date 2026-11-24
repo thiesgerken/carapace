@@ -2,6 +2,8 @@
 
 This guide walks you through deploying carapace with Docker Compose. For Kubernetes, see the [Helm chart README](../charts/carapace/README.md).
 
+Upgrading an install from before skill flakes? Follow [Upgrading to skill flakes](upgrading-to-skill-flakes.md) first.
+
 ## Prerequisites
 
 - **Docker** with the Compose plugin

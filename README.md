@@ -164,14 +164,17 @@ See [docs/architecture.md](docs/architecture.md) for the diagrams and fuller arc
 | Topic                                                          | What it covers                                                             |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | [docs/quickstart.md](docs/quickstart.md)                       | Docker Compose setup, users, UI settings, credentials, and Matrix          |
-| [docs/security.md](docs/security.md)                           | Sentinel policy model, audit trail, approvals, and veto semantics          |
-| [docs/skills.md](docs/skills.md)                               | AgentSkills support, context-scoped access, providers, and command aliases |
-| [docs/credentials.md](docs/credentials.md)                     | Vault-backed credentials, approval flow, and per-exec injection            |
+| [docs/upgrading-to-skill-flakes.md](docs/upgrading-to-skill-flakes.md) | Upgrading an existing install to skill flakes and boundary review |
+| [docs/security.md](docs/security.md)                           | Sentinel policy model, boundary requests, audit trail, and approvals       |
+| [docs/skills.md](docs/skills.md)                               | AgentSkills support, `read_skill`, builds, and bundled skills              |
+| [docs/skill-flakes.md](docs/skill-flakes.md)                   | Writing a skill flake: commands, their needs, MCP servers, uv and npm      |
+| [docs/builder.md](docs/builder.md)                             | The skill builder: API, binary cache, GC, and deployment                   |
+| [docs/credentials.md](docs/credentials.md)                     | Vault-backed credentials, `ccred`, and the approval flow                   |
 | [docs/jobs.md](docs/jobs.md)                                   | Saved jobs, cron scheduling, persistent-session jobs, and job API          |
 | [docs/notifications.md](docs/notifications.md)                 | Web Push delivery, presence tracking, suppression, and notification APIs   |
 | [docs/persistent-context.md](docs/persistent-context.md)       | Persistent context, workspace files, and archived session snapshots        |
 | [docs/memory.md](docs/memory.md)                               | Long-term memory: extractions, digests, tasks, budget, mirror, Memory UI   |
-| [docs/sandbox.md](docs/sandbox.md)                             | Docker/Kubernetes sandboxes, proxy behavior, and exec-scoped tunnels       |
+| [docs/sandbox.md](docs/sandbox.md)                             | Docker/Kubernetes sandboxes, skill commands on PATH, proxy, `cgate`, tunnels |
 | [docs/sessions-and-channels.md](docs/sessions-and-channels.md) | Session lifecycle, session controls, Matrix behavior, and approvals        |
 | [docs/compaction.md](docs/compaction.md)                       | Session compaction: `/compact`, fold/tool strategies                       |
 | [docs/debug-view.md](docs/debug-view.md)                       | Live per-session view of every agent role's latest LLM context             |
