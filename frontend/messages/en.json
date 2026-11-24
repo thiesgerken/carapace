@@ -59,21 +59,8 @@
         "largeFileNotice": "Syntax highlighting is off for this file — it is too large.",
         "tooLarge": "This file is too large to preview — download it instead.",
         "skill": {
-            "commands": "Commands",
-            "domains": "Domains",
-            "tunnels": "Tunnels",
-            "credentials": "Credentials",
-            "credential": "Credential",
-            "mcp": "MCP servers",
-            "mcpAuth": "{type} auth",
-            "vaultPresent": "Found in vault",
-            "vaultAbsent": "Not found in vault",
-            "vaultUnconfigured": "Vault backend not configured",
-            "vaultError": "Vault unreachable",
-            "oauthHint": "No OAuth token stored. Generate one with",
-            "oauthHintStore": "then save the JSON in the vault entry above.",
             "hints": "Hints",
-            "invalid": "Invalid frontmatter, the skill cannot be activated: {error}",
+            "invalid": "Invalid frontmatter: {error}",
             "build": {
                 "title": "Build",
                 "tree": "Git tree of the skill at HEAD",
@@ -945,15 +932,9 @@
             "title": "Approval Required",
             "toolLabel": "Tool:",
             "reasonLabel": "Reason:",
-            "riskLabel": "Risk:",
             "arguments": "Arguments",
             "allow": "Approve",
-            "denyPlaceholder": "Why should this be blocked?",
-            "risk": {
-                "high": "high",
-                "medium": "medium",
-                "low": "low"
-            }
+            "denyPlaceholder": "Why should this be blocked?"
         },
         "denialNote": {
             "deny": "Deny",
@@ -966,7 +947,6 @@
             "accessTitle": "Access Request",
             "domainsLabel": "Domains:",
             "credentialsLabel": "Credentials:",
-            "skillLabel": "Skill:",
             "allow": "Allow",
             "denyPlaceholder": "Why should this credential access be blocked?",
             "decision": {
@@ -1009,7 +989,9 @@
         "status": {
             "sentinel": "Sentinel reviewing…",
             "sandbox": "Starting sandbox…",
-            "skill": "Activating skill…",
+            "skill": "Preparing skill…",
+            "skillBuild": "Waiting for the skill build…",
+            "skillProfile": "Installing the skill's commands…",
             "credential": "Fetching credential…",
             "domain": "Checking domain {domain}…",
             "wait": "Waiting for approval…"
@@ -1026,14 +1008,13 @@
         "fallbacks": {
             "missingPath": "(missing path)",
             "missingCommand": "(missing command)",
-            "missingSkillName": "(missing skill_name)",
             "credential": "credential"
         },
         "labels": {
             "read": "read",
             "wrote": "wrote",
             "replaced": "replaced",
-            "activatedSkill": "activated skill",
+            "readSkill": "read skill",
             "executed": "executed",
             "listedCredentials": "listed credentials",
             "credentialDenied": "credential denied",
@@ -1043,7 +1024,7 @@
             "gitPush": "git push",
             "readAction": "read",
             "write": "write",
-            "activateSkill": "activate skill",
+            "readSkillAction": "read skill",
             "execute": "execute",
             "listCredentials": "list credentials",
             "accessCredential": "access credential",
@@ -1065,23 +1046,12 @@
             "allMatchesSuffix": " (all matches)"
         },
         "details": {
-            "activateSkillPromptPrefix": "Agent wants to activate the",
-            "activateSkillPromptSuffix": "skill.",
             "sentinelLabel": "Sentinel:",
             "sentinelReviewing": "Reviewing this tool call.",
             "sentinelRequestsChanges": "Requests changes:",
             "commentForAgent": "Sentinel to the agent:",
             "userLabel": "User:",
             "deniedByUser": "Denied by user.",
-            "contexts": "Contexts:",
-            "domains": "Domains:",
-            "mcpServers": "MCP servers:",
-            "credentials": "Credentials",
-            "name": "Name",
-            "path": "Path",
-            "description": "Description",
-            "activation": "Activation",
-            "skillInstructions": "Skill Instructions",
             "source": "Source",
             "replacement": "Replacement",
             "diff": "Diff",
@@ -1097,7 +1067,7 @@
             "read": "{count, plural, one {read # file} other {read # files}}",
             "write": "{count, plural, one {wrote # file} other {wrote # files}}",
             "edit": "{count, plural, one {edited # file} other {edited # files}}",
-            "skill": "{count, plural, one {used # skill} other {used # skills}}",
+            "skill": "{count, plural, one {read # skill} other {read # skills}}",
             "other": "{count, plural, one {# more action} other {# more actions}}"
         },
         "present": {
@@ -1105,7 +1075,7 @@
             "read": "{count, plural, one {reading # file} other {reading # files}}",
             "write": "{count, plural, one {writing # file} other {writing # files}}",
             "edit": "{count, plural, one {editing # file} other {editing # files}}",
-            "skill": "{count, plural, one {using # skill} other {using # skills}}",
+            "skill": "{count, plural, one {reading # skill} other {reading # skills}}",
             "other": "{count, plural, one {# more action} other {# more actions}}"
         }
     },
@@ -1456,7 +1426,7 @@
         "savedJobs": "Saved Jobs",
         "loading": "Loading jobs...",
         "paused": "Paused",
-        "unattendedTooltip": "Unattended sessions cannot escalate tool calls",
+        "unattendedTooltip": "Runs without anyone to approve requests",
         "confirmDelete": "Delete job {name}?",
         "summary": {
             "onDemandOnly": "On-demand only",

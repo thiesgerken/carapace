@@ -322,7 +322,6 @@ class WebSocketSubscriber:
         names: list[str],
         descriptions: list[str],
         domains: list[str],
-        skill_name: str | None,
         explanation: str,
     ) -> None:
         await self._safe_send(
@@ -332,7 +331,6 @@ class WebSocketSubscriber:
                 names=names,
                 descriptions=descriptions,
                 domains=domains,
-                skill_name=skill_name,
                 explanation=explanation,
             )
         )
@@ -416,7 +414,6 @@ async def chat_ws(
                         names=pp.get("names", []),
                         descriptions=pp.get("descriptions", []),
                         domains=pp["domains"],
-                        skill_name=pp.get("skill_name"),
                         explanation=pp.get("explanation", ""),
                     ),
                 )

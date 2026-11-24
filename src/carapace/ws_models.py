@@ -245,7 +245,6 @@ class CredentialApprovalRequest(BaseModel):
     names: list[str]
     descriptions: list[str]
     domains: list[str]
-    skill_name: str | None = None
     explanation: str = ""
 
 

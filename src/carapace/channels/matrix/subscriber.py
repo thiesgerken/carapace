@@ -134,7 +134,11 @@ class MatrixSubscriber:
         pass
 
     async def on_span(self, notice: SpanNotice) -> None:
-        pass
+        # Only `read_skill` waits for a build. Profile syncs also run on every sandbox start, where
+        # nothing waits for them, so they are not announced.
+        build_wait = (notice.kind, notice.name, notice.status) == ("skill", "build wait", "running")
+        if build_wait and self._channel._verbose.get(self._room_id, True):
+            await self._channel._send_notice(self._room_id, "⏳ Waiting for the skill build…")
 
     async def on_status(
         self,
@@ -245,12 +249,9 @@ class MatrixSubscriber:
         names: list[str],
         descriptions: list[str],
         domains: list[str],
-        skill_name: str | None,
         explanation: str,
     ) -> None:
         parts = ["🔑 **Access Request**" if domains else "🔑 **Credential Request**"]
-        if skill_name:
-            parts.append(f"Skill: **{skill_name}**")
         if domains:
             parts.append("Domains:")
             parts.extend(f"- `{domain}`" for domain in domains)

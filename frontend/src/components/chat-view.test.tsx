@@ -52,7 +52,7 @@ test("existing unattended sessions still lock after a submitted message already 
 });
 
 test("user-approved tool call survives reload when the server rewrote the escalated event in place", () => {
-  const args = { command: "git push", contexts: [] };
+  const args = { command: "git push" };
   const messages = projectHistoryToMessages([
     {
       role: "tool_call",
@@ -137,7 +137,6 @@ test("appendEscalationCard skips a request that history already shows", () => {
     tool: "exec",
     args: {},
     explanation: "",
-    risk_level: "",
   };
   const once = appendEscalationCard([], { kind: "approval", request });
   assert.equal(once.length, 1);

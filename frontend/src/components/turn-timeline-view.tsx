@@ -370,7 +370,7 @@ function spanText({ kind, name, attrs }: Span): { text: string; mono: boolean } 
       return { text: name === "exec" ? (attr("command") ?? name) : [name, attr("tool")].filter(Boolean).join(" "), mono: true };
     case "file":
       return { text: [name, attr("path")].filter(Boolean).join(" "), mono: true };
-    // build wait, profile sync, activate: which skill it was for.
+    // build wait: which skill it was for (profile sync has no skill attribute).
     case "skill":
       return { text: [name, attr("skill")].filter(Boolean).join(" · "), mono: false };
     // Its name is the check's type and its subject repeats the call or domain next to it.

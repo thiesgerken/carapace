@@ -1838,50 +1838,8 @@ export interface KnowledgeEntry {
   shared: boolean;
 }
 
-export interface SkillCommandDecl {
-  name: string;
-  command: string;
-}
-
-export interface SkillCredentialDecl {
-  vault_path: string;
-  description: string;
-  env_var: string | null;
-  file: string | null;
-  base64: boolean;
-}
-
-export interface SkillNetworkTunnel {
-  host: string;
-  remote_port: number;
-  local_port: number;
-  description: string;
-}
-
-export interface SkillMcpBearerAuth {
-  type: "bearer";
-  vault_path: string;
-}
-
-export interface SkillMcpOAuthAuth {
-  type: "oauth";
-  vault_path: string;
-}
-
-export interface SkillMcpDecl {
-  name: string;
-  url: string | null;
-  command: string | null;
-  description: string;
-  auth: SkillMcpBearerAuth | SkillMcpOAuthAuth | null;
-}
-
 export interface SkillCarapaceConfig {
   disabled: boolean;
-  network: { domains: string[]; tunnels: SkillNetworkTunnel[] };
-  credentials: SkillCredentialDecl[];
-  commands: SkillCommandDecl[];
-  mcp: SkillMcpDecl[];
   hints: Record<string, string>;
 }
 
@@ -1890,7 +1848,7 @@ export interface KnowledgeSkill {
   description: string;
   /** Null when the skill declares no carapace metadata, or it failed validation. */
   carapace: SkillCarapaceConfig | null;
-  /** Why the SKILL.md frontmatter is unusable; such a skill cannot be activated. */
+  /** Why the SKILL.md frontmatter is unusable. */
   error: string | null;
 }
 
@@ -1935,8 +1893,6 @@ export interface KnowledgeDirListing {
   /** Only for a flake skill directly under skills/. */
   build: KnowledgeSkillBuild | null;
   artifact: KnowledgeArtifact | null;
-  /** Per vault_path referenced by the skill: "present" | "absent" | "error". */
-  vault_status?: Record<string, string>;
   path: string;
   entries: KnowledgeEntry[];
 }

@@ -8,6 +8,7 @@ from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
+from rich.console import Console
 from typer.testing import CliRunner
 
 import carapace.cli as cli_module
@@ -411,3 +412,24 @@ def test_job_create_reads_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert result.exit_code == 0
     assert ("POST", "/api/jobs", {"name": "j"}) in _FakeAgentClient.calls
+
+
+def test_only_the_skill_build_wait_is_shown(monkeypatch: pytest.MonkeyPatch) -> None:
+    console = Console(record=True, width=200)
+    monkeypatch.setattr(cli_module, "console", console)
+    span = {"type": "span", "turn_id": "t", "kind": "skill", "tool_call_id": "toolu_1"}
+    ws = _FakeWS(
+        [
+            {**span, "span_id": "a", "name": "build wait", "status": "running"},
+            {**span, "span_id": "a", "name": "build wait", "status": "ok"},
+            {**span, "span_id": "b", "name": "profile sync", "status": "running"},
+            {**span, "span_id": "c", "kind": "sandbox", "name": "ensure", "status": "running"},
+            {"type": "done", "content": "Done."},
+        ]
+    )
+
+    asyncio.run(cli_module._read_server_responses(ws))
+
+    lines = [line.strip() for line in console.export_text().splitlines() if line.strip()]
+    assert lines[0] == "waiting for the skill build…"
+    assert "Done." in lines[1]

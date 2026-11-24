@@ -278,7 +278,6 @@ class SessionApprovalMixin:
                 names,
                 descriptions,
                 domains,
-                None,
                 explanation,
             )
         else:

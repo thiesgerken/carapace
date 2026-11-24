@@ -233,7 +233,6 @@ export interface HistoryMessage {
   tool?: string;
   args?: Record<string, unknown>;
   detail?: string;
-  contexts?: string[];
   approval_source?:
     | "safe-list"
     | "sentinel"
@@ -258,14 +257,12 @@ export interface HistoryMessage {
   decision_source?: "user" | "system";
   message?: string;
   explanation?: string;
-  risk_level?: string;
   ref?: string;
   changed_files?: string[];
   vault_paths?: string[];
   names?: string[];
   descriptions?: string[];
   domains?: string[];
-  skill_name?: string;
   tool_id?: string;
   parent_tool_id?: string;
   compaction?: CompactionAnnotation;
@@ -371,7 +368,6 @@ export interface ToolCallInfo {
   tool: string;
   args: Record<string, unknown>;
   detail: string;
-  contexts?: string[];
   approval_source?:
     | "safe-list"
     | "sentinel"
@@ -427,7 +423,6 @@ export interface ApprovalRequest {
   tool: string;
   args: Record<string, unknown>;
   explanation: string;
-  risk_level: string;
 }
 
 export interface DomainAccessApprovalRequest {
@@ -453,7 +448,6 @@ export interface CredentialApprovalRequest {
   descriptions: string[];
   /** Domains an up-front request (`cgate request`) asks for next to its credentials. */
   domains: string[];
-  skill_name?: string;
   explanation: string;
 }
 
@@ -692,7 +686,6 @@ export type ChatMessage =
       tool: string;
       args: Record<string, unknown>;
       detail: string;
-      contexts?: string[];
       approvalSource?:
         | "safe-list"
         | "sentinel"
@@ -728,7 +721,6 @@ export type ChatMessage =
         tool: string;
         args: Record<string, unknown>;
         detail: string;
-        contexts?: string[];
         approvalSource?:
           | "safe-list"
           | "sentinel"
