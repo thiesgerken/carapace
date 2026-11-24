@@ -49,6 +49,8 @@ let
     };
   };
   mcpNeeds = pkgs.lib.mapAttrs (_: command: command.needs) mcp.passthru.carapace.commands;
+  # Only MCP commands are marked, so `read_skill` lists tools for them and nothing else.
+  marks = package: pkgs.lib.mapAttrs (_: command: command.mcp) package.passthru.carapace.commands;
   rejectsMcp =
     server:
     !(builtins.tryEval (
@@ -136,6 +138,17 @@ assert pkgs.lib.assertMsg (
     };
   }
 ) "mcpCommands declared the wrong needs: ${builtins.toJSON mcpNeeds}";
+assert pkgs.lib.assertMsg (
+  marks mcp == {
+    tracker = true;
+    notes = true;
+    local = true;
+  }
+  && marks skill == {
+    show-token = false;
+    local = false;
+  }
+) "mkSkill marked the wrong commands as MCP servers: ${builtins.toJSON [ (marks mcp) (marks skill) ]}";
 pkgs.runCommand "skill-wrapper-contract" { } ''
   mkdir stubs
   cat > stubs/cgate <<'STUB'

@@ -189,12 +189,6 @@ metadata:
   carapace:
     hints:
       weather: Prefer metric units.
-    mcp:
-      - name: hass
-        url: https://homeassistant.example/api/mcp
-        auth:
-          type: bearer
-          vault_path: vault/abc
 ---
 
 # Weather
@@ -223,8 +217,6 @@ def test_list_dir_strips_frontmatter_into_skill(tmp_path: Path) -> None:
     carapace = listing.skill.carapace
     assert carapace is not None
     assert carapace.hints == {"weather": "Prefer metric units."}
-    assert [(s.name, s.url) for s in carapace.mcp] == [("hass", "https://homeassistant.example/api/mcp")]
-    assert carapace.mcp[0].auth is not None and carapace.mcp[0].auth.vault_path == "vault/abc"
 
 
 def test_disabled_skill_remains_browsable_and_readable(tmp_path: Path) -> None:

@@ -362,8 +362,6 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | Module                                                | Responsibility                                                              |
 | ----------------------------------------------------- | --------------------------------------------------------------------------- |
 | `assets/__init__.py`                                  | Resource package for bundled prompt/policy files and bundled skills.        |
-| `assets/skills/example/src/example_skill/__init__.py` | Example skill package marker.                                               |
-| `assets/skills/example/src/example_skill/hello.py`    | Example skill command demonstrating provider setup and exec-scoped tunnels. |
 | `assets/skills/web/src/web_skill/__init__.py`         | Web skill package marker.                                                   |
 | `assets/skills/web/src/web_skill/backends.py`         | Search backend protocol and Brave Search backend.                           |
 | `assets/skills/web/src/web_skill/fetch.py`            | URL fetch and readable-content extraction CLI.                              |

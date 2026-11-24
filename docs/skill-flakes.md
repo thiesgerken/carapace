@@ -2,7 +2,7 @@
 
 A skill that has commands is a Nix flake: `flake.nix` and `flake.lock` live in the skill directory next to its `SKILL.md`. The flake's package holds one wrapper per command, nothing else. The Carapace builder builds it whenever the skill changes, and every session gets the commands on its `PATH`. A skill without commands needs no flake.
 
-The functions below come from the skills subflake of the Carapace repo, `github:thiesgerken/carapace?dir=nix/skills` ([`nix/skills/flake.nix`](../nix/skills/flake.nix)). It has only `nixpkgs` and the uv2nix stack as inputs, so a skill's `flake.lock` stays small. Three working examples live in [`nix/skills/examples`](../nix/skills/examples): uv, npm and pnpm. CI builds them against the helpers of the current checkout.
+The functions below come from the skills subflake of the Carapace repo, `github:thiesgerken/carapace?dir=nix/skills` ([`nix/skills/flake.nix`](../nix/skills/flake.nix)). It has only `nixpkgs` and the uv2nix stack as inputs, so a skill's `flake.lock` stays small. Three working examples live in [`nix/skills/examples`](../nix/skills/examples): uv, npm and pnpm. CI builds them against the helpers of the current checkout. The bundled skills with commands (`src/carapace/assets/skills`) are flakes too; CI builds them both against the commit their `flake.lock` pins and against the current helpers.
 
 ## The flake
 
@@ -107,11 +107,13 @@ nix eval --json 'path:<skill dir>#packages.x86_64-linux.default.carapace'
         "credentials": { "WEATHER_TOKEN": "personal/weather-token" },
         "oauth": [],
         "tunnels": []
-      }
+      },
+      "mcp": false
     },
     "weather-units": {
       "description": "List the supported units, offline",
-      "needs": { "domains": [], "credentials": {}, "oauth": [], "tunnels": [] }
+      "needs": { "domains": [], "credentials": {}, "oauth": [], "tunnels": [] },
+      "mcp": false
     }
   }
 }
@@ -119,6 +121,7 @@ nix eval --json 'path:<skill dir>#packages.x86_64-linux.default.carapace'
 
 - `commands` has one entry per wrapper in `bin/`, under the same name.
 - `needs` is already resolved: the skill-wide default with the command's override applied, every kind present.
+- `mcp` is `true` for a command made by `mcpCommands`; `read_skill` lists its tools. Packages built with an older `mkSkill` have no `mcp`, which counts as `false`.
 - The builder passes this on as opaque JSON; the server reads it. Fields are only ever added.
 
 ## MCP servers
@@ -147,7 +150,7 @@ default = skill.mkSkill {
 - For an HTTP server, `bearer` names a vault path whose value is sent as `Authorization: Bearer`, and `oauth` names an OAuth entry (see below). At most one; neither applies to stdio, which takes its credentials as environment variables through `needs`.
 - `needs` is derived from the server: the URL's host, and the `bearer` credential or the `oauth` entry. The skill-wide `needs` do not apply. A `needs` given here overrides the derived one per kind.
 
-The commands run the `mcp` bridge from the sandbox image, one connection per call; a server that keeps state between calls does not work. The bridge turns the tool's input schema into flags (see the [contract](sandbox.md#mcp)). `mcp --url …` also works directly in the sandbox, without a skill: the proxy then reviews the domain when the bridge connects.
+`read_skill` shows the agent each server's tools by running `<server> --list-tools` in the sandbox, reviewed like any call of the command; nothing is cached. The commands run the `mcp` bridge from the sandbox image, one connection per call; a server that keeps state between calls does not work. The bridge turns the tool's input schema into flags (see the [contract](sandbox.md#mcp)). `mcp --url …` also works directly in the sandbox, without a skill: the proxy then reviews the domain when the bridge connects.
 
 ### OAuth
 
@@ -198,4 +201,4 @@ npm needs no such hash: `package-lock.json` carries the integrity of every packa
 
 ## Developing a skill
 
-`nix shell ./skills/<name> -c <command>` builds a skill from the workspace and runs one of its commands, without pushing it. The `cgate` request then reports the workspace build's store path, which does not match what the builder built for the committed skill, and the sentinel sees that.
+`nix shell path:./skills/<name> -c <command>` builds a skill from the workspace and runs one of its commands, without pushing it. `path:` matters: inside the knowledge repo a plain `./skills/<name>` is a Git flake that only sees committed files. After changing inputs, `nix flake lock path:./skills/<name>` writes the lock file to commit. The `cgate` request then reports the workspace build's store path, which does not match what the builder built for the committed skill, and the sentinel sees that.

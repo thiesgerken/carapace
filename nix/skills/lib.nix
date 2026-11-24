@@ -123,6 +123,8 @@ in
       declared = lib.mapAttrs (cmd: command: {
         inherit (command) description;
         needs = needsOf "skill ${name}, command ${cmd}" needs command;
+        # `read_skill` runs `<cmd> --list-tools` for an MCP server, so the agent sees its tools.
+        mcp = command.mcp or false;
       }) commands;
     in
     pkgs.runCommand "skill-${name}"
@@ -186,6 +188,7 @@ in
     ) "${where}: set at most one of bearer and oauth";
     {
       inherit description;
+      mcp = true;
       exec = lib.concatStringsSep " " (
         [ "mcp --name ${lib.escapeShellArg name}" ]
         ++ lib.optional (url != null) "--url ${lib.escapeShellArg url}"
