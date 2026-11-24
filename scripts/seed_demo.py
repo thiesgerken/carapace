@@ -161,8 +161,6 @@ class Transcript:
             event["parent_tool_id"] = parent
         if comment is not None:
             event["approval_comment"] = comment
-        if isinstance(args.get("contexts"), list):
-            event["contexts"] = args["contexts"]
         self.events.append(event)
         return tool_id
 
@@ -178,14 +176,10 @@ class Transcript:
             }
         )
 
-    def run(
-        self, command: str, output: str, *, title: str | None = None, contexts: list[str] | None = None, **call: Any
-    ) -> str:
+    def run(self, command: str, output: str, *, title: str | None = None, **call: Any) -> str:
         args: dict[str, Any] = {"command": command}
         if title is not None:
             args["title"] = title
-        if contexts is not None:
-            args["contexts"] = contexts
         tool_id = self.call("exec", args, **call)
         self.result(tool_id, "exec", output)
         return tool_id
@@ -273,15 +267,10 @@ def _sandbox_tour(start: datetime) -> Transcript:
 def _pancake_recipe(start: datetime) -> Transcript:
     t = Transcript(start)
     t.user("I really need a pancake recipe", turn_id=PANCAKE_TURN_ID)
-    skill = t.call("use_skill", {"skill_name": "web"})
-    t.result(skill, "use_skill", "Skill 'web' activated.")
+    skill = t.call("read_skill", {"skill_name": "web"})
+    t.result(skill, "read_skill", _WEB_SKILL)
     # Access decisions happen while their exec runs, so they come before its result.
-    search = t.call(
-        "exec",
-        {"command": _SEARCH, "contexts": ["web"]},
-        source="sentinel",
-        explanation="Searching the web for a recipe is the requested, read-only action.",
-    )
+    search = t.call("exec", {"command": _SEARCH})
     t.domain("search.example.org", search)
     t.call(
         "credential_access",
@@ -291,15 +280,7 @@ def _pancake_recipe(start: datetime) -> Transcript:
         parent=search,
     )
     t.result(search, "exec", '[{"title": "Fluffy Pancakes", "url": "https://recipes.example.org/fluffy-pancakes"}]')
-    fetch = t.call(
-        "exec",
-        {"command": _FETCH, "contexts": ["web"]},
-        source="sentinel",
-        explanation=(
-            "The agent fetches a recipe page found in the search results to answer the user's request. "
-            "This is a safe, read-only action."
-        ),
-    )
+    fetch = t.call("exec", {"command": _FETCH})
     t.domain("recipes.example.org", fetch, source="sentinel")
     t.result(
         fetch,
@@ -327,8 +308,13 @@ def _pancake_recipe(start: datetime) -> Transcript:
 def _recipe_skill(start: datetime) -> Transcript:
     t = Transcript(start)
     t.user("Please write a skill that includes the pancake recipe.")
-    skill = t.call("use_skill", {"skill_name": "create-skill"})
-    t.result(skill, "use_skill", "Skill 'create-skill' activated.")
+    skill = t.call("read_skill", {"skill_name": "create-skill"})
+    t.result(
+        skill,
+        "read_skill",
+        "# Create Skill\n\nCreate or update skills under `skills/<name>/`. Read REFERENCE.md first.\n\n"
+        "The skill has no flake.nix, so it has no commands.",
+    )
     read = t.call("read", {"path": "skills/create-skill/REFERENCE.md", "offset": 0, "limit": 100})
     t.result(read, "read", "# Writing skills\n\nA skill is a folder with a SKILL.md ...")
     t.run("mkdir -p /workspace/skills/recipes", "")
@@ -524,22 +510,20 @@ _EXEC_TOOL = ToolDefinition(
     name="exec",
     description=(
         "Run a shell command in the session **sandbox**.\n\n"
-        "- Every call is reviewed by the sentinel first.\n"
-        "- Pass `contexts` to use the network access of activated skills."
+        "- Domains and credentials it reaches are reviewed by the sentinel."
     ),
     parameters_json_schema={
         "type": "object",
         "properties": {
             "command": {"type": "string", "description": "The command, run with `bash -c`."},
             "title": {"type": "string"},
-            "contexts": {"type": "array"},
         },
         "required": ["command"],
     },
 )
-_USE_SKILL_TOOL = ToolDefinition(
-    name="use_skill",
-    description="Activate a skill so its commands and credentials become available.",
+_READ_SKILL_TOOL = ToolDefinition(
+    name="read_skill",
+    description="Read a skill: its SKILL.md, its commands and whether they are on PATH. Call before using a skill.",
     parameters_json_schema={
         "type": "object",
         "properties": {"skill_name": {"type": "string"}},
@@ -547,6 +531,14 @@ _USE_SKILL_TOOL = ToolDefinition(
     },
 )
 _SEARCH = "web_search 'best fluffy pancake recipe'"
+_WEB_SKILL = (
+    "# Web\n\nSearch the web with `web_search`, read a page with `web_fetch`.\n\n"
+    "# Commands\n"
+    "- `web_fetch`: Fetch a web page as readable text\n"
+    "- `web_search`: Search the web. Asks for: domain search.example.org, "
+    "credential demo/web-search-api-key as $SEARCH_API_KEY.\n\n"
+    "The commands are on PATH."
+)
 _FETCH = "web_fetch 'https://recipes.example.org/fluffy-pancakes'"
 
 
@@ -583,19 +575,17 @@ def _pancake_contexts(prompt: datetime) -> list[LlmContext]:
         _context(
             "agent",
             prompt + timedelta(seconds=22.6),
-            "You are carapace, a personal agent. Every tool call is reviewed by the sentinel.",
+            "You are carapace, a personal agent. The sentinel reviews what a command wants from outside the sandbox.",
             [
                 ModelRequest(parts=[UserPromptPart("I really need a pancake recipe")]),
-                ModelResponse(parts=[ToolCallPart("use_skill", {"skill_name": "web"}, tool_call_id="call-1")]),
-                ModelRequest(parts=[ToolReturnPart("use_skill", "Skill 'web' activated.", tool_call_id="call-1")]),
-                ModelResponse(
-                    parts=[ToolCallPart("exec", {"command": _SEARCH, "contexts": ["web"]}, tool_call_id="call-2")]
-                ),
+                ModelResponse(parts=[ToolCallPart("read_skill", {"skill_name": "web"}, tool_call_id="call-1")]),
+                ModelRequest(parts=[ToolReturnPart("read_skill", _WEB_SKILL, tool_call_id="call-1")]),
+                ModelResponse(parts=[ToolCallPart("exec", {"command": _SEARCH}, tool_call_id="call-2")]),
                 ModelRequest(parts=[ToolReturnPart("exec", search_result, tool_call_id="call-2")]),
                 ModelResponse(
                     parts=[
                         ThinkingPart("The first result is a recipe page; fetch it."),
-                        ToolCallPart("exec", {"command": _FETCH, "contexts": ["web"]}, tool_call_id="call-3"),
+                        ToolCallPart("exec", {"command": _FETCH}, tool_call_id="call-3"),
                     ]
                 ),
                 ModelRequest(
@@ -626,19 +616,20 @@ def _pancake_contexts(prompt: datetime) -> list[LlmContext]:
                 model_name=DEMO_MODEL,
                 provider_name="anthropic",
             ),
-            tools=[_EXEC_TOOL, _USE_SKILL_TOOL],
+            tools=[_EXEC_TOOL, _READ_SKILL_TOOL],
             seconds=78,
         ),
         _context(
             "sentinel",
-            prompt + timedelta(seconds=15.2),
-            "You are the sentinel. Judge each agent action against SECURITY.md: allow, escalate or deny.",
+            prompt + timedelta(seconds=16.7),
+            "You are the sentinel. Judge each boundary request against SECURITY.md: allow, escalate or deny.",
             [
                 ModelRequest(
                     parts=[
                         UserPromptPart(
                             "New action log entries:\n- user: I really need a pancake recipe\n"
-                            f"- tool_call exec: {_FETCH} (contexts: web)\n\nJudge the last tool call."
+                            f"- tool_call exec: {_FETCH}\n\nEVALUATE domain_access_request:\n"
+                            f"Domains: recipes.example.org\nRunning exec: {_FETCH}"
                         )
                     ]
                 )
@@ -790,9 +781,10 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
         0.8,
         thinking=(0.8, 1.3),
     )
-    skill_tool = span("demo-tool-skill", root, "tool", "use_skill", 1.8, 5.0)
-    span("demo-gate-skill", skill_tool, "gate", "use_skill", 1.8, 1.9)
-    span("demo-skill", skill_tool, "skill", "activate", 2.0, 4.9, skill="web", exit_code=0)
+    skill_tool = span("demo-tool-skill", root, "tool", "read_skill", 1.8, 5.0)
+    span("demo-gate-skill", skill_tool, "gate", "read_skill", 1.8, 1.9)
+    span("demo-skill-build", skill_tool, "skill", "build wait", 2.0, 3.6, skill="web")
+    span("demo-skill-sync", skill_tool, "skill", "profile sync", 3.6, 4.9, paths=4)
     request(
         earlier(
             "agent",
@@ -805,26 +797,12 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
         5.6,
     )
     search = span("demo-tool-search", root, "tool", "exec", 5.9, 14.0)
-    search_gate = span("demo-gate-search", search, "gate", "exec", 5.9, 7.0)
-    search_review = span(
-        "demo-sentinel-search", search_gate, "sentinel", "tool_call", 5.95, 6.95, subject=_SEARCH, verdict="allow"
-    )
-    request(
-        earlier(
-            "sentinel",
-            "demo-sentinel-1",
-            6.0,
-            6.9,
-            RequestUsage(input_tokens=2_380, output_tokens=55, cache_write_tokens=2_100),
-        ),
-        search_review,
-        6.5,
-        first_text=6.5,
-    )
-    search_exec = span("demo-exec-search", search, "exec", "exec", 7.0, 14.0, command=_SEARCH, exit_code=0)
-    sandbox = span("demo-sandbox", search_exec, "sandbox", "ensure", 7.0, 8.2)
-    span("demo-sandbox-resume", sandbox, "sandbox", "resume", 7.0, 7.5)
-    span("demo-sandbox-ready", sandbox, "sandbox", "wait_for_ready", 7.5, 8.2, ready=True)
+    # exec is safe-listed: its gate decides at once, and only the boundary requests reach the sentinel.
+    span("demo-gate-search", search, "gate", "exec", 5.9, 6.0)
+    search_exec = span("demo-exec-search", search, "exec", "exec", 6.0, 14.0, command=_SEARCH, exit_code=0)
+    sandbox = span("demo-sandbox", search_exec, "sandbox", "ensure", 6.0, 7.2)
+    span("demo-sandbox-resume", sandbox, "sandbox", "resume", 6.0, 6.5)
+    span("demo-sandbox-ready", sandbox, "sandbox", "wait_for_ready", 6.5, 7.2, ready=True)
     span(
         "demo-domain-search",
         search_exec,
@@ -849,22 +827,29 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
         14.7,
     )
     fetch = span("demo-tool-fetch", root, "tool", "exec", 15.1, 21.0)
-    fetch_gate = span("demo-gate-fetch", fetch, "gate", "exec", 15.1, 16.0)
-    fetch_review = span(
-        "demo-sentinel-fetch", fetch_gate, "sentinel", "tool_call", 15.15, 15.95, subject=_FETCH, verdict="allow"
-    )
-    request(context_records["sentinel"], fetch_review, 15.6, first_text=15.6)
-    fetch_exec = span("demo-exec-fetch", fetch, "exec", "exec", 16.0, 21.0, command=_FETCH, exit_code=0)
-    span(
+    span("demo-gate-fetch", fetch, "gate", "exec", 15.1, 15.2)
+    fetch_exec = span("demo-exec-fetch", fetch, "exec", "exec", 15.2, 21.0, command=_FETCH, exit_code=0)
+    fetch_domain = span(
         "demo-domain-fetch",
         fetch_exec,
         "domain",
         "recipes.example.org",
-        17.6,
+        16.6,
         18.0,
         domain="recipes.example.org",
         allowed=True,
     )
+    fetch_review = span(
+        "demo-sentinel-fetch",
+        fetch_domain,
+        "sentinel",
+        "domain_access",
+        16.65,
+        17.95,
+        subject=f"recipes.example.org via {_FETCH}",
+        verdict="allow",
+    )
+    request(context_records["sentinel"], fetch_review, 17.2, first_text=17.2)
     request(context_records["agent"], root, 23.4, thinking=(23.4, 60.0), first_text=60.0)
 
     records += [context_records["titler"], context_records["compaction"]]

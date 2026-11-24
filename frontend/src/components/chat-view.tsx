@@ -90,7 +90,7 @@ interface ChatViewProps {
   onInitialMessageSent?: () => void;
 }
 
-const SANDBOX_STARTUP_TOOL_NAMES = new Set(["use_skill", "read", "write", "str_replace", "exec", "send_file"]);
+const SANDBOX_STARTUP_TOOL_NAMES = new Set(["read_skill", "read", "write", "str_replace", "exec", "send_file"]);
 // Sent as a plain user message: the history already holds the failed turn's tool calls, so the
 // agent picks up from there. English on purpose, every model follows it whatever the UI language.
 const CONTINUE_PROMPT = "Continue.";
@@ -414,7 +414,7 @@ function isUserApprovedReplay(
     approvalSource === "user" &&
     approvalVerdict === "allow" &&
     detail === "[user approved]" &&
-    (tool === "exec" || tool === "use_skill")
+    tool === "exec"
   );
 }
 
@@ -512,12 +512,6 @@ function normalizeStringList(value: unknown): string[] | undefined {
 
 function normalizeToolArgs(args: unknown): Record<string, unknown> {
   return isRecord(args) ? args : {};
-}
-
-function normalizeHistoryContexts(message: HistoryMessage): string[] | undefined {
-  const directContexts = normalizeStringList(message.contexts);
-  if (directContexts) return directContexts;
-  return normalizeStringList(normalizeToolArgs(message.args).contexts);
 }
 
 function findLaterEscalationDecision(
@@ -749,7 +743,6 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         tool,
         args,
         detail: entry.detail ?? "",
-        contexts: normalizeHistoryContexts(entry),
         approvalSource: entry.approval_source,
         approvalVerdict: entry.approval_verdict,
         approvalExplanation: entry.approval_explanation,
@@ -814,7 +807,6 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         tool: entry.tool ?? "",
         args: normalizeToolArgs(entry.args),
         explanation: entry.explanation ?? "",
-        risk_level: entry.risk_level ?? "",
       };
       const response = history.find(
         (candidate) =>
@@ -911,7 +903,6 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
               names: normalizeStringList(entry.names) ?? [],
               descriptions: normalizeStringList(entry.descriptions) ?? [],
               domains: normalizeStringList(entry.domains) ?? [],
-              skill_name: normalizeOptionalString(entry.skill_name),
               explanation: entry.explanation ?? "",
             },
             decision,
@@ -1494,15 +1485,11 @@ export function ChatView({
             msg.approval_source,
             msg.approval_verdict,
           );
-          const rawContexts = msg.contexts ?? msg.args?.contexts;
           const newMsg: ChatMessage = {
             kind: "tool_call",
             tool: msg.tool,
             args: msg.args,
             detail: msg.detail,
-            contexts: Array.isArray(rawContexts)
-              ? (rawContexts as string[])
-              : undefined,
             approvalSource: msg.approval_source,
             approvalVerdict: msg.approval_verdict,
             approvalExplanation: msg.approval_explanation,
