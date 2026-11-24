@@ -74,6 +74,7 @@ Run the builder image as in [builder.md](builder.md#on-a-separate-machine), then
 
 - `agent.max_sentinel_calls_per_tool_call` is now `agent.max_sentinel_calls_per_exec`. The setting lives only in the platform settings, and the database migration renames it there. Nothing to do by hand.
 - `CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS` is gone, because nothing is activated any more. The server ignores it, so you can delete it.
+- Kubernetes without the chart: set `CARAPACE_SANDBOX_K8S_SERVER_SERVICE` to the name of the server's Service. Sandboxes reach the proxy at its ClusterIP, and the server refuses to start without it. The chart sets it to the release name.
 
 ## Knowledge repos
 

@@ -155,6 +155,7 @@ class KubernetesRuntime(ContainerRuntime):
         priority_class: str | None = None,
         owner_ref: bool = True,
         server_deployment_name: str = "carapace",
+        server_service: str,
         sandboxes_name: str | None = "carapace-sandboxes",
         app_instance: str = "carapace",
         session_pvc_size: str = "1Gi",
@@ -188,6 +189,7 @@ class KubernetesRuntime(ContainerRuntime):
         )
         self._want_owner_ref = owner_ref
         self._server_deployment_name = server_deployment_name
+        self._server_service = server_service
         self._sandboxes_name = sandboxes_name
         self._sandbox_owner: _SandboxOwner | None = None
 
@@ -952,17 +954,12 @@ class KubernetesRuntime(ContainerRuntime):
             return {}
 
     async def get_host_ip(self, network: str) -> str | None:
-        """Return the carapace service ClusterIP."""
-        service_host = os.environ.get("CARAPACE_SERVICE_HOST")
-        if service_host:
-            return service_host
-
-        svc_dns = f"carapace.{self._namespace}.svc.cluster.local"
+        """Return the ClusterIP of the server's Service, where sandboxes reach the proxy."""
+        svc_dns = f"{self._server_service}.{self._namespace}.svc"
         try:
             return await asyncio.to_thread(socket.gethostbyname, svc_dns)
-        except socket.gaierror:
-            logger.warning(f"Could not resolve {svc_dns}")
-            return None
+        except socket.gaierror as exc:
+            raise RuntimeError(f"Cannot resolve the server Service {svc_dns}: {exc}") from exc
 
     async def write_stdout_log(self, container_id: str, message: str) -> None:
         quoted_message = shlex.quote(message)

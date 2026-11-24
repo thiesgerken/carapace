@@ -259,6 +259,7 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | `CARAPACE_SANDBOX_K8S_OWNER_REF`                 | `true`                    | Attach `ownerReferences` to sandboxes                      |
 | `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`            | `carapace-sandboxes`      | Required `Sandboxes` owner; set `null`/`""` for Deployment |
 | `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`    | `carapace`                | Server Deployment name (Helm sets to release name)         |
+| `CARAPACE_SANDBOX_K8S_SERVER_SERVICE`            | (required on Kubernetes)  | Server Service; sandboxes reach the proxy at its ClusterIP (Helm sets to release name) |
 | `CARAPACE_SANDBOX_NETWORK_NAME`                  | `carapace-sandbox`        | Docker network name (Docker only)                          |
 | `CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS`        | `[]`                      | CIDRs the proxy may reach despite being [internal](sandbox.md#internal-destinations) (Helm: `sandbox.allowedInternalNetworks`) |
 | `CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS`           | `[]`                      | Host names allowed to resolve to internal addresses (Helm: `sandbox.allowedInternalHosts`) |
