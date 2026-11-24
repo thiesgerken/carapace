@@ -147,7 +147,7 @@ The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives me
 | Tool          | Description                                                               |
 | ------------- | ------------------------------------------------------------------------- |
 | `list_skills` | List available skills (names + descriptions)                              |
-| `use_skill`   | Activate a skill: prepare its sandbox runtime and load instructions       |
+| `read_skill`  | Read a skill: its instructions, its commands and whether they are on `PATH` |
 | `read`        | Read a file or list a directory inside the sandbox                        |
 | `write`       | Write content to a file in the sandbox                                    |
 | `str_replace` | Search-and-replace edit of a file in the sandbox                          |
@@ -157,7 +157,7 @@ The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives me
 | `read_tool_output` | Return the original output of an earlier tool call whose output was compacted |
 
 Persistent writes to workspace files, skills, and archived session snapshots happen via `git commit` + `git push` inside the sandbox. Each push is evaluated by the security sentinel through a pre-receive hook, so persistent knowledge changes do not bypass the sentinel.
-Skill credential declarations in a skill's `SKILL.md` `metadata.carapace` frontmatter are evaluated during `use_skill`; approved credentials are fetched from the configured backend and cached before sandbox-provided activation runs. Core supplies the activator with the exact committed source revision. The official activator restores matching uv, npm, pnpm, and `setup.sh` inputs from that revision before execution.
+Skill commands are built by the builder and are on `PATH` in every session; they ask for the domains and credentials they declare when they start (`cgate`, `ccred`), and the sentinel reviews those requests per `exec` (see [skills.md](skills.md)).
 
 ### Security Module
 
@@ -173,7 +173,7 @@ When the sentinel escalates an operation, the agent loop sends a structured appr
 
 ### Skill Registry
 
-Loads skill metadata (name, description) from each skill's `SKILL.md` frontmatter at startup. The full `SKILL.md` body is loaded only when the agent activates a skill. See [skills.md](skills.md).
+Loads skill metadata (name, description) from each skill's `SKILL.md` frontmatter at startup. The full `SKILL.md` is loaded only when the agent reads a skill with `read_skill`. See [skills.md](skills.md).
 
 ### Git Store
 
@@ -222,7 +222,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `agent/__init__.py` | Re-exports agent creation and turn runner APIs.                                                                                        |
 | `agent/deps.py`     | Pydantic AI dependency model injected into agent tools.                                                                                |
 | `agent/loop.py`     | Channel-agnostic single-turn runner, streaming callbacks, and deferred tool approval retry loop.                                       |
-| `agent/tools.py`    | Agent construction, system prompt assembly, and registered tools (`list_skills`, `use_skill`, `read`, `write`, `str_replace`, `exec`, `send_file`, `show_artifact`, `read_tool_output`). |
+| `agent/tools.py`    | Agent construction, system prompt assembly, and registered tools (`list_skills`, `read_skill`, `read`, `write`, `str_replace`, `exec`, `send_file`, `show_artifact`, `read_tool_output`). |
 
 ### Channels package
 
@@ -314,7 +314,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `sandbox/proxy.py`             | HTTP/HTTPS forward proxy with per-session domain authorization.                            |
 | `sandbox/runtime.py`           | Abstract runtime protocol and shared sandbox runtime types.                                |
 | `sandbox/session_lifecycle.py` | Container lifecycle state and ensure/cleanup/reload operations.                            |
-| `sandbox/skill_activation.py`  | Skill activation, provider setup, command aliases, and credential materialization.         |
+| `sandbox/skill_profile.py`     | Keeps each sandbox's skill profile (the skill commands on `PATH`) at its owner's head.     |
 | `sandbox/state.py`             | Persisted sandbox snapshot models and load/save helpers.                                   |
 
 ### Security package
@@ -401,21 +401,17 @@ sequenceDiagram
     Frontend->>Engine: WebSocket message
     Engine->>Agent: run_agent_turn()
 
-    Note over Agent: Agent decides to activate web-search skill
+    Note over Agent: Agent decides to use the web-search skill
 
-    Agent->>Security: evaluate(use_skill, "web-search")
-    Security->>Sentinel: evaluate tool call
-    Sentinel-->>Security: verdict: allow (skill activation)
+    Agent->>Security: evaluate(read_skill, "web-search")
+    Security-->>Agent: safe-list: allowed, logged for the sentinel
 
-    Note over Agent: Skill loaded, agent runs search script
+    Note over Agent: Skill read, its command is on PATH
 
-    Agent->>Security: evaluate(exec, "uv run scripts/search.py ...")
-    Security->>Sentinel: evaluate tool call
-    Sentinel-->>Security: verdict: allow (read-only web search)
-
-    Agent->>Sandbox: exec("uv run scripts/search.py ...")
+    Agent->>Sandbox: exec("web-search 'python 3.14 release notes'")
     Sandbox->>Proxy: CONNECT search.example.com:443
-    Proxy->>Proxy: domain in skill's declared domains → allowed
+    Proxy->>Sentinel: domain request, with the running command
+    Sentinel-->>Proxy: verdict: allow (fits the search)
     Proxy->>Sandbox: connection established
     Sandbox-->>Agent: search results
 

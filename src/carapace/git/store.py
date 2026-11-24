@@ -132,8 +132,6 @@ class GitStore:
             # Ensure updateInstead is set even on existing repos
             await self._run("config", "receive.denyCurrentBranch", "updateInstead")
 
-        # Activators may request a revision that stopped being HEAD after selection.
-        await self._run("config", "uploadpack.allowReachableSHA1InWant", "true")
         self._install_hook()
 
     def _install_hook(self) -> None:

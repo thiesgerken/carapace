@@ -808,7 +808,7 @@ class KubernetesRuntime(ContainerRuntime):
             env_prefix = " ".join(f"{shlex.quote(k)}={shlex.quote(v)}" for k, v in env.items())
             shell_cmd = f"/usr/bin/env {env_prefix} /bin/bash -c {shlex.quote(shell_cmd)}"
 
-        # Absolute paths: /workspace/.carapace/bin comes first in PATH and holds skill shims.
+        # Absolute paths: the agent can write to the directories on PATH.
         exec_command = ["/bin/bash", "-c", shell_cmd]
         logger.debug(f"Exec in pod {container_id}: {command_preview} (timeout={timeout}s)")
 

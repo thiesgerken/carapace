@@ -6,8 +6,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .skills import ContextGrant
-
 
 class SessionBudget(BaseModel):
     """Session limits; ``None`` means no limit, and 0 is normalized to ``None``."""
@@ -108,8 +106,6 @@ class SessionState(BaseModel):
     compaction_model_name: str | None = None
     attributes: Annotated[SessionAttributes, Field(default_factory=SessionAttributes)]
     approved_operations: Annotated[list[str], Field(default_factory=list)]
-    activated_skills: Annotated[list[str], Field(default_factory=list)]
-    context_grants: Annotated[dict[str, ContextGrant], Field(default_factory=dict)]
     budget: Annotated[SessionBudget, Field(default_factory=SessionBudget)]
     created_at: datetime
     last_active: datetime
@@ -153,8 +149,6 @@ class SessionState(BaseModel):
                 yolo_mode=yolo_mode,
             ),
             approved_operations=approved_operations or [],
-            activated_skills=[],
-            context_grants={},
             budget=SessionBudget(),
             created_at=ts,
             last_active=ts,

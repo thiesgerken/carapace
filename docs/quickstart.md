@@ -305,7 +305,7 @@ Then make sure the credential is reachable as `vault/brave-api-key`. The simples
 
 You can get a Brave Search API key at <https://brave.com/search/api/>.
 
-Once that is in place, activate the `web` skill and run a simple `web_search` call. If the command succeeds, you have verified both the credential lookup and the per-exec skill injection path.
+Once that is in place, ask the agent to search the web with the `web` skill. If the search succeeds, you have verified the credential lookup and its approval.
 
 ## 8. Personalise
 

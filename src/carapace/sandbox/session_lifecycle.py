@@ -40,7 +40,6 @@ class SandboxSessionLifecycleState:
     session_tokens: dict[str, str]
     allowed_domains: dict[str, set[str]]
     exec_temp_domains: dict[str, set[str]]
-    exec_context_skill_domains: dict[str, set[str]]
     session_current_command: dict[str, str]
     domain_approval_cbs: dict[str, Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]]
     domain_notify_cbs: dict[
@@ -48,10 +47,7 @@ class SandboxSessionLifecycleState:
         Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],
     ]
     exec_locks: dict[str, asyncio.Lock]
-    proxy_bypass_sessions: set[str]
     stashed_session_env: dict[str, dict[str, str]]
-    credential_cache: dict[str, dict[str, str]]
-    session_current_contexts: dict[str, list[str]]
     exec_notified_domains: dict[str, set[str]]
     exec_notified_credentials: dict[str, set[str]]
 
@@ -290,7 +286,7 @@ class SandboxSessionLifecycle:
         git identity and generated command shims is lost and must be restored.
 
         Not serialized here: callers go through ``SandboxManager``, which holds the
-        per-session startup lock around this call and the skill setup rerun.
+        per-session startup lock around this call.
         """
         sandbox_id = self.sandbox_id_for_session(session_id)
         sandbox_name = self.sandbox_name_for_id(sandbox_id)
@@ -740,10 +736,7 @@ class SandboxSessionLifecycle:
             self._state.token_to_session.pop(token, None)
         self._state.allowed_domains.pop(session_id, None)
         self._state.exec_temp_domains.pop(session_id, None)
-        self._state.exec_context_skill_domains.pop(session_id, None)
         self._state.session_current_command.pop(session_id, None)
-        self._state.proxy_bypass_sessions.discard(session_id)
-        self._state.session_current_contexts.pop(session_id, None)
         self._state.exec_locks.pop(session_id, None)
 
     async def cleanup_session(self, session_id: str) -> None:
@@ -773,14 +766,10 @@ class SandboxSessionLifecycle:
             self._state.token_to_session.pop(token, None)
         self._state.allowed_domains.pop(session_id, None)
         self._state.exec_temp_domains.pop(session_id, None)
-        self._state.exec_context_skill_domains.pop(session_id, None)
         self._state.session_current_command.pop(session_id, None)
         self._state.domain_approval_cbs.pop(session_id, None)
         self._state.domain_notify_cbs.pop(session_id, None)
         self._state.exec_locks.pop(session_id, None)
-        self._state.proxy_bypass_sessions.discard(session_id)
-        self._state.credential_cache.pop(session_id, None)
-        self._state.session_current_contexts.pop(session_id, None)
         self._state.exec_notified_domains.pop(session_id, None)
         self._state.exec_notified_credentials.pop(session_id, None)
 

@@ -34,7 +34,7 @@ flowchart LR
 - **Shell access**: The agent runs commands via `exec` (equivalent to `docker exec` / `kubectl exec`)
 - **File operations**: `read`, `write`, `str_replace` work directly on the container filesystem
 - **Network access**: All outbound traffic goes through the HTTP forward proxy, which enforces per-session domain allowlisting
-- **Skills**: Activated skills are available in the cloned knowledge repo; the image-provided activator prepares their runtimes
+- **Skills**: Every skill is in the cloned knowledge repo; the commands of built skills are on `PATH` ([below](#skill-commands-on-path))
 - **Workspace files**: `SOUL.md`, `USER.md`, `SECURITY.md` etc. live in the knowledge repo at `/workspace/`. Changes are persisted via `git commit` and `git push`.
 
 ### Sandbox image
@@ -43,7 +43,7 @@ The official image is built with Nix (`nix/sandbox.nix`) and has no FHS layout: 
 
 - **nix-ld** sits at the system loader path (`/lib64/ld-linux-x86-64.so.2`, `/lib/ld-linux-aarch64.so.1` on ARM). Dynamically linked downloads, PyPI wheels, and npm addons find their libraries in `/run/current-system/sw/share/nix-ld/lib`: the NixOS default set without systemd, plus ICU, expat, and libffi. No environment variables are involved.
 - **Python** is python-build-standalone 3.14, installed as uv's managed default under `/root/.local/share/uv/python` with `python3` in `/root/.local/bin`. `UV_PYTHON_PREFERENCE=only-managed` keeps uv away from Nix interpreters. A Nix-built interpreter bypasses nix-ld and cannot load the native libraries of wheels, so none is on `PATH`; the stdio MCP bridge has its own Nix Python environment outside `PATH`.
-- **Node.js 24** with npm and corepack (pnpm, yarn), **uv**, Git, curl, jq, ripgrep, kubectl, poppler-utils, the usual base tools, and the sandbox CLIs (`ccred`, `cgate`, `setup-proxy.sh`, the skill activator, the stdio MCP bridge).
+- **Node.js 24** with npm and corepack (pnpm, yarn), **uv**, Git, curl, jq, ripgrep, kubectl, poppler-utils, the usual base tools, and the sandbox CLIs (`ccred`, `cgate`, `mcp`, `setup-proxy.sh`, the stdio MCP bridge).
 - **FHS data files**: a CA bundle at `/etc/ssl/certs/ca-certificates.crt` and `/etc/ssl/cert.pem`, terminfo at `/usr/share/terminfo`, `/etc/fonts/fonts.conf` with DejaVu, and an `en_US.UTF-8` locale archive (`LANG` is `C.UTF-8`).
 - **Nix**: single-user as root with flakes enabled, no build sandbox, and its own Nix database, so `nix profile` and `nix-collect-garbage` know the image's paths (which are GC roots). The `nixpkgs` registry entry is the flake's own locked nixpkgs, marked final, and the image ships that source as a valid store path, so `nix run nixpkgs#…` evaluates without downloading nixpkgs. The global flake registry is disabled, because fetching it needs a domain approval. Substitutes come only from the [builder cache](#builder-cache), which also passes `cache.nixos.org` through. Evaluating nixpkgs peaks around 1.3 GiB, so sandboxes get a 2 GiB memory limit (Docker runtime default and Helm value); the request stays at 128 MiB.
 
@@ -51,14 +51,14 @@ Store and installed packages live in the container layer and are gone when a san
 
 ### Process model
 
-Grants are scoped to a session, not to a process: while a command runs with a skill's context, its domains and credentials, sentinel-approved domains or the proxy bypass of a skill activation, every process in the sandbox could use them. So carapace keeps one invariant: **whenever it grants anything, no process from an earlier call is still alive in the sandbox.**
+Grants are scoped to a session, not to a process: while a command runs, the domains and credentials the sentinel approved for it could be used by every process in the sandbox. So carapace keeps one invariant: **whenever it grants anything, no process from an earlier call is still alive in the sandbox.**
 
-- Every `exec` (the agent's commands, but also file reads and writes, uploads, downloads and stdio MCP calls, which all run through it) starts by killing every process in the container except PID 1 (the container's `sleep infinity`). Only then does carapace grant the call's contexts, start its tunnels and write its file credentials. A bypassed setup command (skill activation, restoring command shims) kills the same way before the bypass opens.
+- Every `exec` (the agent's commands, but also file reads and writes, uploads and downloads, which all run through it) starts by killing every process in the container except PID 1 (the container's `sleep infinity`). Only then does the exec scope open that its boundary requests are granted to.
 - If processes were killed, the agent's `exec` result ends with `Killed N leftover process(es) from earlier commands.` A running [skill profile sync](#skill-commands-on-path) is killed too, but not counted: the agent never started it.
 - Background processes therefore do not survive their own `exec`. Within one command they work as usual (`./server & sleep 2; curl localhost:8000; kill %1`); across commands they don't.
 - Container operations of a session run one at a time under its exec lock, so the kill never hits another operation midway. Sandbox startup runs under the startup lock instead, which every exec waits for before it kills. Pull and push from the web UI take the lock too and wait while a command runs. A few operations stay outside the lock: the web UI's git status (its read-only commands run alongside a command, a kill only fails that one refresh, and it fetches only when no command runs), reapplying the git identity after a settings change (it holds the knowledge git lock that an agent's `git push` also takes, so waiting here could deadlock; a kill only fails the settings save) and measuring workspace usage on Kubernetes (a killed `df` keeps the previous measurement).
 
-The killer is a bash script run by absolute path (`/bin/bash`, not via `PATH`, whose first entry holds the skill command shims; the runtimes' own `bash -c` wrapper for every exec uses `/bin/bash` too). It counts the live processes, skips zombies (PID 1 never reaps them) and sends `SIGKILL` to all of them in one `kill(-1)` call, which a forking process cannot outrun. It refuses to run if another process in the sandbox is its parent, because `kill(-1)` would take that wrapper down with it.
+The killer is a bash script run by absolute path (`/bin/bash`, not via `PATH`, whose directories the agent can write to; the runtimes' own `bash -c` wrapper for every exec uses `/bin/bash` too). It counts the live processes, skips zombies (PID 1 never reaps them) and sends `SIGKILL` to all of them in one `kill(-1)` call, which a forking process cannot outrun. It refuses to run if another process in the sandbox is its parent, because `kill(-1)` would take that wrapper down with it.
 
 This guarantees that processes left behind by earlier calls, whether by accident or by a naive script that daemonizes itself, never see a later grant. It is not tamper-proof: the agent is root in the sandbox and can write anywhere, so it can replace `/bin/bash` (the killer's interpreter, and on Kubernetes also the wrapper of every exec) or preload a library through `/etc/ld.so.preload`. An agent that deliberately sets this up can neuter the kill. The planned fix is a static killer binary on a read-only mount, executed by absolute path without a shell ([#538](https://github.com/thiesgerken/carapace/issues/538)).
 
@@ -68,8 +68,8 @@ The commands of every built skill are on the agent's `PATH`, as if it sat in a d
 
 - **What it holds.** The store paths of every skill of the owner's head that the builder built ([skills.md](skills.md#building-skills)). Two skills that expose the same command name are both left out, because Nix refuses the whole transaction otherwise; the reason is kept for `read_skill`. Removing or disabling a skill removes its commands.
 - **The sync.** `nix-env -p <profile> -i -r <all paths>` sets the profile to exactly that list in one transaction, substituting missing paths from the builder's cache ([builder.md](builder.md)), and is a no-op when nothing changed. Afterwards it writes a marker, a hash of the list, next to the profile. Profile, marker and store live in the container layer and are gone with the container, like anything the agent installs ad hoc.
-- **When.** Every sandbox start, resume or recreation starts a sync. Before every `exec` the leftover-process killer also reports the marker; if it differs from what the head resolves to (a new build, a pushed change), a sync starts. So a running session gets new commands on its next `exec`, and its workspace copy of a skill may be older than the commands on `PATH`. Nothing waits for a build or a sync: session start and `exec` go ahead, and an `exec` that fails with "command not found" while `nix-env` runs gets a hint saying so.
-- **The killer.** The sync is an ordinary process, so the killer before the next `exec` kills it like any other; there is no exemption that a root agent could borrow. A sync that is still computing its plan is cancelled with it. The server starts the sync again right after the killer, but never while a proxy bypass is open (a skill activation): then it waits until the bypass has closed, because the sync runs code the agent can influence (`/bin/nix-env` and the store live in the writable container layer). A killed `nix-env` keeps every path it substituted and never switches the profile halfway, so each run continues where the last one stopped and the profile converges. An agent that runs commands back to back slows a large first sync down; that is accepted and measured in [#580](https://github.com/thiesgerken/carapace/issues/580).
+- **When.** Every sandbox start, resume or recreation starts a sync. Before every `exec` the leftover-process killer also reports the marker; if it differs from what the head resolves to (a new build, a pushed change), a sync starts. So a running session gets new commands on its next `exec`, and its workspace copy of a skill may be older than the commands on `PATH`. Session start and `exec` never wait for a build or a sync, and an `exec` that fails with "command not found" while `nix-env` runs gets a hint saying so. [`read_skill`](skills.md#reading-a-skill-read_skill) is the one place that waits: for the skill's build, then for a sync of the profile, so its commands are on `PATH` when it returns.
+- **The killer.** The sync is an ordinary process, so the killer before the next `exec` kills it like any other; there is no exemption that a root agent could borrow. A sync that is still computing its plan is cancelled with it. The server starts the sync again right after the killer. The sync runs code the agent can influence (`/bin/nix-env` and the store live in the writable container layer), so it gets nothing an `exec` does not get: no proxy bypass, only the builder's cache. `read_skill` runs its sync under the exec lock, so no killer interrupts it. A killed `nix-env` keeps every path it substituted and never switches the profile halfway, so each run continues where the last one stopped and the profile converges. An agent that runs commands back to back slows a large first sync down; that is accepted and measured in [#580](https://github.com/thiesgerken/carapace/issues/580).
 - **Disk.** The skill set's store paths take 2 to 8 GB in the container layer. On Kubernetes, sandboxes request `CARAPACE_SANDBOX_K8S_RESOURCE_REQUESTS_EPHEMERAL_STORAGE` (default `2Gi`, Helm `sandbox.resources.requests.ephemeral-storage`); raise it for large skill sets, keeping in mind that every warm-pool and idle sandbox reserves it. A limit (`…_LIMITS_EPHEMERAL_STORAGE`) is off by default, because exceeding it evicts the pod.
 
 `nix shell path:./skills/<name> -c <cmd>` always works as well, evaluating and building in the sandbox: the development loop for changes that are not pushed yet (see [skill flakes](skill-flakes.md#developing-a-skill)).
@@ -97,68 +97,6 @@ No shared PVC access — the server's data PVC is `ReadWriteOnce`.
 
 The knowledge repo is cloned directly into `/workspace/` on first start. On container restarts the existing working tree is reused. `/tmp/` is backed by the same per-session PVC via a separate `subPath`, so temp artifacts also survive suspend and resume without provisioning a second claim. To persist changes back to the server, the agent uses `git commit` and `git push` inside `/workspace/`. Every push is evaluated by the security sentinel via a pre-receive hook.
 
-## Custom sandbox skill activator contract
-
-Every sandbox image must contain an executable at `/usr/local/bin/carapace-skill-activator`. It prepares a complete skill runtime and may override declared command aliases. The image owns the implementation; neither Helm nor Docker Compose selects its path. A custom image may provide a wrapper or a symlink to an immutable executable, for example in the Nix store.
-
-A missing or non-executable activator fails automatic setup. There is no implicit no-op fallback. An image that needs no preparation must still provide an executable that exits zero and emits `{"protocol_version":1}`. This leaves all declared commands unchanged.
-
-Carapace enforces a 600-second timeout for the complete invocation, configurable on the server:
-
-```text
-CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS=600
-```
-
-Upgrade note: the previous built-in providers each had a separate 600-second budget. The new budget covers the entire invocation, including fetching source inputs and all setup steps. Raise this setting for heavy skills that previously relied on multiple provider budgets.
-
-Carapace invokes the executable once per skill with `--request-base64` followed by a base64-encoded JSON object:
-
-```json
-{
-  "protocol_version": 1,
-  "skill": "web",
-  "skill_dir": "/workspace/skills/web",
-  "workspace": "/workspace",
-  "source_revision": "0123456789abcdef0123456789abcdef01234567",
-  "commands": [
-    {
-      "name": "web_search",
-      "command": "uv run --directory /workspace/skills/web web_search"
-    }
-  ]
-}
-```
-
-`source_revision` is the exact committed knowledge-repository object ID selected by Carapace. The live workspace remains writable and may contain later or uncommitted changes. The activator selects its activation inputs from `source_revision` and decides which files to restore or how to consume that revision. Carapace never resets the complete skill directory.
-
-Carapace supplies `GIT_REPO_URL` in the process environment. It is the authenticated URL of the server-side knowledge repository, not a mutable Git remote name from the workspace. A long-lived sandbox may not yet contain `source_revision`. The official activator fetches that exact object from `GIT_REPO_URL` when needed and verifies it before restoring individual provider files. It does not merge, reset the working tree, or move local branches. If fetching fails, activation fails rather than substituting another revision.
-
-Keep `GIT_REPO_URL` out of protocol JSON, messages, and logs: it contains authentication credentials. The base64 request is encoded for shell transport, not encrypted.
-
-On success, the executable exits zero and writes exactly one JSON object to stdout, with no prefix or other output. The parser reads raw stdout only, never combined stdout/stderr. Send all diagnostics to stderr; JSON there cannot act as a protocol response:
-
-```text
-{"protocol_version":1,"command_overrides":{"web_search":"/nix/store/.../bin/web_search"},"messages":["Realized web commands."]}
-```
-
-`command_overrides` may contain only aliases present in `commands`. Omitted aliases keep their declared commands. Commands and messages must be nonempty single-line strings. Messages are model-facing and must not contain credentials or raw package-manager and hook output.
-
-On failure, the executable exits nonzero. It may emit one JSON response with a safe error:
-
-```text
-{"protocol_version":1,"error":"runtime realization failed with status 1"}
-```
-
-Carapace rejects unknown versions, malformed responses, undeclared aliases, invalid command strings, and invocations exceeding the configured timeout. It validates the full response before installing command shims. Activator filesystem side effects are not rolled back. Activation failures, including invalid responses, log at most 2,000 characters of combined diagnostics server-side; this raw output is not returned to the model. Activators and setup scripts must not print credentials, including environment variables and authenticated URLs.
-
-The activator runs after `use_skill` approval with the skill's successfully resolved `env_var` and `file` credentials, plus the same proxy bypass used by the previous built-in setup providers. Credentials are not part of the JSON request. File credentials are removed after invocation.
-
-The executable is trusted deployment code that receives credentials and proxy bypass. It must not be stored in agent-writable locations such as `/workspace` or `/tmp`, to ensure that the agent cannot tamper with activation. Its integrity, including the symlink target, interpreter, and dependencies, is the sandbox image operator's responsibility. Use read-only mounts or a non-root sandbox user with protected image files. A Nix store path is suitable only if the agent cannot modify that store or the link to it. The fixed path alone is not an integrity guarantee; Carapace does not enforce a read-only container root.
-
-Carapace starts the activator in the workspace, not the skill directory, so it can materialize inputs even when the skill directory is missing.
-
-The official image contains `/usr/local/bin/carapace-skill-activator`. It reads matching provider blobs using `git cat-file`, avoiding checkout hooks, filters, and index changes. Provider inputs must be regular committed files; their executable bit is preserved. It rejects symlinked directory components and writes temporary files before renaming over destination files, replacing rather than following a destination symlink. It then runs the [official provider chain](skills.md#official-sandbox-activator). Custom images must implement the versioned process contract above; they need not reproduce that provider chain.
-
 ## Network policy
 
 All outbound traffic from sandbox containers is routed through the carapace server's HTTP forward proxy:
@@ -174,7 +112,6 @@ A resolver that forwards external names is a channel past the proxy: `getent hos
 
 - It reaches the server by IP. The proxy URL, the git origin (`GIT_REPO_URL`), `CARAPACE_API_URL` and `NO_PROXY` are all built from the server's IP on the sandbox network (Docker) or its ClusterIP (Kubernetes).
 - Proxy-aware tools send the hostname to the proxy, which resolves it on the server. pip, uv, npm, git over HTTPS and curl all work this way.
-- [Exec-scoped tunnels](#exec-scoped-tcp-tunnels) shadow their hostnames in `/etc/hosts`.
 
 How each runtime enforces it:
 
@@ -187,9 +124,7 @@ Tools that insist on resolving a hostname locally before they connect fail in th
 
 Each session maintains a domain allowlist. Domains are added when:
 
-1. **Skill activation**: Domains declared in a skill's `SKILL.md` frontmatter under `metadata.carapace.network.domains` are registered when the skill is activated and applied to commands that explicitly use that skill's context.
-2. **Sentinel approval**: Unknown domains are evaluated by the sentinel. If allowed, they're added for the current exec call. If escalated, the user decides. Requests of one exec that arrive within a short window are reviewed together, and a decision is reused for the rest of that exec, never for the next one. The `exec` itself is not reviewed: the sandbox is the boundary, and this is where it is crossed. A command can also ask for its domains up front with [`cgate request`](#declaring-needs-up-front-cgate).
-3. **Proxy bypass**: During sandbox-provided skill activation, the proxy is temporarily bypassed. The official activator selects and restores its executable inputs from the committed `source_revision` before running uv, npm, pnpm, or `setup.sh`.
+1. **Sentinel approval**: Unknown domains are evaluated by the sentinel. If allowed, they're added for the current exec call. If escalated, the user decides. Requests of one exec that arrive within a short window are reviewed together, and a decision is reused for the rest of that exec, never for the next one. The `exec` itself is not reviewed: the sandbox is the boundary, and this is where it is crossed. A command can also ask for its domains up front with [`cgate request`](#declaring-needs-up-front-cgate).
 
 The proxy supports exact domain matching (`example.com`) and wildcard matching (`*.example.com`).
 
@@ -226,24 +161,6 @@ Prefer exact hosts or narrow CIDRs over your whole LAN, and never allow the clus
 `cache.carapace.internal` is the one destination the proxy reaches without a domain decision and despite being internal: it maps that name to the [builder's binary cache](builder.md#binary-cache) (`CARAPACE_BUILDER_CACHE_URL`). Only plain-HTTP `GET` and `HEAD` of cache paths pass (`/nix-cache-info`, narinfos, NARs); anything else, and `CONNECT`, is a `403`. So `nix run nixpkgs#hello` costs no sentinel call per download, and the mapping reaches nothing on the builder but the cache.
 
 Sandboxes get the matching Nix settings in `NIX_CONFIG`: the cache as the only substituter, the builder's and the upstreams' public keys as the trusted keys (so an unsigned or wrongly signed path is refused), `max-substitution-jobs = 1` and `narinfo-cache-negative-ttl = 30`, because Nix otherwise remembers a missing path for an hour. The server fetches the keys from the builder's `/info` whenever it assigns a sandbox to a session, so a builder with a new key is picked up by the next sandbox. With a builder configured but not answering, the sandbox does not start, and the error says so: substituting from anywhere else would quietly put every download behind the domain gate. The agent is root in its sandbox and can override `NIX_CONFIG`. That only changes its own sandbox: any other substituter is an ordinary destination that needs a domain approval.
-
-### Exec-scoped TCP tunnels
-
-Skills may also declare `network.tunnels` in their `metadata.carapace` config. These are not long-running session daemons. Instead, carapace manages them around a single `exec` call:
-
-1. Before the command runs, carapace temporarily shadows the declared hostnames inside the sandbox.
-2. It starts trusted TCP forwarders inside the sandbox that use the existing HTTP CONNECT proxy to reach the remote `host:remote_port` endpoints.
-3. The user command runs.
-4. In `finally`, carapace stops the forwarders and restores the original host resolution.
-
-Important semantics:
-
-- Tunnels are exec-scoped, not session-scoped.
-- Tunnel hosts must be exact hostnames; wildcards are not allowed.
-- The client should keep using the original hostname so TLS validation and SNI continue to work.
-- `network.domains` and `network.tunnels` may overlap on the same hostname.
-- Proxy-aware HTTP and HTTPS to the same hostname still work through the normal proxy path.
-- Direct socket connections to the tunneled hostname are shadowed for the duration of that exec, even on other ports.
 
 ## Declaring needs up front: `cgate`
 
@@ -296,11 +213,11 @@ Each call is its own connection, so servers that keep state between calls do not
 
 ## Container lifecycle
 
-- **Creation**: A container is created (or ensured running) when a session needs it — typically on the first tool call. Startup is serialized per session: concurrent callers, such as parallel `use_skill` calls in a fresh session, wait for the first one to finish starting the sandbox instead of each claiming or creating their own.
+- **Creation**: A container is created (or ensured running) when a session needs it — typically on the first tool call. Startup is serialized per session: concurrent callers, such as parallel tool calls in a fresh session, wait for the first one to finish starting the sandbox instead of each claiming or creating their own.
 - **Reuse**: The container stays running for the session's duration. Multiple tool calls reuse the same container.
 - **Idle timeout**: Configurable (default: 60 min). In Docker mode, idle containers are destroyed. In Kubernetes mode, the StatefulSet is scaled to 0 replicas — the PVC is retained, so venvs and workspace state survive.
 - **Warm pool**: If `CARAPACE_SANDBOX_WARM_POOL_SIZE > 0`, carapace maintains that many unattached base-image sandboxes ahead of time. On Kubernetes, new sessions claim one of these warm sandboxes before falling back to cold creation. The claimed sandbox keeps its own unique `sandbox_id` (for example `pool-3f9c…`) while still being attached to the session.
-- **Re-warming**: When the session needs its sandbox again after the container expired, a new container is created (Docker: fresh container with the same bind mounts; Kubernetes: StatefulSet scaled back to 1 replica, PVC still attached). Whenever a sandbox is freshly created, claimed or resumed, whatever triggered it (a command, `use_skill`, a git pull/push from the UI, or starting the sandbox or uploading a file from the web UI), carapace reruns the image-provided activator for each active skill and restores command shims before any caller gets to use the sandbox. Approved skill credentials are made available before activation. The same applies when a command finds its container gone and the sandbox is recreated for the retry, even if the runtime has already restarted the container on its own.
+- **Re-warming**: When the session needs its sandbox again after the container expired, a new container is created (Docker: fresh container with the same bind mounts; Kubernetes: StatefulSet scaled back to 1 replica, PVC still attached). Whenever a sandbox is freshly created, claimed or resumed, whatever triggered it (a command, `read_skill`, a git pull/push from the UI, or starting the sandbox or uploading a file from the web UI), carapace restores its git identity before any caller gets to use the sandbox and starts the [skill profile sync](#skill-commands-on-path). The same applies when a command finds its container gone and the sandbox is recreated for the retry, even if the runtime has already restarted the container on its own.
 - **Image changes**: In Docker mode every resume recreates the container, so it always uses the configured `CARAPACE_SANDBOX_BASE_IMAGE`. In Kubernetes mode, stale warm-pool members are replaced and scaled-down session sandboxes switch to the configured image when they resume; running sandboxes are left alone (see [kubernetes.md](kubernetes.md#changing-the-sandbox-image)).
 - **Reset** (`/reload`): Fully destroys the container and workspace (including the PVC in Kubernetes mode) and creates a fresh sandbox with a new git clone on the next command.
 

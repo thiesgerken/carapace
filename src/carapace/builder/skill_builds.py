@@ -18,6 +18,7 @@ from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from ..skills import SkillDocumentError, parse_skill_document
+from ..spans import span
 from .client import BuilderClient, BuilderSystemMismatchError
 from .models import BuildResult
 
@@ -107,6 +108,20 @@ class SkillBuilds:
                 )
             )
         return builds
+
+    async def wait_built(self, repo_dir: Path, skill: str) -> tuple[SkillBuild | None, list[SkillBuild]]:
+        """*skill*'s build once it no longer runs (None for a skill without a flake), and every build.
+
+        A crashed build raises here: asking again would only start it again. The build is shared by every
+        session on its tree, so a waiter that is cancelled (a stopped turn) leaves it running for the others.
+        """
+        while True:
+            builds = await self.ensure_built(repo_dir)
+            build = next((build for build in builds if build.skill == skill), None)
+            if build is None or build.state != "building":
+                return build, builds
+            with span("skill", "build wait", skill=skill):
+                await asyncio.shield(self._running[build.tree])
 
     async def sync_roots(self, repo_dirs: Iterable[Path]) -> None:
         """Tell the builder which trees the heads of *repo_dirs* reference; it may collect the others.

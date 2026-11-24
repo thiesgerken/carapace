@@ -115,7 +115,7 @@ let
   };
 
   sandboxScripts = pkgs.runCommand "carapace-sandbox-scripts" { } ''
-    for script in ccred cgate mcp setup-proxy.sh carapace-skill-activator carapace-mcp-bridge; do
+    for script in ccred cgate mcp setup-proxy.sh carapace-mcp-bridge; do
       install -Dm755 ${../sandbox}/$script "$out/bin/$script"
     done
     sed -i '1c#!${mcpBridgeEnv}/bin/python' "$out/bin/carapace-mcp-bridge" "$out/bin/mcp"
@@ -218,7 +218,7 @@ pkgs.dockerTools.buildLayeredImage {
     WorkingDir = "/workspace";
     Env = [
       # Skill commands come last, so a skill cannot shadow a tool of the image or the agent's own.
-      "PATH=/workspace/.carapace/bin:/root/.local/bin:/root/.nix-profile/bin:/bin:/nix/var/nix/profiles/carapace/skills/bin"
+      "PATH=/root/.local/bin:/root/.nix-profile/bin:/bin:/nix/var/nix/profiles/carapace/skills/bin"
       "HOME=/root"
       "USER=root"
       "LANG=C.UTF-8"

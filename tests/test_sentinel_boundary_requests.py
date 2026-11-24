@@ -96,18 +96,6 @@ async def test_an_exec_is_not_reviewed_but_reaches_the_next_boundary_request(tmp
 
 
 @pytest.mark.asyncio
-async def test_an_exec_with_skill_contexts_is_still_reviewed(tmp_path: Path) -> None:
-    model = _AllowingModel()
-    sentinel = _sentinel(tmp_path, model)
-    security = SessionSecurity("s1")
-
-    await evaluate_with(security, sentinel, "exec", {"command": "sync-notes", "contexts": ["notes"]}, tool_call_id="c1")
-
-    assert len(model.prompts) == 1
-    assert "sync-notes" in model.prompts[0]
-
-
-@pytest.mark.asyncio
 async def test_a_credential_listing_is_its_own_request(tmp_path: Path) -> None:
     model = _AllowingModel()
     sentinel = _sentinel(tmp_path, model)

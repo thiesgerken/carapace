@@ -36,7 +36,7 @@ class SkillProfileSync:
     def __init__(self, runtime: ContainerRuntime) -> None:
         self._runtime = runtime
         self._plan_for_session: ProfilePlanCallback | None = None
-        self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._tasks: dict[str, asyncio.Task[str | None]] = {}
         # Sessions whose `nix-env` runs right now: what the "still being installed" hint means.
         self._installing: set[str] = set()
 
@@ -53,6 +53,22 @@ class SkillProfileSync:
         task = asyncio.create_task(self._sync(session_id, container_id, marker))
         task.add_done_callback(lambda done: _log_crash(done, session_id))
         self._tasks[session_id] = task
+
+    async def sync(self, session_id: str, container_id: str) -> str | None:
+        """Bring the profile to the session's plan and wait for it: why it failed, or None.
+
+        The caller holds the session's exec lock, so no killer ends this sync halfway.
+        """
+        if (running := self._tasks.get(session_id)) is not None:
+            # Its plan may predate a build that just finished: let it end, then compare again.
+            await asyncio.wait({running})
+        marker = await self._runtime.exec(container_id, ["/bin/sh", "-c", KILLER_MARKER], timeout=30)
+        self.start(session_id, container_id, marker=marker.stdout.strip())
+        task = self._tasks[session_id]
+        await asyncio.wait({task})
+        if task.cancelled():
+            return "The skill profile sync was cancelled."
+        return task.result()
 
     def stop(self, session_id: str) -> None:
         """Drop the session's sync task, so a sync still computing its plan cannot start `nix-env` later.
@@ -73,12 +89,13 @@ class SkillProfileSync:
             return result
         return result.model_copy(update={"output": f"{result.output}\n{_HINT}"})
 
-    async def _sync(self, session_id: str, container_id: str, marker: str | None) -> None:
+    async def _sync(self, session_id: str, container_id: str, marker: str | None) -> str | None:
+        """Why the sync failed, or None when the profile holds the plan."""
         if self._plan_for_session is None:
-            return
+            return None
         plan = await self._plan_for_session(session_id)
         if plan.digest == marker:
-            return
+            return None
         script = f"echo $$ > {SYNC_PID_FILE}\n{sync_script(plan)}rm -f {SYNC_PID_FILE}\n"
         try:
             # Started from an exec or a sandbox start, so the span lands in that turn's timeline.
@@ -92,15 +109,18 @@ class SkillProfileSync:
                     self._installing.discard(session_id)
         except ContainerGoneError:
             logger.debug(f"Sandbox of session {session_id} went away during its skill profile sync")
-            return
+            return "The sandbox went away during the skill profile sync."
         if result.exit_code == _KILLED:
             logger.debug(f"Skill profile sync of session {session_id} was interrupted by an exec; it restarts")
-        elif result.exit_code != 0:
+            return "The skill profile sync was interrupted by an exec."
+        if result.exit_code != 0:
             # The marker stays stale, so the next exec tries again.
             logger.warning(f"Skill profile sync of session {session_id} failed: {result.output[-2000:]}")
+            return f"The skill profile sync failed: {result.output[-2000:]}"
+        return None
 
 
-def _log_crash(task: asyncio.Task[None], session_id: str) -> None:
+def _log_crash(task: asyncio.Task[str | None], session_id: str) -> None:
     if not task.cancelled() and (exc := task.exception()) is not None:
         logger.opt(exception=exc).error(f"Skill profile sync of session {session_id} crashed")
 

@@ -148,7 +148,7 @@ nix flake check
 
 `checks.<system>` includes `pytest`, `pyrefly`, `ruff`, `frontend-lint`, `frontend-test`, `frontend-build`, and `helm`. For the commands below, `<system>` is `x86_64-linux` or `aarch64-linux`.
 
-The check derivations substitute the activator's deliberately absolute FHS executable paths only in their private source copy, using `--replace-fail`; the deployed sandbox script is unchanged. SHA-256-pinned `cl100k_base` and `o200k_base` BPE files populate a shared tiktoken cache used by checks and the server image, so tokenization needs no first-use network download on a fresh pod.
+SHA-256-pinned `cl100k_base` and `o200k_base` BPE files populate a shared tiktoken cache used by checks and the server image, so tokenization needs no first-use network download on a fresh pod.
 
 Checks set `SSL_CERT_FILE` to the pinned CA bundle because HTTP clients initialize TLS even when tests do not make network requests.
 

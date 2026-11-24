@@ -14,7 +14,7 @@ from .skill_builds import SkillBuild
 SKILLS_PROFILE = "/nix/var/nix/profiles/carapace/skills"
 # The digest of the path set the profile was last set to, written only after `nix-env` succeeded.
 SKILLS_PROFILE_MARKER = "/nix/var/nix/profiles/carapace/skills.wanted"
-# By absolute path in the container layer: PATH starts at the workspace, which a plant would survive in.
+# By absolute path: the agent can write to directories on PATH and plant a `nix-env` there.
 _NIX_ENV = "/bin/nix-env"
 # Nix base32 leaves out e, o, t and u.
 _STORE_PATH = re.compile(r"/nix/store/[0-9a-df-np-sv-z]{32}-[^/\s]+")

@@ -315,9 +315,6 @@ class SessionArchiveService:
                             "tool": part.tool_name,
                             "args": args,
                         }
-                        contexts_raw = args.get("contexts")
-                        if isinstance(contexts_raw, list):
-                            event["contexts"] = list(contexts_raw)
                         result.append(event)
                     elif isinstance(part, TextPart):
                         result.append({"role": "assistant", "content": part.content})

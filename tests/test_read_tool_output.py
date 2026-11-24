@@ -12,6 +12,7 @@ from pydantic_ai.usage import RunUsage
 from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps
 from carapace.agent.tools import create_agent
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models.config import Config
@@ -30,6 +31,7 @@ _EVENTS: list[dict[str, Any]] = [
 
 def _deps(tmp_path: Path) -> Deps:
     return Deps(
+        skill_builds=SkillBuilds(None),
         config=Config(),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,

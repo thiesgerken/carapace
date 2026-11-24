@@ -180,7 +180,7 @@ See [docs/architecture.md](docs/architecture.md) for the diagrams and fuller arc
 
 ## Kubernetes Deployment
 
-carapace supports Kubernetes as a sandbox runtime. Sandboxes run as StatefulSets with per-session PVCs. On idle timeout the StatefulSet scales to zero while preserving persistent state, and on resume the sandbox is recreated with its committed knowledge and activated setup restored. If `CARAPACE_SANDBOX_WARM_POOL_SIZE` is greater than `0`, the server also maintains a generic base-image warm pool and can claim one of those sandboxes for a new session instead of paying the full cold-start path.
+carapace supports Kubernetes as a sandbox runtime. Sandboxes run as StatefulSets with per-session PVCs. On idle timeout the StatefulSet scales to zero while preserving persistent state, and on resume the sandbox is recreated with its committed knowledge, and the skill commands come back onto `PATH`. If `CARAPACE_SANDBOX_WARM_POOL_SIZE` is greater than `0`, the server also maintains a generic base-image warm pool and can claim one of those sandboxes for a new session instead of paying the full cold-start path.
 
 Use the included Helm chart in [charts/carapace](charts/carapace) and see [charts/carapace/README.md](charts/carapace/README.md) for installation details.
 

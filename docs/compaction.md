@@ -254,7 +254,7 @@ never reset and **not** affected by `/compact`; instead it is compacted automati
 - **How:** summaries lead with the sentinel's own system prompt (including `SECURITY.md` and the
   session's ask/unattended mode), followed by compaction instructions that require keeping user
   decisions, what the user asked for and agreed to in chat (with the agent proposal it answers),
-  change requests, denials and escalations, granted contexts, suspicious agent behaviour and what inspected
+  change requests, denials and escalations, the skills the agent read, suspicious agent behaviour and what inspected
   skill code does. Fold summaries are rendered with the verdicts' arguments, so the decisions reach
   the summarizer verbatim.
 - **Result:** the compacted conversation replaces the persisted one. The sentinel forgets which skill

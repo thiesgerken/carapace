@@ -96,8 +96,6 @@ def _summarize_tool_args_for_log(args: dict[str, Any]) -> str:
         value = args[key]
         if key == "command" and isinstance(value, str):
             parts.append(f"command={_truncate_for_log(value, 100)}")
-        elif key == "contexts" and isinstance(value, list):
-            parts.append(f"contexts={','.join(str(entry) for entry in value[:4])}")
         else:
             parts.append(f"{key}={_truncate_for_log(str(value), 60)}")
     return ", ".join(parts) if parts else "-"
