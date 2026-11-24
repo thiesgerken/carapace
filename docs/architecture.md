@@ -171,7 +171,7 @@ The security boundary. Agent tool calls are not reviewed: `security.record_tool_
 
 ### Sentinel Agent
 
-An LLM-powered agent that evaluates actions against the natural-language `SECURITY.md` policy. Maintains a persistent "shadow conversation" per session, giving it full context of the session history. Returns structured verdicts (allow / revise / escalate / deny; revise and comments only for pushes). See [security.md](security.md).
+An LLM-powered agent that evaluates actions against the natural-language `SECURITY.md` policy. Maintains a persistent "shadow conversation" per session, giving it full context of the session history. Returns structured verdicts (allow / escalate / deny; an allow can carry a comment, for pushes only). See [security.md](security.md).
 
 ### Approval Gate
 

@@ -42,7 +42,7 @@ def test_a_retried_output_tool_return_does_not_end_the_turn() -> None:
 def test_a_turn_stopped_on_a_retried_verdict_is_not_completed() -> None:
     messages: list[ModelMessage] = [
         ModelRequest(parts=[UserPromptPart("evaluate")]),
-        ModelResponse(parts=[ToolCallPart(SENTINEL_VERDICT_TOOL, {"decision": "revise"}, tool_call_id="call-1")]),
+        ModelResponse(parts=[ToolCallPart(SENTINEL_VERDICT_TOOL, {"decision": "maybe"}, tool_call_id="call-1")]),
         _output_return(SENTINEL_VERDICT_TOOL, retried=True),
     ]
 

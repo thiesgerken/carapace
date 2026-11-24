@@ -38,10 +38,6 @@ def format_denial_message(source: Literal["sentinel", "user"], message: str | No
     return f"{base} {normalized}"
 
 
-def format_changes_requested_message(explanation: str) -> str:
-    return f"Sentinel requests changes (no threat detected): {explanation}"
-
-
 def format_sentinel_comment(subject: str, comment: str) -> str:
     return (
         f"The security sentinel allowed {subject} and comments: {comment}\n"
@@ -65,7 +61,7 @@ class ToolCallEntry(BaseModel):
     type: Literal["tool_call"] = "tool_call"
     tool: str
     args: dict[str, Any] = {}
-    decision: Literal["auto_allowed", "allowed", "changes_requested", "escalated", "denied"] = "auto_allowed"
+    decision: Literal["auto_allowed", "allowed", "escalated", "denied"] = "auto_allowed"
     explanation: str = ""
 
 
@@ -96,7 +92,7 @@ class UserVouchedEntry(BaseModel):
 class GitPushEntry(BaseModel):
     type: Literal["git_push"] = "git_push"
     ref: str
-    decision: Literal["allowed", "changes_requested", "escalated", "denied"] = "allowed"
+    decision: Literal["allowed", "escalated", "denied"] = "allowed"
     explanation: str = ""
 
 
@@ -137,7 +133,7 @@ SENTINEL_VERDICT_TOOL = "judge"
 
 
 class SentinelVerdict(BaseModel):
-    decision: Literal["allow", "revise", "escalate", "deny"]
+    decision: Literal["allow", "escalate", "deny"]
     explanation: str = ""
     risk_level: Literal["low", "medium", "high"] = "medium"
     # Addressed to the agent, unlike `explanation`, which is the reason for the log and the UI.
@@ -149,7 +145,7 @@ class SentinelVerdict(BaseModel):
 
 
 class UnattendedSentinelVerdict(BaseModel):
-    decision: Literal["allow", "revise", "deny"]
+    decision: Literal["allow", "deny"]
     explanation: str = ""
     risk_level: Literal["low", "medium", "high"] = "medium"
     # Addressed to the agent, unlike `explanation`, which is the reason for the log and the UI.
@@ -164,8 +160,8 @@ class UnattendedSentinelVerdict(BaseModel):
 # contexts were dropped (migration 0018), "safe-list" from when every unreviewed tool call was labelled with it.
 # Their history still has to load. "policy" is the proxy's destination policy, not a reviewer.
 ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "autonomy", "policy", "unknown"]
-ApprovalVerdict = Literal["allow", "revise", "deny", "escalate"]
-type FinalDecision = Literal["auto_allowed", "allowed", "changes_requested", "escalated", "denied"]
+ApprovalVerdict = Literal["allow", "deny", "escalate"]
+type FinalDecision = Literal["auto_allowed", "allowed", "escalated", "denied"]
 
 
 @dataclass(frozen=True, slots=True)

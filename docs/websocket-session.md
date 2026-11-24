@@ -173,7 +173,7 @@ long args stay cheap.
 Present when something decided about the call. An agent tool call that just runs has neither, since none is reviewed by itself (see [Tool calls](security.md#tool-calls)).
 
 - `approval_source`: `sentinel` \| `user` \| `bypass` \| `autonomy` \| `unknown`, plus `safe-list` and `skill` in history from older versions
-- `approval_verdict`: `allow` \| `revise` \| `deny` \| `escalate`
+- `approval_verdict`: `allow` \| `deny` \| `escalate`
 - `approval_comment`: what the sentinel told the agent about a git push it allowed (see [Sentinel comments](security.md#sentinel-comments))
 
 **`safe-list`** — only in sessions from older versions, which labelled every agent tool call with it. The UI shows these calls without a badge, like a call without a decision today.

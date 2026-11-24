@@ -21,7 +21,6 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
-  ShieldEllipsis,
   ShieldX,
   SquareTerminal,
   UserCheck,
@@ -543,7 +542,6 @@ const SENTINEL_VERDICT_ICONS: Record<ApprovalVerdict, { Icon: LucideIcon; colorC
   allow: { Icon: ShieldCheck, colorClass: "text-green-600 dark:text-green-400" },
   deny: { Icon: ShieldX, colorClass: "text-red-600 dark:text-red-400" },
   escalate: { Icon: ShieldAlert, colorClass: "text-yellow-600 dark:text-yellow-400" },
-  revise: { Icon: ShieldEllipsis, colorClass: "text-orange-600 dark:text-orange-400" },
 };
 
 /** What the card says while *step* runs; `read_skill` waits for a build and a profile sync. */
@@ -888,11 +886,6 @@ export function ToolCallBadge({
                   <Shield className="inline h-3 w-3 -translate-y-px mr-1" />
                   {t("details.sentinelLabel")}
                 </span>{" "}
-              {verdict === "revise" && (
-                <span className="font-medium text-orange-600 dark:text-orange-400">
-                  {t("details.sentinelRequestsChanges")}{" "}
-                </span>
-              )}
               {sentinelExplanation}
             </div>
           )}

@@ -107,7 +107,7 @@ async def test_comment_reaches_the_agent_as_a_system_message_after_the_tool_resu
 @pytest.mark.parametrize(
     ("first", "error"),
     [
-        ({"decision": "allow", "comment": "x"}, "`revise` and `comment` are not available here"),
+        ({"decision": "allow", "comment": "x"}, "`comment` is not available here"),
         ({"decision": "escalate", "comment": "x"}, "`comment` only goes with `allow`"),
     ],
 )

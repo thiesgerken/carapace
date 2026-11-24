@@ -434,9 +434,9 @@ def _change_request(start: datetime) -> Transcript:
     first = t.call("exec", {"command": 'git commit -am "Fix duplicate flour" && git push', "title": "commit and push"})
     t.call(
         "git_push",
-        {"ref": "refs/heads/main", "decision": "revise"},
+        {"ref": "refs/heads/main", "decision": "deny"},
         source="sentinel",
-        verdict="revise",
+        verdict="deny",
         explanation="The commit also rewrites skills/web/SKILL.md, which the user did not ask to change. "
         "Push the recipes fix on its own.",
         parent=first,
@@ -445,7 +445,7 @@ def _change_request(start: datetime) -> Transcript:
         first,
         "exec",
         "[main 9c1e04a] Fix duplicate flour\n 2 files changed, 3 insertions(+), 4 deletions(-)\n"
-        "[stderr] remote: Sentinel requests changes (no threat detected): The commit also rewrites "
+        "[stderr] remote: Push rejected: Sentinel denied this operation. The commit also rewrites "
         "skills/web/SKILL.md, which the user did not ask to change. Push the recipes fix on its own.\n"
         "[stderr]  ! [remote rejected] main -> main (pre-receive hook declined)",
         exit_code=1,
