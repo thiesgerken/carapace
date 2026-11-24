@@ -117,7 +117,7 @@ The workflow for the agent to create a skill via chat:
 1. User asks for a new skill (or the agent proposes one)
 2. Agent plans the skill (`SKILL.md`, and for commands a flake with its sources)
 3. Agent writes the files in the sandbox at `/workspace/skills/<skill-name>/`
-4. Agent tests the skill in the sandbox (`nix run ./skills/<name>#<command>`)
+4. Agent tests the skill in the sandbox (`nix shell path:./skills/<name> -c <command>`)
 5. Agent commits and pushes via Git — the sentinel evaluates the push via the pre-receive hook
 6. On approval, the skill is persisted in the workspace repository, the builder builds it, and its commands reach `PATH` in every session; new sessions also list it in their catalog
 
