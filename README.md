@@ -26,15 +26,15 @@
   <a href="charts/carapace/README.md">⚓ Helm Chart</a>
 </p>
 
-carapace is a self-hosted AI agent with a web UI, CLI, and Matrix channel for operators who want an assistant they can actually reason about. Every meaningful action is evaluated by a dedicated sentinel LLM against your natural-language security policy, executed inside a containerized sandbox, and recorded in an audit trail. Its durable context is not hidden inside an app-specific database: personality, policy, skills, and archived sessions live in Git-backed knowledge repos you can inspect, diff, and sync.
+carapace is a self-hosted AI agent with a web UI, CLI, and Matrix channel for operators who want an assistant they can actually reason about. The agent works freely inside a containerized sandbox, and everything that leaves it (a domain, a credential, a push to its knowledge repo) is evaluated by a dedicated sentinel LLM against your natural-language security policy. Every action is recorded in an audit trail. Its durable context is not hidden inside an app-specific database: personality, policy, skills, and archived sessions live in Git-backed knowledge repos you can inspect, diff, and sync.
 
 ## Highlights
 
-- 🛡️ Sentinel-gated execution. Every non-trivial action is reviewed by a dedicated security agent that keeps session context, not a static allowlist spreadsheet.
+- 🛡️ Sentinel-gated boundary. Whatever a command wants from outside the sandbox is reviewed by a dedicated security agent that keeps session context, not a static allowlist spreadsheet.
 - ☸️ Kubernetes-ready sandboxes. Docker and Kubernetes runtimes are both supported, with StatefulSet-backed sandbox sessions, per-session PVCs, idle-to-zero scaling, and an optional warm pool of prestarted base sandboxes for faster Kubernetes claims.
 - 🗃️ Git-native per-user knowledge repos. `SOUL.md`, `USER.md`, `SECURITY.md`, skills, and archived sessions live in files you can inspect, diff, sync, and push upstream.
 - 🚫 No-direct-internet sandboxes. Sandbox workloads do not get ambient internet access; outbound traffic is forced through the proxy path.
-- 🔑 Context-scoped credentials. Secrets stay in your vault, with native Bitwarden support, and are only injected or fetched on demand for exec calls that have the matching approved skill context. Neither the agent nor the backend have a giant `.env` with all of your secrets.
+- 🔑 Exec-scoped credentials. Secrets stay in your vault, with native Bitwarden support, and are fetched on demand by the command that needs them, approved for that one exec. Neither the agent nor the backend have a giant `.env` with all of your secrets.
 - 👥 Multi-user. Bootstrap an admin user, then manage users, roles, passwords, per-user models, Matrix, Git, and credential backends from Settings. Invite your family!
 - 📊 Diagrams in chat. ` ```mermaid ` blocks render as diagrams in the web UI (source toggle, copy, SVG download), and a bundled `mermaid` skill teaches the agent when and how to draw them.
 - 🧠 Long-term memory you can inspect. Archived sessions are distilled into per-session extractions and weekly and monthly digests of what was on your mind and what was learned about you, each with full provenance (model, prompt version, input, cost). LLM work runs as tasks in a budgeted queue that you control, and the results are mirrored as Markdown into your knowledge repo.
@@ -114,12 +114,12 @@ That makes the system inspectable in a way most agent projects are not. You can 
 
 ## Security Model
 
-- Sentinel agent evaluates every non-trivial action against a natural-language policy, not a rigid matrix of rules.
-- Strict veto semantics apply: if the safe path, sentinel, or user says no, the action does not proceed.
+- Sentinel agent evaluates every boundary request (proxy domain, credential, up-front `cgate request`, knowledge-repo push) against a natural-language policy, not a rigid matrix of rules. Tool calls are not reviewed, but every one is in the action log the sentinel judges with.
+- Strict veto semantics apply: if the sentinel or the user says no, the request does not proceed.
 - Sandboxed execution provides a hard boundary for file and process activity.
 - Outbound traffic goes through a proxy, with domain plausibility checks and visible approval events.
 - Domains, credentials, and tunnels are scoped to individual exec calls, so privileges do not accumulate across a long-running session.
-- Credential access is session-aware and auditable, with a fast path only when a matching skill context explicitly covers it.
+- Credential access is reviewed per exec and auditable; a skill command can declare its credentials up front for one review.
 - Git pushes from the knowledge workflow are security-reviewed like other sensitive actions.
 
 See [docs/security.md](docs/security.md), [docs/credentials.md](docs/credentials.md), and [docs/sandbox.md](docs/sandbox.md) for the full model.
@@ -200,7 +200,7 @@ npm --prefix frontend run lint
 For local development without Docker Compose:
 
 ```bash
-docker build -t carapace-sandbox:local sandbox
+docker load -i "$(nix build .#packages.x86_64-linux.sandbox-image --no-link --print-out-paths)"  # aarch64-linux.sandbox-image-lite on Apple Silicon
 CARAPACE_SANDBOX_BASE_IMAGE=carapace-sandbox:local uv run carapace-server
 npm --prefix frontend run dev
 uv run carapace

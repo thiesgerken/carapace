@@ -111,18 +111,19 @@ Look through `AGENTS.md`, `SOUL.md` and your skills for what no longer exists: `
 
 ## Converting a skill
 
-A skill with commands gets a `flake.nix` and a `flake.lock` next to its `SKILL.md` ([skill-flakes.md](skill-flakes.md)). The fields that used to be in its frontmatter move into the flake:
+A skill with `commands` or `mcp` gets a `flake.nix` and a `flake.lock` next to its `SKILL.md` ([skill-flakes.md](skill-flakes.md)), and the fields that used to be in its frontmatter move into the flake. A skill that only declared `network` or `credentials`, for ad-hoc use without commands, needs no flake: delete those fields, and its domains are reviewed when a command reaches them, its credentials fetched with `ccred get`.
 
 | Old frontmatter (`metadata.carapace`) | In the flake |
 | --- | --- |
 | `network.domains` | `needs.domains`, per skill or per command |
-| `network.tunnels` (`host`, `remote_port`, `local_port`) | `needs.tunnels = [ "host:port" ]`. The client connects to the real host and port: `/etc/hosts` sends the name to a local forwarder, so there is no `local_port` any more ([sandbox.md](sandbox.md#tunnels)) |
+| `network.tunnels` (`host`, `remote_port`, `local_port`) | `needs.tunnels = [ "host:port" ]`. The client connects to the real host and port: `/etc/hosts` sends the name to a local forwarder, so there is no `local_port` any more ([sandbox.md](sandbox.md#tunnels)). The host must be a name, not an IP address, and a host on your LAN also needs the [internal-destination allowlist](#sandboxes) |
 | `credentials` with `env_var` | `needs.credentials.<VAR> = "<vault path>"` |
 | `credentials` with `file` | the command fetches it itself: `ccred get <vault path> -o <file>` ([credentials.md](credentials.md#skill-declared-credentials)) |
 | `credentials` with `base64` | the command decodes the value itself |
+| `credentials` with neither `env_var` nor `file` | nothing: the agent fetches them with `ccred get <vault path>` when it needs them |
 | `commands` (`name`, `command`) | `mkSkill { commands.<name> = { exec = …; description = …; }; }`. A `uv run --directory …` becomes `"${skill.uvEnv { root = ./.; }}/bin/<script>"` |
-| `mcp` (HTTP, `auth.type: bearer` or `oauth`) | `skill.mcpCommands { <name> = { url = …; bearer = …; }; }` (or `oauth = …`) |
-| `mcp` (stdio, `command`) | `skill.mcpCommands { <name> = { command = …; needs.credentials… }; }` |
+| `mcp` (HTTP, `auth.type: bearer` or `oauth`) | `skill.mcpCommands { <name> = { url = …; bearer = "<vault path>"; description = …; }; }` (or `oauth = "<vault path>"`). The URL must be `https://` with a host name: `http://` and IP addresses fail the evaluation. `description` is required ([skill-flakes.md](skill-flakes.md#mcp-servers)) |
+| `mcp` (stdio, `command`) | `skill.mcpCommands { <name> = { command = …; description = …; needs.credentials… }; }` |
 | `disabled`, `hints` | stay in the frontmatter |
 
 Then delete `network`, `credentials`, `commands` and `mcp` from the frontmatter. Their presence is what marks the skill as broken.
@@ -180,6 +181,6 @@ Old turns keep their recorded `gate` spans in the [debug view](debug-view.md). N
 
 ## Checking the upgrade
 
-1. The server log shows no builder warning at start, and on Kubernetes the egress self-test passes.
-2. In the Knowledge view, every skill with a flake shows a successful build.
-3. Ask the agent to use a skill with commands, e.g. `wikipedia`. It calls `read_skill`, which waits for the build and the profile sync, then runs the command. Its first domain request asks the sentinel, or you if the sentinel escalates.
+1. The server log shows no builder warning at start, and the egress self-test passes.
+2. In the Knowledge view, every enabled skill with a flake shows a successful build. Disabled skills (`web` and `ferret` after re-seeding) are not built.
+3. Ask the agent to use a skill with commands, e.g. `wikipedia`. It calls `read_skill`, which waits for the build and the profile sync, then runs the command. Its wrapper first sends an up-front `cgate request` for the Wikipedia domains, which the sentinel decides, or you if the sentinel escalates.

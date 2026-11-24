@@ -146,7 +146,7 @@ On Linux:
 nix flake check
 ```
 
-`checks.<system>` includes `pytest`, `pyrefly`, `ruff`, `frontend-lint`, `frontend-test`, `frontend-build`, and `helm`. For the commands below, `<system>` is `x86_64-linux` or `aarch64-linux`.
+`checks.<system>` includes `pytest`, `pyrefly`, `ruff`, `frontend-lint`, `frontend-test`, `frontend-build`, `helm`, and the skill checks: `skill-wrapper-contract`, the examples (`skill-example-*`, `skill-examples-run`) and the bundled skills (`skill-bundled-*`, `skill-bundled-run`). For the commands below, `<system>` is `x86_64-linux` or `aarch64-linux`.
 
 SHA-256-pinned `cl100k_base` and `o200k_base` BPE files populate a shared tiktoken cache used by checks and the server image, so tokenization needs no first-use network download on a fresh pod.
 
@@ -235,7 +235,7 @@ The [release workflow](../.github/workflows/release.yml) runs in two steps. The 
 gh workflow run release.yml --ref main -f candidate=<full SHA of the release commit>
 ```
 
-A re-dispatched candidate builds the sandbox image again, so its `<version>` tag moves to the new build's digest; the Nix images are matched by store path and stay as they are. Until that candidate is published, the next push run fails because a release is pending. To see what the next release would contain, run `nix run --inputs-from . presswerk -- plan` on an up-to-date `main` (with `GITHUB_TOKEN="$(gh auth token)"`, since it checks the previous GitHub Release). See Presswerk's [recovery guide](https://presswerk.dev/guide/recovery/) for anything else.
+A re-dispatched candidate publishes the same images, since they are matched by store path. Until that candidate is published, the next push run fails because a release is pending. To see what the next release would contain, run `nix run --inputs-from . presswerk -- plan` on an up-to-date `main` (with `GITHUB_TOKEN="$(gh auth token)"`, since it checks the previous GitHub Release). See Presswerk's [recovery guide](https://presswerk.dev/guide/recovery/) for anything else.
 
 See the native builder's [known constraints](https://docs.determinate.systems/troubleshooting/native-linux-builder/) for shared-store filesystem and builder configuration issues.
 

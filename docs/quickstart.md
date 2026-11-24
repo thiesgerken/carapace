@@ -186,7 +186,7 @@ carapace starts one Matrix channel per enabled user config, joins the allowed ro
 
 ## 6. Set up credentials
 
-carapace can fetch credentials from a password manager on demand. The agent does not have blanket access — every credential request is evaluated by the sentinel agent and requires explicit user approval the first time it is used in a session. Credentials are intended to be consumed inside the sandbox (auto-injected via skill config or fetched with `ccred`) and must never be echoed or logged. Two backends are available.
+carapace can fetch credentials from a password manager on demand. The agent does not have blanket access — every credential request is evaluated by the sentinel agent for the `exec` it comes from, and escalated to you when the sentinel is unsure. Credentials are intended to be consumed inside the sandbox (exported by a skill command's wrapper or fetched with `ccred`) and must never be echoed or logged. Two backends are available.
 
 ### File backend (local trusted users only)
 
@@ -303,7 +303,7 @@ If you use the file backend, add the key to your secrets file:
 echo "brave-api-key=your-brave-search-api-key" >> data/secrets.env
 ```
 
-Then make sure the credential is reachable as `vault/brave-api-key`. The simplest option is a file credential backend named `vault` that points at `data/secrets.env`. If you use a different backend name or path shape, update the bundled web skill metadata to match.
+Then make sure the credential is reachable as `vault/brave-api-key`. The simplest option is a file credential backend named `vault` that points at `data/secrets.env`. If you use a different backend name or path shape, change `credentials.BRAVE_API_KEY` in the bundled web skill's `flake.nix` to match.
 
 You can get a Brave Search API key at <https://brave.com/search/api/>.
 
