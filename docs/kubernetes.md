@@ -8,7 +8,7 @@ carapace supports Kubernetes as a sandbox runtime. Instead of Docker containers,
 - **RWO StorageClass** — any standard ReadWriteOnce provisioner. The server pod has its own data PVC; sandbox sessions each get a dedicated PVC.
 - **Container images** pushed to a registry accessible by the cluster (GHCR by default)
 - **Helm 3** installed locally
-- **User namespaces for pods** on the nodes that run the [skill builder](builder.md#kubernetes) (`hostUsers: false`, `procMount: Unmasked`), and Pod Security level `privileged` for it. That label covers every pod in its namespace, and in the release namespace it would also lift admission limits on the sandbox pods, so give the builder its own namespace (`builder.namespace`, see [builder](builder.md#kubernetes)). Or run the builder on a separate machine and set `builder.enabled: false`.
+- **User namespaces for pods** on the nodes that run the [skill builder](builder.md#kubernetes) (`hostUsers: false`, `procMount: Unmasked`), and Pod Security level `privileged` for it. The chart puts the builder into its own namespace, `<release namespace>-builder`, so the release namespace can enforce `baseline` (see [Pod security](#pod-security)). Or run the builder on a separate machine and set `builder.enabled: false`.
 - Published application images support **Linux x64**; native ARM Linux builds are a local development target.
 
 ## Quick start
@@ -18,6 +18,7 @@ carapace supports Kubernetes as a sandbox runtime. Instead of Docker containers,
 #    The ANTHROPIC_API_KEY line is optional: drop it and the server still starts, so an admin can
 #    configure the model catalog under Settings -> Admin -> Platform first.
 kubectl create namespace carapace
+kubectl label namespace carapace pod-security.kubernetes.io/enforce=baseline
 kubectl create secret generic carapace-secrets -n carapace \
   --from-literal=ANTHROPIC_API_KEY=sk-ant-... \
   --from-literal=CARAPACE_TOKEN=my-bootstrap-admin-password
@@ -316,7 +317,7 @@ The included `networkpolicy.yaml` restricts sandbox pods:
 
 This mirrors the Docker setup where sandbox containers are on an internal network with no direct internet access.
 
-A second policy covers the [skill builder](builder.md#kubernetes): ingress only from the server pod, on ports 8330 (build API) and 8331 (binary cache). Sandboxes reach the cache only through the server's session proxy, never directly.
+A second policy, in the builder namespace, covers the [skill builder](builder.md#kubernetes): ingress only from the server pod, on ports 8330 (build API) and 8331 (binary cache). Sandboxes reach the cache only through the server's session proxy, never directly.
 
 > **⚠️ SECURITY WARNING — NetworkPolicy is critical to carapace's security model**
 >
@@ -335,6 +336,12 @@ A second policy covers the [skill builder](builder.md#kubernetes): ingress only 
 > kubectl exec -it <sandbox-pod> -- curl -m 5 https://example.com
 > # This MUST fail (timeout / connection refused). If it succeeds, your NetworkPolicy is not being enforced.
 > ```
+
+## Pod security
+
+Label the release namespace `pod-security.kubernetes.io/enforce: baseline`. The chart doesn't own that namespace, so it doesn't set the label. Every pod there passes `baseline`: the chart's own Deployments and the sandbox pods the server creates (`allowPrivilegeEscalation: false`, all capabilities dropped, PVC volumes only). `restricted` doesn't fit, because sandboxes run as root. The label is a second layer behind the server: should the server's service account be misused, admission still rejects hostPath, host network and privileged pods.
+
+The builder needs `privileged` and gets its own namespace for it, `<release namespace>-builder` by default, created and labelled by the chart (`builder.namespace`, `builder.createNamespace`; see [builder](builder.md#kubernetes)). Only the server reaches it: the builder's NetworkPolicy admits server pods from the release namespace on ports 8330 and 8331.
 
 ## RBAC
 

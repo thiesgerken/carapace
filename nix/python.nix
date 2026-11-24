@@ -75,6 +75,7 @@ let
     fileset = lib.fileset.unions [
       ../src
       ../tests
+      ../charts
       ../sandbox
       ../scripts
       ../pyproject.toml
@@ -97,6 +98,8 @@ let
           pkgs.bash
           pkgs.coreutils
           pkgs.jq
+          # tests/test_pod_security.py renders the chart.
+          pkgs.kubernetes-helm
         ];
       }
       ''

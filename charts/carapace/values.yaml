@@ -58,11 +58,14 @@ builder:
   externalUrl: ""
   # -- URL of that builder's binary cache (port 8331), required with externalUrl
   externalCacheUrl: ""
-  # -- Namespace for the in-cluster builder (default: the release namespace). Its pod needs Pod
-  # Security level `privileged`, and that label applies to every pod in a namespace, sandboxes
-  # included. Under Pod Security enforcement, create a separate namespace labelled
-  # `pod-security.kubernetes.io/enforce: privileged` and name it here. The chart does not create it.
+  # -- Namespace for the in-cluster builder (default: `<release namespace>-builder`). Its pod needs
+  # Pod Security level `privileged`, and that label applies to every pod in a namespace, sandboxes
+  # included, so the builder gets its own. The release namespace itself works with `baseline`.
   namespace: ""
+  # -- Create the builder namespace, labelled `pod-security.kubernetes.io/enforce: privileged`. Helm
+  # keeps it on uninstall, so the store PVC in it survives. Set to false when the namespace is
+  # managed elsewhere (GitOps); it then needs that label.
+  createNamespace: true
   image:
     registry: ghcr.io
     repository: thiesgerken/carapace-builder
