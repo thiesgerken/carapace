@@ -130,6 +130,7 @@ ccred search gmail
 ccred get <backend>/<id>
 ccred get <backend>/<id> --login
 ccred get <backend>/<id> --json
+ccred get <backend>/<id> --access-token
 ccred get <backend>/<id> -o ~/.ssh/id_ed25519
 ```
 
@@ -137,7 +138,8 @@ ccred get <backend>/<id> -o ~/.ssh/id_ed25519
 - `get` returns the raw password/value by default (or writes it to `-o` with mode `0400`).
 - `--login` returns the provider login name when supported. Bitwarden supports it; unsupported providers fail with a non-zero exit code.
 - `--json` returns the complete provider-specific item. Every provider supports this.
-- `--login` and `--json` are mutually exclusive and go through normal credential approval rather than skill-context approval.
+- `--access-token` returns a short-lived access token of an OAuth entry, which Carapace refreshes; `--refresh` forces a new one, once per `exec`. The entry itself (it holds the refresh token) is refused in every other form. See [skill-flakes.md](skill-flakes.md#oauth) for its format.
+- `--login`, `--json` and `--access-token` are mutually exclusive and go through normal credential approval rather than skill-context approval.
 - Every command blocks until the sentinel (or the user, if it escalates) decides. A denial exits with status 1 and prints the reason on stderr, e.g. `error: Sentinel denied this operation. <explanation>`; the calling script decides how to continue.
 - An approval holds for the rest of the `exec`, for the representation that was asked for: asking again for the same credential in the same form returns without another review, while `--login` or `--json` after an approved password is reviewed again. The next `exec` asks again.
 
@@ -148,6 +150,7 @@ A command that knows its credentials in advance can declare them with `cgate req
 ## API surface (sandbox-only)
 
 - `GET /credentials?q=<query>`: list/search metadata (approval-gated per exec)
+- `GET /oauth-token/{vault_path}[?refresh=true]`: access token of an OAuth entry (approval-gated per exec)
 - `GET /credentials/{vault_path}?kind=password|login|json`: fetch the selected representation (approval-gated per exec)
 
 A denial is a `403` with the explanation as a plain-text body.

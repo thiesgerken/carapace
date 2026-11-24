@@ -23,6 +23,7 @@ import carapace.usage as usage_mod
 from carapace.models.credentials import CredentialRegistryProtocol
 from carapace.models.session import SessionFork
 from carapace.models.skills import ContextGrant, SkillCredentialDecl
+from carapace.sandbox.runtime import SkillActivationError
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.usage import InputShapeRatios, LlmRequestLog, LlmRequestRecord, LlmRequestState, ModelUsage
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel, _without_timestamps
@@ -904,3 +905,27 @@ def test_finalize_failed_turn_dispatches_unattended_failure_notification(tmp_pat
 
     with _patch_sentinel():
         asyncio.run(_run())
+
+
+@pytest.mark.anyio
+async def test_skill_activation_never_injects_an_oauth_entry(tmp_path: Path, db_factory):
+    skill_name = "oauth-skill"
+    skill_dir = tmp_path / "skills" / skill_name
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        f"---\nname: {skill_name}\nmetadata:\n  carapace:\n    credentials:\n"
+        "      - vault_path: vault/oauth\n        description: OAuth\n        env_var: TOKEN\n---\n"
+    )
+    mock_reg = AsyncMock(spec=CredentialRegistryProtocol)
+    mock_reg.fetch = AsyncMock(return_value='{"token_uri": "https://issuer.example.com", "refresh_token": "rt"}')
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory, credential_registry=mock_reg)
+    sid = engine.session_mgr.create_session(user="thies").session_id
+    engine.get_or_activate(sid).state.context_grants[skill_name] = ContextGrant(
+        skill_name=skill_name,
+        credential_decls=[SkillCredentialDecl(vault_path="vault/oauth", description="OAuth", env_var="TOKEN")],
+    )
+
+    with pytest.raises(SkillActivationError, match="refresh token"):
+        await engine._skill_activation_inputs(sid, skill_name)
+    engine._sandbox_mgr.cache_credential.assert_not_called()

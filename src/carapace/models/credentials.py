@@ -18,6 +18,8 @@ class CredentialMetadata(BaseModel):
 
 
 CredentialValueKind = Literal["password", "login", "json"]
+# Not a vault representation: Carapace refreshes an OAuth state blob and hands out only its access token.
+type OAuthAccessTokenKind = Literal["oauth_access_token"]
 
 
 @runtime_checkable

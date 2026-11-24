@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""mcp: call the tools of an MCP server from the command line.
+
+Usage:
+    mcp (--url URL [--bearer-env VAR | --oauth VAULT_PATH] | --stdio COMMAND) [--name NAME] --list-tools [--json]
+    mcp ... TOOL --help | --schema
+    mcp ... TOOL [--PROPERTY VALUE]... [--json BODY]
+
+One process per call: the server is connected, initialized, asked once, and dropped. Through a skill,
+`<server> <tool> …` runs this with the server's address and credential filled in; the contract is
+documented in docs/sandbox.md.
+
+Exit status: 0 success, 1 the call failed or the tool reported an error (the message is on stderr),
+2 usage error.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import subprocess
+import sys
+from collections.abc import AsyncIterator, Generator
+from contextlib import asynccontextmanager
+from typing import Any, NoReturn
+
+import httpx2
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamable_http_client
+from mcp.shared._httpx_utils import create_mcp_http_client
+
+_SCALARS = {"string": str, "integer": int, "number": float}
+
+
+class _CcredOAuth(httpx2.Auth):
+    """Bearer auth with a short-lived access token from `ccred`; one fresh token after a 401.
+
+    The refresh token stays with Carapace: `ccred get --access-token` returns only the access token.
+    """
+
+    def __init__(self, vault_path: str) -> None:
+        self._vault_path = vault_path
+        # One call makes several requests; all of them use the latest token, so a refresh happens once.
+        self._current: str | None = None
+
+    def _token(self, *, refresh: bool) -> str:
+        command = ["ccred", "get", self._vault_path, "--access-token", *(["--refresh"] if refresh else [])]
+        done = subprocess.run(command, capture_output=True, text=True, check=False)
+        if done.returncode != 0:
+            _fail(f"no access token for {self._vault_path}: {done.stderr.strip()}")
+        return done.stdout.strip()
+
+    def auth_flow(self, request: httpx2.Request) -> Generator[httpx2.Request, httpx2.Response]:
+        if self._current is None:
+            self._current = self._token(refresh=False)
+        request.headers["Authorization"] = f"Bearer {self._current}"
+        response = yield request
+        if response.status_code == 401:
+            self._current = self._token(refresh=True)
+            request.headers["Authorization"] = f"Bearer {self._current}"
+            yield request
+
+
+def _fail(message: str) -> NoReturn:
+    print(f"error: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+@asynccontextmanager
+async def _session(server: argparse.Namespace) -> AsyncIterator[ClientSession]:
+    if server.stdio is not None:
+        params = StdioServerParameters(command="bash", args=["-c", server.stdio], env=dict(os.environ))
+        transport = stdio_client(params, errlog=sys.stderr)
+    else:
+        headers: dict[str, str] = {}
+        if server.bearer_env is not None:
+            token = os.environ.get(server.bearer_env)
+            if not token:
+                _fail(f"{server.bearer_env} is not set")
+            headers["Authorization"] = f"Bearer {token}"
+        auth = _CcredOAuth(server.oauth) if server.oauth is not None else None
+        transport = streamable_http_client(server.url, http_client=create_mcp_http_client(headers=headers, auth=auth))
+    async with transport as (read, write), ClientSession(read, write) as session:
+        await session.initialize()
+        yield session
+
+
+def _json_value(raw: str) -> Any:
+    """A JSON value given literally, as `@file`, or as `-` for stdin."""
+    if raw == "-":
+        text = sys.stdin.read()
+    elif raw.startswith("@"):
+        with open(raw[1:]) as f:
+            text = f.read()
+    else:
+        text = raw
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise argparse.ArgumentTypeError(f"not valid JSON: {e}") from None
+
+
+def _scalar_type(schema: dict[str, Any]) -> str | None:
+    """The scalar JSON type a flag can parse, or None when the value needs JSON."""
+    types = schema.get("type")
+    candidates = [t for t in (types if isinstance(types, list) else [types]) if t != "null"]
+    return candidates[0] if len(candidates) == 1 and candidates[0] in (*_SCALARS, "boolean") else None
+
+
+def _tool_parser(prog: str, tool: dict[str, Any]) -> argparse.ArgumentParser:
+    """One flag per top-level property: typed for scalars, repeatable for arrays of scalars, JSON otherwise.
+
+    Flags keep the property's exact name, so `--page_size` and `--pageSize` cannot collide.
+    """
+    parser = argparse.ArgumentParser(
+        prog=f"{prog} {tool['name']}",
+        description=tool["description"] or None,
+        epilog="Nested values take JSON: literal, @file, or - for stdin. --json passes the whole body.",
+    )
+    parser.add_argument("--schema", action="store_true", help="print the tool's input JSON Schema and exit")
+    parser.add_argument("--json", type=_json_value, metavar="BODY", help="the whole argument object as JSON")
+    properties = parser.add_argument_group("arguments")
+    required = set(tool["input_schema"].get("required", []))
+    colliding: list[str] = []
+    for name, prop in tool["input_schema"].get("properties", {}).items():
+        description = (prop.get("description") or "") + (" (required)" if name in required else "")
+        options: dict[str, Any] = {"dest": f"arg:{name}", "help": description}
+        kind = _scalar_type(prop)
+        if kind == "boolean":
+            options |= {"action": argparse.BooleanOptionalAction}
+        elif kind is not None:
+            options |= {"type": _SCALARS[kind], "choices": prop.get("enum"), "metavar": kind.upper()}
+        elif prop.get("type") == "array" and (item_kind := _scalar_type(prop.get("items", {}))) in _SCALARS:
+            options |= {"type": _SCALARS[item_kind], "action": "append", "metavar": item_kind.upper()}
+        else:
+            options |= {"type": _json_value, "metavar": "JSON"}
+        try:
+            properties.add_argument(f"--{name}", **options)
+        except argparse.ArgumentError:
+            # `--json`, `--schema`, `--help` or another property's `--no-x` has the name already.
+            colliding.append(name)
+    if colliding:
+        parser.epilog += f" Without a flag, because the name is taken: {', '.join(colliding)}; pass these with --json."
+    return parser
+
+
+def _body(parser: argparse.ArgumentParser, parsed: argparse.Namespace, required: list[str]) -> dict[str, Any]:
+    """The tool's argument object: from --json or from the flags, never both."""
+    flags = {
+        key.removeprefix("arg:"): value
+        for key, value in vars(parsed).items()
+        if key.startswith("arg:") and value is not None
+    }
+    if parsed.json is not None and flags:
+        parser.error(f"--json conflicts with --{next(iter(flags))}: pass the whole body or flags, not both")
+    body = parsed.json if parsed.json is not None else flags
+    if not isinstance(body, dict):
+        parser.error("--json must be a JSON object")
+    if missing := [name for name in required if name not in body]:
+        parser.error(f"missing required argument: --{missing[0]}")
+    return body
+
+
+def _tool_dict(tool: Any) -> dict[str, Any]:
+    return {"name": tool.name, "description": tool.description or "", "input_schema": tool.input_schema}
+
+
+def _print_result(result: Any) -> None:
+    """Text content as is, so the output pipes; structured content as JSON when there is no text."""
+    texts = [block.text for block in result.content if getattr(block, "type", None) == "text"]
+    if texts:
+        output = "\n".join(texts)
+    elif result.structured_content is not None:
+        output = json.dumps(result.structured_content, indent=2)
+    else:
+        output = json.dumps([block.model_dump(mode="json") for block in result.content], indent=2)
+    if result.is_error:
+        _fail(output or "the tool reported an error")
+    print(output)
+
+
+async def _run(server: argparse.Namespace, prog: str) -> None:
+    async with _session(server) as session:
+        tools = [_tool_dict(tool) for tool in (await session.list_tools()).tools]
+        if server.list_tools:
+            if server.json:
+                print(json.dumps(tools, indent=2))
+            else:
+                for tool in tools:
+                    summary = tool["description"].strip().splitlines()
+                    print(f"{tool['name']}\t{summary[0] if summary else ''}")
+            return
+        tool = next((t for t in tools if t["name"] == server.tool), None)
+        if tool is None:
+            print(f"{prog}: unknown tool {server.tool!r}; see --list-tools", file=sys.stderr)
+            sys.exit(2)
+        parser = _tool_parser(prog, tool)
+        parsed = parser.parse_args(server.rest)
+        if parsed.schema:
+            print(json.dumps(tool["input_schema"], indent=2))
+            return
+        body = _body(parser, parsed, tool["input_schema"].get("required", []))
+        _print_result(await session.call_tool(tool["name"], arguments=body))
+
+
+def _system_exit(exc: BaseException) -> SystemExit | None:
+    """A usage error raised inside the session, which the transport's task group wraps."""
+    if isinstance(exc, SystemExit):
+        return exc
+    if isinstance(exc, BaseExceptionGroup):
+        return next(filter(None, map(_system_exit, exc.exceptions)), None)
+    return None
+
+
+def _describe(exc: BaseException) -> str:
+    # asyncio task groups wrap the server's real error; show the leaves.
+    if isinstance(exc, BaseExceptionGroup):
+        return "; ".join(_describe(sub) for sub in exc.exceptions)
+    return f"{type(exc).__name__}: {exc}"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="mcp",
+        description="Call the tools of an MCP server: one connection per call.",
+        epilog=(
+            "examples:\n"
+            "  mcp --url https://mcp.example.com/mcp --list-tools\n"
+            "  mcp --stdio 'example-mcp-server --stdio' search --query nix --limit 5\n"
+            "  mcp --url https://mcp.example.com/mcp search --json @query.json\n"
+            "\n"
+            "A domain or credential the call needs is reviewed when it is requested, like any command's."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    transport = parser.add_mutually_exclusive_group(required=True)
+    transport.add_argument("--url", help="streamable HTTP endpoint of the server")
+    transport.add_argument("--stdio", metavar="COMMAND", help="shell command that starts the server on stdio")
+    auth = parser.add_mutually_exclusive_group()
+    auth.add_argument("--bearer-env", metavar="VAR", help="send the token in this environment variable")
+    auth.add_argument("--oauth", metavar="VAULT_PATH", help="send an access token from `ccred get --access-token`")
+    parser.add_argument("--name", help="the server's name in usage and error messages")
+    parser.add_argument("--list-tools", action="store_true", help="list the tools: name and first description line")
+    parser.add_argument("--json", action="store_true", help="with --list-tools: names, descriptions and schemas")
+    parser.add_argument("tool", nargs="?", help="the tool to describe or call")
+    parser.add_argument("rest", nargs=argparse.REMAINDER, help="the tool's arguments, --help or --schema")
+
+    server = parser.parse_args()
+    if server.stdio is not None and (server.bearer_env or server.oauth):
+        parser.error("--bearer-env and --oauth apply to --url; a stdio server gets credentials from its environment")
+    if server.list_tools == (server.tool is not None):
+        parser.error("give either --list-tools or a tool")
+    if server.json and not server.list_tools:
+        parser.error("--json before the tool only goes with --list-tools; a tool's --json comes after its name")
+    prog = server.name or "mcp"
+    try:
+        asyncio.run(_run(server, prog))
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
+        if (usage_exit := _system_exit(exc)) is not None:
+            raise usage_exit from None
+        _fail(_describe(exc))
+
+
+if __name__ == "__main__":
+    main()

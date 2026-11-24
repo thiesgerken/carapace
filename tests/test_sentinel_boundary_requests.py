@@ -155,6 +155,7 @@ async def test_an_upfront_request_shows_everything_declared_and_the_whole_exec(t
     request = UpfrontRequest(
         domains=["api.example.com", "*.cdn.example.com"],
         credentials=[CredentialMetadata(vault_path="demo/api-key", name="Example API", description="read-only")],
+        access_tokens=[CredentialMetadata(vault_path="demo/tracker-oauth", name="Tracker", description="")],
         store_path="/nix/store/abc-example-skill",
     )
 
@@ -164,6 +165,10 @@ async def test_an_upfront_request_shows_everything_declared_and_the_whole_exec(t
     assert "EVALUATE upfront_request" in prompt
     assert "Domains: api.example.com, *.cdn.example.com" in prompt
     assert "- demo/api-key (Example API): read-only" in prompt
+    assert (
+        "OAuth access tokens (short-lived; the refresh token stays with Carapace):\n- demo/tracker-oauth (Tracker)"
+        in prompt
+    )
     assert "Caller store path: /nix/store/abc-example-skill (matches the build for the current head: unknown)" in prompt
     assert "Running exec: example-sync --all" in prompt
 
@@ -196,7 +201,7 @@ async def test_an_escalated_upfront_request_with_domains_only_asks_the_user() ->
         return UserEscalationDecision(allowed=True)
 
     security.set_user_escalation_callback(allow)
-    request = UpfrontRequest(domains=["uploads.example.net"], credentials=[], store_path=None)
+    request = UpfrontRequest(domains=["uploads.example.net"], credentials=[], access_tokens=[], store_path=None)
 
     evaluation = await evaluate_upfront_request_with(security, sentinel, request, "example-upload", follow_up=False)
 

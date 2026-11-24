@@ -5,10 +5,10 @@ from __future__ import annotations
 import secrets
 from dataclasses import dataclass, field
 
-from ..models.credentials import CredentialValueKind
+from ..models.credentials import CredentialValueKind, OAuthAccessTokenKind
 
 # What an approved credential request covers: a vault path in one representation, or a listing (no kind).
-type CredentialGrant = tuple[str, CredentialValueKind | None]
+type CredentialGrant = tuple[str, CredentialValueKind | OAuthAccessTokenKind | None]
 
 
 @dataclass(eq=False, slots=True)
@@ -23,3 +23,5 @@ class RunningExec:
     boundary_reviewed: bool = False
     # Names this exec where the security layer must tell it from the next one, e.g. its domain decisions.
     exec_id: str = field(default_factory=lambda: secrets.token_hex(8))
+    # Vault paths whose OAuth access token this exec already forced a refresh of: one each, after a 401.
+    oauth_refreshed: set[str] = field(default_factory=set)

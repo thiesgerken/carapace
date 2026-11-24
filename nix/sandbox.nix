@@ -115,10 +115,10 @@ let
   };
 
   sandboxScripts = pkgs.runCommand "carapace-sandbox-scripts" { } ''
-    for script in ccred cgate setup-proxy.sh carapace-skill-activator carapace-mcp-bridge; do
+    for script in ccred cgate mcp setup-proxy.sh carapace-skill-activator carapace-mcp-bridge; do
       install -Dm755 ${../sandbox}/$script "$out/bin/$script"
     done
-    sed -i '1c#!${mcpBridgeEnv}/bin/python' "$out/bin/carapace-mcp-bridge"
+    sed -i '1c#!${mcpBridgeEnv}/bin/python' "$out/bin/carapace-mcp-bridge" "$out/bin/mcp"
   '';
 
   nixConf = pkgs.writeText "nix.conf" ''
