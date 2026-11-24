@@ -953,7 +953,6 @@
             "accessTitle": "Zugriffsanfrage",
             "domainsLabel": "Domains:",
             "credentialsLabel": "Zugangsdaten:",
-            "skillLabel": "Skill:",
             "allow": "Erlauben",
             "denyPlaceholder": "Warum sollte dieser Zugang blockiert werden?",
             "decision": {

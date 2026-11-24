@@ -78,6 +78,7 @@ interface ToolCallBadgeProps {
   artifactReference?: ArtifactReference;
 }
 
+// "skill" only appears on tool calls stored before skill contexts were dropped; their transcripts still render.
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "unknown";
 
 const TOOL_ICONS: Record<string, LucideIcon> = {

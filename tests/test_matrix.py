@@ -969,7 +969,7 @@ async def test_subscriber_attachment_only_message_is_forwarded(tmp_path: Path, d
 
 
 @pytest.mark.anyio
-async def test_read_skill_waits_become_notices(tmp_path: Path, db_factory):
+async def test_only_the_skill_build_wait_becomes_a_notice(tmp_path: Path, db_factory):
     ch = _make_channel(tmp_path, db_factory)
     room_id = "!room:example.com"
     ch._send_notice = AsyncMock()
@@ -983,7 +983,4 @@ async def test_read_skill_waits_become_notices(tmp_path: Path, db_factory):
     await sub.on_span(notice("b", "skill", "profile sync", "running"))
     await sub.on_span(notice("c", "sandbox", "ensure", "running"))
 
-    assert [call.args[1] for call in ch._send_notice.await_args_list] == [
-        "⏳ Waiting for the skill build…",
-        "⏳ Installing the skill's commands…",
-    ]
+    assert [call.args[1] for call in ch._send_notice.await_args_list] == ["⏳ Waiting for the skill build…"]

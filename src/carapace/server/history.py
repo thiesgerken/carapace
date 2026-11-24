@@ -86,7 +86,6 @@ class HistoryMessage(BaseModel):
     names: list[str] | None = None
     descriptions: list[str] | None = None
     domains: list[str] | None = None
-    skill_name: str | None = None
     tool_id: str | None = None
     model_tool_call_id: str | None = None
     parent_tool_id: str | None = None

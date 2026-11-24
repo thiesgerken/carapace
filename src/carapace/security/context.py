@@ -168,6 +168,8 @@ class UnattendedSentinelVerdict(BaseModel):
     )
 
 
+# Nothing assigns "skill" any more, but tool calls stored before skill contexts were dropped (migration 0018)
+# carry it, and their history still has to load.
 ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "autonomy", "unknown"]
 ApprovalVerdict = Literal["allow", "revise", "deny", "escalate"]
 type FinalDecision = Literal["auto_allowed", "allowed", "changes_requested", "escalated", "denied"]

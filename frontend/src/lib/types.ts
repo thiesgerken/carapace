@@ -264,7 +264,6 @@ export interface HistoryMessage {
   names?: string[];
   descriptions?: string[];
   domains?: string[];
-  skill_name?: string;
   tool_id?: string;
   parent_tool_id?: string;
   compaction?: CompactionAnnotation;
@@ -451,7 +450,6 @@ export interface CredentialApprovalRequest {
   descriptions: string[];
   /** Domains an up-front request (`cgate request`) asks for next to its credentials. */
   domains: string[];
-  skill_name?: string;
   explanation: string;
 }
 

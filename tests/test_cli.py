@@ -414,7 +414,7 @@ def test_job_create_reads_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ("POST", "/api/jobs", {"name": "j"}) in _FakeAgentClient.calls
 
 
-def test_read_skill_waits_are_shown_while_they_run(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_only_the_skill_build_wait_is_shown(monkeypatch: pytest.MonkeyPatch) -> None:
     console = Console(record=True, width=200)
     monkeypatch.setattr(cli_module, "console", console)
     span = {"type": "span", "turn_id": "t", "kind": "skill", "tool_call_id": "toolu_1"}
@@ -431,4 +431,5 @@ def test_read_skill_waits_are_shown_while_they_run(monkeypatch: pytest.MonkeyPat
     asyncio.run(cli_module._read_server_responses(ws))
 
     lines = [line.strip() for line in console.export_text().splitlines() if line.strip()]
-    assert lines[:2] == ["waiting for the skill build…", "installing the skill's commands…"]
+    assert lines[0] == "waiting for the skill build…"
+    assert "Done." in lines[1]

@@ -43,12 +43,6 @@ export function CredentialApprovalCard({
       </div>
 
       <div className="space-y-1.5">
-        {request.skill_name && (
-          <div>
-            <span className="text-muted-foreground">{t("skillLabel")} </span>
-            <span className="font-medium">{request.skill_name}</span>
-          </div>
-        )}
         {hasDomains && (
           <div className="space-y-1">
             <div className="text-xs text-muted-foreground">{t("domainsLabel")}</div>

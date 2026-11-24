@@ -52,7 +52,7 @@ test("existing unattended sessions still lock after a submitted message already 
 });
 
 test("user-approved tool call survives reload when the server rewrote the escalated event in place", () => {
-  const args = { command: "git push", contexts: [] };
+  const args = { command: "git push" };
   const messages = projectHistoryToMessages([
     {
       role: "tool_call",

@@ -229,7 +229,6 @@ def test_an_escalated_upfront_request_reaches_the_user_with_its_domains(tmp_path
             ["Example API"],
             ["read-only"],
             ["uploads.example.net"],
-            None,
             "Unknown upload host.",
         )
         events = engine.session_mgr.load_events(sid)
