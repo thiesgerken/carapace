@@ -576,7 +576,6 @@ class SessionTurnMixin(SessionTurnHost):
                     "tool": req.tool,
                     "args": req.args,
                     "explanation": req.explanation,
-                    "risk_level": req.risk_level,
                 }
             ],
         )

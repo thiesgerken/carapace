@@ -77,10 +77,10 @@ Each message is one JSON object with a `type` field.
 | `tool_call_end`                  | Model stopped writing the call                      | `tool_call_id`, `aborted`                                                                        |
 | `tool_call`                      | Tool started / security notification                | `tool`, `args`, `detail`; optional `approval_source`, `approval_verdict`, `approval_explanation`, `approval_comment` |
 | `tool_result`                    | Tool finished                                       | `tool`, `result`, `exit_code`                                                                    |
-| `approval_request`               | Sentinel escalated a **tool** to the user           | `tool_call_id`, `tool`, `args`, `explanation`, `risk_level`                                      |
+| `approval_request`               | A **tool** call is held at the autonomy limit       | `tool_call_id`, `tool`, `args`, `explanation`                                                    |
 | `domain_access_approval_request` | Sentinel escalated **proxy domain** access          | `request_id`, `domain`, `command`                                                                |
 | `git_push_approval_request`      | Sentinel escalated **git push**                     | `request_id`, `ref`, `explanation`, `changed_files`                                              |
-| `credential_approval_request`    | Sentinel escalated **credential** access            | `request_id`, `vault_paths`, `names`, `descriptions`, optional `skill_name`, `explanation`       |
+| `credential_approval_request`    | Sentinel escalated **credential** access or an up-front request | `request_id`, `vault_paths`, `names`, `descriptions`, `domains`, `explanation`       |
 | `done`                           | Agent turn finished                                 | `content` (final assistant text), `turn_id`, optional `usage`, optional `final_status`           |
 | `command_result`                 | Slash command or turn-control acknowledgement       | `command`, `data` (arbitrary)                                                                    |
 | `error`                          | Parse error, unknown command, busy agent, etc.      | `detail`, `turn_terminal`; on the error that ended a turn also its `turn_id`                     |
@@ -111,7 +111,7 @@ streaming its arguments, not on the waiting line below the messages.
 ### `span`
 
 Every span of the running turn sends one message when it starts and one when it ends: `turn_id`,
-`span_id`, `kind` (`tool`, `gate`, `sentinel`, `sandbox`, `skill`, `domain`, `wait`, `llm`, ...),
+`span_id`, `kind` (`tool`, `sentinel`, `sandbox`, `skill`, `domain`, `wait`, `llm`, ...),
 `name` (a tool's name, a sandbox step, a domain) and `status`. `tool_call_id` is the provider's id of
 the tool call whose `tool` span the span is or nests under, `null` outside one. Calls from inside the
 sandbox (proxy domain checks) nest under the newest running exec, with parallel execs possibly the
@@ -138,13 +138,13 @@ While the agent model writes a tool call, the client sees it before it runs:
 
 1. `tool_call_start` as soon as the model starts the call.
 2. `tool_call_delta` with the args text written since the previous delta, at most about twenty per second and call. Concatenated, the deltas are the call's JSON args; parsing the partial JSON is up to the client. Providers that hand over args as an object send them as one delta at the end.
-3. `tool_call_end`. `aborted: false` means the args are complete: the call goes to the security gate and shows up as `tool_call` (later `tool_result`) with the same `tool_call_id`, or as an `approval_request`, whose `tool_call_id` is that id too. `aborted: true` means the request was cancelled or failed while the call was still being written; the turn's `cancelled` or `error` follows.
+3. `tool_call_end`. `aborted: false` means the args are complete: the call shows up as `tool_call` (later `tool_result`) with the same `tool_call_id`, or as an `approval_request`, whose `tool_call_id` is that id too. `aborted: true` means the request was cancelled or failed while the call was still being written; the turn's `cancelled` or `error` follows.
 
 Parallel calls in one response each stream under their own `tool_call_id`. Some OpenAI-compatible servers reuse ids (`call_0`) across responses, so a `tool_call_start` with an id the client has already seen starts a new card, and later messages with that id belong to the newest one. A provider that sends a call's id only after its name streams it under a stand-in id the executed call does not carry; the server logs a warning, and the card ends up "not run" next to the real call. A finished call can still never run, for instance when its args fail validation, so a client should mark a card still waiting for its `tool_call` when the turn ends as not run, and keep it visible. `list_skills` sends no `tool_call`, only its `tool_result`. Only the agent role streams calls; sentinel, titler and compaction requests do not. Nothing of this is persisted: history only has the executed call, and a client that connects mid-call sees it from its `tool_call` on.
 
 ### Streamed tool calls in the web UI
 
-The web UI opens a tool card at `tool_call_start`, before the gate runs, and fills it from the
+The web UI opens a tool card at `tool_call_start`, before the call runs, and fills it from the
 `tool_call_delta`s: it appends them to the args text and parses that tolerantly
 ([partial-json](https://www.npmjs.com/package/partial-json)), so the card shows what the final one
 will (the command of an `exec`, the file text of a `write` with its line breaks). A box below the row
@@ -172,13 +172,15 @@ long args stay cheap.
 
 When present:
 
-- `approval_source`: `safe-list` \| `sentinel` \| `user` \| `skill` \| `bypass` \| `unknown`
+- `approval_source`: `safe-list` \| `sentinel` \| `user` \| `skill` \| `bypass` \| `autonomy` \| `unknown`
 - `approval_verdict`: `allow` \| `revise` \| `deny` \| `escalate`
-- `approval_comment`: what the sentinel told the agent about a tool call or git push it allowed (see [Sentinel comments](security.md#sentinel-comments))
+- `approval_comment`: what the sentinel told the agent about a git push it allowed (see [Sentinel comments](security.md#sentinel-comments))
+
+**`safe-list`** — every agent tool call, in YOLO mode too: none is reviewed by itself (see [Tool calls](security.md#tool-calls)). The name is historical; there is no list.
 
 **`skill`** — only in sessions from before skills were read instead of activated: the action was covered by a skill's context grant.
 
-**`bypass`** — the action was allowed without sentinel evaluation because the session is in YOLO mode.
+**`bypass`** — a boundary request or push was allowed without sentinel evaluation because the session is in YOLO mode.
 
 ## Turn-control messages
 

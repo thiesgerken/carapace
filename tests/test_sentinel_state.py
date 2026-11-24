@@ -42,7 +42,7 @@ async def test_restart_continues_the_shadow_conversation(tmp_path: Path, db_fact
     sid = SessionManager(db_factory, tmp_path).create_session(user="thies").session_id
     security = _restarted(sid, db_factory)
     security.append(UserMessageEntry(content="list my files"))
-    await _sentinel(tmp_path).evaluate_tool_call(security, "exec", {"command": "ls"})
+    await _sentinel(tmp_path).evaluate_domain_access(security, ["example.com"], "ls", follow_up=False)
     security.append(ToolCallEntry(tool="exec", args={"command": "ls"}, decision="allowed"))
 
     restarted = _restarted(sid, db_factory)
@@ -55,7 +55,7 @@ async def test_restart_continues_the_shadow_conversation(tmp_path: Path, db_fact
         "[tool]: exec(command='ls') → allowed",
     ]
 
-    await _sentinel(tmp_path).evaluate_tool_call(restarted, "exec", {"command": "pwd"})
+    await _sentinel(tmp_path).evaluate_domain_access(restarted, ["example.com"], "pwd", follow_up=False)
 
     continued = _restarted(sid, db_factory).sentinel_messages
     assert continued[: len(security.sentinel_messages)] == security.sentinel_messages
@@ -77,7 +77,7 @@ async def test_timed_out_evaluation_keeps_entries_unsynced(
         await asyncio.sleep(1)
 
     monkeypatch.setattr(sentinel.agent, "run", _hang)
-    verdict = await sentinel.evaluate_tool_call(security, "exec", {"command": "ls"})
+    verdict = await sentinel.evaluate_domain_access(security, ["example.com"], "ls", follow_up=False)
 
     assert verdict.decision == "deny"
     restarted = _restarted(sid, db_factory)

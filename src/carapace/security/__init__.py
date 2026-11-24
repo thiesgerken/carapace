@@ -5,7 +5,6 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from pydantic_ai import ApprovalRequired
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
@@ -18,10 +17,8 @@ from .context import (
     AuditEntry,
     BoundaryEvaluation,
     CachedDomainApproval,
-    ChangesRequestedError,
     DomainBatchSnapshot,
     GitPushEntry,
-    SecurityDeniedError,
     SentinelVerdict,
     SessionSecurity,
     ToolCallEntry,
@@ -34,30 +31,6 @@ from .context import ActionLogEntry as ActionLogEntry
 from .context import CredentialAccessEntry as CredentialAccessEntry
 from .sentinel import Sentinel
 
-SAFE_TOOLS: frozenset[str] = frozenset(
-    {
-        "read",
-        "write",
-        "str_replace",
-        "list_skills",
-        # Reading a skill grants nothing; the call stays in the action log so the sentinel knows what later
-        # requests are about.
-        "read_skill",
-        "send_file",
-        # Shows an already pushed artifact (the push itself was gated) and sends nothing out.
-        "show_artifact",
-        # Only returns tool output this session's agent has already seen.
-        "read_tool_output",
-        # The sandbox is the boundary: a command only reaches the outside through the proxy, `ccred`
-        # or `cgate`, and each of those is reviewed when it asks. The exec itself stays in the action log.
-        "exec",
-    }
-)
-
-
-def _is_safe(tool_name: str) -> bool:
-    return tool_name in SAFE_TOOLS
-
 
 def _fallback_verdict(session: SessionSecurity, *, explanation: str) -> SentinelVerdict:
     return SentinelVerdict(
@@ -67,177 +40,33 @@ def _fallback_verdict(session: SessionSecurity, *, explanation: str) -> Sentinel
     )
 
 
-async def evaluate_with(
+def record_tool_call(
     session: SessionSecurity,
-    sentinel: Sentinel,
     tool_name: str,
     args: dict[str, Any],
     *,
-    usage_tracker: UsageTracker | None = None,
-    assert_llm_budget_available: Callable[[], None] | None = None,
-    usage_limits: UsageLimits | None = None,
     tool_call_callback: Any = None,
     tool_call_id: str | None,
 ) -> None:
-    """Main security gate. Auto-allows safe tools; asks the sentinel for everything else.
+    """Put an agent tool call into the action log, the audit log and the UI; tool calls are never reviewed.
 
-    Raises ApprovalRequired if the sentinel escalates, ChangesRequestedError if it wants the agent
-    to change its approach, or SecurityDeniedError if denied.
+    The sandbox is the boundary: what a call wants from outside is reviewed when it asks, and the sentinel
+    sees the call with the next such request.
     """
-    if session.yolo_mode:
-        explanation = "YOLO mode bypassed sentinel."
-        entry = ToolCallEntry(tool=tool_name, args=args, decision="allowed", explanation=explanation)
-        session.append(entry)
-        session.write_audit(
-            AuditEntry.now(
-                kind="tool_call",
-                tool=tool_name,
-                args_summary=args,
-                final_decision="allowed",
-                explanation=explanation,
-            )
-        )
-        _log_tool_call(
-            tool_name,
-            args,
-            "[bypass] yolo mode auto-allowed",
-            tool_call_callback,
-            tool_call_id=tool_call_id,
-            approval_source="bypass",
-            approval_verdict="allow",
-            approval_explanation=explanation,
-        )
-        return
-
-    if _is_safe(tool_name):
-        entry = ToolCallEntry(tool=tool_name, args=args, decision="auto_allowed")
-        session.append(entry)
-        session.write_audit(
-            AuditEntry.now(
-                kind="tool_call",
-                tool=tool_name,
-                args_summary=args,
-                final_decision="auto_allowed",
-            )
-        )
-        _log_tool_call(
-            tool_name,
-            args,
-            "[safe-list] auto-allowed",
-            tool_call_callback,
-            tool_call_id=tool_call_id,
-            approval_source="safe-list",
-            approval_verdict="allow",
-            approval_explanation="auto-allowed",
-        )
-        return
-
-    _log_tool_call(
-        tool_name,
-        args,
-        "[sentinel] reviewing",
-        tool_call_callback,
-        tool_call_id=tool_call_id,
-        approval_source="sentinel",
-    )
-
-    try:
-        verdict = await sentinel.evaluate_tool_call(
-            session,
-            tool_name,
-            args,
-            usage_tracker=usage_tracker,
-            assert_llm_budget_available=assert_llm_budget_available,
-            usage_limits=usage_limits,
-        )
-    except UsageLimitExceeded:
-        verdict = _fallback_verdict(
-            session,
-            explanation=(
-                "Automatic sentinel review hit its internal request limit and could not finish. "
-                + (
-                    "The tool call was denied because no user approval path is available."
-                    if session.unattended
-                    else "Please approve or deny this tool call manually."
-                )
-            ),
-        )
-
-    decision_str = _verdict_to_decision(verdict)
-
-    entry = ToolCallEntry(
-        tool=tool_name,
-        args=args,
-        decision=decision_str,
-        explanation=verdict.explanation,
-    )
-    session.append(entry)
-
-    detail = f"[sentinel: {verdict.decision}] {verdict.explanation}"
-    _log_tool_call(
-        tool_name,
-        args,
-        detail,
-        tool_call_callback,
-        tool_call_id=tool_call_id,
-        approval_source="sentinel",
-        approval_verdict=verdict.decision,
-        approval_explanation=verdict.explanation,
-        approval_comment=verdict.comment or None,
-    )
-
-    if verdict.decision == "deny":
-        session.write_audit(
-            AuditEntry.now(
-                kind="tool_call",
-                tool=tool_name,
-                args_summary=args,
-                sentinel_verdict=verdict,
-                final_decision="denied",
-                explanation=verdict.explanation,
-            )
-        )
-        raise SecurityDeniedError(format_denial_message("sentinel", verdict.explanation))
-
-    if verdict.decision == "revise":
-        session.write_audit(
-            AuditEntry.now(
-                kind="tool_call",
-                tool=tool_name,
-                args_summary=args,
-                sentinel_verdict=verdict,
-                final_decision="changes_requested",
-                explanation=verdict.explanation,
-            )
-        )
-        raise ChangesRequestedError(format_changes_requested_message(verdict.explanation))
-
-    if verdict.decision == "escalate":
-        raise ApprovalRequired(
-            metadata={
-                "tool": tool_name,
-                "args": args,
-                "explanation": verdict.explanation,
-                "risk_level": verdict.risk_level,
-                "sentinel_verdict": verdict,
-                "args_summary": args,
-            }
-        )
-
-    # allow
+    session.append(ToolCallEntry(tool=tool_name, args=args, decision="auto_allowed"))
     session.write_audit(
-        AuditEntry.now(
-            kind="tool_call",
-            tool=tool_name,
-            args_summary=args,
-            sentinel_verdict=verdict,
-            final_decision="allowed",
-            explanation=verdict.explanation,
-        )
+        AuditEntry.now(kind="tool_call", tool=tool_name, args_summary=args, final_decision="auto_allowed")
     )
-    if verdict.comment:
-        subject = f"the `{tool_name}` call {tool_call_id}" if tool_call_id else f"the `{tool_name}` call"
-        session.leave_comment_for_agent(subject, verdict.comment)
+    _log_tool_call(
+        tool_name,
+        args,
+        "[safe-list] auto-allowed",
+        tool_call_callback,
+        tool_call_id=tool_call_id,
+        approval_source="safe-list",
+        approval_verdict="allow",
+        approval_explanation="auto-allowed",
+    )
 
 
 async def evaluate_domain_with(

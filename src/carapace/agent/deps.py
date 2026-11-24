@@ -7,7 +7,6 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
-from pydantic_ai.usage import UsageLimits
 
 from ..builder.skill_builds import SkillBuilds
 from ..git.store import GitStore
@@ -19,7 +18,6 @@ from ..models.skills import SkillInfo
 from ..models.tooling import ToolCallCallback, ToolResult
 from ..sandbox.manager import SandboxManager
 from ..security.context import SessionSecurity
-from ..security.sentinel import Sentinel
 from ..usage import UsageTracker
 from .autonomy import AutonomyStreak
 
@@ -45,7 +43,6 @@ class Deps(BaseModel):
     session_state: SessionState
     sandbox: SandboxManager
     security: SessionSecurity
-    sentinel: Sentinel
     git_store: GitStore
     skill_catalog: list[SkillInfo] = []
     skill_builds: SkillBuilds
@@ -60,8 +57,6 @@ class Deps(BaseModel):
     load_session_events: Callable[[], list[dict[str, Any]]]
     usage_tracker: UsageTracker
     autonomy: AutonomyStreak
-    assert_llm_budget_available: Callable[[], None] | None = None
-    llm_usage_limits: Callable[[], UsageLimits | None] | None = None
     # Compacts the run's history before a model request, or returns None to keep it.
     compact_history: Callable[[list[ModelMessage]], Awaitable[list[ModelMessage] | None]] | None = None
     # Set when the agent model compacts server-side; local compaction inside the run is then off.

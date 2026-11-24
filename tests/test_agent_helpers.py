@@ -29,7 +29,6 @@ from carapace.models.skills import SkillInfo
 from carapace.prompt_prefix import shared_prompt_prefix
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity
-from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
 
@@ -44,7 +43,6 @@ def test_build_system_prompt_minimal(tmp_path: Path):
         rules=[],
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("test-123"),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
@@ -76,7 +74,6 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
         rules=[],
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1"),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
@@ -101,7 +98,6 @@ def test_build_system_prompt_unattended_mentions_task_outputs(tmp_path: Path):
         session_state=state,
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1", unattended=True),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
@@ -129,7 +125,6 @@ def test_build_system_prompt_puts_the_memory_block_between_fixed_instructions_an
         session_state=state,
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1", ask_mode=True),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
@@ -154,7 +149,6 @@ def test_build_system_prompt_ask_mode_mentions_read_only_limits(tmp_path: Path):
         session_state=state,
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1", ask_mode=True),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
@@ -185,7 +179,6 @@ def test_build_system_prompt_leads_with_the_shared_prefix_and_ends_volatile(tmp_
         skill_catalog=catalog,
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1"),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
@@ -232,7 +225,6 @@ def _capture_agent_request(
         session_state=SessionState.now(session_id="s1"),
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1"),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=make_model(httpx2.AsyncClient(transport=httpx2.MockTransport(capture))),
         agent_model_id=model_id,

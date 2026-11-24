@@ -122,8 +122,8 @@ async def _sentinel(model: Model, tmp_path: Path) -> None:
     )
     session = SessionSecurity("s")
     # The second evaluation carries the first in its shadow conversation.
-    await sentinel.evaluate_tool_call(session, "exec", {"command": "ls"})
-    await sentinel.evaluate_tool_call(session, "exec", {"command": "pwd"})
+    await sentinel.evaluate_domain_access(session, ["example.com"], "ls", follow_up=False)
+    await sentinel.evaluate_domain_access(session, ["example.com"], "pwd", follow_up=False)
 
 
 @pytest.mark.asyncio

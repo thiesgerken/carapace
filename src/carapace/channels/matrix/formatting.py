@@ -329,8 +329,6 @@ def format_approval_request(req: ApprovalRequest) -> str:
     ]
     if req.explanation:
         parts.append(f"**Reason:** {req.explanation}")
-    if req.risk_level:
-        parts.append(f"**Risk level:** {req.risk_level}")
     parts += [
         f"**Arguments:**\n```json\n{args_text}\n```",
         "",

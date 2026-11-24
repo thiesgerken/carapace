@@ -4,24 +4,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from carapace.security import evaluate_push_with, evaluate_with
-from carapace.security.context import GitPushEntry, SessionSecurity, ToolCallEntry
+from carapace.security import evaluate_push_with
+from carapace.security.context import GitPushEntry, SessionSecurity
 from carapace.security.sentinel import Sentinel
-
-
-@pytest.mark.anyio
-async def test_yolo_mode_bypasses_tool_sentinel_review(tmp_path) -> None:
-    session = SessionSecurity("test-session", yolo_mode=True)
-    sentinel = MagicMock(spec=Sentinel)
-    sentinel.evaluate_tool_call = AsyncMock()
-
-    await evaluate_with(session, sentinel, "use_skill", {"skill_name": "web"}, tool_call_id="call_1")
-
-    sentinel.evaluate_tool_call.assert_not_awaited()
-    entry = session.action_log[-1]
-    assert isinstance(entry, ToolCallEntry)
-    assert entry.decision == "allowed"
-    assert entry.explanation == "YOLO mode bypassed sentinel."
 
 
 @pytest.mark.anyio

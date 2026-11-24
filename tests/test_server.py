@@ -452,7 +452,7 @@ def test_pending_approvals_lists_by_id(auth_headers):
     sid = _create_session(auth_headers)
     active = srv._engine.get_or_activate(sid)
     active.pending_approval_requests.append(
-        {"type": "approval_request", "tool_call_id": "tc1", "tool": "bash", "args": {}, "risk_level": "high"}
+        {"type": "approval_request", "tool_call_id": "tc1", "tool": "bash", "args": {}}
     )
     active.pending_escalations.append(
         {"request_id": "r1", "kind": "domain_access", "domain": "x.test", "command": "curl"}

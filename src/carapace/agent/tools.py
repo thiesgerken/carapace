@@ -10,7 +10,7 @@ from typing import Annotated, Any
 
 from loguru import logger
 from pydantic import Field
-from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied, ToolOutput
+from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolOutput
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import BinaryContent, ToolReturn
 
@@ -31,7 +31,7 @@ from ..security.context import ToolResultEntry
 from ..skills import SkillDocumentError, SkillRegistry
 from ..spans import ToolSpanCapability, span
 from ..usage import LlmRequestLogCapability
-from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, AutonomyLimitCapability
+from .autonomy import AutonomyLimitCapability
 from .deps import Deps, TaskDone, TaskFailed
 from .history_compaction import HistoryCompactionCapability, ProviderCompactionMarkerCapability
 from .sentinel_comments import SentinelCommentCapability
@@ -115,53 +115,15 @@ def _normalize_workspace_path(path: str) -> PurePosixPath:
     return raw
 
 
-def _user_approved(ctx: RunContext[Deps]) -> bool:
-    """Whether the user approved this exact call after the security gate escalated it.
-
-    A call the user only let past the autonomy limit is approved too, but still has to pass the gate.
-    """
-    metadata = ctx.tool_call_metadata or {}
-    return ctx.tool_call_approved and not metadata.get(AUTONOMY_LIMIT_METADATA_KEY)
-
-
-async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> ToolDenied | None:
-    """Delegate to the security module for tool call evaluation.
-
-    Returns ``ToolDenied`` when the sentinel denies the call or requests changes (the caller must
-    return it to pydantic-ai), or ``None`` when the call is allowed.
-    """
-    with span("gate", tool_name) as gate:
-        try:
-            await security.evaluate_with(
-                ctx.deps.security,
-                ctx.deps.sentinel,
-                tool_name,
-                args,
-                usage_tracker=ctx.deps.usage_tracker,
-                assert_llm_budget_available=ctx.deps.assert_llm_budget_available,
-                usage_limits=ctx.deps.llm_usage_limits() if ctx.deps.llm_usage_limits is not None else None,
-                tool_call_callback=ctx.deps.tool_call_callback,
-                tool_call_id=ctx.tool_call_id,
-            )
-        except (security.SecurityDeniedError, security.ChangesRequestedError) as exc:
-            gate.attrs["denied"] = True
-            return ToolDenied(str(exc))
-    return None
-
-
-def _notify_approved_start(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> None:
-    """For previously-escalated tools, send a ToolCallInfo before execution."""
-    if ctx.deps.tool_call_callback:
-        ctx.deps.tool_call_callback(
-            tool_name,
-            args,
-            "[user approved]",
-            "user",
-            "allow",
-            "user approved",
-            ctx.tool_call_id,
-            None,
-        )
+def _record(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> None:
+    """Log the call for the sentinel, the audit log and the UI; agent tools are never reviewed themselves."""
+    security.record_tool_call(
+        ctx.deps.security,
+        tool_name,
+        args,
+        tool_call_callback=ctx.deps.tool_call_callback,
+        tool_call_id=ctx.tool_call_id,
+    )
 
 
 def _notify_result(
@@ -497,16 +459,15 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         return _emit_tool_result(ctx, "list_skills", result)
 
     @agent.tool
-    async def read_skill(ctx: RunContext[Deps], skill_name: str) -> str | ToolDenied:
+    async def read_skill(ctx: RunContext[Deps], skill_name: str) -> str:
         """Read a skill: its SKILL.md, its commands and whether they are on PATH. Call before using a skill.
 
         Waits while the skill builds and its commands are being installed in the sandbox.
         """
         if not _SKILL_NAME.fullmatch(skill_name):
             return _emit_tool_result(ctx, "read_skill", f"Error: {skill_name!r} is not a skill name.", exit_code=1)
-        # On the safe list: reading grants nothing, but the sentinel learns what later requests are about.
-        if denied := await _gate(ctx, "read_skill", {"skill_name": skill_name}):
-            return denied
+        # Reading grants nothing, but the sentinel learns what later requests are about.
+        _record(ctx, "read_skill", {"skill_name": skill_name})
         registry = SkillRegistry(ctx.deps.knowledge_dir / "skills")
         instructions = registry.get_full_instructions(skill_name)
         if instructions is None:
@@ -535,14 +496,11 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         path: str,
         offset: Annotated[int, Field(ge=0)] | None = None,
         limit: Annotated[int, Field(ge=1, le=READ_TOOL_MAX_LINE_WINDOW)] | None = None,
-    ) -> str | ToolDenied | ToolReturn:
+    ) -> str | ToolReturn:
         text_offset = offset or 0
         text_limit = limit if limit is not None else 100
         line_numbers_given = offset is not None or limit is not None
-        if not _user_approved(ctx) and (
-            denied := await _gate(ctx, "read", {"path": path, "offset": text_offset, "limit": text_limit})
-        ):
-            return denied
+        _record(ctx, "read", {"path": path, "offset": text_offset, "limit": text_limit})
 
         session_id = ctx.deps.session_state.session_id
 
@@ -569,14 +527,13 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         return _emit_tool_result(ctx, "read", result, exit_code)
 
     @agent.tool
-    async def read_tool_output(ctx: RunContext[Deps], tool_call_id: str) -> str | ToolDenied:
+    async def read_tool_output(ctx: RunContext[Deps], tool_call_id: str) -> str:
         """Return the full original output of an earlier tool call in this session.
 
         Use it when a tool output was summarized to save context and you need the details.
         Prefer it over re-running the tool, which may have side effects or give a different result.
         """
-        if not _user_approved(ctx) and (denied := await _gate(ctx, "read_tool_output", {"tool_call_id": tool_call_id})):
-            return denied
+        _record(ctx, "read_tool_output", {"tool_call_id": tool_call_id})
         output = find_tool_output(ctx.deps.load_session_events(), tool_call_id)
         if output is None:
             return _emit_tool_result(
@@ -585,7 +542,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         return _emit_tool_result(ctx, "read_tool_output", output)
 
     @agent.tool
-    async def send_file(ctx: RunContext[Deps], path: str) -> str | ToolDenied:
+    async def send_file(ctx: RunContext[Deps], path: str) -> str:
         """Expose a file or image to the user so they can view or download it in the chat.
 
         Use this for outputs you produce that the user should keep or look at: generated
@@ -595,10 +552,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         """
         from ..session import sent_files
 
-        # send_file reads the file out and publishes it, so it runs through the same
-        # safe-list / sentinel checks as the read tool.
-        if not _user_approved(ctx) and (denied := await _gate(ctx, "send_file", {"path": path})):
-            return denied
+        _record(ctx, "send_file", {"path": path})
 
         artifact_parts = _normalize_workspace_path(posixpath.normpath(path)).parts
         if len(artifact_parts) >= 3 and artifact_parts[0] == _ARTIFACTS_ROOT:
@@ -633,15 +587,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         return _emit_tool_result(ctx, "send_file", f"Sent {info.name} to the user.", files=(info,))
 
     @agent.tool
-    async def show_artifact(ctx: RunContext[Deps], slug: str) -> str | ToolDenied:
+    async def show_artifact(ctx: RunContext[Deps], slug: str) -> str:
         """Show an artifact to the user in the chat, always in its current pushed version.
 
         ``slug`` names ``artifacts/<slug>/index.html`` in the knowledge repo. The chat reads
         the server's copy, so commit and push the artifact first; call this again after
         pushing changes so the user sees the update.
         """
-        if not _user_approved(ctx) and (denied := await _gate(ctx, "show_artifact", {"slug": slug})):
-            return denied
+        _record(ctx, "show_artifact", {"slug": slug})
 
         index = artifact_index(ctx.deps.knowledge_dir.resolve(), slug)
         if index is None:
@@ -656,10 +609,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         )
 
     @agent.tool
-    async def write(ctx: RunContext[Deps], path: str, content: str) -> str | ToolDenied:
+    async def write(ctx: RunContext[Deps], path: str, content: str) -> str:
         """Write content to a file in the sandbox. Creates parent directories as needed."""
-        if not _user_approved(ctx) and (denied := await _gate(ctx, "write", {"path": path, "content": content})):
-            return denied
+        _record(ctx, "write", {"path": path, "content": content})
 
         session_id = ctx.deps.session_state.session_id
         exit_code = 0
@@ -681,26 +633,23 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         old_string: str,
         new_string: str,
         replace_all: bool = False,
-    ) -> str | ToolDenied:
+    ) -> str:
         """Replace text in a file.
 
         Use ``replace_all=False`` (default) to require exactly one match.
         Use ``replace_all=True`` to replace all matches.
         Returns a compact status string including match count and original line number(s).
         """
-        if not _user_approved(ctx) and (
-            denied := await _gate(
-                ctx,
-                "str_replace",
-                {
-                    "path": path,
-                    "old_string": old_string,
-                    "new_string": new_string,
-                    "replace_all": replace_all,
-                },
-            )
-        ):
-            return denied
+        _record(
+            ctx,
+            "str_replace",
+            {
+                "path": path,
+                "old_string": old_string,
+                "new_string": new_string,
+                "replace_all": replace_all,
+            },
+        )
 
         session_id = ctx.deps.session_state.session_id
         exit_code = 0
@@ -726,7 +675,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
     # The short title comes before a command that may be a long heredoc, so the chat can show the title
     # while it streams. Without strict mode GPT writes the command first; strict decoding keeps the order.
     @agent.tool(strict=True)
-    async def exec(ctx: RunContext[Deps], title: str | None = None, *, command: str) -> str | ToolDenied:
+    async def exec(ctx: RunContext[Deps], title: str | None = None, *, command: str) -> str:
         """Run a shell command (typically bash) and return its output. Runs in a Docker sandbox.
 
         Background processes do not survive their own exec: every exec starts by killing all
@@ -738,11 +687,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             command: The shell command to execute.
         """
         args = normalize_tool_call_args("exec", {"command": command, "title": title})
-        if not _user_approved(ctx):
-            if denied := await _gate(ctx, "exec", args):
-                return denied
-        else:
-            _notify_approved_start(ctx, "exec", args)
+        _record(ctx, "exec", args)
 
         session_id = ctx.deps.session_state.session_id
         try:
