@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +10,8 @@ import httpx
 import kr8s
 import pytest
 
+from carapace.models.config import Config
+from carapace.models.config import SandboxConfig as ConfigSandbox
 from carapace.sandbox.kubernetes import (
     KubernetesRuntime,
     _default_command,
@@ -17,6 +20,7 @@ from carapace.sandbox.kubernetes import (
     _standard_labels,
 )
 from carapace.sandbox.runtime import ContainerConfig, ExecResult, Mount, PoolSandbox, SandboxConfig
+from carapace.server import _create_sandbox_runtime
 
 # --- Helpers ---
 
@@ -36,6 +40,7 @@ def _make_runtime(*, namespace: str = "carapace", data_dir: str = "/data") -> Ku
     rt._resource_spec = None
     rt._want_owner_ref = False
     rt._server_deployment_name = "carapace"
+    rt._server_service = "carapace"
     rt._sandboxes_name = "carapace-sandboxes"
     rt._sandbox_owner = None
     rt._sandbox_owner_lookup_done = False
@@ -385,11 +390,39 @@ def test_image_exists_always_true():
 
 
 @pytest.mark.asyncio
-async def test_get_host_ip_from_env(monkeypatch):
+async def test_get_host_ip_resolves_the_configured_server_service(monkeypatch):
+    rt = _make_runtime(namespace="agents")
+    rt._server_service = "my-release"
+    resolved: list[str] = []
+
+    def _resolve(name: str) -> str:
+        resolved.append(name)
+        return "10.43.0.100"
+
+    monkeypatch.setattr("carapace.sandbox.kubernetes.socket.gethostbyname", _resolve)
+
+    assert await rt.get_host_ip("any-network") == "10.43.0.100"
+    assert resolved == ["my-release.agents.svc"]
+
+
+@pytest.mark.asyncio
+async def test_get_host_ip_fails_loudly_when_the_service_does_not_resolve(monkeypatch):
     rt = _make_runtime()
-    monkeypatch.setenv("CARAPACE_SERVICE_HOST", "10.43.0.100")
-    ip = await rt.get_host_ip("any-network")
-    assert ip == "10.43.0.100"
+
+    def _fail(_name: str) -> str:
+        raise socket.gaierror("Name or service not known")
+
+    monkeypatch.setattr("carapace.sandbox.kubernetes.socket.gethostbyname", _fail)
+
+    with pytest.raises(RuntimeError, match=r"carapace\.carapace\.svc"):
+        await rt.get_host_ip("any-network")
+
+
+def test_kubernetes_runtime_requires_the_server_service(tmp_path: Path):
+    config = Config(sandbox=ConfigSandbox(runtime="kubernetes"))
+
+    with pytest.raises(ValueError, match="CARAPACE_SANDBOX_K8S_SERVER_SERVICE"):
+        _create_sandbox_runtime(config, tmp_path)
 
 
 # --- StatefulSet lifecycle ---

@@ -360,6 +360,9 @@ class SandboxConfig(BaseSettings):
     k8s_owner_ref: bool = True
     # Server Deployment name for ownerReference fallback (Helm: release name).
     k8s_server_deployment_name: str = "carapace"
+    # Service in front of the server (Helm: release name). Sandboxes have no DNS, so the server resolves
+    # it to the ClusterIP they reach the proxy at. Required with the kubernetes runtime.
+    k8s_server_service: str | None = None
     # Preferred owner for sandbox resources (namespaced Sandboxes CRD singleton).
     # Set to null or an empty string to use k8s_server_deployment_name instead.
     # When set, the named Sandboxes object must exist.

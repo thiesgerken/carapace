@@ -251,6 +251,9 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
     if config.sandbox.runtime == "kubernetes":
         from ..sandbox.kubernetes import KubernetesRuntime
 
+        server_service = config.sandbox.k8s_server_service
+        if not server_service:
+            raise ValueError("CARAPACE_SANDBOX_K8S_SERVER_SERVICE is required with the kubernetes runtime")
         return KubernetesRuntime(
             namespace=config.sandbox.k8s_namespace,
             pvc_claim=config.sandbox.k8s_pvc_claim,
@@ -259,6 +262,7 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
             priority_class=config.sandbox.k8s_priority_class,
             owner_ref=config.sandbox.k8s_owner_ref,
             server_deployment_name=config.sandbox.k8s_server_deployment_name,
+            server_service=server_service,
             sandboxes_name=config.sandbox.k8s_sandboxes_name,
             app_instance=config.sandbox.k8s_app_instance,
             session_pvc_size=config.sandbox.k8s_session_pvc_size,
