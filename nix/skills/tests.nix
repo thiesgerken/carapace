@@ -22,6 +22,10 @@ let
     { credentials."TOKEN; rm -rf ~" = "demo/token"; }
     { tunnels = [ "imap.example.com" ]; }
     { tunnels = [ "*.example.com:993" ]; }
+    { tunnels = [ "imap.example.com:0" ]; }
+    { tunnels = [ "imap.example.com:0993" ]; }
+    { tunnels = [ "imap.example.com:65536" ]; }
+    { tunnels = [ "10.0.0.1:5432" ]; }
   ];
   # MCP servers: the bridge's arguments and what each command declares follow from the server.
   mcp = skillLib.mkSkill {
@@ -99,7 +103,8 @@ let
         needs = {
           domains = [ ];
           credentials = { };
-          tunnels = [ "imap.example.com:993" ];
+          # Any case, like the server, which lowercases it.
+          tunnels = [ "Imap.example.com:993" ];
         };
       };
     };
@@ -160,7 +165,7 @@ pkgs.runCommand "skill-wrapper-contract" { } ''
 
   # A tunnel is asked for up front like a domain; the server opens it before cgate returns.
   [ "$(${skill}/bin/mail)" = mail ]
-  echo "cgate request --store-path ${skill} --tunnel imap.example.com:993" | diff - calls
+  echo "cgate request --store-path ${skill} --tunnel Imap.example.com:993" | diff - calls
 
   # A denial or a failing ccred stops the wrapper before the command runs. `if` rather than `!`, which
   # errexit ignores.

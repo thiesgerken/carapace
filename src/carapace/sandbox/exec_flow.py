@@ -12,7 +12,7 @@ from .exec_scope import RunningExec
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult
 from .session_lifecycle import SessionContainer
 from .skill_profile import KILLER_MARKER, KILLER_SYNC_PID, SkillProfileSync
-from .tunnels import Tunnel, close_script, listen_addresses, open_script
+from .tunnels import ExecEndedError, Tunnel, close_script, listen_addresses, open_script
 
 type DomainApprovalCallback = Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]
 type DomainNotifyCallback = Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None]
@@ -152,11 +152,12 @@ class SandboxExecCoordinator:
     async def open_tunnels(self, running: RunningExec, tunnels: list[Tunnel]) -> str | None:
         """Open *tunnels* for the running exec; why they could not be opened, or None.
 
-        Runs while that exec holds the exec lock, so it goes to the container directly.
+        Runs while that exec holds the exec lock, so it goes to the container directly. Raises
+        ``ExecEndedError`` when the exec ended before the tunnels could be opened.
         """
         async with running.tunnel_lock:
             if not self.is_running(running):
-                return EXEC_ENDED_REJECTION
+                raise ExecEndedError
             new = listen_addresses(running.tunnels, [tunnel for tunnel in tunnels if tunnel not in running.tunnels])
             if not new:
                 return None
@@ -168,6 +169,10 @@ class SandboxExecCoordinator:
                 sc.container_id, ["/bin/bash", "-c", script], timeout=30, env=sc.session_env or None
             )
             if result.exit_code != 0:
+                # Closes the exec's other tunnels too: recorded as open, a failed one would let a retry
+                # answer 200 with nothing listening. Starting over is the simple way to keep the record true.
+                await self._run_close_script(sc)
+                running.tunnels.clear()
                 return f"The tunnels could not be opened: {result.output.strip()[-2000:]}"
             return None
 
@@ -178,12 +183,15 @@ class SandboxExecCoordinator:
             if not running.tunnels or sc is None:
                 return
             try:
-                result = await self._runtime.exec(sc.container_id, ["/bin/bash", "-c", close_script()], timeout=30)
+                await self._run_close_script(sc)
             except ContainerGoneError:
                 return
-            if result.exit_code != 0:
-                # Left open, /etc/hosts would keep pointing the hosts at forwarders the next killer ends.
-                raise RuntimeError(f"Failed to close the tunnels of session {sc.session_id}: {result.output}")
+
+    async def _run_close_script(self, sc: SessionContainer) -> None:
+        result = await self._runtime.exec(sc.container_id, ["/bin/bash", "-c", close_script()], timeout=30)
+        if result.exit_code != 0:
+            # Left open, /etc/hosts would keep pointing the hosts at forwarders the next killer ends.
+            raise RuntimeError(f"Failed to close the tunnels of session {sc.session_id}: {result.output}")
 
     async def sync_skill_profile(self, session_id: str, *, ensure_session: EnsureSessionCallback) -> str | None:
         """Bring the session's skill profile to its plan and wait for it: why it failed, or None.

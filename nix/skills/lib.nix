@@ -32,9 +32,16 @@ let
       badVars = lib.filter (var: builtins.match "[A-Za-z_][A-Za-z0-9_]*" var == null) (
         lib.attrNames needs.credentials
       );
-      # What `cgate request --tunnel` accepts: an exact host name and a port.
+      # What `cgate request --tunnel` accepts: an exact host name (any case, not an IP address, which a
+      # client would connect to directly) and a port from 1 to 65535.
       badTunnels = lib.filter (
-        tunnel: builtins.match "[a-z0-9-]+(\\.[a-z0-9-]+)*:[0-9]{1,5}" tunnel == null
+        tunnel:
+        let
+          parts = builtins.match "([A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*):([1-9][0-9]{0,4})" tunnel;
+        in
+        parts == null
+        || builtins.match "[0-9.]+" (builtins.head parts) != null
+        || lib.toInt (builtins.elemAt parts 2) > 65535
       ) needs.tunnels;
     in
     assert lib.assertMsg (unknown == [ ])

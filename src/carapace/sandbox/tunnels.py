@@ -12,12 +12,14 @@ import re
 import shlex
 from dataclasses import dataclass
 
+from .destinations import ip_literal
+
 TUNNEL_DIR = "/tmp/carapace-tunnels"
 _HOSTS_BACKUP = f"{TUNNEL_DIR}/hosts"
 # By absolute path: the agent can write to the directories on PATH.
 _FORWARDER = "/bin/carapace-tunnel"
 # An exact host name; a wildcard has no address to listen on.
-_TUNNEL = re.compile(r"([a-z0-9-]+(?:\.[a-z0-9-]+)*):([0-9]{1,5})")
+_TUNNEL = re.compile(r"([a-z0-9-]+(?:\.[a-z0-9-]+)*):([1-9][0-9]{0,4})")
 _READY_SECONDS = 10
 
 
@@ -30,10 +32,18 @@ class Tunnel:
         return f"{self.host}:{self.port}"
 
 
+class ExecEndedError(Exception):
+    """The exec a tunnel was approved for ended before it could be opened."""
+
+
 def parse_tunnel(raw: str) -> Tunnel | None:
-    """A ``HOST:PORT`` as ``cgate`` sends it, or None when it is not one."""
+    """A ``HOST:PORT`` as ``cgate`` sends it, or None when it is not one.
+
+    An IP address is refused: a client connects to it directly, so no /etc/hosts entry can send it
+    through the forwarder.
+    """
     match = _TUNNEL.fullmatch(raw.strip().lower())
-    if match is None or not 1 <= int(match.group(2)) <= 65535:
+    if match is None or not 1 <= int(match.group(2)) <= 65535 or ip_literal(match.group(1)) is not None:
         return None
     return Tunnel(match.group(1), int(match.group(2)))
 

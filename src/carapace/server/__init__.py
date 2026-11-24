@@ -75,7 +75,7 @@ from ..sandbox.exec_scope import CredentialGrant, RunningExec
 from ..sandbox.manager import SandboxLimitError, SandboxManager
 from ..sandbox.proxy import ProxyServer, domain_allowed
 from ..sandbox.runtime import ContainerRuntime
-from ..sandbox.tunnels import Tunnel, parse_tunnel
+from ..sandbox.tunnels import ExecEndedError, Tunnel, parse_tunnel
 from ..security import (
     CREDENTIAL_LISTING_PATH,
     CredentialAccessEvaluation,
@@ -1258,7 +1258,13 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
 
 
 async def _open_tunnels(running: RunningExec, tunnels: list[Tunnel]) -> Response:
-    if tunnels and (failure := await _engine.sandbox_mgr.open_tunnels(running, tunnels)):
+    if not tunnels:
+        return Response(status_code=200)
+    try:
+        failure = await _engine.sandbox_mgr.open_tunnels(running, tunnels)
+    except ExecEndedError:
+        return _boundary_denied(EXEC_ENDED_REJECTION)
+    if failure is not None:
         return Response(status_code=502, content=failure, media_type="text/plain")
     return Response(status_code=200)
 

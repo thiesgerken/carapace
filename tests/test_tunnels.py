@@ -14,12 +14,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from carapace.sandbox import tunnels
-from carapace.sandbox.exec_flow import EXEC_ENDED_REJECTION, SandboxExecCoordinator, SandboxExecState
+from carapace.sandbox.exec_flow import SandboxExecCoordinator, SandboxExecState
 from carapace.sandbox.exec_scope import RunningExec
 from carapace.sandbox.runtime import ExecResult
 from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.sandbox.skill_profile import SkillProfileSync
-from carapace.sandbox.tunnels import Tunnel, listen_addresses, parse_tunnel
+from carapace.sandbox.tunnels import ExecEndedError, Tunnel, listen_addresses, parse_tunnel
 from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, make_runtime_mock
 
 FORWARDER = Path(__file__).parents[1] / "sandbox" / "carapace-tunnel"
@@ -38,6 +38,8 @@ BASH = shutil.which("bash")
         ("imap.example.com:65536", None),
         ("imap.example.com:993; rm -rf /", None),
         ("[::1]:993", None),
+        ("10.0.0.1:5432", None),
+        ("imap.example.com:0993", None),
     ],
 )
 def test_a_tunnel_is_an_exact_host_and_a_port(raw: str, expected: Tunnel | None) -> None:
@@ -244,7 +246,8 @@ async def test_a_tunnel_for_an_exec_that_ended_is_not_opened() -> None:
 
     await _exec_that(coordinator, remember)
 
-    assert await coordinator.open_tunnels(ended[0], [Tunnel("imap.a.example", 993)]) == EXEC_ENDED_REJECTION
+    with pytest.raises(ExecEndedError):
+        await coordinator.open_tunnels(ended[0], [Tunnel("imap.a.example", 993)])
     assert scripts == []
 
 
@@ -268,4 +271,32 @@ async def test_a_tunnel_that_does_not_come_up_is_reported_and_still_cleaned_up()
     await _exec_that(coordinator, open_one)
 
     assert failures == ["The tunnels could not be opened: imap.a.example:993 did not start:\nAddress in use"]
+    # The failed open was closed right away; the exec's end found nothing left to close.
     assert scripts[-1] == tunnels.close_script()
+    assert sum(script == tunnels.close_script() for script in scripts) == 1
+
+
+@pytest.mark.anyio
+async def test_a_retry_after_a_failed_open_starts_the_tunnel_again() -> None:
+    coordinator, state, scripts = _coordinator()
+    runtime_exec = coordinator._runtime.exec.side_effect
+    attempts: list[str | None] = []
+
+    async def first_open_fails(container_id: str, command: Any, *args: object, **kwargs: object) -> ExecResult:
+        result = await runtime_exec(container_id, command, *args, **kwargs)
+        if isinstance(command, list) and "nohup" in command[2] and not attempts:
+            return ExecResult(stdout="", exit_code=1, output="imap.a.example:993 did not start:\nAddress in use\n")
+        return result
+
+    coordinator._runtime.exec.side_effect = first_open_fails
+
+    async def open_twice() -> None:
+        running = state.running_execs["s1"]
+        attempts.append(await coordinator.open_tunnels(running, [Tunnel("imap.a.example", 993)]))
+        attempts.append(await coordinator.open_tunnels(running, [Tunnel("imap.a.example", 993)]))
+
+    await _exec_that(coordinator, open_twice)
+
+    assert attempts[1] is None
+    opens = [script for script in scripts if "nohup" in script]
+    assert len(opens) == 2 and all("imap.a.example:993" in script for script in opens)
