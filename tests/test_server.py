@@ -19,6 +19,7 @@ import pytest
 import yaml
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from loguru import logger
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.providers.openai_codex import OpenAICodexCredentials, OpenAICodexOAuthFlow
 from pydantic_ai.usage import RunUsage
@@ -769,6 +770,7 @@ async def test_lifespan_initializes_knowledge_repo_registry_module_state(tmp_pat
         assert registry.knowledge_repos_dir == tmp_path / "knowledges"
 
     sandbox_mgr.cleanup_all.assert_awaited_once()
+    sandbox_mgr.verify_no_direct_egress.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -789,6 +791,23 @@ async def test_lifespan_refuses_to_start_when_the_egress_probe_cannot_run(tmp_pa
     with pytest.raises(SystemExit):
         async with srv._lifespan(app):
             pass
+
+
+@pytest.mark.anyio
+async def test_lifespan_without_the_egress_self_test_starts_and_warns(tmp_path, monkeypatch):
+    sandbox_mgr = _patch_lifespan_dependencies(tmp_path, monkeypatch)
+    srv.build_config().sandbox.egress_self_test = False
+    sandbox_mgr.verify_no_direct_egress.side_effect = EgressCheckError(["would have failed"])
+    warnings: list[str] = []
+    sink = logger.add(lambda message: warnings.append(message.record["message"]), level="WARNING")
+    try:
+        async with srv._lifespan(app):
+            pass
+    finally:
+        logger.remove(sink)
+
+    sandbox_mgr.verify_no_direct_egress.assert_not_awaited()
+    assert any("egress self-test is OFF" in message for message in warnings)
 
 
 @pytest.mark.parametrize(

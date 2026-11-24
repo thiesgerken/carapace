@@ -692,14 +692,21 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await proxy.start()
 
     # After the proxy starts, which the probe connects to as its positive control; before anything is served.
-    try:
-        await _sandbox_mgr.verify_no_direct_egress(Path("/etc/resolv.conf"))
-    except EgressCheckError as exc:
-        logger.error(_egress_check_failure(exc, _config.sandbox.runtime, sandbox_network))
-        raise SystemExit(1) from exc
-    except EgressProbeError as exc:
-        logger.error(str(exc))
-        raise SystemExit(1) from exc
+    if _config.sandbox.egress_self_test:
+        try:
+            await _sandbox_mgr.verify_no_direct_egress(Path("/etc/resolv.conf"))
+        except EgressCheckError as exc:
+            logger.error(_egress_check_failure(exc, _config.sandbox.runtime, sandbox_network))
+            raise SystemExit(1) from exc
+        except EgressProbeError as exc:
+            logger.error(str(exc))
+            raise SystemExit(1) from exc
+    else:
+        logger.warning(
+            "Sandbox egress self-test is OFF (CARAPACE_SANDBOX_EGRESS_SELF_TEST=false): nothing verifies that "
+            "sandboxes reach the network only through the session proxy. Use this for development only, never "
+            "for a server that runs real sessions."
+        )
 
     # Start sandbox-facing API server (Basic Auth, accessible by containers)
     sandbox_server = uvicorn.Server(
