@@ -30,6 +30,7 @@ from carapace.models.session import SessionBudget
 from carapace.notifications.presence import NotificationPresenceRegistry
 from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionEngine, SessionManager
+from carapace.spans import SpanNotice
 from carapace.ws_models import ApprovalRequest, CommandResult
 
 # ---------------------------------------------------------------------------
@@ -965,3 +966,24 @@ async def test_subscriber_attachment_only_message_is_forwarded(tmp_path: Path, d
 
     ch._send_text.assert_awaited_once()
     assert "d.csv" in ch._send_text.await_args.args[1]
+
+
+@pytest.mark.anyio
+async def test_read_skill_waits_become_notices(tmp_path: Path, db_factory):
+    ch = _make_channel(tmp_path, db_factory)
+    room_id = "!room:example.com"
+    ch._send_notice = AsyncMock()
+    sub = MatrixSubscriber(ch, room_id)
+
+    def notice(span_id: str, kind: str, name: str, status: str) -> SpanNotice:
+        return SpanNotice(turn_id="t", span_id=span_id, kind=kind, name=name, status=status, tool_call_id="toolu_1")
+
+    await sub.on_span(notice("a", "skill", "build wait", "running"))
+    await sub.on_span(notice("a", "skill", "build wait", "ok"))
+    await sub.on_span(notice("b", "skill", "profile sync", "running"))
+    await sub.on_span(notice("c", "sandbox", "ensure", "running"))
+
+    assert [call.args[1] for call in ch._send_notice.await_args_list] == [
+        "⏳ Waiting for the skill build…",
+        "⏳ Installing the skill's commands…",
+    ]

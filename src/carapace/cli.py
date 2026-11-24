@@ -618,6 +618,13 @@ async def _chat_loop(ws_url: str, *, headers: dict[str, str]) -> None:
         await ws.close()
 
 
+# What `read_skill` waits for, by span kind and name.
+_SKILL_WAITS = {
+    ("skill", "build wait"): "waiting for the skill build…",
+    ("skill", "profile sync"): "installing the skill's commands…",
+}
+
+
 async def _read_server_responses(ws, *, show_tool_events: bool = True) -> None:
     """Read and render server messages until a terminal response (done/command_result/error)."""
     streamed = ""
@@ -672,6 +679,11 @@ async def _read_server_responses(ws, *, show_tool_events: bool = True) -> None:
                     if show_tool_events:
                         detail = msg.get("detail", "")
                         console.print(f"  [dim]{msg['tool']}({msg['args']}) {detail}[/dim]")
+
+                case "span" if show_tool_events and msg.get("status") == "running":
+                    if wait := _SKILL_WAITS.get((msg.get("kind"), msg.get("name"))):
+                        _stop_live()
+                        console.print(f"  [dim]{wait}[/dim]")
 
                 case "tool_result":
                     _stop_live()

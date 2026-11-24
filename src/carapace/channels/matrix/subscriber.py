@@ -25,6 +25,13 @@ if TYPE_CHECKING:
     from .channel import MatrixChannel
 
 
+# What `read_skill` waits for, by span kind and name.
+_SKILL_WAITS = {
+    ("skill", "build wait"): "⏳ Waiting for the skill build…",
+    ("skill", "profile sync"): "⏳ Installing the skill's commands…",
+}
+
+
 class MatrixSubscriber:
     """Bridges ``SessionEngine`` events to Matrix messages for a room."""
 
@@ -134,7 +141,9 @@ class MatrixSubscriber:
         pass
 
     async def on_span(self, notice: SpanNotice) -> None:
-        pass
+        wait = _SKILL_WAITS.get((notice.kind, notice.name))
+        if wait and notice.status == "running" and self._channel._verbose.get(self._room_id, True):
+            await self._channel._send_notice(self._room_id, wait)
 
     async def on_status(
         self,
