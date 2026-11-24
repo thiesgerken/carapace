@@ -64,7 +64,7 @@ def domain_matches(domain: str, pattern: str) -> bool:
 
 
 class ProxyServer:
-    """Async HTTP forward-proxy with per-session domain allowlists.
+    """Async HTTP forward-proxy that lets through only domains approved for the running exec.
 
     Supports plain HTTP forwarding and HTTPS via CONNECT tunnelling.
     No MITM -- domain-level control only.

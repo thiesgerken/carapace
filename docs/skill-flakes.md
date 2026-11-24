@@ -201,4 +201,4 @@ npm needs no such hash: `package-lock.json` carries the integrity of every packa
 
 ## Developing a skill
 
-`nix shell path:./skills/<name> -c <command>` builds a skill from the workspace and runs one of its commands, without pushing it. `path:` matters: inside the knowledge repo a plain `./skills/<name>` is a Git flake that only sees committed files. After changing inputs, `nix flake lock path:./skills/<name>` writes the lock file to commit. The `cgate` request then reports the workspace build's store path, which does not match what the builder built for the committed skill, and the sentinel sees that.
+`nix shell path:./skills/<name> -c <command>` builds a skill from the workspace and runs one of its commands, without pushing it. `path:` matters: inside the knowledge repo a plain `./skills/<name>` is a Git flake that only sees committed files. After changing inputs, `nix flake lock path:./skills/<name>` writes the lock file to commit. The `cgate` request then reports the workspace build's store path. The sentinel sees that path, but whether it matches what the builder built for the committed skill is not checked yet.

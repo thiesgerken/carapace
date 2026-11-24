@@ -108,7 +108,7 @@ action log shows. The command that asked gets your verdict and explanation
 back and decides how to continue, so write a denial's explanation for it.
 SECURITY.md below says when to choose which.
 
-Pushes to the knowledge repo (`/workspace/knowledge`) get their own git_push
+Pushes to the knowledge repo (`/workspace`) get their own git_push
 evaluation with the actual commits and diff, also when an exec runs the push.
 
 You have tools to read skill source code and documentation.
@@ -237,7 +237,7 @@ def _boundary_origin(command: str, *, follow_up: bool) -> str:
 def _store_path_line(store_path: str | None) -> str:
     if store_path is None:
         return "Caller store path: not given."
-    # Skills are not built by the builder yet, so there is nothing to compare the store path with.
+    # ponytail: no comparison with the build for the current head yet; it needs the head's build results here.
     return f"Caller store path: {store_path} (matches the build for the current head: unknown)"
 
 

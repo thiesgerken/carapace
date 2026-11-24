@@ -297,7 +297,7 @@ Slash commands are the user's control interface for managing sessions. Interacti
 | Command                                         | Effect                                                         |
 | ----------------------------------------------- | -------------------------------------------------------------- |
 | `/help`                                         | Show available commands                                        |
-| `/session`                                      | Show session metadata and domain allowlist                     |
+| `/session`                                      | Show session metadata and the domains approved for the running exec |
 | `/skills`                                       | List available skills                                          |
 | `/retitle`                                      | Regenerate session title, or set it explicitly                 |
 | `/budget`                                       | Show or update session budgets: tokens, actual and equivalent cost, tool calls, autonomy |
@@ -347,7 +347,7 @@ The approval gate holds tool calls over the [autonomy limit](#autonomy-limit) fo
 A separate approval flow handles domain requests from sandbox containers:
 
 1. Sandbox container makes an outbound request through the proxy
-2. Proxy checks the domain against the session's allowlist
+2. Proxy checks the domain against what the running exec has been approved for
 3. If unknown, proxy calls the sentinel via the security module
 4. If sentinel escalates, a `ProxyApprovalRequest` is sent to subscribers
 5. User decides (allow/deny)

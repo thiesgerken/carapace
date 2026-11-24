@@ -119,7 +119,6 @@ def _coordinator(stub: SandboxStub) -> tuple[SandboxExecCoordinator, SkillProfil
     sync.set_plan_callback(plan_for)
     state = SandboxExecState(
         sessions={},
-        allowed_domains={},
         exec_temp_domains={},
         session_current_command={},
         domain_approval_cbs={},

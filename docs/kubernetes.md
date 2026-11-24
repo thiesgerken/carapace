@@ -2,9 +2,11 @@
 
 carapace supports Kubernetes as a sandbox runtime. Instead of Docker containers, sandbox sessions run as Kubernetes StatefulSets with per-session PVCs. Each session gets its own PersistentVolumeClaim via `volumeClaimTemplates`, eliminating the need for a shared RWX volume.
 
+Upgrading an install from before skill flakes? Follow [Upgrading to skill flakes](upgrading-to-skill-flakes.md) first.
+
 ## Prerequisites
 
-- **Kubernetes cluster** (1.27+) — tested with k3s, works with any conformant cluster. K8s 1.27+ is required for the `persistentVolumeClaimRetentionPolicy` feature (GA).
+- **Kubernetes cluster** (1.29+) — tested with k3s, works with any conformant cluster. Sandbox file writes need the `v5.channel.k8s.io` exec subprotocol (1.29+, see [Architecture](#architecture)), and the in-cluster builder needs user namespaces for pods (below).
 - **RWO StorageClass** — any standard ReadWriteOnce provisioner. The server pod has its own data PVC; sandbox sessions each get a dedicated PVC.
 - **Container images** pushed to a registry accessible by the cluster (GHCR by default)
 - **Helm 3** installed locally
@@ -58,7 +60,7 @@ See the [chart README](../charts/carapace/README.md) for installation details an
 
 The server, frontend, and Bitwarden pods run as UID/GID/fsGroup **999**, with `runAsNonRoot` and seccomp `RuntimeDefault`. Their containers use a read-only root, disable privilege escalation, drop all capabilities, and mount an `emptyDir` at `/tmp`. The server and Bitwarden data mounts remain writable. The server UID and data-volume fsGroup stay 999. For legacy root-owned Bitwarden files, kubelet's default `fsGroupChangePolicy: Always` recursively applies group 999 and group read/write permissions on mount, so existing PVCs do not need a manual ownership migration.
 
-The server retains its service account token for sandbox lifecycle operations. Frontend and Bitwarden pods disable token automounting. The Bitwarden nginx proxy uses the unprivileged image and listens on 8080; its Service still defaults to 80. The frontend likewise listens on 8080 behind its port-80 Service. Postgres and the root/FHS sandbox image are not changed by this hardening.
+The server retains its service account token for sandbox lifecycle operations. Frontend and Bitwarden pods disable token automounting. The Bitwarden nginx proxy uses the unprivileged image and listens on 8080; its Service still defaults to 80. The frontend likewise listens on 8080 behind its port-80 Service. Postgres and the sandbox image (Nix-built, the agent is root in it) are not changed by this hardening.
 
 Bitwarden API-key login requires Vaultwarden 1.35.5 or newer. If Bitwarden persistence is disabled, its state gets an `emptyDir`, not the read-only root.
 
@@ -81,6 +83,13 @@ graph TD
         PvcB["PVC/session-data-…-bbb-0 (RWO)"]
     end
 
+    subgraph nsb ["Namespace: carapace-builder (Pod Security: privileged)"]
+        Builder["Deployment/carapace-builder<br/>(hostUsers: false)"]
+        SvcBuilder["Service/carapace-builder<br/>(ports 8330 + 8331)"]
+        BuilderPVC["PVC/carapace-builder (Nix store)"]
+        BuilderPol["NetworkPolicy (server only)"]
+    end
+
     Deploy -->|mounts| DataPVC
     Deploy -->|creates via K8s API| StsA & StsB
     StsA -->|volumeClaimTemplate| PvcA
@@ -89,6 +98,10 @@ graph TD
     SvcFront --> Frontend
     Route --> SvcServer & SvcFront
     NetPol -.->|restricts| StsA & StsB
+    Deploy -->|builds skills, proxies the cache| SvcBuilder
+    SvcBuilder --> Builder
+    Builder -->|mounts| BuilderPVC
+    BuilderPol -.->|restricts| Builder
 ```
 
 The server pod manages sandbox StatefulSets directly via the Kubernetes API. Each session gets its own StatefulSet (replicas=1) with a per-session PVC created via `volumeClaimTemplates`. Commands are executed in the pod `{sts-name}-0` via `kubectl exec`. File writes, `str_replace` and uploads pass their data on the exec's stdin, in one exec per file. That needs the `v5.channel.k8s.io` exec subprotocol (Kubernetes 1.29 or newer), the only one that can close stdin. kr8s speaks only v4, so carapace opens that websocket itself and fails loudly if the API server doesn't agree to v5.
@@ -247,6 +260,9 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`            | `carapace-sandboxes`      | Required `Sandboxes` owner; set `null`/`""` for Deployment |
 | `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`    | `carapace`                | Server Deployment name (Helm sets to release name)         |
 | `CARAPACE_SANDBOX_NETWORK_NAME`                  | `carapace-sandbox`        | Docker network name (Docker only)                          |
+| `CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS`        | `[]`                      | CIDRs the proxy may reach despite being [internal](sandbox.md#internal-destinations) (Helm: `sandbox.allowedInternalNetworks`) |
+| `CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS`           | `[]`                      | Host names allowed to resolve to internal addresses (Helm: `sandbox.allowedInternalHosts`) |
+| `CARAPACE_SANDBOX_K8S_RESOURCE_REQUESTS_EPHEMERAL_STORAGE` | `2Gi`           | Sandbox ephemeral storage request, for skill store paths (Helm: `sandbox.resources.requests.ephemeral-storage`) |
 | `CARAPACE_BUILDER_URL`                           | (none: no builder)        | [Skill builder](builder.md) API URL (Helm sets it)         |
 | `CARAPACE_BUILDER_CACHE_URL`                     | (required with a URL)     | Builder [binary cache](builder.md#binary-cache) URL (Helm sets it) |
 | `CARAPACE_BUILDER_TOKEN`                         | (required with a URL)     | Builder token (Helm reads it from the builder Secret)      |
@@ -302,7 +318,7 @@ the server being reachable on `localhost` (see [chatgpt-subscription.md](chatgpt
 
 ### Proxy
 
-Sandbox pods reach the internet exclusively through the HTTP proxy running inside the server pod (port 3128). The proxy enforces per-session domain allowlisting with token-based auth, and it refuses cluster-internal and private destinations (other pods, Services, the Kubernetes API, the node network) unless `sandbox.allowedInternalNetworks` or `sandbox.allowedInternalHosts` allows them; see [Internal destinations](sandbox.md#internal-destinations). Sandbox pods receive **only** `HTTP_PROXY` / `HTTPS_PROXY` env vars pointing to the carapace service.
+Sandbox pods reach the internet exclusively through the HTTP proxy running inside the server pod (port 3128). The proxy lets a domain through only once it is approved for the running exec, with token-based auth, and it refuses cluster-internal and private destinations (other pods, Services, the Kubernetes API, the node network) unless `sandbox.allowedInternalNetworks` or `sandbox.allowedInternalHosts` allows them; see [Internal destinations](sandbox.md#internal-destinations). Sandbox pods receive **only** `HTTP_PROXY` / `HTTPS_PROXY` env vars pointing to the carapace service.
 
 Git operations (`git clone`, `git push`) use the **sandbox API** (port 8322) directly with HTTP Basic Auth (`session_id:token`). The sandbox API hostname is added to `NO_PROXY` so Git traffic bypasses the HTTP proxy.
 
@@ -321,7 +337,7 @@ A second policy, in the builder namespace, covers the [skill builder](builder.md
 
 > **⚠️ SECURITY WARNING — NetworkPolicy is critical to carapace's security model**
 >
-> Sandbox pods must **never** have direct internet access. All outbound traffic is forced through the server's HTTP proxy, which enforces per-session domain allowlisting and the human-in-the-loop approval flow. If a sandbox pod can reach the internet without going through the proxy, an agent can exfiltrate data or interact with external services without any approval.
+> Sandbox pods must **never** have direct internet access. All outbound traffic is forced through the server's HTTP proxy, which lets a domain through only once the sentinel (or the user) approved it for the running exec. If a sandbox pod can reach the internet without going through the proxy, an agent can exfiltrate data or interact with external services without any approval.
 >
 > **The NetworkPolicy is the only thing preventing this.** If any of the following are true, the approval system can be trivially defeated:
 >

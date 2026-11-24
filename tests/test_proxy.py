@@ -261,31 +261,10 @@ async def _session_env(mgr: _SandboxManager) -> dict[str, str]:
     return await mgr._session_lifecycle.build_session_proxy_env("sess-1")
 
 
-class TestSandboxManagerAllowlists:
+class TestSandboxManagerProxyEnv:
     def _make_manager(self, tmp_path: Path, db_factory):
         runtime = make_runtime_mock()
         return _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-
-    def test_empty_by_default(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        assert mgr.get_allowed_domains("sess-1") == set()
-
-    def test_allow_domains(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        mgr.allow_domains("sess-1", {"a.com", "b.com"})
-        assert mgr.get_allowed_domains("sess-1") == {"a.com", "b.com"}
-
-    def test_allow_domains_accumulates(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        mgr.allow_domains("sess-1", {"a.com"})
-        mgr.allow_domains("sess-1", {"b.com"})
-        assert mgr.get_allowed_domains("sess-1") == {"a.com", "b.com"}
-
-    def test_cleanup_clears_domains(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        mgr.allow_domains("sess-1", {"a.com"})
-        mgr._cleanup_tracking("sess-1")
-        assert mgr.get_allowed_domains("sess-1") == set()
 
     def test_proxy_env_includes_token(self, tmp_path: Path, db_factory):
         mgr = self._make_manager(tmp_path, db_factory)
@@ -423,41 +402,6 @@ class TestSandboxManagerAllowlists:
 
 
 @pytest.mark.anyio
-async def test_exec_recreate_preserves_domains(tmp_path: Path, db_factory):
-    runtime = make_runtime_mock()
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
-    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-    _git_exists = ExecResult(stdout="", exit_code=0, output="")
-    runtime.exec = AsyncMock(
-        side_effect=[
-            _git_exists,  # knowledge repo probe after first create
-            _git_exists,  # install_commit_msg_hook
-            _git_exists,  # setup_git_identity
-            NO_LEFTOVER_PROCESSES,  # leftover process kill
-            ContainerGoneError(),  # exec_command triggers recreate
-            _git_exists,  # knowledge repo probe after recreate
-            _git_exists,  # install_commit_msg_hook
-            _git_exists,  # setup_git_identity
-            NO_LEFTOVER_PROCESSES,  # leftover process kill in the new sandbox
-            ExecResult(stdout="ok", exit_code=0, output="ok"),  # actual command retry
-        ]
-    )
-
-    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-    _seed_session_row(db_factory, tmp_path, "sess-1")
-    session_id = "sess-1"
-    await mgr.ensure_session(session_id)
-    mgr.allow_domains(session_id, {"api.example.com"})
-
-    output = await mgr.exec_command(session_id, "curl https://api.example.com")
-    assert output.output == "ok"
-    assert output.stdout == "ok"
-    assert mgr.get_allowed_domains(session_id) == {"api.example.com"}
-
-
-@pytest.mark.anyio
 async def test_exec_container_gone_recovery_restores_git_identity(tmp_path: Path, db_factory):
     runtime = make_runtime_mock()
     runtime.sandbox_exists = AsyncMock(return_value="container-1")
@@ -525,7 +469,6 @@ class TestSkillMetadataParsing:
 def _make_exec_state(**overrides) -> SandboxExecState:
     base = dict(
         sessions={},
-        allowed_domains={},
         exec_temp_domains={},
         session_current_command={},
         domain_approval_cbs={},

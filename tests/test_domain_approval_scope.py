@@ -18,7 +18,6 @@ from tests.session_helpers import _make_engine, _patch_sentinel
 def _coordinator(domain_cb: Any) -> SandboxExecCoordinator:
     state = SandboxExecState(
         sessions={},
-        allowed_domains={},
         exec_temp_domains={},
         session_current_command={},
         domain_approval_cbs={"s1": domain_cb},

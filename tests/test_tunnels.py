@@ -172,7 +172,6 @@ def _coordinator() -> tuple[SandboxExecCoordinator, SandboxExecState, list[str]]
     sc = SessionContainer(container_id="container-1", session_id="s1", created_at=0, last_used=0)
     state = SandboxExecState(
         sessions={"s1": sc},
-        allowed_domains={},
         exec_temp_domains={},
         session_current_command={},
         domain_approval_cbs={},

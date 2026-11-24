@@ -33,7 +33,7 @@ flowchart LR
 
 - **Shell access**: The agent runs commands via `exec` (equivalent to `docker exec` / `kubectl exec`)
 - **File operations**: `read`, `write`, `str_replace` work directly on the container filesystem
-- **Network access**: All outbound traffic goes through the HTTP forward proxy, which enforces per-session domain allowlisting
+- **Network access**: All outbound traffic goes through the HTTP forward proxy, which lets a domain through only once the sentinel approved it for the running exec
 - **Skills**: Every skill is in the cloned knowledge repo; the commands of built skills are on `PATH` ([below](#skill-commands-on-path))
 - **Workspace files**: `SOUL.md`, `USER.md`, `SECURITY.md` etc. live in the knowledge repo at `/workspace/`. Changes are persisted via `git commit` and `git push`.
 
@@ -123,9 +123,7 @@ Tools that insist on resolving a hostname locally before they connect fail in th
 
 ### Domain allowlisting
 
-Each session maintains a domain allowlist. Domains are added when:
-
-1. **Sentinel approval**: Unknown domains are evaluated by the sentinel. If allowed, they're added for the current exec call. If escalated, the user decides. Requests of one exec that arrive within a short window are reviewed together, and a decision is reused for the rest of that exec, never for the next one. The `exec` itself is not reviewed: the sandbox is the boundary, and this is where it is crossed. A command can also ask for its domains up front with [`cgate request`](#declaring-needs-up-front-cgate).
+Domains are granted per exec, never for the whole session. The sentinel evaluates each unknown domain; if it allows one, the domain is added for the current exec call. If escalated, the user decides. Requests of one exec that arrive within a short window are reviewed together, and a decision is reused for the rest of that exec, never for the next one. The `exec` itself is not reviewed: the sandbox is the boundary, and this is where it is crossed. A command can also ask for its domains up front with [`cgate request`](#declaring-needs-up-front-cgate).
 
 The proxy supports exact domain matching (`example.com`) and wildcard matching (`*.example.com`).
 
@@ -174,7 +172,7 @@ cgate request --domain api.example.com --domain '*.cdn.example.com' \
 
 After approval the domains are reachable, the [tunnels](#tunnels) are open and `ccred get` returns the credentials without another review, until the `exec` ends. A domain or credential that was not declared still works: it reaches the sentinel through the proxy or `ccred` as a short follow-up that does not repeat the command. Follow-ups are tracked per `exec`, so the first request of the next `exec` always shows its command, also when parallel tool calls run their `exec`s one after the other.
 
-A declaration is a batching hint and carries no trust. The sentinel judges it like the single requests, and sees the caller's store path together with whether it matches what was built for the current head. Until skills are built by the builder that match is reported as unknown. A process in the sandbox can claim any store path; the check covers the honest development case, where `nix shell path:./skills/x -c cmd` runs workspace code that differs from the committed skill.
+A declaration is a batching hint and carries no trust. The sentinel judges it like the single requests, and sees the caller's store path. Whether that path matches what was built for the current head is not checked yet and is reported as unknown. A process in the sandbox can claim any store path; such a check would cover the honest development case, where `nix shell path:./skills/x -c cmd` runs workspace code that differs from the committed skill.
 
 ### CLI contract
 

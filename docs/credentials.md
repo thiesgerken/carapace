@@ -1,6 +1,6 @@
 # Credentials
 
-carapace keeps credentials in external vault backends and exposes them to sandboxed tools when needed. The server never persists secret values to disk, and credential access is session-scoped with explicit approval.
+carapace keeps credentials in external vault backends and exposes them to sandboxed tools when needed. The server never persists secret values to disk, and every credential access is approved for one `exec` at a time.
 
 ## Design: pull, not push
 

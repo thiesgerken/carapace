@@ -75,17 +75,19 @@ The default is only copied into a knowledge repo that has no `SECURITY.md` yet, 
 
 - Drop `exec` from the tool calls the sentinel reviews, and replace a section on judging `exec` in the sandbox ("Sandbox and layered defense") with the boundary model ("The sandbox is the boundary").
 - Say that comments and `revise` only exist for git pushes: no tool call is reviewed.
+- Drop the "Usually low risk" list (file reads and edits, `list_skills`): the sentinel never sees those as requests.
+- Correct the knowledge repo path to `/workspace`, if your copy says `/workspace/knowledge`.
 - Replace "The triggering tool call was already cleared by you or the user", if your copy still has it: no review precedes a domain or credential request.
 - Remove "Read-only shell commands" from the low-risk list.
 - Replace the section on skill activation (`use_skill`) and the bullet "Skill-declared credentials: covered by approval of `use_skill`" with the section "Skills": skills are read with `read_skill`, which grants nothing, and their commands ask with `cgate request`.
 
 A stale policy does not break anything, but it describes reviews that no longer happen.
 
-The cap on domain reviews follows the same cut: `agent.max_sentinel_calls_per_tool_call` is now `agent.max_sentinel_calls_per_exec`, since one exec is the scope a review covers. A value saved in the platform settings is carried over by the database migration. Anywhere else the old name fails config validation at start; rename it there.
+The cap on domain reviews follows the same cut: `agent.max_sentinel_calls_per_tool_call` is now `agent.max_sentinel_calls_per_exec`, since one exec is the scope a review covers. The setting lives only in the platform settings, and the database migration renames it there.
 
 ## Tool calls
 
-No agent tool is reviewed by itself: `exec`, `read`, `write`, `str_replace`, `read_skill`, `send_file`, `show_artifact` and `read_tool_output` all run right away. The sandbox is the boundary, and a tool reaches outside only through a boundary request or a push, which are reviewed.
+No agent tool is reviewed by itself: `exec`, `read`, `write`, `str_replace`, `list_skills`, `read_skill`, `send_file`, `show_artifact` and `read_tool_output` all run right away. The sandbox is the boundary, and a tool reaches outside only through a boundary request or a push, which are reviewed.
 
 Each call still gets an action log entry with its full arguments and an audit entry (`auto_allowed`), YOLO mode included; it is not a silent bypass. For `exec` that matters: the sentinel sees every command that ran since its last decision with the next boundary request, which is where a sequence like packing up mail and then asking for an upload host shows. A `read_skill` call tells it which skill the following requests belong to.
 
@@ -161,7 +163,7 @@ This action log is distinct from both runtime session transcripts:
 Requests that cross the sandbox boundary while a command runs, a domain at the proxy, a credential through `ccred` or everything a command declares up front with `cgate request`, are decisions of their own, not a plausibility check behind an already reviewed `exec`. The sentinel is told so in its instructions.
 
 - **What the sentinel sees.** The usual action log update: every entry since its last decision, which includes the `exec` calls that ran since then, followed by the request and the command that is running. A later request of the same `exec` is a short follow-up instead: what it adds, without repeating the command. The first request of every `exec` shows its command.
-- **Up-front requests.** `cgate request` asks for domains, credentials and TCP tunnels together and gets one verdict for all of them. A tunnel is judged like a domain request for its host ([sandbox.md](sandbox.md#tunnels)). A declaration carries no trust; the sentinel also sees the caller's store path and whether it matches the build for the current head (unknown until skills are built by the builder). See [sandbox.md](sandbox.md#declaring-needs-up-front-cgate) for the CLI.
+- **Up-front requests.** `cgate request` asks for domains, credentials and TCP tunnels together and gets one verdict for all of them. A tunnel is judged like a domain request for its host ([sandbox.md](sandbox.md#tunnels)). A declaration carries no trust; the sentinel also sees the caller's store path; whether it matches the build for the current head is not checked yet, so it is reported as unknown. See [sandbox.md](sandbox.md#declaring-needs-up-front-cgate) for the CLI.
 - **What the caller gets back.** The verdict and the sentinel's (or the user's) explanation. The proxy answers a denied domain with `403 Forbidden` and the explanation as a plain-text body; `ccred` and `cgate` print a denial on stderr and exit with status 1. The command decides how to continue; the `exec` is not aborted from outside. `revise` and comments are not offered here.
   For HTTPS the 403 answers the `CONNECT`, and common clients drop its body: curl reports `CONNECT tunnel failed, response 403`, Python requests `Tunnel connection failed: 403 Forbidden`. Only plain HTTP clients reliably see the explanation, so do not build on it for HTTPS.
 - **Scope of an approval.** An approved domain or credential is free for the rest of that `exec` and not beyond. A credential approval covers the representation that was reviewed: a second `ccred get` for the same vault path in the same form returns without another review, `--json` after an approved password is reviewed again, and the next `exec` asks again. An approved `ccred list` or `ccred search` covers further listings in that `exec`. Only the first request is recorded; repeats within the `exec` leave no new UI, action log or audit entry.

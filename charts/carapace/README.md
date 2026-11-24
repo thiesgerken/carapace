@@ -4,7 +4,8 @@ Helm chart for deploying [carapace](https://github.com/thiesgerken/carapace) on 
 
 ## Prerequisites
 
-- Kubernetes 1.27+ with [Gateway API](https://gateway-api.sigs.k8s.io/) CRDs installed
+- Kubernetes 1.29+ with [Gateway API](https://gateway-api.sigs.k8s.io/) CRDs installed
+- For the in-cluster [skill builder](../../docs/builder.md#kubernetes): nodes with user namespaces for pods (`hostUsers: false`, `procMount: Unmasked`). The chart creates its namespace `<release namespace>-builder` with Pod Security `privileged`; the release namespace works with `baseline`. Without such nodes, set `builder.enabled: false` and point `builder.externalUrl` at a builder elsewhere.
 - Helm 3
 - A **ReadWriteOnce** (RWO) StorageClass. The server gets its own data PVC and each sandbox session gets its own PVC.
 - Container images pushed to a registry (GHCR by default)
@@ -13,7 +14,7 @@ Helm chart for deploying [carapace](https://github.com/thiesgerken/carapace) on 
 
 > **⚠️ SECURITY WARNING — NetworkPolicy is critical**
 >
-> carapace's security model relies on sandbox pods having **no direct internet access**. All outbound traffic is forced through the server's HTTP proxy, which enforces per-session domain allowlisting and the human-in-the-loop approval flow.
+> carapace's security model relies on sandbox pods having **no direct internet access**. All outbound traffic is forced through the server's HTTP proxy, which lets a domain through only once the sentinel (or the user) approved it for the running exec.
 >
 > The chart installs a `NetworkPolicy` that restricts sandbox pod egress to the proxy port (3128) and the sandbox API port (8322) only; sandbox pods get no DNS. **If you add broader egress rules to the namespace, or your CNI does not enforce NetworkPolicy, sandbox pods can bypass the proxy entirely — defeating the approval system and all domain-level security controls.**
 >
@@ -27,7 +28,7 @@ Helm chart for deploying [carapace](https://github.com/thiesgerken/carapace) on 
 
 Server, frontend, and Bitwarden CLI use Nix-built runtime-only images. Their pods run as UID/GID/fsGroup **999**, with `runAsNonRoot` and seccomp `RuntimeDefault`; all application containers drop capabilities, disable privilege escalation, and use read-only roots with an `emptyDir` on `/tmp`. The Bitwarden nginx proxy uses the pinned unprivileged nginx image under the same restrictions.
 
-The server keeps its service account token to manage sandboxes. Frontend and Bitwarden pods disable token automounting. The server UID and data-volume fsGroup stay 999. Kubelet's default `fsGroupChangePolicy: Always` makes legacy root-owned Bitwarden files group-accessible under fsGroup 999, so chart upgrades do not require a manual PVC ownership change. Bitwarden gets an ephemeral state volume when persistence is disabled. Postgres is left unchanged; the sandbox still runs as root so the agent can install packages at runtime.
+The server keeps its service account token to manage sandboxes. Frontend and Bitwarden pods disable token automounting. The server UID and data-volume fsGroup stay 999. Kubelet's default `fsGroupChangePolicy: Always` makes legacy root-owned Bitwarden files group-accessible under fsGroup 999, so chart upgrades do not require a manual PVC ownership change. Bitwarden gets an ephemeral state volume when persistence is disabled. Postgres is left unchanged; the sandbox (a Nix-built image) still runs as root so the agent can install packages at runtime.
 
 The frontend container listens on 8080 behind the existing port-80 Service. `frontend.csp.imgSrcExtra` renders a ConfigMap containing an nginx override snippet, and its checksum triggers a rollout on changes. There is no CSP environment-variable templating.
 
@@ -148,7 +149,7 @@ All images default to the chart's `appVersion` tag. Release charts use the relea
 
 ### Injecting secrets and environment variables
 
-The chart does **not** create Secret resources — manage them externally and reference them:
+Apart from the generated builder token (`<release>-builder`) and the bundled Postgres password, the chart creates no Secret resources. Manage the others externally and reference them:
 
 ```yaml
 # values.yaml
@@ -283,6 +284,15 @@ The Bitwarden CLI binds to the fixed localhost-only internal port `8088` inside 
 | `server.probes`                                        | see `values.yaml`                | Server startup, liveness, and readiness probe timing                |
 | `sandbox.image.tag`                                    | `""` (appVersion)                | Sandbox base image tag                                              |
 | `sandbox.sandboxesName`                                | `null` (`<release>-sandboxes`)   | `Sandboxes` CR name; set `""` to use the Deployment as owner        |
+| `sandbox.allowedInternalNetworks`                      | `[]`                             | CIDRs the session proxy may reach despite being internal            |
+| `sandbox.allowedInternalHosts`                         | `[]`                             | Host names that may resolve to internal addresses                   |
+| `builder.enabled`                                      | `true`                           | Deploy the skill builder in the cluster                             |
+| `builder.namespace`                                    | `""` (`<release namespace>-builder`) | Namespace of the in-cluster builder                            |
+| `builder.createNamespace`                              | `true`                           | Create that namespace with Pod Security `privileged`                |
+| `builder.externalUrl` / `builder.externalCacheUrl`     | `""`                             | A builder outside the cluster, with `builder.enabled: false`        |
+| `builder.auth.existingSecret`                          | `""` (generated)                 | Secret with the builder token under `token`                         |
+| `builder.persistence.size`                             | `20Gi`                           | The builder's Nix store                                             |
+| `builder.upstreamCaches`                               | `[]` (cache.nixos.org)           | Binary caches the builder substitutes from                          |
 | `ingress.enabled`                                      | `true`                           | Create a Gateway API HTTPRoute                                      |
 | `ingress.hostname`                                     | `carapace.example.com`           | Ingress hostname                                                    |
 | `ingress.parentRefs`                                   | `[{name: default-gateway}]`      | Gateway parent references                                           |

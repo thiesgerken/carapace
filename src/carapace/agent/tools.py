@@ -316,7 +316,7 @@ _SANDBOX_INSTRUCTIONS = (
     "`read_skill` waits until they are there and says what each command asks for when it starts.\n\n"
     "## Network Access\n"
     "The sandbox has internet access. Outgoing requests are allowed but subject to "
-    "security review by the sentinel — like all tool calls, network activity is evaluated "
+    "security review by the sentinel: each domain a command reaches is evaluated "
     "and may be denied if it violates the security policy. "
     "A skill command asks up front for the domains and credentials it declares (`cgate`), "
     "and the sentinel reviews that request for the exec it runs in. "

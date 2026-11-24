@@ -87,7 +87,6 @@ class SandboxManager:
         self._sessions: dict[str, SessionContainer] = {}
         self._token_to_session: dict[str, str] = {}
         self._session_tokens: dict[str, str] = {}
-        self._allowed_domains: dict[str, set[str]] = {}
         self._exec_temp_domains: dict[str, set[str]] = {}  # session_id -> domains, cleared after each exec
         self._session_current_command: dict[str, str] = {}
         self._domain_approval_cbs: dict[str, Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]] = {}
@@ -109,7 +108,6 @@ class SandboxManager:
                 sessions=self._sessions,
                 token_to_session=self._token_to_session,
                 session_tokens=self._session_tokens,
-                allowed_domains=self._allowed_domains,
                 exec_temp_domains=self._exec_temp_domains,
                 session_current_command=self._session_current_command,
                 domain_approval_cbs=self._domain_approval_cbs,
@@ -137,7 +135,6 @@ class SandboxManager:
             profile_sync=self._profile_sync,
             state=SandboxExecState(
                 sessions=self._sessions,
-                allowed_domains=self._allowed_domains,
                 exec_temp_domains=self._exec_temp_domains,
                 session_current_command=self._session_current_command,
                 domain_approval_cbs=self._domain_approval_cbs,
@@ -676,12 +673,6 @@ class SandboxManager:
 
     def verify_session_token(self, session_id: str, token: str) -> bool:
         return self._session_lifecycle.verify_session_token(session_id, token)
-
-    def allow_domains(self, session_id: str, domains: set[str]) -> None:
-        self._exec_coordinator.allow_domains(session_id, domains)
-
-    def get_allowed_domains(self, session_id: str) -> set[str]:
-        return self._exec_coordinator.get_allowed_domains(session_id)
 
     def get_domain_info(self, session_id: str) -> list[dict[str, str]]:
         return self._exec_coordinator.get_domain_info(session_id)
