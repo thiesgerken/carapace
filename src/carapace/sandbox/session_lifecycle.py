@@ -79,7 +79,7 @@ class SandboxSessionLifecycle:
         warm_pool_size: int,
         knowledge_repo_name_for_session: Callable[[str], str],
         git_author_for_session: Callable[[str], str],
-        nix_config: Callable[[], str | None] | None = None,
+        nix_config: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._runtime = runtime
         self._state = state
@@ -233,7 +233,10 @@ class SandboxSessionLifecycle:
             )
         proxy_url = f"http://{host_ip}:{self._proxy_port}"
         logger.info(f"Proxy URL for session {session_id}: {proxy_url}")
-        return self.build_proxy_env(session_id, proxy_token, proxy_url)
+        env = self.build_proxy_env(session_id, proxy_token, proxy_url)
+        if self._nix_config is not None:
+            env["NIX_CONFIG"] = await self._nix_config()
+        return env
 
     def build_proxy_env(self, session_id: str, proxy_token: str, proxy_url: str) -> dict[str, str]:
         """Build HTTP_PROXY / NO_PROXY env vars for session containers."""
@@ -260,7 +263,6 @@ class SandboxSessionLifecycle:
             "GIT_REPO_URL": git_url,
             "CARAPACE_API_URL": f"{scheme}://{session_id}:{proxy_token}@{no_proxy_host}:{self._sandbox_port}",
             "CARAPACE_SESSION_ID": session_id,
-            **({"NIX_CONFIG": nix_config} if self._nix_config and (nix_config := self._nix_config()) else {}),
         }
 
     async def log_assignment(

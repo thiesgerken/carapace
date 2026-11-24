@@ -13,6 +13,10 @@ class BuilderSystemMismatchError(RuntimeError):
     pass
 
 
+class BuilderUnavailableError(RuntimeError):
+    pass
+
+
 def sandbox_system() -> str:
     """The Nix system of this host's sandboxes: always Linux, on the server's CPU architecture.
 
@@ -31,8 +35,8 @@ class BuilderClient:
         )
         self._info: BuilderInfo | None = None
 
-    async def check_system(self) -> None:
-        """Raise if the builder builds for another system than the sandboxes run on."""
+    async def check_system(self) -> BuilderInfo:
+        """Fetch `/info`; raise if the builder builds for another system than the sandboxes run on."""
         response = await self._client.get("/info")
         response.raise_for_status()
         info = BuilderInfo.model_validate(response.json())
@@ -40,22 +44,29 @@ class BuilderClient:
         if info.system != expected:
             raise BuilderSystemMismatchError(f"The builder builds for {info.system}, but sandboxes run on {expected}")
         self._info = info
+        return info
 
     async def _ensure_system(self) -> None:
         if self._info is None:
             await self.check_system()
 
-    def sandbox_nix_config(self) -> str | None:
-        """`NIX_CONFIG` for sandboxes: the builder's cache as the only substituter.
+    async def sandbox_nix_config(self) -> str:
+        """`NIX_CONFIG` for a new sandbox: the builder's cache as the only substituter.
 
-        None until the builder has answered once; sandboxes then keep the image's defaults.
+        Fetches the keys on every call, so a builder with a new key (a wiped volume) is picked up.
+        A builder that does not answer fails the sandbox start: falling back to another substituter
+        would quietly put every download behind the domain gate.
         """
-        if self._info is None:
-            return None
+        try:
+            info = await self.check_system()
+        except httpx.HTTPError as exc:
+            raise BuilderUnavailableError(
+                f"The skill builder is configured but unreachable ({exc}); sandboxes need its cache keys"
+            ) from exc
         return "\n".join(
             [
                 f"substituters = http://{CACHE_HOST}",
-                f"trusted-public-keys = {' '.join(self._info.cache_public_keys)}",
+                f"trusted-public-keys = {' '.join(info.cache_public_keys)}",
                 # Fastest and smallest on a sandbox's single CPU (#548).
                 "max-substitution-jobs = 1",
                 # Nix otherwise remembers a missing path for an hour, past the build that adds it.

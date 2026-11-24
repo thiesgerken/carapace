@@ -227,7 +227,7 @@ class SandboxManager:
         warm_pool_size: int = 0,
         skill_activator_timeout_seconds: int = 600,
         max_sandboxes_per_user: int = 0,
-        nix_config: Callable[[], str | None] | None = None,
+        nix_config: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._runtime = runtime
         self._max_sandboxes_per_user = max_sandboxes_per_user

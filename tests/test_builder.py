@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from carapace.builder import app as builder_app
 from carapace.builder import client as builder_client
 from carapace.builder import nix
-from carapace.builder.client import BuilderClient, BuilderSystemMismatchError
+from carapace.builder.client import BuilderClient, BuilderSystemMismatchError, BuilderUnavailableError
 from carapace.builder.models import BuilderInfo, BuildResult
 
 TOKEN = "builder-test-token"
@@ -123,20 +123,31 @@ async def test_the_client_refuses_a_builder_for_another_system(monkeypatch: pyte
     assert requests == ["/info"]
 
 
-async def test_sandboxes_substitute_from_the_builder_cache_once_its_keys_are_known(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_every_sandbox_gets_the_builders_current_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(builder_client, "sandbox_system", lambda: "x86_64-linux")
-    info = BuilderInfo(system="x86_64-linux", cache_public_keys=["carapace-builder-1:AAAA", "cache.nixos.org-1:BBBB"])
+    keys = iter([["carapace-builder-1:AAAA", "cache.nixos.org-1:BBBB"], ["carapace-builder-1:CCCC"]])
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=BuilderInfo(system="x86_64-linux", cache_public_keys=next(keys)).model_dump())
+
     client = BuilderClient("http://builder", TOKEN, 5)
-    client._client = httpx.AsyncClient(
-        base_url="http://builder", transport=httpx.MockTransport(lambda _: httpx.Response(200, json=info.model_dump()))
-    )
+    client._client = httpx.AsyncClient(base_url="http://builder", transport=httpx.MockTransport(handler))
 
-    assert client.sandbox_nix_config() is None
-    await client.check_system()
+    first = await client.sandbox_nix_config()
+    # A wiped builder volume means a new key, picked up by the next sandbox.
+    second = await client.sandbox_nix_config()
 
-    config = client.sandbox_nix_config()
-    assert config is not None
-    assert "substituters = http://cache.carapace.internal\n" in config
-    assert "trusted-public-keys = carapace-builder-1:AAAA cache.nixos.org-1:BBBB\n" in config
+    assert "substituters = http://cache.carapace.internal\n" in first
+    assert "trusted-public-keys = carapace-builder-1:AAAA cache.nixos.org-1:BBBB\n" in first
+    assert "trusted-public-keys = carapace-builder-1:CCCC\n" in second
+
+
+async def test_a_sandbox_does_not_start_while_the_builder_has_not_answered() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = BuilderClient("http://builder", TOKEN, 5)
+    client._client = httpx.AsyncClient(base_url="http://builder", transport=httpx.MockTransport(handler))
+
+    with pytest.raises(BuilderUnavailableError, match="configured but unreachable"):
+        await client.sandbox_nix_config()
