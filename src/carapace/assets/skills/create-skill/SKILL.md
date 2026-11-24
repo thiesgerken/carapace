@@ -59,7 +59,7 @@ Good filenames are `REFERENCE.md`, `CONFIG.md`, or `references/*.md`.
 6. If the skill has commands, it is a flake: write `flake.nix` with the commands and what they need, lock it, and commit `flake.lock` (see `REFERENCE.md`). Add an `Exposed Commands` section near the top of `SKILL.md` with the real command names.
 7. Build and run every command from the workspace before pushing: `nix shell path:./skills/<name> -c <command> …`.
 8. If implementation or reference material is not needed for normal use, add a sidecar markdown file and link it from `SKILL.md`.
-9. Commit and push. Tell the user the builder builds the skill after the push, the Knowledge view shows its build state, and its commands are available in new sessions once built.
+9. Commit and push. `read_skill` sees only pushed skills. After the push, `read_skill(<name>)` waits for the build and puts the commands on `PATH`, in this session too. Tell the user the builder builds the skill after the push and the Knowledge view shows its build state.
 
 ## Setup Guidance
 
