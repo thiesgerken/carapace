@@ -499,10 +499,6 @@ async def _render_approval_request(data: dict[str, Any]) -> tuple[bool, str | No
     explanation = data.get("explanation", "")
     if explanation:
         panel_lines.append(f"[bold]Reason:[/bold] {explanation}")
-    risk_level = data.get("risk_level", "")
-    if risk_level:
-        risk_style = {"high": "red", "medium": "yellow", "low": "green"}.get(risk_level, "dim")
-        panel_lines.append(f"[bold]Risk level:[/bold] [{risk_style}]{risk_level}[/{risk_style}]")
 
     console.print()
     console.print(

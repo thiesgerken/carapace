@@ -215,7 +215,6 @@ class ApprovalRequest(BaseModel):
     tool: str
     args: dict[str, Any]
     explanation: str = ""
-    risk_level: str = ""
 
 
 class DomainAccessApprovalRequest(BaseModel):

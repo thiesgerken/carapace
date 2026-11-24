@@ -153,7 +153,7 @@ Migration 0010 renamed every stored cost limit (platform default, user defaults,
 
 The **autonomous streak** is the tool calls the agent attempted since the last human interaction. The **autonomy limit** (`SessionBudget.autonomous_tool_calls`, `/budget autonomy N`) caps it. It is loop protection, not security: it applies in YOLO mode too, where nobody watches the agent.
 
-What counts: every tool call attempt, including calls the sentinel denies and skill-blocked calls, since a model looping on denied calls is exactly the case to catch. Output tools (`task_done`, `task_failed`), access decisions nested under a tool call (`proxy_domain`, `credential_access`, `git_push`), and the re-run of a call the user approved don't count. The total `tool_calls` budget is separate and counts allowed calls only.
+What counts: every tool call attempt, including calls whose command then fails or whose boundary request is denied, since a model looping on failing calls is exactly the case to catch. Output tools (`task_done`, `task_failed`), access decisions nested under a tool call (`proxy_domain`, `credential_access`, `git_push`), and the re-run of a call the user approved don't count. The total `tool_calls` budget is separate and counts allowed calls only.
 
 What resets the streak:
 
@@ -332,11 +332,11 @@ The WebSocket protocol also supports non-slash turn controls for retry and reset
 
 ## Approval gate
 
-The approval gate handles security escalations. When the sentinel escalates a tool call, the flow is:
+The approval gate holds tool calls over the [autonomy limit](#autonomy-limit) for the user. Tool calls are never escalated by the sentinel; its escalations of boundary requests and pushes have their own messages (domain access, credential access, git push). The flow:
 
 1. Agent loop receives `DeferredToolRequests` (tools that need approval)
 2. `ApprovalRequest` is broadcast to all session subscribers (WebSocket clients, Matrix rooms)
-3. The request includes the sentinel's explanation, risk level, tool name, and arguments
+3. The request includes the reason ("Autonomy limit reached (N tool calls without you)"), tool name, and arguments
 4. Agent loop blocks waiting on the approval queue
 5. User approves or denies via the frontend UI, reaction, or slash command
 6. `ApprovalResponse` is routed back through the approval queue

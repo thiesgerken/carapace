@@ -89,7 +89,7 @@ Who doesn't want a personal assistant? OpenClaw showed that this is achievable w
   <img src="docs/assets/screenshots/post_readonly.png" width="1000">
 </p>
 
-<p align="center"><em>Example of a tool call that was intercepted and blocked by the sentinel due to security policy.</em></p>
+<p align="center"><em>Example of a request that was blocked by the sentinel due to security policy.</em></p>
 
 ## Remarks
 

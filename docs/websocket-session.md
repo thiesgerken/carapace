@@ -176,11 +176,11 @@ When present:
 - `approval_verdict`: `allow` \| `revise` \| `deny` \| `escalate`
 - `approval_comment`: what the sentinel told the agent about a git push it allowed (see [Sentinel comments](security.md#sentinel-comments))
 
-**`safe-list`** — every agent tool call: none is reviewed by itself (see [Tool calls](security.md#tool-calls)).
+**`safe-list`** — every agent tool call, in YOLO mode too: none is reviewed by itself (see [Tool calls](security.md#tool-calls)). The name is historical; there is no list.
 
 **`skill`** — only in sessions from before skills were read instead of activated: the action was covered by a skill's context grant.
 
-**`bypass`** — the action was allowed without sentinel evaluation because the session is in YOLO mode.
+**`bypass`** — a boundary request or push was allowed without sentinel evaluation because the session is in YOLO mode.
 
 ## Turn-control messages
 

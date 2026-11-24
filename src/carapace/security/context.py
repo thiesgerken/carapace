@@ -527,15 +527,6 @@ class SessionSecurity:
             row.synced_entries = self._last_synced_idx
             row.eval_count = self.sentinel_eval_count
 
-    def tool_calls_since_last_user_message(self) -> int:
-        count = 0
-        for entry in reversed(self.action_log):
-            if isinstance(entry, UserMessageEntry):
-                break
-            if isinstance(entry, ToolCallEntry):
-                count += 1
-        return count
-
     def write_audit(self, entry: AuditEntry) -> None:
         if self._session_factory is None:
             return

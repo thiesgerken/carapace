@@ -156,7 +156,6 @@ async def run_agent_turn(
                     tool=meta.get("tool", call.tool_name),
                     args=args,
                     explanation=meta.get("explanation", ""),
-                    risk_level=meta.get("risk_level", ""),
                 )
             )
 

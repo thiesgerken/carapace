@@ -79,7 +79,7 @@ src/carapace/          # main package
   memory/
     service.py         # MemoryService facade: long-term memory tasks, worker, queries (see docs/memory.md)
   security/
-    __init__.py        # public API: evaluate(), evaluate_domain(), safe-list
+    __init__.py        # public API: record_tool_call(), evaluate_domain_with(), boundary and push evaluations
     sentinel.py        # LLM-powered security agent (shadow conversation)
     context.py         # action log entries, sentinel verdict, session security state
   sandbox/
@@ -121,7 +121,7 @@ data/                  # runtime data directory (config, sessions, notifications
 - Commit messages use [gitmoji](https://gitmoji.dev/) (e.g. `🐛 fix:`, `✨ feat:`, `♻️ refactor:`). The emoji sets the release level per [Presswerk's Gitmoji catalog](https://presswerk.dev/reference/analyzers/gitmoji/), with ♻️ and 👷 raised to patch
 - Try to commit isolated fixes / features
 - Security policy is a natural-language `SECURITY.md` that becomes the sentinel agent's system prompt
-- Every tool call goes through a safe-list check, then an LLM sentinel gate (`security.evaluate()`)
+- Tool calls are not reviewed: `security.record_tool_call()` puts each one into the action log. The LLM sentinel reviews what crosses the sandbox boundary (proxy domains, credentials, `cgate request`, git pushes)
 - The sentinel maintains a persistent shadow conversation per session for contextual decisions
 - An append-only action log tracks all agent actions, user messages, and security decisions
 - Skills follow the open [AgentSkills](https://agentskills.io/) format
