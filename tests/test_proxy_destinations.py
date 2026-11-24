@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import ipaddress
 from typing import Any
@@ -86,6 +87,9 @@ class _Writer:
         self.writes.append(data)
 
     async def drain(self) -> None:
+        return None
+
+    def close(self) -> None:
         return None
 
 
@@ -191,3 +195,107 @@ async def test_connect_dials_the_checked_address(monkeypatch: pytest.MonkeyPatch
     await proxy._handle_connect(AsyncMock(), _Writer(), "s1", "10.0.0.2", "pypi.org:443")  # type: ignore[arg-type]
 
     assert dialed == [(PUBLIC, 443)]
+
+
+NARINFO = "/0z5c0imb0fnaf9a3ab2s1a39xh1g8gqi.narinfo"
+
+
+def _cache_proxy(approval: AsyncMock, cache_url: str | None = "http://builder:8331") -> ProxyServer:
+    return ProxyServer(
+        verify_session_token=lambda _sid, _tok: True,
+        get_allowed_domains=lambda _sid: set(),
+        attach_sandbox_call=lambda _sid: contextlib.nullcontext(),
+        request_approval=approval,
+        builder_cache_url=cache_url,
+    )
+
+
+async def test_the_builder_cache_is_forwarded_without_a_decision(monkeypatch: pytest.MonkeyPatch) -> None:
+    lookups = fake_dns(monkeypatch, {})
+    remote = _Writer()
+    dialed: list[tuple[str, int]] = []
+
+    async def open_connection(host: str, port: int, **_kwargs: Any) -> Any:
+        dialed.append((host, port))
+        response = asyncio.StreamReader()
+        response.feed_data(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+        response.feed_eof()
+        return response, remote
+
+    monkeypatch.setattr("carapace.sandbox.proxy.asyncio.open_connection", open_connection)
+    approval = _approval(False)
+    writer = _Writer()
+    await _cache_proxy(approval)._handle_http(
+        AsyncMock(),
+        writer,  # type: ignore[arg-type]
+        "s1",
+        "10.0.0.2",
+        "GET",
+        f"http://cache.carapace.internal{NARINFO}",
+        "HTTP/1.1",
+        [b"Host: cache.carapace.internal"],
+    )
+
+    request = b"".join(remote.writes)
+    assert dialed == [("builder", 8331)]
+    assert request.startswith(f"GET {NARINFO} HTTP/1.1\r\n".encode())
+    assert b"Host: builder:8331\r\n" in request and b"cache.carapace.internal" not in request
+    assert b"".join(writer.writes).endswith(b"ok")
+    approval.assert_not_awaited()
+    assert lookups == []
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/builds/0123"),
+        ("GET", "/info"),
+        ("GET", "/nar/../builds"),
+        ("GET", "/upstream/0/builds"),
+        ("GET", "/upstream/0/nar/" + "a" * 53 + ".nar"),
+        ("GET", "/nar/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.nar"),
+        ("PUT", NARINFO),
+        ("POST", "/nar/1w1fff338fvdw53sqgamddn1b2xgds473pv6y13gizdbqjv4i5p3.nar.xz"),
+    ],
+)
+async def test_the_builder_cache_mapping_passes_only_cache_reads(
+    monkeypatch: pytest.MonkeyPatch, method: str, path: str
+) -> None:
+    async def open_connection(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("must not connect")
+
+    monkeypatch.setattr("carapace.sandbox.proxy.asyncio.open_connection", open_connection)
+    approval = _approval(True)
+    writer = _Writer()
+    await _cache_proxy(approval)._handle_http(
+        AsyncMock(),
+        writer,  # type: ignore[arg-type]
+        "s1",
+        "10.0.0.2",
+        method,
+        f"http://cache.carapace.internal{path}",
+        "HTTP/1.1",
+        [],
+    )
+
+    assert b"serves only reads" in _refusal(writer)
+    approval.assert_not_awaited()
+
+
+async def test_the_builder_cache_is_unavailable_without_a_builder(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_dns(monkeypatch, {})
+    approval = _approval(True)
+
+    body = _refusal(await _get(_cache_proxy(approval, None), f"http://cache.carapace.internal{NARINFO}"))
+
+    assert b"No builder cache" in body
+    approval.assert_not_awaited()
+
+
+async def test_the_builder_cache_refuses_connect(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_dns(monkeypatch, {})
+    approval = _approval(True)
+
+    _refusal(await _connect(_cache_proxy(approval), "cache.carapace.internal:443"))
+
+    approval.assert_not_awaited()

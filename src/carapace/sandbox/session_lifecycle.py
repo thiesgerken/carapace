@@ -79,6 +79,7 @@ class SandboxSessionLifecycle:
         warm_pool_size: int,
         knowledge_repo_name_for_session: Callable[[str], str],
         git_author_for_session: Callable[[str], str],
+        nix_config: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._runtime = runtime
         self._state = state
@@ -92,6 +93,8 @@ class SandboxSessionLifecycle:
         self._warm_pool_size = warm_pool_size
         self._knowledge_repo_name_for_session = knowledge_repo_name_for_session
         self._git_author_for_session = git_author_for_session
+        # The builder's cache settings for Nix in the sandbox, once the builder has answered.
+        self._nix_config = nix_config
         self._warm_claim_lock = asyncio.Lock()
         self._warm_refill_tasks: set[asyncio.Task[int]] = set()
 
@@ -230,7 +233,10 @@ class SandboxSessionLifecycle:
             )
         proxy_url = f"http://{host_ip}:{self._proxy_port}"
         logger.info(f"Proxy URL for session {session_id}: {proxy_url}")
-        return self.build_proxy_env(session_id, proxy_token, proxy_url)
+        env = self.build_proxy_env(session_id, proxy_token, proxy_url)
+        if self._nix_config is not None:
+            env["NIX_CONFIG"] = await self._nix_config()
+        return env
 
     def build_proxy_env(self, session_id: str, proxy_token: str, proxy_url: str) -> dict[str, str]:
         """Build HTTP_PROXY / NO_PROXY env vars for session containers."""

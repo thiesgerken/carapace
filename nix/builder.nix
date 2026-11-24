@@ -2,6 +2,22 @@
 let
   inherit (pkgs) lib;
   apiUid = "999";
+  cacheUid = "998";
+  # Root-owned, so the API user (and with it any evaluation) can neither read nor swap the key.
+  keyDir = "/nix/var/carapace-builder-key";
+  upstreamCaches = [
+    {
+      url = "https://cache.nixos.org";
+      public_key = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=";
+    }
+  ];
+
+  harmoniaConf = pkgs.writeText "harmonia.toml" ''
+    bind = "127.0.0.1:5000"
+    enable_compression = true
+    priority = 30
+    sign_key_paths = [ "${keyDir}/secret" ]
+  '';
   buildUsers = lib.genList (i: i + 1) 32;
 
   nixConf = pkgs.writeText "nix.conf" ''
@@ -21,17 +37,31 @@ let
     runtimeInputs = [
       pkgs.nix
       pkgs.util-linuxMinimal
+      pkgs.jq
+      pkgs.harmonia
       builder
     ];
     text = ''
       trap 'kill $(jobs -p) 2>/dev/null; wait' TERM INT
-      nix-daemon &
+      if [ ! -e ${keyDir}/secret ]; then
+        mkdir -p ${keyDir}
+        nix-store --generate-binary-cache-key carapace-builder-1 ${keyDir}/secret ${keyDir}/public
+      fi
+      chown ${cacheUid}:${cacheUid} ${keyDir}/secret
+      chmod 600 ${keyDir}/secret
+      chmod 644 ${keyDir}/public
+      # The daemon substitutes from the same upstreams the cache passes through.
+      NIX_CONFIG="substituters = $(jq -r 'map(.url) | join(" ")' <<< "$CARAPACE_BUILDER_UPSTREAM_CACHES")
+      trusted-public-keys = $(jq -r 'map(.public_key) | join(" ")' <<< "$CARAPACE_BUILDER_UPSTREAM_CACHES")" \
+        nix-daemon &
       until [ -S /nix/var/nix/daemon-socket/socket ]; do sleep 0.1; done
       # The API and every evaluation it starts run unprivileged, through the daemon.
       HOME=/tmp NIX_REMOTE=daemon setpriv --reuid=${apiUid} --regid=${apiUid} --clear-groups carapace-builder &
-      # Whichever of the two stops first takes the container down with it.
+      # harmonia serves the store to the cache listener on loopback and is the only one with the key.
+      CONFIG_FILE=${harmoniaConf} setpriv --reuid=${cacheUid} --regid=${cacheUid} --clear-groups harmonia-cache &
+      # Whichever stops first takes the container down with it.
       wait -n
-      echo 'carapace-builder: the daemon or the API stopped' >&2
+      echo 'carapace-builder: the daemon, the API or the cache stopped' >&2
       exit 1
     '';
   };
@@ -54,6 +84,7 @@ let
     {
       echo 'root:x:0:0:root:/root:/bin/bash'
       echo 'carapace-builder:x:${apiUid}:${apiUid}:Carapace builder:/tmp:/bin/false'
+      echo 'harmonia:x:${cacheUid}:${cacheUid}:Carapace builder cache:/var/empty:/bin/false'
       ${lib.concatMapStrings (
         i:
         "echo 'nixbld${toString i}:x:${toString (30000 + i)}:30000:Nix build user:/var/empty:/bin/false'\n"
@@ -62,6 +93,7 @@ let
     {
       echo 'root:x:0:'
       echo 'carapace-builder:x:${apiUid}:'
+      echo 'harmonia:x:${cacheUid}:'
       echo 'nixbld:x:30000:${lib.concatMapStringsSep "," (i: "nixbld${toString i}") buildUsers}'
     } > $out/etc/group
     ln -s ${nixConf} $out/etc/nix/nix.conf
@@ -113,7 +145,13 @@ pkgs.dockerTools.buildLayeredImage {
   '';
   config = {
     Cmd = [ "/bin/carapace-builder-start" ];
-    Env = [ "PATH=/bin" ];
-    ExposedPorts."8330/tcp" = { };
+    Env = [
+      "PATH=/bin"
+      "CARAPACE_BUILDER_UPSTREAM_CACHES=${builtins.toJSON upstreamCaches}"
+    ];
+    ExposedPorts = {
+      "8330/tcp" = { };
+      "8331/tcp" = { };
+    };
   };
 }

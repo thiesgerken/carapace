@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from carapace.builder import app as builder_app
 from carapace.builder import client as builder_client
 from carapace.builder import nix
-from carapace.builder.client import BuilderClient, BuilderSystemMismatchError
+from carapace.builder.client import BuilderClient, BuilderSystemMismatchError, BuilderUnavailableError
 from carapace.builder.models import BuilderInfo, BuildResult
 
 TOKEN = "builder-test-token"
@@ -44,13 +44,16 @@ def builds(monkeypatch: pytest.MonkeyPatch) -> list[set[str]]:
 
 @pytest.fixture
 def api(tmp_path: Path) -> TestClient:
-    return TestClient(builder_app.create_app(TOKEN, tmp_path, "x86_64-linux"))
+    return TestClient(builder_app.create_app(TOKEN, tmp_path, "x86_64-linux", ["carapace-builder-1:AAAA"]))
 
 
 def test_requires_the_token(api: TestClient) -> None:
     assert api.get("/info").status_code == 401
     assert api.get("/info", headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert api.get("/info", headers=AUTH).json() == {"system": "x86_64-linux"}
+    assert api.get("/info", headers=AUTH).json() == {
+        "system": "x86_64-linux",
+        "cache_public_keys": ["carapace-builder-1:AAAA"],
+    }
     assert api.get("/healthz").status_code == 200
 
 
@@ -110,7 +113,7 @@ async def test_the_client_refuses_a_builder_for_another_system(monkeypatch: pyte
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request.url.path)
-        return httpx.Response(200, json=BuilderInfo(system="aarch64-linux").model_dump())
+        return httpx.Response(200, json=BuilderInfo(system="aarch64-linux", cache_public_keys=[]).model_dump())
 
     client = BuilderClient("http://builder", TOKEN, 5)
     client._client = httpx.AsyncClient(base_url="http://builder", transport=httpx.MockTransport(handler))
@@ -118,3 +121,33 @@ async def test_the_client_refuses_a_builder_for_another_system(monkeypatch: pyte
     with pytest.raises(BuilderSystemMismatchError, match="aarch64-linux"):
         await client.get(TREE)
     assert requests == ["/info"]
+
+
+async def test_every_sandbox_gets_the_builders_current_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(builder_client, "sandbox_system", lambda: "x86_64-linux")
+    keys = iter([["carapace-builder-1:AAAA", "cache.nixos.org-1:BBBB"], ["carapace-builder-1:CCCC"]])
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=BuilderInfo(system="x86_64-linux", cache_public_keys=next(keys)).model_dump())
+
+    client = BuilderClient("http://builder", TOKEN, 5)
+    client._client = httpx.AsyncClient(base_url="http://builder", transport=httpx.MockTransport(handler))
+
+    first = await client.sandbox_nix_config()
+    # A wiped builder volume means a new key, picked up by the next sandbox.
+    second = await client.sandbox_nix_config()
+
+    assert "substituters = http://cache.carapace.internal\n" in first
+    assert "trusted-public-keys = carapace-builder-1:AAAA cache.nixos.org-1:BBBB\n" in first
+    assert "trusted-public-keys = carapace-builder-1:CCCC\n" in second
+
+
+async def test_a_sandbox_does_not_start_while_the_builder_has_not_answered() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = BuilderClient("http://builder", TOKEN, 5)
+    client._client = httpx.AsyncClient(base_url="http://builder", transport=httpx.MockTransport(handler))
+
+    with pytest.raises(BuilderUnavailableError, match="configured but unreachable"):
+        await client.sandbox_nix_config()

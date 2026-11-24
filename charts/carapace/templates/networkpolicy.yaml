@@ -60,4 +60,7 @@ spec:
       ports:
         - protocol: TCP
           port: 8330
+        # The binary cache: sandboxes reach it only through the server's session proxy.
+        - protocol: TCP
+          port: 8331
 {{- end }}

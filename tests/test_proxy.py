@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from carapace.builder.client import BuilderUnavailableError
 from carapace.database.models import SandboxTokenRow
 from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
@@ -257,6 +258,12 @@ async def test_handle_http_supports_absolute_https_urls(monkeypatch: pytest.Monk
 # ── SandboxManager allowlists ───────────────────────────────────────
 
 
+async def _session_env(mgr: _SandboxManager) -> dict[str, str]:
+    """The env a session sandbox starts with; the token lookup is stubbed (no session row needed)."""
+    mgr._session_lifecycle.get_or_create_token = lambda _session_id: "tok"  # type: ignore[method-assign]
+    return await mgr._session_lifecycle.build_session_proxy_env("sess-1")
+
+
 class TestSandboxManagerAllowlists:
     def _make_manager(self, tmp_path: Path, db_factory):
         runtime = make_runtime_mock()
@@ -295,6 +302,38 @@ class TestSandboxManagerAllowlists:
         mgr = self._make_manager(tmp_path, db_factory)
         env = mgr._build_proxy_env("sess-1", "tok", "http://172.18.0.2:3128")
         assert env["CARAPACE_SESSION_ID"] == "sess-1"
+
+    async def test_session_env_points_nix_at_the_builder_cache(self, tmp_path: Path, db_factory):
+        async def nix_config() -> str:
+            return "substituters = http://cache.carapace.internal"
+
+        mgr = _sandbox_manager(
+            runtime=make_runtime_mock(),
+            data_dir=tmp_path,
+            knowledge_dir=tmp_path,
+            session_factory=db_factory,
+            nix_config=nix_config,
+        )
+        env = await _session_env(mgr)
+        assert env["NIX_CONFIG"] == "substituters = http://cache.carapace.internal"
+
+    async def test_session_env_fails_when_the_builder_does_not_answer(self, tmp_path: Path, db_factory):
+        async def nix_config() -> str:
+            raise BuilderUnavailableError("The skill builder is configured but unreachable")
+
+        mgr = _sandbox_manager(
+            runtime=make_runtime_mock(),
+            data_dir=tmp_path,
+            knowledge_dir=tmp_path,
+            session_factory=db_factory,
+            nix_config=nix_config,
+        )
+        with pytest.raises(BuilderUnavailableError):
+            await _session_env(mgr)
+
+    async def test_session_env_has_no_nix_config_without_a_builder(self, tmp_path: Path, db_factory):
+        env = await _session_env(self._make_manager(tmp_path, db_factory))
+        assert "NIX_CONFIG" not in env
 
     def test_proxy_env_uses_owner_repo_name(self, tmp_path: Path, db_factory):
         runtime = make_runtime_mock()

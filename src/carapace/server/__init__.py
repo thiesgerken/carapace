@@ -524,6 +524,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         skill_activator_timeout_seconds=_config.sandbox.skill_activator_timeout_seconds,
         max_sandboxes_per_user=_config.sandbox.max_per_user,
         knowledge_repo_for_session=knowledge_repo_for_session,
+        nix_config=_builder.sandbox_nix_config if _builder is not None else None,
     )
 
     async def skill_profile_plan(session_id: str) -> ProfilePlan:
@@ -654,6 +655,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         request_approval=_sandbox_mgr.request_domain_approval,
         notify_domain_access=_sandbox_mgr.notify_domain_access,
         destinations=_destination_policy(_config.sandbox, list(network_info.values())),
+        builder_cache_url=_config.builder.cache_url,
         host="0.0.0.0",
         port=proxy_port,
     )

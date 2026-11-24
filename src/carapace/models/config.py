@@ -395,6 +395,8 @@ class BuilderConfig(BaseSettings):
 
     url: str | None = None
     token: SecretStr | None = None
+    # The builder's binary cache listener, which the session proxy forwards sandboxes to.
+    cache_url: str | None = None
     # A build blocks its request until it ends, and a cold uv skill takes minutes.
     timeout_seconds: float = Field(default=1800, gt=0)
 
@@ -402,6 +404,8 @@ class BuilderConfig(BaseSettings):
     def _token_with_url(self) -> BuilderConfig:
         if self.url is not None and not (self.token and self.token.get_secret_value()):
             raise ValueError("CARAPACE_BUILDER_TOKEN is required when CARAPACE_BUILDER_URL is set")
+        if (self.url is None) != (self.cache_url is None):
+            raise ValueError("CARAPACE_BUILDER_URL and CARAPACE_BUILDER_CACHE_URL go together")
         return self
 
 

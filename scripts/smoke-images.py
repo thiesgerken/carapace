@@ -216,6 +216,20 @@ def put_build(url: str, token: str, archive: bytes) -> dict:
         return json.loads(response.read())
 
 
+def assert_builder_cache(container: str, api: str, token: str, store_path: str) -> None:
+    """The cache serves the built path, signed with the key the API advertises to the server."""
+    info_request = urllib.request.Request(api + "/info", headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(info_request, timeout=15) as response:
+        key_name = json.loads(response.read())["cache_public_keys"][0].split(":", 1)[0]
+    assert key_name == "carapace-builder-1", key_name
+    cache = "http://" + run("docker", "port", container, "8331")
+    assert b"StoreDir: /nix/store" in request(cache + "/nix-cache-info")[0]
+    narinfo = request(f"{cache}/{store_path.removeprefix('/nix/store/')[:32]}.narinfo")[0].decode()
+    assert f"StorePath: {store_path}\n" in narinfo and "Sig: carapace-builder-1:" in narinfo, narinfo
+    nar_url = next(line.removeprefix("URL: ") for line in narinfo.splitlines() if line.startswith("URL: "))
+    assert request(f"{cache}/{nar_url}")[0], nar_url
+
+
 def assert_builder() -> str:
     image = "carapace-builder:local"
     token = "builder-smoke-token"
@@ -226,7 +240,8 @@ def assert_builder() -> str:
         run("docker", "run", "--rm", "-v", f"{volume}:/mnt/nix", image, "/bin/carapace-builder-init")
         # The Compose settings for the Nix build sandbox (see docker-compose.yml).
         container = run(
-            *("docker", "run", "-d", "-p", "127.0.0.1::8330", "-e", f"CARAPACE_BUILDER_TOKEN={token}"),
+            *("docker", "run", "-d", "-p", "127.0.0.1::8330", "-p", "127.0.0.1::8331"),
+            *("-e", f"CARAPACE_BUILDER_TOKEN={token}"),
             *("--security-opt", "seccomp=unconfined", "--security-opt", "apparmor=unconfined"),
             *("--security-opt", "systempaths=unconfined", "-v", f"{volume}:/nix", image),
         )
@@ -240,9 +255,12 @@ def assert_builder() -> str:
         assert built["state"] == "succeeded", built
         assert built["metadata"] == {"commands": {"smoke": {"description": "Smoke"}}}, built
         assert put_build(url, token, b"stored results need no archive") == built
+        assert_builder_cache(container, base, token, built["store_paths"][0])
         processes = run("docker", "top", container, "-eo", "pid,euid,cmd").splitlines()[1:]
         api = [line.split()[1] for line in processes if line.endswith("/bin/carapace-builder")]
         assert api == ["999"], processes
+        harmonia = [line.split()[1] for line in processes if line.endswith("harmonia-cache")]
+        assert harmonia == ["998"], processes
         return built["store_paths"][0]
     except BaseException:
         if container:
@@ -385,7 +403,7 @@ def main() -> None:
                 f"PASS {expected}: authenticated server readiness, sandbox egress self-test, default/override CSP, "
                 f"effective UID 999, read-only roots, Bitwarden CLI {version} offline commands and serve rejection, "
                 "sandbox python-build-standalone, native wheels and npm addons, nix-ld, offline nixpkgs, "
-                "builder sandbox probe, build and stored result with the API unprivileged"
+                "builder sandbox probe, build and stored result with the API unprivileged, signed builder cache"
             )
         except BaseException:
             subprocess.run([*compose, "logs", "--no-color"], check=False)

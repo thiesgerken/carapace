@@ -228,6 +228,7 @@ class SandboxManager:
         warm_pool_size: int = 0,
         skill_activator_timeout_seconds: int = 600,
         max_sandboxes_per_user: int = 0,
+        nix_config: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._runtime = runtime
         self._max_sandboxes_per_user = max_sandboxes_per_user
@@ -295,6 +296,7 @@ class SandboxManager:
             warm_pool_size=warm_pool_size,
             knowledge_repo_name_for_session=self._knowledge_repo_name_for_session,
             git_author_for_session=self._git_author_for_session,
+            nix_config=nix_config,
         )
         self._profile_sync = SkillProfileSync(runtime)
         self._exec_coordinator = SandboxExecCoordinator(

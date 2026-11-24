@@ -56,6 +56,8 @@ builder:
   enabled: true
   # -- URL of a builder outside the cluster, used when enabled is false
   externalUrl: ""
+  # -- URL of that builder's binary cache (port 8331), required with externalUrl
+  externalCacheUrl: ""
   # -- Namespace for the in-cluster builder (default: the release namespace). Its pod needs Pod
   # Security level `privileged`, and that label applies to every pod in a namespace, sandboxes
   # included. Under Pod Security enforcement, create a separate namespace labelled
@@ -66,6 +68,10 @@ builder:
     repository: thiesgerken/carapace-builder
     tag: "" # defaults to appVersion
     pullPolicy: IfNotPresent
+  # -- Binary caches the builder substitutes from and passes through to sandboxes, in order, as
+  # `{url, public_key}` entries. Replaces the image default (cache.nixos.org) when set, so list
+  # cache.nixos.org too when adding a cache.
+  upstreamCaches: []
   auth:
     # -- Secret holding the builder token under the key `token`. Generated for the in-cluster
     # builder when empty; required with externalUrl.
