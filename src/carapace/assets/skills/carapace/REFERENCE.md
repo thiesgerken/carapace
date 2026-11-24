@@ -18,79 +18,48 @@ This skill ships with **placeholders** and will not work until an operator fills
 In the carapace UI, create a scoped API key with the minimum scopes the agent needs
 (typically `sessions:read`, `sessions:write`, and `jobs:*` depending on the task).
 
-### 2. Store the key in the vault
+### 2. Store the key in the vault and set the server domain
 
-Put the API key in your credential vault and note its `<backend>/<id>` path. Then edit
-`SKILL.md` frontmatter, replacing the placeholder:
+Put the API key in your credential vault and note its `<backend>/<id>` path. The sandbox
+refuses loopback and internal hosts (`localhost`, `127.0.0.1`, cluster services, …), so the
+CLI must reach the deployment's **public** API domain. Both values sit at the top of
+`flake.nix`:
 
-```yaml
-credentials:
-  - vault_path: <backend>/<your-carapace-api-key-id>   # <-- your vault path
-    description: carapace API key (Bearer) for driving the server
-    env_var: CARAPACE_API_KEY
+```nix
+server = "carapace.example.com";                    # public API domain, without https://
+apiKey = "<backend>/<your-carapace-api-key-id>";    # vault path of the API key
 ```
 
-On `use_skill`, carapace fetches this through the sentinel, asks for approval once, and
-injects it as `CARAPACE_API_KEY` for the session. The CLI reads it automatically — the
-value is never placed on a command line.
+The command declares both: it asks for the domain and the credential when it runs, exports
+the key as `CARAPACE_API_KEY` (the CLI reads it from there, never from a command line), and
+points the CLI at `https://<server>`. Commit and push; the builder rebuilds the skill.
 
-### 3. Set the server domain (TWO places, same value)
+The `SKILL.md` frontmatter repeats the domain, the vault path and the command for the
+activation path that is being replaced by the flake; keep it in sync until it goes away.
 
-The sandbox blocks loopback and internal hostnames (`localhost`, `127.0.0.1`,
-`*.internal`, `*.svc`, …), so the CLI must reach the deployment's **public** API domain.
-Replace `carapace.example.com` in both spots in `SKILL.md`:
+## Which CLI
 
-```yaml
-network:
-  domains:
-    - carapace.example.com            # <-- 1. proxy allowlist
-
-commands:
-  - name: carapace
-    command: sh -c 'CARAPACE_SERVER="https://carapace.example.com" ...'   # <-- 2. CLI target
-```
-
-Both must match. `network.domains` opens the proxy; `CARAPACE_SERVER` tells the CLI where
-to connect.
-
-## Why no uv.lock
-
-`uv sync --locked` (the official sandbox activator's uv step) would require a committed `uv.lock`, but
-locking a `git+https://…carapace.git` dependency pins a specific commit that goes stale as
-carapace evolves. Instead this skill ships only `pyproject.toml` + `setup.sh`; `setup.sh`
-runs `uv sync` at activation (network open), resolving carapace fresh each time and writing
-an ephemeral lock inside the sandbox. Trade-off: builds are not byte-reproducible, but they
-always track the current default branch.
-
-## Install weight
-
-The base `carapace` package is CLI-only — ~16 deps (typer, rich, httpx, websockets,
-python-dotenv + their small transitive set), **no compiled wheels**, so `uv sync` at
-activation takes seconds. The heavy server/agent stack (fastapi, sqlalchemy, docker, kr8s,
-the LLM SDKs, …) lives in the `carapace[server]` extra and is deliberately not installed
-here. Do not add `[server]` to this skill's dependency — the client needs none of it.
+`carapace.lib.carapaceCli` builds the CLI client of the Carapace commit `flake.lock` pins:
+the base `carapace` package, about 16 dependencies, without the `server` extra and its
+heavy stack. Updating that pin (`nix flake lock --override-input carapace
+github:thiesgerken/carapace/<rev>?dir=nix/skills`) updates the CLI and the skill helpers
+together.
 
 ## File layout
 
 ```text
 skills/carapace/
-  SKILL.md         # frontmatter (network/credentials/commands) + agent instructions
+  SKILL.md         # agent instructions
   REFERENCE.md     # this file
-  pyproject.toml   # git dependency on the carapace package
-  setup.sh         # `uv sync` at activation (network open)
+  flake.nix        # server domain, vault path, the `carapace` command
+  flake.lock       # pins nixpkgs and the Carapace commit
+  pyproject.toml   # with setup.sh, the activation path the flake replaces
+  setup.sh
 ```
 
-## Command alias mechanics
+## The command
 
-The `carapace` alias is registered as a shim on `PATH`. It wraps:
-
-```sh
-sh -c 'CARAPACE_SERVER="https://carapace.example.com" exec uv run --no-sync \
-    --directory /workspace/skills/carapace carapace "$@"' carapace
-```
-
-- `CARAPACE_SERVER` is baked in (non-secret) so the agent never passes `--server`.
-- `--no-sync` keeps command-time invocations off the network (the proxy would block the
-  GitHub install anyway); all installing happens in `setup.sh`.
-- `uv run` prepends the project venv's `bin` to `PATH`, so the inner `carapace` resolves to
-  the installed console script, not the shim.
+The `carapace` wrapper runs
+`env CARAPACE_SERVER=https://<server> <cli>/bin/carapace "$@"`, after asking for the
+declared domain and credential. `CARAPACE_SERVER` is fixed in the build, so the agent never
+passes `--server`. Nothing is installed at run time.
