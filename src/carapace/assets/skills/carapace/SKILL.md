@@ -11,7 +11,7 @@ description: >-
 
 Drive a carapace server over its non-interactive JSON CLI. Authentication is automatic:
 `CARAPACE_API_KEY` (from the vault) and `CARAPACE_SERVER` (baked into the `carapace` command)
-are already set once the skill is active — never pass `--api-key` on the command line.
+are set by the `carapace` command itself — never pass `--api-key` on the command line.
 
 ## Exposed Commands
 
