@@ -147,6 +147,7 @@ assert pkgs.lib.assertMsg (
   && marks skill == {
     show-token = false;
     local = false;
+    mail = false;
   }
 ) "mkSkill marked the wrong commands as MCP servers: ${builtins.toJSON [ (marks mcp) (marks skill) ]}";
 pkgs.runCommand "skill-wrapper-contract" { } ''
