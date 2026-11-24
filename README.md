@@ -14,7 +14,7 @@
 </p>
 <p align="center"><strong>A secure personal AI agent for DevOps engineers.</strong></p>
 
-<p align="center">Zero trust. Git-backed knowledge. Kubernetes Sandboxes.</p>
+<p align="center">Git-backed knowledge. Kubernetes Sandboxes. Skills are Nix Flakes.</p>
 
 <p align="center">
   <a href="docs/quickstart.md">🚀 Quickstart</a>
@@ -31,6 +31,7 @@ carapace is a self-hosted AI agent with a web UI, CLI, and Matrix channel for op
 ## Highlights
 
 - 🛡️ Sentinel-gated boundary. Whatever a command wants from outside the sandbox is reviewed by a dedicated security agent that keeps session context, not a static allowlist spreadsheet.
+- ❄️ Skills are Nix flakes. carapace's own builder builds a skill's commands from its pinned `flake.lock`, and sandboxes only substitute the finished store paths from the builder's cache. Nothing is installed at run time and dependencies don't drift, so skills break less often. The images are built with Nix too. See [docs/skill-flakes.md](docs/skill-flakes.md).
 - ☸️ Kubernetes-ready sandboxes. Docker and Kubernetes runtimes are both supported, with StatefulSet-backed sandbox sessions, per-session PVCs, idle-to-zero scaling, and an optional warm pool of prestarted base sandboxes for faster Kubernetes claims.
 - 🗃️ Git-native per-user knowledge repos. `SOUL.md`, `USER.md`, `SECURITY.md`, skills, and archived sessions live in files you can inspect, diff, sync, and push upstream.
 - 🚫 No-direct-internet sandboxes. Sandbox workloads do not get ambient internet access; outbound traffic is forced through the proxy path.
@@ -105,7 +106,7 @@ carapace treats long-term agent state as a repository, not as an opaque internal
 
 - The agent's policy lives in `SECURITY.md`.
 - Its personality and user model live in `SOUL.md` and `USER.md`.
-- Skills are plain files in AgentSkills format.
+- Skills are plain files in AgentSkills format, plus a Nix flake for the skills that have commands.
 - Durable context is markdown and other plain files on disk.
 - Session histories can be archived into the owning user's knowledge repo and pushed upstream.
 - Long-term memory is mirrored into `memory/` as Markdown, with provenance in every file.
@@ -155,7 +156,7 @@ For the full Docker Compose setup, multi-user auth model, UI-managed configurati
 
 ## Architecture
 
-The server runs the agent loop, session lifecycle, and security system. The CLI, web UI, and Matrix channel are thin clients. Owner-scoped knowledge repos are a first-class part of the design: session output can be promoted into Git-backed knowledge, and outbound Git operations are security-reviewed instead of treated as an afterthought.
+The server runs the agent loop, session lifecycle, and security system. The CLI, web UI, and Matrix channel are thin clients. A separate skill builder builds the skill flakes and is the only binary cache the sandboxes substitute from. Owner-scoped knowledge repos are a first-class part of the design: session output can be promoted into Git-backed knowledge, and outbound Git operations are security-reviewed instead of treated as an afterthought.
 
 See [docs/architecture.md](docs/architecture.md) for the diagrams and fuller architecture breakdown.
 
