@@ -55,9 +55,7 @@ metadata:
 
 **`hints`** — optional map of strings, extra metadata for tooling.
 
-**`mcp`** — still accepted, but nothing reads it any more: MCP servers are flake commands now ([skill-flakes.md](skill-flakes.md#mcp-servers)). The field goes away with [#578](https://github.com/thiesgerken/carapace/issues/578).
-
-`network`, `credentials` and `commands` moved into the skill's flake, where each command declares the domains, credentials and OAuth entries it needs ([skill-flakes.md](skill-flakes.md#commands-and-what-they-need)). A `SKILL.md` that still has one of them is [broken](#invalid-frontmatter), with a message that points there.
+`network`, `credentials`, `commands` and `mcp` moved into the skill's flake: each command declares the domains, credentials and OAuth entries it needs ([skill-flakes.md](skill-flakes.md#commands-and-what-they-need)), and an MCP server is a command made by `mcpCommands` ([skill-flakes.md](skill-flakes.md#mcp-servers)). A `SKILL.md` that still has one of them is [broken](#invalid-frontmatter), with a message that points there.
 
 ## Reading a skill (`read_skill`)
 
@@ -67,11 +65,12 @@ The agent calls `read_skill(skill_name)` before it uses a skill. Nothing is acti
 
 - the full `SKILL.md`,
 - the skill's commands with their descriptions and what each one asks for when it starts (domains, credentials, OAuth tokens), read from the build's `passthru.carapace`,
-- whether the commands are on `PATH`; if not, why: the build failed (with the end of its log), the builder is unavailable, two skills expose the same command name, or the profile sync failed.
+- whether the commands are on `PATH`; if not, why: the build failed (with the end of its log), the builder is unavailable, two skills expose the same command name, or the profile sync failed,
+- for each MCP server among them, its tools: `read_skill` runs `<server> --list-tools` in the sandbox, every time (nothing is cached). That is an `exec` like any other: the command asks for the server's domain and credentials with `cgate`, and the sentinel decides. Like every `exec`, it first ends processes earlier commands left behind, and `read_skill` says so when it did. A denied listing or an unreachable server is reported with the reason, and the rest of the result still comes back (the `skill` span `list tools`).
 
 It waits until the commands are usable. While the skill builds, it waits for the build (a `skill` span `build wait` in the turn's timeline); then it brings the sandbox's [skill profile](sandbox.md#skill-commands-on-path) to the current head and waits for that too (the `skill` span `profile sync`). Both spans nest under the `read_skill` call, and the chat hears them start and end as [`span` messages](websocket-session.md#span). A skill without a flake returns at once.
 
-`read_skill` is on the safe list: it is never reviewed, but the call is in the action log, so the sentinel knows which skill the requests that follow belong to.
+`read_skill` is on the safe list: the call itself is never reviewed, but it is in the action log, so the sentinel knows which skill the requests that follow belong to.
 
 ## Discovery (progressive disclosure)
 
@@ -133,7 +132,7 @@ These are seeded into every knowledge repo on first run and can be edited or del
 | `carapace`     | Drive a carapace server over its JSON CLI (sessions, approvals, jobs).         |
 | `create-skill` | Write and refine skills.                                                       |
 | `credentials`  | List, fetch, and use secrets from the vault.                                   |
-| `ferret`       | Personal indexed-source discovery over native HTTP MCP. Disabled by default; [setup](../src/carapace/assets/skills/ferret/SETUP.md). |
+| `ferret`       | Personal indexed-source discovery over MCP. Disabled by default; [setup](../src/carapace/assets/skills/ferret/SETUP.md). |
 | `mermaid`      | Write Mermaid diagrams; the web UI renders ` ```mermaid ` fences as pictures.   |
 | `web`          | Web search and page fetch. Disabled by default; requires a Brave Search API key at `vault/brave-api-key` before enabling. |
 | `wikipedia`    | Wikipedia search and article fetch.                                            |
