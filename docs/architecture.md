@@ -31,6 +31,10 @@ flowchart TB
         Container["Session Container<br/>(Nix image with nix-ld)"]
     end
 
+    subgraph builderbox [Skill Builder]
+        Builder["Build API + binary cache"]
+    end
+
     subgraph external [External Services]
         Web[Web / APIs]
         Vault[Password Manager / Vault]
@@ -68,6 +72,8 @@ flowchart TB
     Container -->|GET /credentials| CredentialRegistry
     CredentialRegistry --> Vault
     GitStore --> Sentinel
+    GitStore -->|skill trees| Builder
+    Proxy -->|cache.carapace.internal| Builder
 
     Server --> MemorySvc
     MemorySvc -.->|reads events| SessionMgr
@@ -138,7 +144,7 @@ Handles session persistence — creating, loading, saving, listing, and deleting
 
 ### Agent Loop
 
-Orchestrates a single agent turn: streams tokens to subscribers, handles the deferred tool approval cycle (when the sentinel escalates), records usage, and returns the final response. Implements the retry loop for `DeferredToolRequests`.
+Orchestrates a single agent turn: streams tokens to subscribers, handles the deferred tool approval cycle (when a call is held at the autonomy limit), records usage, and returns the final response. Implements the retry loop for `DeferredToolRequests`.
 
 ### Pydantic AI Agent
 
@@ -165,11 +171,11 @@ The security boundary. Agent tool calls are not reviewed: `security.record_tool_
 
 ### Sentinel Agent
 
-An LLM-powered agent that evaluates actions against the natural-language `SECURITY.md` policy. Maintains a persistent "shadow conversation" per session, giving it full context of the session history. Returns structured verdicts (allow / escalate / deny). See [security.md](security.md).
+An LLM-powered agent that evaluates actions against the natural-language `SECURITY.md` policy. Maintains a persistent "shadow conversation" per session, giving it full context of the session history. Returns structured verdicts (allow / revise / escalate / deny; revise and comments only for pushes). See [security.md](security.md).
 
 ### Approval Gate
 
-When the sentinel escalates an operation, the agent loop sends a structured approval request to all session subscribers (WebSocket clients, Matrix rooms) and waits for a response (approve/deny). The request includes the sentinel's explanation and risk assessment.
+When the sentinel escalates a boundary request or a push, the session engine sends a structured approval request (domain access, credential or up-front request, git push) to all session subscribers (WebSocket clients, Matrix rooms) and waits for a response (approve/deny). The request includes the sentinel's explanation. The agent loop's own approval requests come only from the autonomy limit.
 
 ### Skill Registry
 
@@ -183,11 +189,11 @@ Manages the knowledge directory as a Git repository. Initialises the repo on sta
 
 Routes `vault_path` identifiers (`<backend>/<id>`) to named credential backends and provides three operations: `list(query)`, `fetch_metadata(vault_path)`, and `fetch(vault_path)`. Backends implement a small protocol (`file` and Bitwarden via `bw serve` are built in), including per-backend exposure rules (`expose` allowlist / `hide` blocklist).
 
-Credential reads are sandbox-only: containers call `GET /credentials` and `GET /credentials/{vault_path}` on the sandbox API using their session token. The first per-session fetch triggers an approval request to channel subscribers; approved credentials are recorded in session state and access is appended to the action log as `credential_access` entries.
+Credential reads are sandbox-only: containers call `GET /credentials` and `GET /credentials/{vault_path}` on the sandbox API using their session token. Each fetch is reviewed by the sentinel for the `exec` it comes from (escalated to the user if needed); an approval holds until that exec ends, and every access is appended to the action log as a `credential_access` entry.
 
 ### HTTP Forward Proxy
 
-An async forward proxy (HTTP + HTTPS CONNECT) running inside the carapace server process. All outbound traffic from sandbox containers is routed through this proxy. It enforces per-session domain allowlisting with token-based authentication and delegates unknown domain requests to the security module for sentinel evaluation or user approval. See [sandbox.md](sandbox.md).
+An async forward proxy (HTTP + HTTPS CONNECT) running inside the carapace server process. All outbound traffic from sandbox containers is routed through this proxy. It lets a domain through only once it is approved for the running exec, with token-based authentication, and delegates unknown domain requests to the security module for sentinel evaluation or user approval. See [sandbox.md](sandbox.md).
 
 ## Python module map
 
@@ -303,6 +309,8 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | Module                         | Responsibility                                                                             |
 | ------------------------------ | ------------------------------------------------------------------------------------------ |
 | `sandbox/__init__.py`          | Sandbox package namespace.                                                                 |
+| `sandbox/destinations.py`      | Which addresses the session proxy may connect a sandbox to (internal-destination block and allowlist). |
+| `sandbox/egress_check.py`      | Start-up self-test: a sandbox must not reach the internet or resolve names except through its proxy. |
 | `sandbox/container_scripts.py` | Python snippets executed inside sandboxes for setup and helper operations.                 |
 | `sandbox/docker.py`            | Docker runtime implementation.                                                             |
 | `sandbox/exec_flow.py`         | Exec orchestration: leftover killer, exec scope, opening and closing its tunnels.          |
@@ -318,11 +326,24 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `sandbox/skill_profile.py`     | Keeps each sandbox's skill profile (the skill commands on `PATH`) at its owner's head.     |
 | `sandbox/state.py`             | Persisted sandbox snapshot models and load/save helpers.                                   |
 
+### Builder package
+
+| Module                    | Responsibility                                                                         |
+| ------------------------- | -------------------------------------------------------------------------------------- |
+| `builder/app.py`          | The builder's HTTP API: a skill directory archive in, store paths and metadata out.    |
+| `builder/cache.py`        | The builder's binary cache: its own store through harmonia, then the upstream caches.  |
+| `builder/nix.py`          | The Nix commands the builder runs, each as an unprivileged subprocess.                 |
+| `builder/store.py`        | Build results and GC roots on the builder's store volume, and garbage collection.      |
+| `builder/models.py`       | Wire format between the server and the builder.                                        |
+| `builder/client.py`       | The server's side of the builder API.                                                  |
+| `builder/skill_builds.py` | Server side: which skill trees are built, building or failed, and their commands.      |
+| `builder/profile.py`      | What a sandbox's skill profile should hold: built skills minus colliding command names. |
+
 ### Security package
 
 | Module                       | Responsibility                                                                    |
 | ---------------------------- | --------------------------------------------------------------------------------- |
-| `security/__init__.py`       | Public security evaluation API for tools, domains, credentials, and pushes.       |
+| `security/__init__.py`       | Records tool calls; evaluates domains, credentials, up-front requests and pushes. |
 | `security/context.py`        | Session security state, action log entries, approval records, and callback types. |
 | `security/sentinel.py`       | LLM-powered sentinel agent and persistent shadow conversation handling.           |
 
@@ -402,18 +423,18 @@ sequenceDiagram
     Frontend->>Engine: WebSocket message
     Engine->>Agent: run_agent_turn()
 
-    Note over Agent: Agent decides to use the web-search skill
+    Note over Agent: Agent decides to use the web skill
 
-    Agent->>Security: record_tool_call(read_skill, "web-search")
+    Agent->>Security: record_tool_call(read_skill, "web")
     Security-->>Agent: logged for the sentinel, not reviewed
 
-    Note over Agent: Skill read, its command is on PATH
+    Note over Agent: Skill read, its commands are on PATH
 
-    Agent->>Sandbox: exec("web-search 'python 3.14 release notes'")
-    Sandbox->>Proxy: CONNECT search.example.com:443
-    Proxy->>Sentinel: domain request, with the running command
-    Sentinel-->>Proxy: verdict: allow (fits the search)
-    Proxy->>Sandbox: connection established
+    Agent->>Sandbox: exec("web_search 'python 3.14 release notes'")
+    Sandbox->>Sentinel: cgate request: domain api.search.brave.com, credential vault/brave-api-key
+    Sentinel-->>Sandbox: verdict: allow (fits the search)
+    Sandbox->>Proxy: CONNECT api.search.brave.com:443
+    Proxy->>Sandbox: connection established (approved for this exec)
     Sandbox-->>Agent: search results
 
     Agent->>Engine: streamed response with search summary
@@ -425,25 +446,7 @@ sequenceDiagram
 
 carapace runs as a Docker container with the Docker socket mounted (to orchestrate sandbox containers), alongside a Next.js web frontend.
 
-```yaml
-# docker-compose.yaml (simplified)
-services:
-  carapace:
-    build: .
-    volumes:
-      - ./data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - CARAPACE_DATA_DIR=/data
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-  frontend:
-    build: ./frontend
-
-  proxy:
-    image: traefik:v3
-    ports:
-      - "3001:80"
-```
+[`docker-compose.yml`](../docker-compose.yml) runs the server, frontend, Postgres, Redis, the Bitwarden CLI and the [skill builder](builder.md) (`builder-init` and `builder`); the server orchestrates sandbox containers on the internal `carapace-sandbox` network.
 
 For Kubernetes deployments, the Docker socket is replaced by in-cluster Kubernetes API access — see [kubernetes.md](kubernetes.md).
 
@@ -494,7 +497,8 @@ Operator/bootstrap configuration comes entirely from **environment variables** (
 | server | `CARAPACE_SERVER_` | `CARAPACE_SERVER_PORT`, `CARAPACE_SERVER_CORS_ORIGINS` |
 | auth cookie | `CARAPACE_AUTH_` | `CARAPACE_AUTH_COOKIE__SECURE=true`, `CARAPACE_AUTH_COOKIE__SAME_SITE` |
 | notifications | `CARAPACE_NOTIFICATIONS_` | `CARAPACE_NOTIFICATIONS_VAPID_SUBJECT` |
-| sandbox | `CARAPACE_SANDBOX_` | `CARAPACE_SANDBOX_RUNTIME`, `CARAPACE_SANDBOX_K8S_NAMESPACE` |
+| sandbox | `CARAPACE_SANDBOX_` | `CARAPACE_SANDBOX_RUNTIME`, `CARAPACE_SANDBOX_K8S_NAMESPACE`, `CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS` |
+| builder | `CARAPACE_BUILDER_` | `CARAPACE_BUILDER_URL`, `CARAPACE_BUILDER_CACHE_URL`, `CARAPACE_BUILDER_TOKEN` |
 
 Session commit settings (DB-backed, edited via the Platform UI) control how conversation histories are copied into the knowledge repo:
 
