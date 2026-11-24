@@ -41,6 +41,8 @@ SEND_FILE_MAX_BYTES = 50 * 1024 * 1024
 _WORKSPACE_ROOT = PurePosixPath("/workspace")
 _ARTIFACTS_ROOT = "artifacts"
 _EXEC_OUTPUT_SPILL_ROOT = PurePosixPath("/tmp/carapace-tool-output")
+# Covers a review the user decides on: the listing asks for the server's domain and credentials first.
+_LIST_TOOLS_TIMEOUT_SECONDS = 600
 # A directory under skills/, never a path out of it.
 _SKILL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
@@ -239,6 +241,8 @@ def _command_docs(commands: dict[str, SkillCommand]) -> str:
             *(f"tunnel {tunnel}" for tunnel in needs.tunnels),
         ]
         line = f"- `{name}`: {command.description}"
+        if command.mcp:
+            line += f" An MCP server: `{name} <tool> --flag value`, `{name} <tool> --help` for a tool's flags."
         if asks:
             line += f" Asks for: {', '.join(asks)}."
         lines.append(line)
@@ -264,7 +268,31 @@ async def _skill_commands(ctx: RunContext[Deps], skill_name: str) -> str:
         failure = str(exc)
     if failure:
         return f"{docs}\n\nThe commands could not be put on PATH: {failure}"
-    return f"{docs}\n\nThe commands are on PATH."
+    servers = sorted(name for name, command in build.commands.items() if command.mcp)
+    return "\n\n".join([docs, "The commands are on PATH.", *[await _mcp_tools(ctx, server) for server in servers]])
+
+
+async def _mcp_tools(ctx: RunContext[Deps], server: str) -> str:
+    """The server's tools, listed by its own command in the sandbox, never cached.
+
+    The command asks for its domain and credentials with `cgate` like any call, so the sentinel decides
+    about the listing; a denial or an unreachable server ends up in the text, and the rest still returns.
+    """
+    with span("skill", "list tools", server=server):
+        result = await ctx.deps.sandbox.exec_command(
+            ctx.deps.session_state.session_id, f"{server} --list-tools", timeout=_LIST_TOOLS_TIMEOUT_SECONDS
+        )
+    lines = [f"# Tools of `{server}`", ""]
+    if result.exit_code == 0:
+        lines.append(result.output.strip())
+    else:
+        lines.append(f"The tools could not be listed; the server may still answer a call: {result.output.strip()}")
+    if result.leftover_processes_killed:
+        lines += [
+            "",
+            f"Listing them killed {result.leftover_processes_killed} leftover process(es) from earlier commands.",
+        ]
+    return "\n".join(lines)
 
 
 _SANDBOX_INSTRUCTIONS = (

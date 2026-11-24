@@ -36,6 +36,8 @@ class SkillNeeds(BaseModel):
 class SkillCommand(BaseModel):
     description: str
     needs: SkillNeeds
+    # An MCP server from `mcpCommands`. Added after the first `mkSkill`: older pins mark none.
+    mcp: bool = False
 
 
 class SkillMetadata(BaseModel):

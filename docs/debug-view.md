@@ -340,12 +340,12 @@ escalation waits with reason `approval`. The title is generated after the turn a
 | `sandbox` | `create`, `resume`, `warm claim`, `wait_for_ready`, `knowledge clone`, `hooks`, `proxy setup`, `git identity` | the steps of a start, under `ensure` | `claimed` on `warm claim`, `ready` on `wait_for_ready` |
 | `skill` | `build wait` | `read_skill` waiting for the skill's build | `skill` |
 | `skill` | `profile sync` | bringing the sandbox's skill profile to the owner's head ([sandbox.md](sandbox.md#skill-commands-on-path)) | `paths` |
+| `skill` | `list tools` | `read_skill` running an MCP server's `<server> --list-tools` | `server` |
 | `domain` | the domain (≤ 200 chars) | a proxy domain check | `domain` (≤ 200 chars), `allowed` |
 
 A sandbox that is already running gets no `ensure` span, so the common case adds no row per call.
 Warm pool refills run in a fresh context, so the pool's own startups never land in the turn that
 triggered them.
-The exec span's command is not the MCP bridge's: that one carries the tool arguments.
 
 Calls from inside the sandbox reach the server outside the turn's task: the proxy's domain checks,
 the sandbox API (credentials, git) and the pre-receive hook's push evaluation. They enter
