@@ -4,7 +4,7 @@ carapace lets the agent work freely inside its sandbox and reviews where it reac
 
 ## How it works
 
-1. **Tool calls are logged, not reviewed.** Every agent tool (`exec`, file edits, `read_skill`, …) runs right away and gets an action log entry and an audit entry (`auto_allowed`), and the UI shows it with `approval_source="safe-list"`, in YOLO mode too (see [Tool calls](#tool-calls)). The name is historical: there is no list.
+1. **Tool calls are logged, not reviewed.** Every agent tool (`exec`, file edits, `read_skill`, …) runs right away and gets an action log entry and an audit entry (`auto_allowed`), and the UI shows it without an approval badge, in YOLO mode too (see [Tool calls](#tool-calls)).
 2. **Boundary requests are reviewed.** What a command wants from outside the sandbox reaches the sentinel as a [boundary request](#boundary-requests), and every push to the knowledge repo as a [git push evaluation](#git-push-evaluation). The sentinel gets the action log since its last decision with each of them.
 3. **Verdict.** The sentinel is a guard rail, not a reviewer of the agent's work: it stops the agent from going haywire beyond the sandbox, changing what it was not asked to change, exfiltrating data, or following injected instructions, and lets everything else through. It returns one of four decisions:
    - **allow** -- proceed without interruption; on a git push optionally with a comment for the agent (see [Sentinel comments](#sentinel-comments)).

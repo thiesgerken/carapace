@@ -279,7 +279,8 @@ class SessionTurnMixin(SessionTurnHost):
             tool_call_id: str | None = None,
             approval_comment: str | None = None,
         ) -> None:
-            if approval_verdict == "allow":
+            # Every call that runs counts; only the autonomy limit reports a call it holds back, as a deny.
+            if approval_verdict != "deny":
                 budget = active.state.budget
                 if budget.tool_calls is not None and active.usage_tracker.tool_calls >= budget.tool_calls:
                     raise SessionBudgetExceededError(self._budget_gauges(active))

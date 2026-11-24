@@ -18,9 +18,11 @@ import {
   Puzzle,
   Replace,
   Send,
+  Shield,
   ShieldAlert,
   ShieldCheck,
   ShieldEllipsis,
+  ShieldX,
   SquareTerminal,
   UserCheck,
   UserX,
@@ -78,7 +80,8 @@ interface ToolCallBadgeProps {
   artifactReference?: ArtifactReference;
 }
 
-// "skill" only appears on tool calls stored before skill contexts were dropped; their transcripts still render.
+// "skill" and "safe-list" only appear on tool calls stored by older versions; their transcripts still render.
+// "safe-list" marked every unreviewed tool call, so it gets no badge, like an unreviewed call today.
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "unknown";
 
 const TOOL_ICONS: Record<string, LucideIcon> = {
@@ -409,62 +412,52 @@ function resolveToolLabel(
   return tool;
 }
 
+/** Which tooltip title explains this decision; the explanation, if any, follows it. */
+function approvalTitleKey(source: ApprovalSource, verdict?: ApprovalVerdict): string | null {
+  switch (source) {
+    case "sentinel":
+      return verdict == null ? "sentinelPending" : `sentinel_${verdict}`;
+    case "user":
+      return verdict === "deny" ? "userDeny" : "userAllow";
+    case "skill":
+    case "autonomy":
+    case "bypass":
+      return source;
+    default:
+      return verdict === "deny" ? "denied" : null;
+  }
+}
+
 function ApprovalBadge({
   source,
   verdict,
-  tooltip,
+  explanation,
 }: {
   source: ApprovalSource;
   verdict?: ApprovalVerdict;
-  tooltip?: string;
+  explanation?: string;
 }) {
   const t = useTranslations("toolCallBadge.approvalBadge");
-
-  if (source === "safe-list") {
-    return (
-      <span
-        className="inline-flex shrink-0 items-center text-blue-600 dark:text-blue-400"
-        title={tooltip || undefined}
-      >
-        <ShieldCheck className="h-3 w-3" />
-      </span>
-    );
-  }
+  const titleKey = approvalTitleKey(source, verdict);
+  if (titleKey == null) return null;
+  const title = explanation ? `${t(`titles.${titleKey}`)}: ${explanation}` : t(`titles.${titleKey}`);
 
   if (source === "sentinel") {
     if (verdict == null) {
       return (
         <span
           className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-500/10 text-slate-600 dark:text-slate-400"
-          title={tooltip || undefined}
+          title={title}
         >
           <BrailleSpinner className="text-xs" />
           {t("review")}
         </span>
       );
     }
-    if (verdict === "revise") {
-      return (
-        <span
-          className="inline-flex shrink-0 items-center text-orange-600 dark:text-orange-400"
-          title={tooltip || undefined}
-        >
-          <ShieldEllipsis className="h-3 w-3" />
-        </span>
-      );
-    }
-    const colorClass =
-      verdict === "allow"
-        ? "text-green-600 dark:text-green-400"
-        : verdict === "deny"
-          ? "text-red-600 dark:text-red-400"
-          : "text-yellow-600 dark:text-yellow-400";
+    const { Icon, colorClass } = SENTINEL_VERDICT_ICONS[verdict];
     return (
-      <span
-        className={cn("inline-flex shrink-0 items-center", colorClass)}
-        title={tooltip || undefined}
-      >
-        <ShieldAlert className="h-3 w-3" />
+      <span className={cn("inline-flex shrink-0 items-center", colorClass)} title={title}>
+        <Icon className="h-3 w-3" />
       </span>
     );
   }
@@ -479,7 +472,7 @@ function ApprovalBadge({
             ? "text-red-600 dark:text-red-400"
             : "text-purple-600 dark:text-purple-400",
         )}
-        title={tooltip || undefined}
+        title={title}
       >
         {isDenied ? (
           <UserX className="h-3 w-3" />
@@ -492,7 +485,10 @@ function ApprovalBadge({
 
   if (source === "skill") {
     return (
-      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400">
+      <span
+        className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400"
+        title={title}
+      >
         <Puzzle className="h-2.5 w-2.5" />
         {t("skill")}
       </span>
@@ -503,7 +499,7 @@ function ApprovalBadge({
     return (
       <span
         className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400"
-        title={tooltip || undefined}
+        title={title}
       >
         <Hourglass className="h-2.5 w-2.5" />
         {t("autonomy")}
@@ -513,24 +509,33 @@ function ApprovalBadge({
 
   if (source === "bypass") {
     return (
-      <span className="inline-flex items-center gap-0.5 rounded border border-amber-300/60 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-400/30 dark:text-amber-300">
+      <span
+        className="inline-flex items-center gap-0.5 rounded border border-amber-300/60 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-400/30 dark:text-amber-300"
+        title={title}
+      >
         <Zap className="h-2.5 w-2.5" />
         {t("bypass")}
       </span>
     );
   }
 
-  if (verdict === "deny") {
-    return (
-      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400">
-        <ShieldAlert className="h-2.5 w-2.5" />
-        {t("denied")}
-      </span>
-    );
-  }
-
-  return null;
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400"
+      title={title}
+    >
+      <ShieldX className="h-2.5 w-2.5" />
+      {t("denied")}
+    </span>
+  );
 }
+
+const SENTINEL_VERDICT_ICONS: Record<ApprovalVerdict, { Icon: LucideIcon; colorClass: string }> = {
+  allow: { Icon: ShieldCheck, colorClass: "text-green-600 dark:text-green-400" },
+  deny: { Icon: ShieldX, colorClass: "text-red-600 dark:text-red-400" },
+  escalate: { Icon: ShieldAlert, colorClass: "text-yellow-600 dark:text-yellow-400" },
+  revise: { Icon: ShieldEllipsis, colorClass: "text-orange-600 dark:text-orange-400" },
+};
 
 /** What the card says while *step* runs; `read_skill` waits for a build and a profile sync. */
 function stepLabel(step: RunningSpan, t: TranslateFn): string {
@@ -726,7 +731,7 @@ export function ToolCallBadge({
           </>
         );
       })()}
-      {source && <ApprovalBadge source={source} verdict={verdict} tooltip={finalDecisionMessage || sentinelExplanation || undefined} />}
+      {source && <ApprovalBadge source={source} verdict={verdict} explanation={finalDecisionMessage || sentinelExplanation || undefined} />}
       {approvalComment && (
         <span className="inline-flex shrink-0 items-center text-green-600 dark:text-green-400" title={approvalComment}>
           <MessageSquareText className="h-3 w-3" />
@@ -870,7 +875,7 @@ export function ToolCallBadge({
           {sentinelExplanation && (
             <div className="text-[11px] text-muted-foreground leading-relaxed">
                 <span className="font-medium text-foreground/70">
-                  <ShieldCheck className="inline h-3 w-3 -translate-y-px mr-1" />
+                  <Shield className="inline h-3 w-3 -translate-y-px mr-1" />
                   {t("details.sentinelLabel")}
                 </span>{" "}
               {verdict === "revise" && (

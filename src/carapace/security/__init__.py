@@ -57,16 +57,8 @@ def record_tool_call(
     session.write_audit(
         AuditEntry.now(kind="tool_call", tool=tool_name, args_summary=args, final_decision="auto_allowed")
     )
-    _log_tool_call(
-        tool_name,
-        args,
-        "[safe-list] auto-allowed",
-        tool_call_callback,
-        tool_call_id=tool_call_id,
-        approval_source="safe-list",
-        approval_verdict="allow",
-        approval_explanation="auto-allowed",
-    )
+    # No approval fields: nothing decided about the call, so the UI shows no verdict for it.
+    _log_tool_call(tool_name, args, "", tool_call_callback, tool_call_id=tool_call_id)
 
 
 async def evaluate_domain_with(
@@ -125,12 +117,13 @@ async def evaluate_domain_with(
         ),
     )
     if cached_approval is not None:
-        display_source: ApprovalSource = "safe-list" if cached_approval.allowed else cached_approval.approval_source
-        detail = f"[cached {display_source}: {cached_approval.approval_verdict}] " + "reused earlier decision"
+        detail = (
+            f"[cached {cached_approval.approval_source}: {cached_approval.approval_verdict}] reused earlier decision"
+        )
         session.notify_domain_decision(
             domain,
             detail,
-            approval_source=display_source,
+            approval_source=cached_approval.approval_source,
             approval_verdict=cached_approval.approval_verdict,
             approval_explanation=cached_approval.explanation,
         )

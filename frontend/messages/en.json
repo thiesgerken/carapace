@@ -881,7 +881,7 @@
             "enabledTitle": "YOLO",
             "enabledDescription": "Disable sentinel review and allow operations immediately.",
             "disabledTitle": "Reviewed",
-            "disabledDescription": "Keep actions gated by safe-list and sentinel review."
+            "disabledDescription": "The sentinel reviews what commands ask for outside the sandbox."
         },
         "unattended": {
             "enabledTitle": "Unattended",
@@ -1003,7 +1003,20 @@
             "skill": "skill",
             "bypass": "bypass",
             "denied": "denied",
-            "autonomy": "autonomy limit"
+            "autonomy": "autonomy limit",
+            "titles": {
+                "sentinelPending": "The sentinel is reviewing this",
+                "sentinel_allow": "Allowed by the sentinel",
+                "sentinel_deny": "Denied by the sentinel",
+                "sentinel_escalate": "The sentinel left this to you",
+                "sentinel_revise": "The sentinel asks for changes",
+                "userAllow": "Allowed by you",
+                "userDeny": "Denied by you",
+                "skill": "Allowed by an active skill",
+                "autonomy": "Stopped by the autonomy limit",
+                "bypass": "Allowed without review (YOLO mode)",
+                "denied": "Denied"
+            }
         },
         "fallbacks": {
             "missingPath": "(missing path)",
