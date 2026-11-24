@@ -14,7 +14,7 @@
 </p>
 <p align="center"><strong>A secure personal AI agent for DevOps engineers.</strong></p>
 
-<p align="center">Git-backed knowledge. Kubernetes Sandboxes. Skills are Nix Flakes.</p>
+<p align="center">Git-backed knowledge. Kubernetes Sandboxes. Nix-based Skills.</p>
 
 <p align="center">
   <a href="docs/quickstart.md">🚀 Quickstart</a>
