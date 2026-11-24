@@ -38,6 +38,7 @@ class FakeBuilder:
         self.built: list[tuple[str, set[str]]] = []
         self.unreachable = False
         self.reject_with: int | None = None
+        self.retries = 0
         self.answer = lambda tree: BuildResult(
             tree=tree, state="succeeded", store_paths=[f"/nix/store/{tree[:32]}-skill"], metadata=_METADATA
         )
@@ -47,9 +48,10 @@ class FakeBuilder:
             raise httpx.ConnectError("builder down")
         return self.stored.get(tree)
 
-    async def build(self, tree: str, archive: bytes) -> BuildResult:
+    async def build(self, tree: str, archive: bytes, *, retry: bool = False) -> BuildResult:
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
             self.built.append((tree, set(tar.getnames())))
+        self.retries += retry
         if self.reject_with is not None:
             request = httpx.Request("PUT", f"http://builder/builds/{tree}")
             response = httpx.Response(self.reject_with, text="archive member escapes the skill directory")
@@ -329,6 +331,32 @@ async def test_a_tree_no_head_references_is_looked_up_again(repo: Path) -> None:
     # The builder may collect the old tree, so its remembered result must not outlive the sync.
     assert old_weather not in builds._results
     assert _git(repo, "rev-parse", "HEAD:skills/notes") in builds._results
+
+
+@pytest.mark.anyio
+async def test_a_failed_build_is_retried_on_request(repo: Path) -> None:
+    builder = FakeBuilder()
+    builder.answer = lambda tree: BuildResult(tree=tree, state="failed", log_tail="error: connection reset")
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    assert (await _settled(builds, repo))["weather"] == "failed"
+
+    builder.answer = FakeBuilder().answer
+    await builds.retry(repo, "weather")
+
+    assert (await _settled(builds, repo)) == {"weather": "succeeded", "notes": "failed"}
+    assert builder.retries == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("name", ["weather", "parked", "instructions-only", "missing"])
+async def test_only_a_failed_flake_skill_can_be_retried(repo: Path, name: str) -> None:
+    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    with pytest.raises(skill_builds.RetryRefusedError):
+        await builds.retry(repo, name)
 
 
 @pytest.mark.anyio

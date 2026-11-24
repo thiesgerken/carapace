@@ -73,7 +73,26 @@
             "oauthHint": "No OAuth token stored. Generate one with",
             "oauthHintStore": "then save the JSON in the vault entry above.",
             "hints": "Hints",
-            "invalid": "Invalid frontmatter, the skill cannot be activated: {error}"
+            "invalid": "Invalid frontmatter, the skill cannot be activated: {error}",
+            "build": {
+                "title": "Build",
+                "tree": "Git tree of the skill at HEAD",
+                "retry": "Retry",
+                "log": "Build log",
+                "needsDomains": "reaches {domains}",
+                "state": {
+                    "building": "Building",
+                    "succeeded": "Built",
+                    "failed": "Failed",
+                    "unavailable": "Builder unavailable"
+                },
+                "hint": {
+                    "building": "The builder is working on the committed version of this skill.",
+                    "succeeded": "Its commands are available in new sessions.",
+                    "failed": "Its commands are not available. Fix the skill and push, or retry if the failure was transient.",
+                    "unavailable": "The skill builder cannot be reached; the build starts once it is back."
+                }
+            }
         }
     },
     "memory": {
