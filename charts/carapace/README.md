@@ -14,7 +14,7 @@ Helm chart for deploying [carapace](https://github.com/thiesgerken/carapace) on 
 
 > **⚠️ SECURITY WARNING — NetworkPolicy is critical**
 >
-> carapace's security model relies on sandbox pods having **no direct internet access**. All outbound traffic is forced through the server's HTTP proxy, which enforces per-session domain allowlisting and the human-in-the-loop approval flow.
+> carapace's security model relies on sandbox pods having **no direct internet access**. All outbound traffic is forced through the server's HTTP proxy, which lets a domain through only once the sentinel (or the user) approved it for the running exec.
 >
 > The chart installs a `NetworkPolicy` that restricts sandbox pod egress to the proxy port (3128) and the sandbox API port (8322) only; sandbox pods get no DNS. **If you add broader egress rules to the namespace, or your CNI does not enforce NetworkPolicy, sandbox pods can bypass the proxy entirely — defeating the approval system and all domain-level security controls.**
 >

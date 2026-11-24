@@ -84,7 +84,7 @@ src/carapace/          # main package
     context.py         # action log entries, sentinel verdict, session security state
   sandbox/
     manager.py         # sandbox container lifecycle and auth
-    proxy.py           # HTTP forward proxy with domain allowlisting
+    proxy.py           # HTTP forward proxy with per-exec domain approvals
     runtime.py         # abstract container runtime interface
     docker.py          # Docker runtime implementation
     kubernetes.py      # Kubernetes runtime implementation

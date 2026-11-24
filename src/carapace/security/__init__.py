@@ -228,7 +228,7 @@ async def _decision_for_batch_limit(
     review_limit: int | None,
 ) -> CachedDomainApproval:
     limit_text = (
-        "Automatic sentinel review hit the per-tool-call domain batch limit"
+        "Automatic sentinel review hit the per-exec domain batch limit"
         + (f" ({review_limit})" if review_limit is not None else "")
         + (
             ". The domain request was denied because no user approval path is available."

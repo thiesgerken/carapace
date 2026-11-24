@@ -87,7 +87,7 @@ The cap on domain reviews follows the same cut: `agent.max_sentinel_calls_per_to
 
 ## Tool calls
 
-No agent tool is reviewed by itself: `exec`, `read`, `write`, `str_replace`, `read_skill`, `send_file`, `show_artifact` and `read_tool_output` all run right away. The sandbox is the boundary, and a tool reaches outside only through a boundary request or a push, which are reviewed.
+No agent tool is reviewed by itself: `exec`, `read`, `write`, `str_replace`, `list_skills`, `read_skill`, `send_file`, `show_artifact` and `read_tool_output` all run right away. The sandbox is the boundary, and a tool reaches outside only through a boundary request or a push, which are reviewed.
 
 Each call still gets an action log entry with its full arguments and an audit entry (`auto_allowed`), YOLO mode included; it is not a silent bypass. For `exec` that matters: the sentinel sees every command that ran since its last decision with the next boundary request, which is where a sequence like packing up mail and then asking for an upload host shows. A `read_skill` call tells it which skill the following requests belong to.
 

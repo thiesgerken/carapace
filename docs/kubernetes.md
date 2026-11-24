@@ -318,7 +318,7 @@ the server being reachable on `localhost` (see [chatgpt-subscription.md](chatgpt
 
 ### Proxy
 
-Sandbox pods reach the internet exclusively through the HTTP proxy running inside the server pod (port 3128). The proxy enforces per-session domain allowlisting with token-based auth, and it refuses cluster-internal and private destinations (other pods, Services, the Kubernetes API, the node network) unless `sandbox.allowedInternalNetworks` or `sandbox.allowedInternalHosts` allows them; see [Internal destinations](sandbox.md#internal-destinations). Sandbox pods receive **only** `HTTP_PROXY` / `HTTPS_PROXY` env vars pointing to the carapace service.
+Sandbox pods reach the internet exclusively through the HTTP proxy running inside the server pod (port 3128). The proxy lets a domain through only once it is approved for the running exec, with token-based auth, and it refuses cluster-internal and private destinations (other pods, Services, the Kubernetes API, the node network) unless `sandbox.allowedInternalNetworks` or `sandbox.allowedInternalHosts` allows them; see [Internal destinations](sandbox.md#internal-destinations). Sandbox pods receive **only** `HTTP_PROXY` / `HTTPS_PROXY` env vars pointing to the carapace service.
 
 Git operations (`git clone`, `git push`) use the **sandbox API** (port 8322) directly with HTTP Basic Auth (`session_id:token`). The sandbox API hostname is added to `NO_PROXY` so Git traffic bypasses the HTTP proxy.
 
@@ -337,7 +337,7 @@ A second policy, in the builder namespace, covers the [skill builder](builder.md
 
 > **⚠️ SECURITY WARNING — NetworkPolicy is critical to carapace's security model**
 >
-> Sandbox pods must **never** have direct internet access. All outbound traffic is forced through the server's HTTP proxy, which enforces per-session domain allowlisting and the human-in-the-loop approval flow. If a sandbox pod can reach the internet without going through the proxy, an agent can exfiltrate data or interact with external services without any approval.
+> Sandbox pods must **never** have direct internet access. All outbound traffic is forced through the server's HTTP proxy, which lets a domain through only once the sentinel (or the user) approved it for the running exec. If a sandbox pod can reach the internet without going through the proxy, an agent can exfiltrate data or interact with external services without any approval.
 >
 > **The NetworkPolicy is the only thing preventing this.** If any of the following are true, the approval system can be trivially defeated:
 >

@@ -320,7 +320,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `sandbox/k8s_exec_v5.py`       | Pod exec with stdin over the `v5.channel.k8s.io` websocket subprotocol.                    |
 | `sandbox/kubernetes.py`        | Kubernetes StatefulSet/PVC runtime implementation.                                         |
 | `sandbox/manager.py`           | High-level sandbox session manager used by tools and server routes.                        |
-| `sandbox/proxy.py`             | HTTP/HTTPS forward proxy with per-session domain authorization.                            |
+| `sandbox/proxy.py`             | HTTP/HTTPS forward proxy that lets through only domains approved for the running exec.     |
 | `sandbox/runtime.py`           | Abstract runtime protocol and shared sandbox runtime types.                                |
 | `sandbox/session_lifecycle.py` | Container lifecycle state and ensure/cleanup/reload operations.                            |
 | `sandbox/skill_profile.py`     | Keeps each sandbox's skill profile (the skill commands on `PATH`) at its owner's head.     |
