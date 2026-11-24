@@ -695,7 +695,7 @@ async def evaluate_upfront_request_with(
             ui_explanation="YOLO mode bypassed sentinel.",
         )
     else:
-        for domain in request.domains:
+        for domain in [*request.domains, *request.tunnels]:
             session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
         for credential in credentials:
             session.notify_credential_review(
@@ -713,17 +713,18 @@ async def evaluate_upfront_request_with(
         outcome = await _decide_boundary_request(
             session,
             verdict,
-            subject=", ".join([*request.domains, *(c.vault_path for c in credentials)]),
+            subject=", ".join([*request.domains, *request.tunnels, *(c.vault_path for c in credentials)]),
             what="the up-front request",
             items=_AccessItems(
                 vault_paths=[c.vault_path for c in credentials],
                 names=[c.name for c in credentials],
                 descriptions=[c.description for c in credentials],
-                domains=request.domains,
+                domains=[*request.domains, *request.tunnels],
             ),
         )
 
-    for domain in request.domains:
+    # A tunnel shows as its host:port, so the user sees which port it opens.
+    for domain in [*request.domains, *request.tunnels]:
         session.notify_domain_decision(
             domain,
             outcome.detail,

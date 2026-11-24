@@ -62,6 +62,7 @@ from carapace.sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_RE
 from carapace.sandbox.exec_scope import CredentialGrant, RunningExec
 from carapace.sandbox.manager import SandboxLimitError, SandboxManager
 from carapace.sandbox.state import SessionSandboxSnapshot
+from carapace.sandbox.tunnels import ExecEndedError, Tunnel
 from carapace.security.context import CredentialAccessEntry, SentinelVerdict, SessionSecurity
 from carapace.server import app, sandbox_app
 from carapace.server.runtime import KnowledgeGitRuntime, MatrixChannelHandle, MatrixChannelManager
@@ -3821,6 +3822,10 @@ def test_gate_request_after_its_exec_ended_grants_nothing(client, auth_headers, 
         ),
         ({"domains": ["https://api.example.com"]}, "example-sync", (400, "not a domain: https://api.example.com")),
         ({}, "example-sync", (400, "nothing requested")),
+        ({"tunnels": ["imap.example.com"]}, "example-sync", (400, "not a HOST:PORT: imap.example.com")),
+        ({"tunnels": ["*.example.com:993"]}, "example-sync", (400, "not a HOST:PORT: *.example.com:993")),
+        ({"tunnels": ["imap.example.com:0"]}, "example-sync", (400, "not a HOST:PORT: imap.example.com:0")),
+        ({"tunnels": ["10.0.0.1:5432"]}, "example-sync", (400, "not a HOST:PORT: 10.0.0.1:5432")),
         ({"credentials": ["demo/missing"]}, "example-sync", (404, "credential not found: demo/missing")),
         ({"domains": ["api.example.com"]}, None, (403, ORPHANED_REQUEST_REJECTION)),
     ],
@@ -3836,6 +3841,78 @@ def test_gate_request_refuses_without_a_review(client, auth_headers, monkeypatch
 
     assert (resp.status_code, resp.text) == expected
     sentinel.evaluate_upfront_request.assert_not_awaited()
+
+
+def test_gate_request_reviews_a_tunnel_and_opens_it_before_answering(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    open_tunnels = srv._engine.sandbox_mgr.open_tunnels
+    open_tunnels.side_effect = None
+    open_tunnels.return_value = None
+    body = {"tunnels": ["IMAP.example.com:993"]}
+
+    resp = TestClient(sandbox_app).post("/gate", json=body, headers=_sandbox_basic_auth(sid))
+
+    assert resp.status_code == 200
+    request = sentinel.evaluate_upfront_request.await_args.args[1]
+    assert (request.domains, request.tunnels) == ([], ["imap.example.com:993"])
+    # The forwarder reaches the host with CONNECT, which the proxy checks like any domain.
+    assert running.domains == {"imap.example.com"}
+    open_tunnels.assert_awaited_once_with(running, [Tunnel("imap.example.com", 993)])
+
+
+def test_gate_request_opens_a_tunnel_to_an_allowed_host_without_a_review(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="deny", explanation="no"))
+    running.domains.add("imap.example.com")
+    srv._engine.sandbox_mgr.open_tunnels.side_effect = None
+    srv._engine.sandbox_mgr.open_tunnels.return_value = None
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"tunnels": ["imap.example.com:993"]}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert resp.status_code == 200
+    sentinel.evaluate_upfront_request.assert_not_awaited()
+    srv._engine.sandbox_mgr.open_tunnels.assert_awaited_once()
+
+
+def test_gate_request_denied_tunnel_is_not_opened(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    _, _, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="deny", explanation="Not for this task."))
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"tunnels": ["imap.example.com:993"]}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert (resp.status_code, resp.text) == (403, "Sentinel denied this operation. Not for this task.")
+    assert running.domains == set()
+    srv._engine.sandbox_mgr.open_tunnels.assert_not_awaited()
+
+
+def test_gate_request_for_a_tunnel_whose_exec_ended_is_denied(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    srv._engine.sandbox_mgr.open_tunnels.side_effect = ExecEndedError
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"tunnels": ["imap.example.com:993"]}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert (resp.status_code, resp.text) == (403, EXEC_ENDED_REJECTION)
+
+
+def test_gate_request_reports_a_tunnel_that_did_not_open(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    srv._engine.sandbox_mgr.open_tunnels.side_effect = None
+    srv._engine.sandbox_mgr.open_tunnels.return_value = "The tunnels could not be opened: address in use"
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"tunnels": ["imap.example.com:993"]}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert (resp.status_code, resp.text) == (502, "The tunnels could not be opened: address in use")
 
 
 def test_sandbox_fetch_credential_backend_error_returns_503(client, auth_headers, monkeypatch):

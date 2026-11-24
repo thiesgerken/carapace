@@ -20,7 +20,12 @@ let
     { domain = [ "api.example.com" ]; }
     { credentials."A=B" = "demo/token"; }
     { credentials."TOKEN; rm -rf ~" = "demo/token"; }
-    { tunnels = [ "imap.example.com:993" ]; }
+    { tunnels = [ "imap.example.com" ]; }
+    { tunnels = [ "*.example.com:993" ]; }
+    { tunnels = [ "imap.example.com:0" ]; }
+    { tunnels = [ "imap.example.com:0993" ]; }
+    { tunnels = [ "imap.example.com:65536" ]; }
+    { tunnels = [ "10.0.0.1:5432" ]; }
   ];
   # MCP servers: the bridge's arguments and what each command declares follow from the server.
   mcp = skillLib.mkSkill {
@@ -94,6 +99,16 @@ let
           credentials = { };
         };
       };
+      mail = {
+        exec = "${pkgs.coreutils}/bin/echo mail";
+        description = "Needs a tunnel and nothing else";
+        needs = {
+          domains = [ ];
+          credentials = { };
+          # Any case, like the server, which lowercases it.
+          tunnels = [ "Imap.example.com:993" ];
+        };
+      };
     };
   };
 in
@@ -132,6 +147,7 @@ assert pkgs.lib.assertMsg (
   && marks skill == {
     show-token = false;
     local = false;
+    mail = false;
   }
 ) "mkSkill marked the wrong commands as MCP servers: ${builtins.toJSON [ (marks mcp) (marks skill) ]}";
 pkgs.runCommand "skill-wrapper-contract" { } ''
@@ -160,6 +176,10 @@ pkgs.runCommand "skill-wrapper-contract" { } ''
   rm calls
   [ "$(${skill}/bin/local)" = local ]
   [ ! -e calls ]
+
+  # A tunnel is asked for up front like a domain; the server opens it before cgate returns.
+  [ "$(${skill}/bin/mail)" = mail ]
+  echo "cgate request --store-path ${skill} --tunnel Imap.example.com:993" | diff - calls
 
   # A denial or a failing ccred stops the wrapper before the command runs. `if` rather than `!`, which
   # errexit ignores.

@@ -2,7 +2,8 @@
 """cgate: ask Carapace up front for what a command will need.
 
 Usage:
-    cgate request [--domain D]... [--credential VAULT_PATH]... [--oauth VAULT_PATH]... [--store-path PATH]
+    cgate request [--domain D]... [--credential VAULT_PATH]... [--oauth VAULT_PATH]... [--tunnel HOST:PORT]...
+                  [--store-path PATH]
 
 Exit status: 0 approved, 1 denied or failed (the reason is on stderr), 2 usage error.
 The contract is documented in docs/sandbox.md; generated skill wrappers depend on it.
@@ -40,6 +41,7 @@ def cmd_request(args: argparse.Namespace) -> None:
         "domains": args.domain,
         "credentials": args.credential,
         "oauth": args.oauth,
+        "tunnels": args.tunnel,
         "store_path": args.store_path,
     }
     req = urllib.request.Request(
@@ -54,8 +56,9 @@ def cmd_request(args: argparse.Namespace) -> None:
         with urllib.request.urlopen(req):
             pass
     except urllib.error.HTTPError as e:
-        # 403 is a denial by the sentinel or the user, 400/404 a bad request; their body says why.
-        message = e.read().decode() if e.code in (400, 403, 404) else f"{e.code} {e.reason}"
+        # 403 is a denial by the sentinel or the user, 400/404 a bad request, 502 a tunnel that did not open;
+        # their body says why.
+        message = e.read().decode() if e.code in (400, 403, 404, 502) else f"{e.code} {e.reason}"
         print(f"error: {message}", file=sys.stderr)
         sys.exit(1)
 
@@ -68,10 +71,12 @@ def main() -> None:
             "examples:\n"
             "  cgate request --domain api.example.com --credential personal/api-key\n"
             "  cgate request --domain '*.example.com' --store-path /nix/store/...-my-skill\n"
+            "  cgate request --tunnel imap.example.com:993\n"
             "\n"
             "One sentinel decision covers everything requested. After approval the domains are\n"
             "reachable, and `ccred get` returns the credentials (`ccred get --access-token` the OAuth\n"
-            "access tokens) without another review, until the exec ends. Anything requested later\n"
+            "access tokens) without another review, until the exec ends. A tunnel is open when cgate\n"
+            "returns: connect to HOST:PORT by its name as usual. Anything requested later\n"
             "in the same exec is reviewed as a follow-up.\n"
             "Exit status: 0 approved, 1 denied or failed (reason on stderr), 2 usage error."
         ),
@@ -84,14 +89,14 @@ def main() -> None:
     request.add_argument(
         "--oauth", action="append", default=[], help="OAuth vault path, for its access token (repeatable)"
     )
-    request.add_argument("--tunnel", action="append", default=[], help="HOST:PORT (not supported yet)")
+    request.add_argument(
+        "--tunnel", action="append", default=[], help="HOST:PORT for a client that does not speak HTTP (repeatable)"
+    )
     request.add_argument("--store-path", help="The calling wrapper's own Nix store path")
 
     args = parser.parse_args(args=None if sys.argv[1:] else ["--help"])
-    if args.tunnel:
-        request.error("--tunnel is not supported yet")
-    if not args.domain and not args.credential and not args.oauth:
-        request.error("nothing requested: give at least one --domain, --credential or --oauth")
+    if not args.domain and not args.credential and not args.oauth and not args.tunnel:
+        request.error("nothing requested: give at least one --domain, --credential, --oauth or --tunnel")
     cmd_request(args)
 
 

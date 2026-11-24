@@ -71,10 +71,11 @@ from ..prompt_prefix import shared_prompt_prefix
 from ..sandbox.destinations import DestinationPolicy
 from ..sandbox.egress_check import EgressCheckError, EgressProbeError
 from ..sandbox.exec_flow import EXEC_ENDED_REJECTION, ORPHANED_REQUEST_REJECTION
-from ..sandbox.exec_scope import CredentialGrant
+from ..sandbox.exec_scope import CredentialGrant, RunningExec
 from ..sandbox.manager import SandboxLimitError, SandboxManager
 from ..sandbox.proxy import ProxyServer, domain_allowed
 from ..sandbox.runtime import ContainerRuntime
+from ..sandbox.tunnels import ExecEndedError, Tunnel, parse_tunnel
 from ..security import (
     CREDENTIAL_LISTING_PATH,
     CredentialAccessEvaluation,
@@ -1155,6 +1156,7 @@ class UpfrontRequestBody(BaseModel):
     domains: list[str] = []
     credentials: list[str] = []
     oauth: list[str] = []
+    tunnels: list[str] = []
     store_path: str | None = None
 
 
@@ -1170,7 +1172,8 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
     """Review what a command declares before its work (``cgate request``); one decision for all of it.
 
     Approved domains and credentials hold for the rest of the running exec. Credentials are approved as
-    the password kind, the one generated wrappers fetch with ``ccred get``.
+    the password kind, the one generated wrappers fetch with ``ccred get``. Approved tunnels are opened
+    before the answer, so the command can connect as soon as ``cgate`` returns.
     """
     session_id = _authenticate_sandbox(request.headers.get("authorization"))
     if session_id is None:
@@ -1181,9 +1184,13 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
         return Response(status_code=400, content=f"not a domain: {invalid[0]}", media_type="text/plain")
     if body.store_path is not None and not _STORE_PATH.fullmatch(body.store_path):
         return Response(status_code=400, content="not a Nix store path", media_type="text/plain")
+    parsed = {raw: parse_tunnel(raw) for raw in body.tunnels}
+    if invalid := [raw for raw, tunnel in parsed.items() if tunnel is None]:
+        return Response(status_code=400, content=f"not a HOST:PORT: {invalid[0]}", media_type="text/plain")
+    tunnels = sorted({tunnel for tunnel in parsed.values() if tunnel is not None})
     vault_paths = sorted(set(body.credentials))
     token_paths = sorted(set(body.oauth))
-    if not domains and not vault_paths and not token_paths:
+    if not domains and not tunnels and not vault_paths and not token_paths:
         return Response(status_code=400, content="nothing requested", media_type="text/plain")
 
     try:
@@ -1198,10 +1205,12 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
         return _boundary_denied(ORPHANED_REQUEST_REJECTION)
     effective_domains = sandbox_mgr.get_effective_domains(session_id)
     pending_domains = [domain for domain in domains if not domain_allowed(domain, effective_domains)]
+    # A tunnel whose host is already allowed adds nothing the exec could not reach: it opens without a review.
+    pending_tunnels = [tunnel for tunnel in tunnels if not domain_allowed(tunnel.host, effective_domains)]
     pending_paths = [path for path in vault_paths if (path, "password") not in running.credentials]
     pending_tokens = [path for path in token_paths if (path, "oauth_access_token") not in running.credentials]
-    if not pending_domains and not pending_paths and not pending_tokens:
-        return Response(status_code=200)
+    if not pending_domains and not pending_tunnels and not pending_paths and not pending_tokens:
+        return await _open_tunnels(running, tunnels)
 
     metadata: dict[str, CredentialMetadata] = {}
     for path in sorted({*pending_paths, *pending_tokens}):
@@ -1225,6 +1234,7 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
                     domains=pending_domains,
                     credentials=credentials,
                     access_tokens=access_tokens,
+                    tunnels=[str(tunnel) for tunnel in pending_tunnels],
                     store_path=body.store_path,
                 ),
                 running.command,
@@ -1241,8 +1251,21 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
     if not evaluation.allowed:
         return _boundary_denied(evaluation.rejection)
     running.domains.update(pending_domains)
+    running.domains.update(tunnel.host for tunnel in pending_tunnels)
     running.credentials.update((path, "password") for path in pending_paths)
     running.credentials.update((path, "oauth_access_token") for path in pending_tokens)
+    return await _open_tunnels(running, tunnels)
+
+
+async def _open_tunnels(running: RunningExec, tunnels: list[Tunnel]) -> Response:
+    if not tunnels:
+        return Response(status_code=200)
+    try:
+        failure = await _engine.sandbox_mgr.open_tunnels(running, tunnels)
+    except ExecEndedError:
+        return _boundary_denied(EXEC_ENDED_REJECTION)
+    if failure is not None:
+        return Response(status_code=502, content=failure, media_type="text/plain")
     return Response(status_code=200)
 
 

@@ -42,7 +42,7 @@ Comments and `revise` only exist for git pushes. For proxy domains, credentials 
 - Network access (proxy): you only see the domain, not path, method, or payload
 - Git push of the knowledge repo (`/workspace/knowledge`): you receive commits and diff
 - Credential access (explicit requests from the sandbox, including `ccred list` and `ccred search`)
-- Up-front requests (`cgate request`): the domains and credentials a command declares before its work, one verdict for all of them. A declaration carries no trust; judge it like the single requests, with the whole command in view. The caller's store path tells you whether it is the built skill or workspace code, when that is known.
+- Up-front requests (`cgate request`): the domains, credentials and TCP tunnels a command declares before its work, one verdict for all of them. A tunnel lets a client that does not speak HTTP (mail, databases) reach its host; judge it like a domain request for that host. A declaration carries no trust; judge it like the single requests, with the whole command in view. The caller's store path tells you whether it is the built skill or workspace code, when that is known.
 
 ## The sandbox is the boundary
 
