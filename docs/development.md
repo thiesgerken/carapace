@@ -36,7 +36,7 @@ export CARAPACE_BUILDER_CACHE_URL=http://127.0.0.1:8331
 uv run carapace-server
 ```
 
-Sandboxes need a Linux Docker host here: they reach the server's proxy and Git endpoint through the gateway of their internal network, which Docker Desktop puts inside its VM, so on a Mac the start-up egress self-test fails. On Apple Silicon, run the stack from [native Linux images](#native-linux-images-on-apple-silicon) instead. The builder's cache on loopback works because the session proxy forwards cache reads to it without the destination check.
+Sandboxes need a Linux Docker host here: they reach the server's proxy and Git endpoint through the gateway of their internal network, which Docker Desktop puts inside its VM, so on a Mac the start-up egress self-test fails. With `CARAPACE_SANDBOX_EGRESS_SELF_TEST=false` the server starts on a Mac anyway, for the UI and the API, but sandboxes still can't reach the proxy or the Git endpoint: no knowledge clone, no domain or credential access, so no real turn that runs commands. For those, run the stack from [native Linux images](#native-linux-images-on-apple-silicon) on Apple Silicon. The builder's cache on loopback works because the session proxy forwards cache reads to it without the destination check.
 
 The server reads `CARAPACE_TOKEN` and the model keys from `.env` in the working directory (see `.env.example`). The SQLite database defaults to `carapace.db` in the data directory. For Postgres-backed host iteration, expose a separate development Postgres port and set `CARAPACE_DATABASE_URL`; keep development data separate from an existing deployment. Clean up with `docker stop carapace-dev-redis`, `docker rm -f carapace-dev-builder` and `docker volume rm carapace-dev-builder-nix`.
 
@@ -82,9 +82,12 @@ The demo user also has memory data for the Memory pages and the home page: `memo
    unset CARAPACE_DATABASE_URL  # the demo database must be the default SQLite file in the data dir
    CARAPACE_CACHE_REDIS_URL=redis://127.0.0.1:6390/0 \
    CARAPACE_SANDBOX_BASE_IMAGE=carapace-sandbox:local \
+   CARAPACE_SANDBOX_EGRESS_SELF_TEST=false \
    CARAPACE_TOKEN=demo-admin-password-0123456789 \
    uv run carapace-server
    ```
+
+   The demo sessions need no sandbox, so the server skips the egress self-test, which a server on a Mac host can never pass (see [host iteration](#native-developer-shell)). It warns about that at start.
 
 2. In another shell with the same `CARAPACE_DATA_DIR`, seed it once the server is up. Order matters: server startup closes approval requests left open by a previous process, and two demo sessions show open ones. The script refuses a data dir outside the temp directory, a database outside the data dir, and a data dir that already has sessions.
 

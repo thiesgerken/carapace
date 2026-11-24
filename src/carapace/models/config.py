@@ -387,6 +387,9 @@ class SandboxConfig(BaseSettings):
     k8s_resource_limits_ephemeral_storage: str = ""
     # Remove sandbox resources for sessions that no longer exist on disk at startup.
     cleanup_orphans_on_startup: bool = True
+    # The start-up egress self-test (docs/security.md). Only for development on a Mac, where a server on the host
+    # is unreachable from Docker Desktop's sandboxes and the test can never pass; production must keep it.
+    egress_self_test: bool = True
 
 
 class BuilderConfig(BaseSettings):
