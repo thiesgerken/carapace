@@ -9,7 +9,7 @@ from carapace.database.engine import _alembic_config, create_engine_and_factory
 from carapace.database.models import SessionActionLogRow, SessionEventRow, SessionRow, SessionSentinelRow
 from carapace.models.config import DatabaseConfig
 from carapace.models.session import SessionState
-from carapace.security.context import SessionSecurity, ToolCallEntry, UserMessageEntry
+from carapace.security.context import SessionSecurity, UserMessageEntry
 
 _USER = {"type": "user_message", "content": "push the fix"}
 _LEGACY_RESPONSE = {"type": "agent_response", "token_count": 1234}
@@ -79,11 +79,12 @@ def test_upgrade_drops_textless_agent_responses_and_keeps_the_sync_position(tmp_
 def test_downgrade_turns_change_requests_into_denials(tmp_path) -> None:
     engine, _ = create_engine_and_factory(DatabaseConfig(url=f"sqlite+pysqlite:///{tmp_path}/m.db"))
     cfg = _alembic_config(str(engine.url))
-    revised = ToolCallEntry(tool="exec", args={"command": "ls"}, decision="changes_requested", explanation="split it")
+    # Raw: the current model no longer accepts `changes_requested`.
+    revised = _TOOL | {"decision": "changes_requested", "explanation": "split it"}
     with engine.begin() as conn:
         cfg.attributes["connection"] = conn
         command.upgrade(cfg, "0014")
-        _insert_session(conn, "s", [_USER, revised.model_dump(mode="json")], synced_entries=None)
+        _insert_session(conn, "s", [_USER, revised], synced_entries=None)
         conn.execute(
             insert(SessionEventRow),
             [

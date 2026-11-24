@@ -206,8 +206,8 @@ export interface SentFile {
   size: number;
 }
 
-/** The verdict of the sentinel or the user on an action; `revise` sends it back to the agent for changes. */
-export type ApprovalVerdict = "allow" | "revise" | "deny" | "escalate";
+/** The verdict of the sentinel or the user on an action. */
+export type ApprovalVerdict = "allow" | "deny" | "escalate";
 /**
  * Who decided: `policy` is the proxy's destination policy, not a reviewer. `skill` and `safe-list` only appear on
  * tool calls stored by older versions; their transcripts still render. `safe-list` marked every unreviewed tool

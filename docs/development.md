@@ -62,7 +62,7 @@ UI PRs show the pages they change: before and after, light and dark, plus phone 
 | `demo-recipe-skill` | Creating A Recipe Skill | file read and write, a git push, code blocks |
 | `demo-blocked-post` | HTTP POST Blocked In Ask Mode | ask mode, a domain the sentinel denied, and the failed `exec` |
 | `demo-internal-host` | Checking The Document Server | a domain the proxy refused as an internal destination, with the reason |
-| `demo-change-request` | Fixing The Pancake Ingredients | a push the sentinel sent back for changes (`revise`), then the narrowed push, allowed with a comment for the agent |
+| `demo-change-request` | Fixing The Pancake Ingredients | a push the sentinel denied for bundling an extra change, then the narrowed push, allowed with a comment for the agent |
 | `demo-pending-approval` | Cleaning Up NAS Backups | a pending escalation of an up-front request (a credential and a domain) |
 | `demo-budget-stop` | Triage Open Issues | a budget stop with the error box |
 | `demo-unexpected-error` | LED Controller Pinout | a turn that stopped on an unexpected error: the failed call and the error box with its traceback |

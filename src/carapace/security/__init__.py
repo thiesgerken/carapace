@@ -23,7 +23,6 @@ from .context import (
     SessionSecurity,
     ToolCallEntry,
     UpfrontRequest,
-    format_changes_requested_message,
     format_denial_message,
     normalize_optional_message,
 )
@@ -193,8 +192,6 @@ async def _decision_from_verdict(
             final_decision = "allowed" if allowed else "denied"
             rejection = "" if allowed else format_denial_message("user", user_message)
             detail = rejection or "[user: allow]"
-        case "revise":
-            raise _revise_not_offered("domain access")
 
     source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
     approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
@@ -475,10 +472,6 @@ async def evaluate_push_with(
         allowed = False
         detail = f"[sentinel: deny] {verdict.explanation}"
         rejection = format_denial_message("sentinel", verdict.explanation)
-    elif verdict.decision == "revise":
-        allowed = False
-        detail = f"[sentinel: revise] {verdict.explanation}"
-        rejection = format_changes_requested_message(verdict.explanation)
     else:
         changed_files = sorted(touched_paths(diff))
         user_decision = await session.escalate_to_user(
@@ -829,8 +822,6 @@ async def _decide_boundary_request(
                 rejection=rejection,
                 ui_explanation=message,
             )
-        case "revise":
-            raise _revise_not_offered(what)
 
 
 def _record_credential_outcome(
@@ -856,21 +847,14 @@ def _record_credential_outcome(
     )
 
 
-def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "changes_requested", "escalated", "denied"]:
+def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "escalated", "denied"]:
     match verdict.decision:
         case "allow":
             return "allowed"
-        case "revise":
-            return "changes_requested"
         case "escalate":
             return "escalated"
         case "deny":
             return "denied"
-
-
-def _revise_not_offered(kind: str) -> RuntimeError:
-    # The sentinel's output validator rejects `revise` where the agent never reads the explanation.
-    return RuntimeError(f"Sentinel returned `revise` for {kind}, where it is not offered.")
 
 
 def _log_tool_call(

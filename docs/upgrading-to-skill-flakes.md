@@ -176,6 +176,7 @@ The database migrations run on start:
 
 - They drop every session's activated skills and context grants, together with the `skill_activated` and `context_grant` entries in the sentinel's action log.
 - They rename `max_sentinel_calls_per_tool_call` in the platform settings.
+- They turn the sentinel's old `revise` verdicts into denials, so old sessions show them as denied.
 
 A session that was running keeps its conversation. If the agent calls `use_skill` again, it gets "unknown tool" and moves on to `read_skill`. The commands are on `PATH` once the skill is built.
 
