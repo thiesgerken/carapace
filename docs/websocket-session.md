@@ -77,10 +77,10 @@ Each message is one JSON object with a `type` field.
 | `tool_call_end`                  | Model stopped writing the call                      | `tool_call_id`, `aborted`                                                                        |
 | `tool_call`                      | Tool started / security notification                | `tool`, `args`, `detail`; optional `approval_source`, `approval_verdict`, `approval_explanation`, `approval_comment` |
 | `tool_result`                    | Tool finished                                       | `tool`, `result`, `exit_code`                                                                    |
-| `approval_request`               | Sentinel escalated a **tool** to the user           | `tool_call_id`, `tool`, `args`, `explanation`, `risk_level`                                      |
+| `approval_request`               | A **tool** call is held at the autonomy limit       | `tool_call_id`, `tool`, `args`, `explanation`                                                    |
 | `domain_access_approval_request` | Sentinel escalated **proxy domain** access          | `request_id`, `domain`, `command`                                                                |
 | `git_push_approval_request`      | Sentinel escalated **git push**                     | `request_id`, `ref`, `explanation`, `changed_files`                                              |
-| `credential_approval_request`    | Sentinel escalated **credential** access            | `request_id`, `vault_paths`, `names`, `descriptions`, optional `skill_name`, `explanation`       |
+| `credential_approval_request`    | Sentinel escalated **credential** access or an up-front request | `request_id`, `vault_paths`, `names`, `descriptions`, `domains`, `explanation`       |
 | `done`                           | Agent turn finished                                 | `content` (final assistant text), `turn_id`, optional `usage`, optional `final_status`           |
 | `command_result`                 | Slash command or turn-control acknowledgement       | `command`, `data` (arbitrary)                                                                    |
 | `error`                          | Parse error, unknown command, busy agent, etc.      | `detail`, `turn_terminal`; on the error that ended a turn also its `turn_id`                     |
@@ -111,7 +111,7 @@ streaming its arguments, not on the waiting line below the messages.
 ### `span`
 
 Every span of the running turn sends one message when it starts and one when it ends: `turn_id`,
-`span_id`, `kind` (`tool`, `gate`, `sentinel`, `sandbox`, `skill`, `domain`, `wait`, `llm`, ...),
+`span_id`, `kind` (`tool`, `sentinel`, `sandbox`, `skill`, `domain`, `wait`, `llm`, ...),
 `name` (a tool's name, a sandbox step, a domain) and `status`. `tool_call_id` is the provider's id of
 the tool call whose `tool` span the span is or nests under, `null` outside one. Calls from inside the
 sandbox (proxy domain checks) nest under the newest running exec, with parallel execs possibly the
@@ -144,7 +144,7 @@ Parallel calls in one response each stream under their own `tool_call_id`. Some 
 
 ### Streamed tool calls in the web UI
 
-The web UI opens a tool card at `tool_call_start`, before the gate runs, and fills it from the
+The web UI opens a tool card at `tool_call_start`, before the call runs, and fills it from the
 `tool_call_delta`s: it appends them to the args text and parses that tolerantly
 ([partial-json](https://www.npmjs.com/package/partial-json)), so the card shows what the final one
 will (the command of an `exec`, the file text of a `write` with its line breaks). A box below the row
@@ -172,7 +172,7 @@ long args stay cheap.
 
 When present:
 
-- `approval_source`: `safe-list` \| `sentinel` \| `user` \| `skill` \| `bypass` \| `unknown`
+- `approval_source`: `safe-list` \| `sentinel` \| `user` \| `skill` \| `bypass` \| `autonomy` \| `unknown`
 - `approval_verdict`: `allow` \| `revise` \| `deny` \| `escalate`
 - `approval_comment`: what the sentinel told the agent about a git push it allowed (see [Sentinel comments](security.md#sentinel-comments))
 
