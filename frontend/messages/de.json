@@ -932,15 +932,9 @@
             "title": "Freigabe erforderlich",
             "toolLabel": "Tool:",
             "reasonLabel": "Grund:",
-            "riskLabel": "Risiko:",
             "arguments": "Argumente",
             "allow": "Freigeben",
-            "denyPlaceholder": "Warum sollte das blockiert werden?",
-            "risk": {
-                "high": "hoch",
-                "medium": "mittel",
-                "low": "niedrig"
-            }
+            "denyPlaceholder": "Warum sollte das blockiert werden?"
         },
         "denialNote": {
             "deny": "Ablehnen",
@@ -1432,7 +1426,7 @@
         "savedJobs": "Gespeicherte Jobs",
         "loading": "Jobs werden geladen...",
         "paused": "Pausiert",
-        "unattendedTooltip": "Unbeaufsichtigte Sitzungen können Tool-Aufrufe nicht eskalieren",
+        "unattendedTooltip": "Läuft ohne jemanden, der Anfragen freigibt",
         "confirmDelete": "Job {name} löschen?",
         "summary": {
             "onDemandOnly": "Nur manuell",

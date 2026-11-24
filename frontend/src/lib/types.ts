@@ -257,7 +257,6 @@ export interface HistoryMessage {
   decision_source?: "user" | "system";
   message?: string;
   explanation?: string;
-  risk_level?: string;
   ref?: string;
   changed_files?: string[];
   vault_paths?: string[];
@@ -424,7 +423,6 @@ export interface ApprovalRequest {
   tool: string;
   args: Record<string, unknown>;
   explanation: string;
-  risk_level: string;
 }
 
 export interface DomainAccessApprovalRequest {

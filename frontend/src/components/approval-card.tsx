@@ -14,12 +14,6 @@ export function ApprovalCard({
   onRespond,
 }: ApprovalCardProps) {
   const t = useTranslations("approval.general");
-  const riskLabels: Record<NonNullable<ApprovalRequest["risk_level"]>, string> = {
-    high: t("risk.high"),
-    low: t("risk.low"),
-    medium: t("risk.medium"),
-  };
-
   return (
     <div
       className={cn(
@@ -40,21 +34,6 @@ export function ApprovalCard({
           <div>
             <span className="text-muted-foreground">{t("reasonLabel")} </span>
             <span>{request.explanation}</span>
-          </div>
-        )}
-        {request.risk_level && (
-          <div>
-            <span className="text-muted-foreground">{t("riskLabel")} </span>
-            <span
-              className={cn(
-                "font-medium",
-                request.risk_level === "high" && "text-destructive",
-                request.risk_level === "medium" && "text-warning-foreground",
-                request.risk_level === "low" && "text-green-600 dark:text-green-400",
-              )}
-            >
-              {riskLabels[request.risk_level]}
-            </span>
           </div>
         )}
         <details className="text-xs">

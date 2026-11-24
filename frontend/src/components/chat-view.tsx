@@ -807,7 +807,6 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         tool: entry.tool ?? "",
         args: normalizeToolArgs(entry.args),
         explanation: entry.explanation ?? "",
-        risk_level: entry.risk_level ?? "",
       };
       const response = history.find(
         (candidate) =>

@@ -932,15 +932,9 @@
             "title": "Approval Required",
             "toolLabel": "Tool:",
             "reasonLabel": "Reason:",
-            "riskLabel": "Risk:",
             "arguments": "Arguments",
             "allow": "Approve",
-            "denyPlaceholder": "Why should this be blocked?",
-            "risk": {
-                "high": "high",
-                "medium": "medium",
-                "low": "low"
-            }
+            "denyPlaceholder": "Why should this be blocked?"
         },
         "denialNote": {
             "deny": "Deny",
@@ -1432,7 +1426,7 @@
         "savedJobs": "Saved Jobs",
         "loading": "Loading jobs...",
         "paused": "Paused",
-        "unattendedTooltip": "Unattended sessions cannot escalate tool calls",
+        "unattendedTooltip": "Runs without anyone to approve requests",
         "confirmDelete": "Delete job {name}?",
         "summary": {
             "onDemandOnly": "On-demand only",

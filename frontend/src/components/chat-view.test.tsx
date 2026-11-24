@@ -137,7 +137,6 @@ test("appendEscalationCard skips a request that history already shows", () => {
     tool: "exec",
     args: {},
     explanation: "",
-    risk_level: "",
   };
   const once = appendEscalationCard([], { kind: "approval", request });
   assert.equal(once.length, 1);
