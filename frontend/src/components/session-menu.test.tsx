@@ -17,6 +17,7 @@ function renderMenu(overrides: Partial<Parameters<typeof SessionMenu>[0]> = {}, 
         canArchive={true}
         attributesDisabled={false}
         deleteDisabled={false}
+        busy={false}
         onTogglePinned={() => calls.push("pin")}
         onToggleFavorite={() => calls.push("favorite")}
         onToggleArchived={() => calls.push("archive")}
@@ -59,6 +60,19 @@ test("the session menu hides archive when the session cannot be archived and clo
     await dispatchDocumentEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
     assert.deepEqual(items(view.container), []);
     await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("the session menu trigger spins while an action from it runs", async () => {
+  const restore = installDom();
+  try {
+    for (const busy of [false, true]) {
+      const view = await renderMenu({ busy });
+      assert.equal(view.container.querySelector('button[aria-haspopup="menu"] .animate-spin') !== null, busy);
+      await view.unmount();
+    }
   } finally {
     restore();
   }

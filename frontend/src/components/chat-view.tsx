@@ -2851,6 +2851,7 @@ export function ChatView({
               canArchive={sessionCanArchive}
               attributesDisabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
               deleteDisabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession}
+              busy={!!updatingSessionAttribute || deletingSession}
               onTogglePinned={() => void handleTogglePinned()}
               onToggleFavorite={() => void handleToggleFavorite()}
               onToggleArchived={() => void handleToggleArchived()}

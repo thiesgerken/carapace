@@ -143,7 +143,7 @@ function TurnMeta({
     <Link
       href={href}
       title={tip}
-      className={cn(metaClassName, "rounded-sm underline-offset-2 transition-colors hover:text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")}
+      className={cn(metaClassName, "rounded-sm underline-offset-2 transition-colors hover:text-muted-foreground hover:underline focus-visible:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")}
     >
       {visible}
       <span className="sr-only"> · {tMessage("actions.timeline")}</span>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { Archive, ArchiveRestore, Bug, Ellipsis, Pin, PinOff, Star, StarOff, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Bug, Ellipsis, Loader2, Pin, PinOff, Star, StarOff, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useDismiss } from "@/hooks/use-dismiss";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,7 @@ export function SessionMenu({
   canArchive,
   attributesDisabled,
   deleteDisabled,
+  busy,
   onTogglePinned,
   onToggleFavorite,
   onToggleArchived,
@@ -31,6 +32,8 @@ export function SessionMenu({
   canArchive: boolean;
   attributesDisabled: boolean;
   deleteDisabled: boolean;
+  /** An action from the menu is still running; the menu itself is closed by then. */
+  busy: boolean;
   onTogglePinned: () => void;
   onToggleFavorite: () => void;
   onToggleArchived: () => void;
@@ -59,7 +62,7 @@ export function SessionMenu({
         title={t("sessionView.menu")}
         className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Ellipsis className="h-4 w-4" />
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ellipsis className="h-4 w-4" />}
       </button>
       {open ? (
         <div
