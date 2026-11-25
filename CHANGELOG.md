@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.193.0 (2026-11-25)
+
+### ✨ Introduce new features
+
+- feat: bring the generating phrases back for prompt and thinking
+- feat: teach the tortoise more poses and phrases
+- feat: let the tortoise act out what the agent is waiting on
+
+### 🐛 Fix a bug
+
+- fix: keep the stall clock running between requests
+
+### ✏️ Fix typos
+
+- fix: give the English word-by-word phrase its verb
+
+### ♻️ Refactor code
+
+- refactor: calm the waiting line down
+
+### ✅ Add, update, or pass tests
+
+- test: fire the sentinel timeout between requests deterministically
+
 ## v0.192.0 (2026-11-25)
 
 ### ✨ Introduce new features
