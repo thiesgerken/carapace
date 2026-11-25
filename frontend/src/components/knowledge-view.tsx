@@ -390,7 +390,7 @@ export function KnowledgeView() {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-5 py-5 sm:px-6">
         <div className="pb-4">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
               {git.head ? (
@@ -401,7 +401,7 @@ export function KnowledgeView() {
                 </div>
               ) : null}
             </div>
-            <GlobalGitPanel git={git} alwaysShow className="w-56 shrink-0" />
+            <GlobalGitPanel git={git} className="shrink-0 sm:w-56" />
           </div>
 
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-border/70 pt-3">
