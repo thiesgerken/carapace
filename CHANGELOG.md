@@ -1,6 +1,178 @@
 # CHANGELOG
 
 
+## v0.191.0 (2026-11-25)
+
+### ✨ Introduce new features
+
+- feat: CARAPACE_SANDBOX_EGRESS_SELF_TEST to skip the start-up egress check
+- feat: cgate request --tunnel opens TCP tunnels for the running exec
+- feat: give the skill builder its own privileged namespace by default
+- feat: read_skill lists an MCP server's tools through its own command
+- feat(cli, matrix): show what read_skill waits for
+- feat(frontend): read_skill cards with build and sync progress; drop activation leftovers
+- feat: read skills with read_skill instead of activating them
+- feat(skills): bundled skills with commands are flakes; drop the example skill
+- feat(skills): export the CLI client of the pinned commit to skill flakes
+- feat(frontend): build panel for skills in the Knowledge view
+- feat(knowledge): show a skill's build and retry a failed one
+- feat(server): keep the builder's GC roots on the skill trees of all heads
+- feat(builder): collect garbage after a grace period and retry failed builds
+- feat(sandbox): substitute Nix paths from the builder cache through the proxy
+- feat(builder): serve the store and upstream caches as one binary cache
+- feat: skill commands on PATH through a Carapace-managed session profile
+- feat: MCP servers as CLIs through the `mcp` bridge and `mcpCommands`
+- feat: build skill trees when a knowledge repo head changes
+- feat: tell the sentinel in plain lines which flake inputs a push changes
+- feat: stop gating exec, the sandbox boundary is where the sentinel decides
+- feat: mkSkill and uv, npm, pnpm helpers in the Carapace flake
+- feat: builder.namespace keeps Pod Security privileged off the sandboxes
+- feat: skill builder service
+- feat: refuse to start when sandboxes have direct egress
+- feat: cgate request declares a command's needs up front
+- feat: boundary requests become the primary sentinel decision
+- feat: build the sandbox image with Nix
+
+### 🐛 Fix a bug
+
+- fix: record a shared domain review once, not per waiting connection
+- fix: migration 0019 leaves verdict calls with unparsable args as they are
+- fix: refuse internal destinations at cgate request and say why
+- fix: don't fail demo-nix-pages on qpdf warnings
+- fix: give the egress-check probe a fresh name per start
+- fix: sandboxes find the server's proxy under any Helm release name
+- fix: a failed tunnel open no longer looks open, and IP tunnels are refused
+- fix: let helm uninstall remove the builder namespace
+- fix: a cancelled read_skill no longer cancels the shared build
+- fix(skills): review fixes for the bundled skill flakes
+- fix(server): one unreadable repo no longer stops the builder roots of all others
+- fix(sandbox): fetch the builder's cache keys for every sandbox and fail without them
+- fix: tell refused skills from an unavailable builder
+- fix: validate skill needs at evaluation, make wrapper denial checks count
+- fix: egress check tests no longer read the host's resolv.conf
+- fix: assert no python lands in /bin and explain who reads the locale path
+- fix: give the egress probe a positive control and probe cluster DNS
+- fix: key boundary follow-ups on the exec, validate cgate input
+- fix: grant boundary approvals only to the exec that asked
+- fix: raise when the exec websocket closes before the status frame
+
+### 🔒️ Fix security or privacy issues
+
+- fix: keep the skill profile sync out of proxy-bypass windows
+- fix(builder): bound cache NAR names and follow redirects to public https hosts only
+- fix: fetch MCP bearer tokens through fetch_for_sandbox too
+- fix: one fetch_for_sandbox for every value bound for a sandbox
+- fix: quote lock-derived values and cap the flake.lock walk
+- fix: keep reviewing exec calls that carry skill contexts
+- fix: resolve names only after the domain decision, close IPv6 embeddings
+- fix: session proxy refuses private and internal destinations
+- chore: lock the example skills to the skills subflake
+
+### ♻️ Refactor code
+
+- refactor: drop the sentinel's revise verdict
+- refactor: drop the pnpm skill helper, add a plain-nixpkgs example
+- refactor: ferret is an mcpCommands flake instead of mcp frontmatter
+- refactor: drop activation leftovers and the gated exec from the clients
+- refactor: ship nixpkgs unpacked in the sandbox image, plus a lite variant for Macs
+- refactor: rename max_sentinel_calls_per_tool_call to max_sentinel_calls_per_exec
+- refactor: skill helpers as a subflake, so skill locks stay small
+
+### 🍱 Add or update assets
+
+- demo: the pancake turn has no gate spans
+- demo: blocked, revised and pending demos go through the boundary and the push
+
+### 👷 Add or update CI build system
+
+- ci: pin the bundled skills and build them against their locks
+- ci: allow user namespaces for the builder on Ubuntu runners
+
+### 🔧 Add or update configuration files
+
+- chore(demo): seed read_skill turns instead of use_skill
+- chore(deploy): point the server at the builder cache in Compose and Helm
+
+### ⬆️ Upgrade dependencies
+
+- chore: upgrade logfire to 6.0.0
+
+### 📈 Add or update analytics or track code
+
+- feat: time the skill profile sync as a span
+
+### 💄 Add or update the UI and style files
+
+- ui: approval badges only for decisions, an icon per verdict, tooltips
+
+### 💬 Add or update text and literals
+
+- feat: tell the agent that read_skill sees only pushed skills
+
+### ⚡️ Improve performance
+
+- perf: upload into the sandbox over exec stdin in one exec
+
+### 📝 Add or update documentation
+
+- docs: an unclear credential request is denied to ask, not escalated
+- docs: deny to ask also covers credential requests
+- docs: the proxy sends the explanation too, clients mostly drop it
+- docs: deny to ask what a push or an up-front request is for
+- docs: move the skill-source note to the shared ApprovalSource type
+- docs: add the skill builder to host iteration
+- docs: title the Nix highlight like the tagline
+- docs: tagline reads Nix-based Skills
+- docs: lead the README with skills as Nix flakes
+- docs: list cluster DNS and outbound traffic in the server egress note
+- docs: server egress to the builder namespace under restricted egress
+- docs: the upgrade guide names the server Service setting
+- docs: link the profile sync measurements, document the server Service setting
+- docs: domains are approved per exec everywhere, no session allowlist
+- docs: per-exec domains in sandbox.md, builder and boundary review in architecture.md
+- docs: guide review fixes; boundary review in README, policy and security docs
+- docs: guide review fixes; builder in the Kubernetes docs and chart README
+- docs: approval requests come from the autonomy limit, audit entries say auto_allowed
+- docs: no tool call is reviewed; drop the always-empty approval risk level
+- docs: the builder namespace goes with helm uninstall
+- docs: per-exec credentials, ferret is a flake, unchecked store path match
+- docs: guide for upgrading an existing install to skill flakes
+- docs: AGENTS.md no longer names skill MCP tools as a known cache break
+- docs: the skill development loop uses nix shell path:
+- docs: bundled skill flakes and their release pin
+- docs(skills): create-skill teaches the flake format and the development loop
+- docs: where users see skill builds
+- docs: builder garbage collection, retry and store sizing
+- docs: builder NetworkPolicy and upstream cache list semantics
+- docs: the builder smoke covers the binary cache
+- docs: the builder's binary cache and how sandboxes reach it
+- docs: the session proxy refuses an internal builder
+- docs: state the builder's evaluator-escape, proxy and Pod Security limits
+
+### 🔥 Remove code or files
+
+- chore: drop skill-specific tools from the sandbox image
+- remove: the session-wide domain allowlist nothing fills any more
+- remove: drop the unreachable tool-level sentinel gate
+- remove: drop the risk level from approval cards
+- remove: drop the activator's git config and stale context comments
+- remove: old command, network and credential frontmatter of the bundled skills
+
+### ✅ Add, update, or pass tests
+
+- test: the waiting indicator test runs on a frozen clock
+- test: the tunnel test command is no MCP server either
+- test: check cgate and the egress probe's tools in the sandbox image
+- test: run write tests with bash from PATH, the Nix sandbox has no /bin/bash
+
+### 🚧 Work in progress
+
+- chore: start integration branch for Nix-native skills (#548)
+
+### 💚 Fix CI Build
+
+- ci: give the smoke server a host data dir so sandboxes can bind their workspace
+
 ## v0.190.1 (2026-11-22)
 
 ### 🔧 Add or update configuration files
