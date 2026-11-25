@@ -369,7 +369,10 @@ class SessionSecurity:
         follow_up: bool,
         worker_factory: Callable[[], asyncio.Task[None]],
     ) -> tuple[CachedDomainApproval | None, asyncio.Future[CachedDomainApproval] | None, bool]:
-        """Return the exec's earlier decision for *domain*, or the future of its pending review."""
+        """Return the exec's earlier decision for *domain*, or the future of its pending review.
+
+        The flag tells the request that started that review: a request that joins one shares its outcome.
+        """
         async with self._domain_scope_lock:
             self._enter_domain_scope(exec_id)
 
@@ -387,16 +390,16 @@ class SessionSecurity:
                 self._domain_scope_pending_requests[domain] = PendingDomainRequest(
                     command=command, follow_up=follow_up, future=future
                 )
-                should_notify_queued = True
+                starts_review = True
                 self._domain_scope_pending_generation += 1
             else:
                 pending.command = command
                 future = pending.future
-                should_notify_queued = False
+                starts_review = False
 
             if self._domain_scope_worker_task is None or self._domain_scope_worker_task.done():
                 self._domain_scope_worker_task = worker_factory()
-            return None, future, should_notify_queued
+            return None, future, starts_review
 
     async def next_domain_batch(self) -> DomainBatchSnapshot | None:
         while True:
