@@ -44,8 +44,8 @@ def test_seeded_demo_sessions_load_like_real_sessions(tmp_path: Path, monkeypatc
         for index, event in enumerate(events):
             HistoryMessage.model_validate({**event, "event_index": index})
         assert rebuild_model_history_from_events(events)
-        # Every demo session ends a turn, except the two waiting on an open approval request.
-        if events[-1]["role"] != "approval_request":
+        # Every demo session ends a turn, except the two waiting on an open approval or escalation.
+        if events[-1]["role"] not in ("approval_request", "credential_approval"):
             assert completed_event_turns(events)
 
     # The pancake turn's timeline joins the session's own requests: each once, nested in its span.

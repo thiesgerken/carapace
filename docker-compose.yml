@@ -31,6 +31,12 @@ services:
       # SQL backend. Migrations run automatically on startup.
       - CARAPACE_DATABASE_URL=postgresql+psycopg://carapace:carapace@postgres:5432/carapace
       - CARAPACE_SANDBOX_BASE_IMAGE=ghcr.io/thiesgerken/carapace-sandbox:${CARAPACE_IMAGE_TAG:-latest}
+      - CARAPACE_BUILDER_URL=http://builder:8330
+      - CARAPACE_BUILDER_CACHE_URL=http://builder:8331
+      - CARAPACE_BUILDER_TOKEN=${CARAPACE_BUILDER_TOKEN:?set CARAPACE_BUILDER_TOKEN in .env}
+      # Internal hosts skills may reach through the proxy (JSON lists); see docs/sandbox.md.
+      - CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS=${CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS:-[]}
+      - CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS=${CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS:-[]}
       # Enables credentials.backends.<name>.type=file for this local Compose example.
       # Only keep this enabled when users who can change backend config are trustworthy;
       # the server process reads the configured path.
@@ -116,11 +122,38 @@ services:
       retries: 20
 
   sandbox:
-    build: ./sandbox
     image: ghcr.io/thiesgerken/carapace-sandbox:${CARAPACE_IMAGE_TAG:-latest}
     profiles: ["build"]
 
+  # Copies the builder image's own store paths into the store volume, which replaces /nix in the
+  # builder; runs before every start, so image updates reach the volume.
+  builder-init:
+    image: ghcr.io/thiesgerken/carapace-builder:${CARAPACE_IMAGE_TAG:-latest}
+    command: ["/bin/carapace-builder-init"]
+    volumes:
+      - builder-nix:/mnt/nix
+
+  # Builds skill flakes for the server. Reachable only on the default network, never by sandboxes.
+  builder:
+    image: ghcr.io/thiesgerken/carapace-builder:${CARAPACE_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      builder-init:
+        condition: service_completed_successfully
+    environment:
+      - CARAPACE_BUILDER_TOKEN=${CARAPACE_BUILDER_TOKEN:?set CARAPACE_BUILDER_TOKEN in .env}
+    # The Nix build sandbox creates its own namespaces and mounts /proc. Plain Docker has no
+    # per-container user namespace, so this is weaker than the chart's hostUsers: false; see
+    # docs/security.md. Ubuntu 23.10+ hosts must allow user namespaces; see docs/builder.md.
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+      - systempaths=unconfined
+    volumes:
+      - builder-nix:/nix
+
 volumes:
+  builder-nix:
   bitwarden-cli-data:
   pgdata:
 

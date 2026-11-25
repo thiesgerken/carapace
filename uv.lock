@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -426,6 +426,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+builder = [
+    { name = "fastapi" },
+    { name = "loguru" },
+    { name = "uvicorn", extra = ["standard"] },
+]
 server = [
     { name = "alembic" },
     { name = "croniter" },
@@ -470,6 +475,7 @@ requires-dist = [
     { name = "alembic", marker = "extra == 'server'", specifier = ">=1.18,<2" },
     { name = "croniter", marker = "extra == 'server'", specifier = ">=7,<8" },
     { name = "docker", marker = "extra == 'server'", specifier = ">=7,<8" },
+    { name = "fastapi", marker = "extra == 'builder'", specifier = ">=0.115,<1" },
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.115,<1" },
     { name = "genai-prices", marker = "extra == 'server'", specifier = ">=0.0.53" },
     { name = "httpx", specifier = ">=0.28,<1" },
@@ -477,6 +483,7 @@ requires-dist = [
     { name = "joserfc", marker = "extra == 'server'", specifier = ">=1.6.5" },
     { name = "kr8s", marker = "extra == 'server'", specifier = ">=0.20,<1" },
     { name = "logfire", extras = ["httpx"], marker = "extra == 'server'", specifier = ">=6,<7" },
+    { name = "loguru", marker = "extra == 'builder'", specifier = ">=0.7.3" },
     { name = "loguru", marker = "extra == 'server'", specifier = ">=0.7.3" },
     { name = "markdown", marker = "extra == 'server'", specifier = ">=3,<4" },
     { name = "matrix-nio", marker = "extra == 'server'", specifier = ">=0.25,<1" },
@@ -495,10 +502,11 @@ requires-dist = [
     { name = "tiktoken", marker = "extra == 'server'", specifier = ">=0.8,<1" },
     { name = "typer", specifier = ">=0.23,<1" },
     { name = "types-docker", marker = "extra == 'server'", specifier = ">=7.1.0.20260518" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'builder'", specifier = ">=0.40,<1" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'server'", specifier = ">=0.40,<1" },
     { name = "websockets", specifier = ">=17,<18" },
 ]
-provides-extras = ["server"]
+provides-extras = ["server", "builder"]
 
 [package.metadata.requires-dev]
 dev = [

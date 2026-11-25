@@ -23,11 +23,11 @@ Use this checklist when writing or reviewing a skill:
 4. Keep domain facts in `SKILL.md` when the agent needs them to act correctly, even if they are user-specific.
 5. Move schemas, dependency setup, auth internals, wrapper internals, and maintainer troubleshooting into sidecar docs.
 6. Link any sidecar docs from `SKILL.md` when the runtime agent may need to know they exist.
-7. If the skill exposes commands, add a short `Exposed Commands` list near the top of `SKILL.md` and show the real aliases there.
-8. Do not put exposed commands into frontmatter; keep them in the body where the runtime agent will read them naturally.
+7. If the skill has commands, add a short `Exposed Commands` list near the top of `SKILL.md` with the real command names from `flake.nix`.
+8. Commands live in `flake.nix`, never in frontmatter; the body only lists them for the runtime agent.
 9. If the skill performs risky actions, add explicit safety rules near the top of `SKILL.md`.
-10. If activation handles credentials or setup automatically, say that briefly in `SKILL.md` and stop there.
-11. If `metadata.carapace` injects a credential into a local file, add that generated file path to the skill-local `.gitignore`.
+10. If a command needs domains or credentials, declare them in `flake.nix`; one sentence in `SKILL.md` that the command asks for them itself is enough.
+11. Build and run every command with `nix shell path:./skills/<name> -c <command>` before pushing (see [Developing before you push](#developing-before-you-push)).
 
 ## What Good `SKILL.md` Files Usually Contain
 
@@ -36,12 +36,12 @@ Most good skills in this repo converge on the same shape:
 - a precise `description` with task keywords
 - one short opening paragraph that sets scope
 - a `When To Use` or equivalent section
-- an `Exposed Commands` section near the top when the skill ships command aliases
+- an `Exposed Commands` section near the top when the skill has commands
 - the normal workflow or command entrypoints
 - enough CLI usage detail to run the skill without guessing
 - user-specific domain maps that prevent mistakes, such as folder names, project IDs, label names, account conventions, or preferred filters
 - important safety or behavior constraints
-- a short setup note when automatic activation behavior matters
+- a short note when commands ask for domains or credentials themselves
 
 They do not try to be complete technical documentation, but they may be detailed when the detail is needed during ordinary use.
 
@@ -52,21 +52,21 @@ Move content into a sidecar doc when it is mainly about:
 - package structure and source layout
 - lockfiles and dependency management
 - full config schemas or validation edge cases
-- secret sourcing, vault paths, or authentication mechanics beyond the activation behavior
+- secret sourcing, vault paths, or authentication mechanics beyond a one-line note
 - exhaustive command catalogs where the common commands are already represented in `SKILL.md`
 - troubleshooting intended for maintainers rather than runtime usage
 
 Keep content in `SKILL.md` when it is mainly about:
 
 - how to invoke the skill's CLI correctly
-- which exposed command aliases the agent should prefer during normal use
+- which commands the agent should prefer during normal use
 - common commands the agent should use often
 - user-specific categories, folders, projects, labels, accounts, or IDs needed for correct action
 - safety rules and syntax traps that prevent accidental side effects
 
 Use `CONFIG.md` when the document is mostly runtime configuration detail. Use `REFERENCE.md` when it is general maintainer guidance. Use `references/*.md` when the detail is large enough to merit topic-specific documents.
 
-Do not use file length as the deciding factor. Use load timing: if the agent should know it immediately after skill activation, it belongs in `SKILL.md`; if the agent can intentionally open it only for uncommon setup, development, or deep reference work, it can live in a sidecar file.
+Do not use file length as the deciding factor. Use load timing: if the agent should know it as soon as it reads the skill, it belongs in `SKILL.md`; if the agent can intentionally open it only for uncommon setup, development, or deep reference work, it can live in a sidecar file.
 
 ## Common Failure Modes
 
@@ -82,23 +82,20 @@ These mistakes make skills harder to discover or use:
 
 ## Standard Skill Layout
 
-Skills live under `skills/` in the data directory. Each skill directory contains at minimum a `SKILL.md` file:
+Skills live under `skills/` in the knowledge repo. A skill without commands is a directory with a `SKILL.md`. A skill with commands is also a Nix flake: `flake.nix` and `flake.lock` next to `SKILL.md`, plus the code and its lock files.
 
 ```text
 skills/
   my-skill/
     SKILL.md
-    pyproject.toml
+    flake.nix        # commands, what they need, how they are built
+    flake.lock       # committed, complete; the builder never writes it
+    pyproject.toml   # Python: with uv.lock
     uv.lock
-    package.json
-    package-lock.json
-    pnpm-lock.yaml
-    setup.sh
     src/my_skill/
       __init__.py
       cli.py
     references/
-    assets/
 ```
 
 Use `REFERENCE.md`, `CONFIG.md`, or `references/*.md` for maintainer docs, large examples, or implementation notes.
@@ -167,127 +164,82 @@ That is why `SKILL.md` should stay short and user-facing. Put the rest here or i
 
 As a rule of thumb, if a runtime agent can succeed without reading a section every time the skill is activated, that section belongs here instead of in `SKILL.md`.
 
-## carapace metadata (`metadata.carapace`)
+## Commands: the skill flake
 
-Declare carapace-specific metadata inline in `SKILL.md` under `metadata.carapace`.
+The Carapace builder builds the flake whenever the skill changes on the server, and every session gets its commands on `PATH`. The flake's package holds one wrapper per command and nothing else; interpreters and dependencies stay behind the wrappers. The full reference is the Carapace repo's `docs/skill-flakes.md`; the shape is:
 
-Top-level keys:
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+    carapace = {
+      url = "github:thiesgerken/carapace?dir=nix/skills";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
-| Key               | Type            | Purpose                                                 |
-| ----------------- | --------------- | ------------------------------------------------------- |
-| `network`         | object          | Network configuration for allowed domains or tunnels    |
-| `network.domains` | list of strings | Hostnames added to the session allowlist                |
-| `credentials`     | list of objects | Vault-backed credentials to inject as env vars or files |
-| `commands`        | list of objects | Command aliases registered on skill activation          |
-| `hints`           | map             | Extra metadata for tooling                              |
-
-Valid inline example:
-
-```yaml
-metadata:
-  carapace:
-    network:
-      domains:
-        - api.example.com
-        - "*.cdn.example.com"
-    credentials:
-      - vault_path: my-backend/some-secret-id
-        description: API key for Example service
-        env_var: EXAMPLE_API_KEY
-      - vault_path: my-backend/deploy-key
-        description: SSH private key for deploys
-        file: ~/.ssh/id_example_deploy
-    commands:
-      - name: example-search
-        command: uv run --directory /workspace/skills/example scripts/search.py
+  outputs =
+    { nixpkgs, carapace, ... }:
+    {
+      packages = carapace.lib.forSkillSystems (
+        system:
+        let
+          skill = carapace.lib.skill nixpkgs.legacyPackages.${system};
+          env = skill.uvEnv { root = ./.; };
+        in
+        {
+          default = skill.mkSkill {
+            name = "my-skill";
+            needs = {
+              domains = [ "api.example.com" ];
+              credentials.EXAMPLE_TOKEN = "personal/example-token";
+            };
+            commands = {
+              my-search = {
+                exec = "${env}/bin/my-search";
+                description = "Search the Example service";
+              };
+              my-format = {
+                exec = "${env}/bin/my-format";
+                description = "Reformat a local file, offline";
+                needs = {
+                  domains = [ ];
+                  credentials = { };
+                };
+              };
+            };
+          };
+        }
+      );
+    };
+}
 ```
 
-Common mistake:
+- `name` matches the skill directory. Command names are what the agent types; keep them unique across skills.
+- `exec` is what the wrapper runs, with the agent's arguments appended. It is shell words: a store path may carry fixed arguments.
+- `needs` declares what a command will ask for from outside the sandbox: `domains`, `credentials` (environment variable to vault path), `oauth` (vault paths of OAuth entries the command reads itself). It is the skill-wide default; a command's own `needs` overrides it per kind. The wrapper asks for everything declared at once before the command starts, and exports the credentials. Undeclared requests still work and are reviewed when they happen.
+- `description` is one short line the agent sees.
+- The wrapper keeps the caller's working directory. Commands take paths as arguments rather than assuming a directory.
 
-```yaml
-network:
-  - api.example.com
-```
+## Building commands
 
-`network` must be an object with a `domains` key. If the shape is wrong, validation fails and the file may be ignored.
+- **Python with uv:** `skill.uvEnv { root = ./.; }` builds a virtualenv from `pyproject.toml` and `uv.lock`; commands are the `[project.scripts]` entries under `${env}/bin`. A dependency that ships only an sdist, or a Git dependency, needs its build system named in `overrides` (see `docs/skill-flakes.md`): the error says `No module named 'setuptools'` or similar.
+- **Node with npm:** `skill.npmApp { root = ./.; }` from `package.json` and `package-lock.json`; a command is `"${pkgs.nodejs}/bin/node ${app}/src/main.mjs"`.
+- **Plain nixpkgs:** a command that only glues tools together needs no package manager. `exec` can be a nixpkgs binary (`"${pkgs.jq}/bin/jq"`) or a `pkgs.writeShellApplication { name; runtimeInputs = [ … ]; text; }` script.
+- Nothing is installed at run time: no `uv run`, `npm install`, `nix run` or `nix profile install` in a command. A tool the skill needs every time goes into its flake, so everything a command needs is in its closure.
 
-When credentials are declared there, activation handles approval and injection automatically. Keep those details out of `SKILL.md` unless the runtime behavior itself depends on them.
-
-When command aliases are declared there, activation generates executable wrappers in `/workspace/.carapace/bin/` and exposes that directory on `PATH`. Runtime agents should call the plain alias token, not the absolute shim path. Authors should think of `command` as the base command line for that wrapper, not as a multi-line shell script.
-
-Each command entry has:
-
-- `name`: the alias token the agent will invoke
-- `command`: a single non-empty line that becomes `exec <command> "$@"` inside the generated `#!/bin/sh` wrapper
-
-Guidelines for command aliases:
-
-- Preserve the caller's current working directory. Do not depend on an implicit `cd` into the skill directory.
-- Use absolute paths if the command needs files under `/workspace/skills/<name>/`.
-- Assume extra arguments are forwarded with `"$@"`.
-- Keep aliases unique. If another active skill already owns the same alias, activation fails.
-- Do not use multi-line commands; validation rejects them.
-
-The usual sentence in `SKILL.md` is enough: setup or credential injection happens automatically on activation.
-
-If the skill exposes commands, it is customary to list them near the top of `SKILL.md` in a short section such as:
-
-```markdown
-## Exposed Commands
-
-- `example-search`: Search the Example service.
-- `example-sync`: Run the Example sync flow.
-```
-
-Keep this in the body, not in frontmatter.
-
-If a credential is materialized into a local file, treat that path as generated secret state and ignore it in the skill-local `.gitignore`.
-
-Pattern:
-
-```yaml
-credentials:
-  - vault_path: vault/<uuid>
-    description: Password for Example service
-    file: config/example-password.txt
-```
-
-```gitignore
-config/example-password.txt
-```
-
-## Python Provider Files
-
-Python-backed skills should use a proper package under `src/<package_name>/` with CLI entrypoints declared in `pyproject.toml`.
-
-Suggested layout:
-
-```text
-skills/my-skill/
-  SKILL.md
-  REFERENCE.md
-  pyproject.toml
-  uv.lock
-  src/my_skill/
-    __init__.py
-    cli.py
-    another.py
-```
-
-Minimal `pyproject.toml`:
+Minimal `pyproject.toml` for a uv skill:
 
 ```toml
 [project]
 name = "my-skill"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = [
-  "httpx>=0.28,<1",
-]
+dependencies = ["httpx>=0.28,<1"]
 
 [project.scripts]
-my-cli = "my_skill.cli:main"
-my-other = "my_skill.another:main"
+my-search = "my_skill.cli:search"
+my-format = "my_skill.cli:format"
 
 [build-system]
 requires = ["hatchling"]
@@ -297,44 +249,22 @@ build-backend = "hatchling.build"
 packages = ["src/my_skill"]
 ```
 
-Rules:
+Prefer `httpx`, modern typing and JSON output for CLIs, with `main()`-style entry points.
 
-- always commit `uv.lock` alongside `pyproject.toml`
-- run commands through `uv run --directory /workspace/skills/my-skill <command>`
-- do not run Python source files directly
-- prefer `httpx`, modern typing, and structured JSON output for CLIs
-- expose stable CLI entrypoints with `main()` functions instead of expecting ad hoc module execution
+## Developing before you push
 
-To create or update the lockfile:
+The builder builds what is committed and pushed. Before that, build and run from the workspace:
 
 ```bash
-uv lock --directory /workspace/skills/my-skill
-uv add --directory /workspace/skills/my-skill beautifulsoup4
-uv remove --directory /workspace/skills/my-skill httpx
+uv lock --directory skills/my-skill                       # after changing Python dependencies
+nix flake lock path:./skills/my-skill                     # after changing flake inputs; commit flake.lock
+nix shell path:./skills/my-skill -c my-search "query"     # build the commands and run one
 ```
 
-## Node Provider Files
-
-Node-backed skills are supported through either npm or pnpm.
-
-- `package.json` + `package-lock.json` uses `npm ci`
-- `package.json` + `pnpm-lock.yaml` uses `pnpm install --frozen-lockfile`
-
-Commit the lockfile. The official sandbox activator restores provider inputs from the source revision supplied by Carapace.
-
-If both npm and pnpm files are present, be explicit about which workflow is intended and remove stale lockfiles when possible.
-
-## `setup.sh`
-
-If present, `setup.sh` runs after dependency installation. Use it for deterministic local post-processing such as writing derived config files or materializing approved credentials into tool-specific locations.
-
-Rules:
-
-- keep it idempotent
-- do not print secrets
-- assume the official activator runs the copy from the committed source revision
-
-`setup.sh` is not a place for user guidance. If the runtime agent needs to know that setup materializes local config, mention that in one short line in `SKILL.md` and keep the details here.
+- `path:` matters: a plain `./skills/my-skill` inside the Git repo only sees committed files, so new or changed files would be missing.
+- The first build downloads nixpkgs and dependencies and takes a minute or more; later builds are fast.
+- A workspace build has a different store path than the builder's build of the committed skill, and the sentinel sees that when the command asks for domains or credentials.
+- After the push, the Knowledge view of the skill shows whether the builder built it, and for a failure the end of the build log.
 
 ## Creating A New Skill
 
@@ -344,7 +274,7 @@ Recommended sequence:
 2. Draft the `description` next, because discovery quality matters more than polish in the long body.
 3. Write a `SKILL.md` that a runtime agent can follow without guessing or immediately loading sidecar files.
 4. Add sidecar docs only where complexity is real.
-5. Add provider files and command entrypoints.
+5. For commands: add the code with its lock files, write `flake.nix`, lock it, and run every command with `nix shell path:./skills/<name> -c <command>`.
 6. Re-read the skill from the perspective of a fresh agent with no maintainer context.
 
 ## Editing An Existing Skill

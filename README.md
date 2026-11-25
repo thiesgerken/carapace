@@ -14,7 +14,7 @@
 </p>
 <p align="center"><strong>A secure personal AI agent for DevOps engineers.</strong></p>
 
-<p align="center">Zero trust. Git-backed knowledge. Kubernetes Sandboxes.</p>
+<p align="center">Git-backed knowledge. Kubernetes Sandboxes. Nix-based Skills.</p>
 
 <p align="center">
   <a href="docs/quickstart.md">🚀 Quickstart</a>
@@ -26,15 +26,16 @@
   <a href="charts/carapace/README.md">⚓ Helm Chart</a>
 </p>
 
-carapace is a self-hosted AI agent with a web UI, CLI, and Matrix channel for operators who want an assistant they can actually reason about. Every meaningful action is evaluated by a dedicated sentinel LLM against your natural-language security policy, executed inside a containerized sandbox, and recorded in an audit trail. Its durable context is not hidden inside an app-specific database: personality, policy, skills, and archived sessions live in Git-backed knowledge repos you can inspect, diff, and sync.
+carapace is a self-hosted AI agent with a web UI, CLI, and Matrix channel for operators who want an assistant they can actually reason about. The agent works freely inside a containerized sandbox, and everything that leaves it (a domain, a credential, a push to its knowledge repo) is evaluated by a dedicated sentinel LLM against your natural-language security policy. Every action is recorded in an audit trail. Its durable context is not hidden inside an app-specific database: personality, policy, skills, and archived sessions live in Git-backed knowledge repos you can inspect, diff, and sync.
 
 ## Highlights
 
-- 🛡️ Sentinel-gated execution. Every non-trivial action is reviewed by a dedicated security agent that keeps session context, not a static allowlist spreadsheet.
+- 🛡️ Sentinel-gated boundary. Whatever a command wants from outside the sandbox is reviewed by a dedicated security agent that keeps session context, not a static allowlist spreadsheet.
+- ❄️ Nix-based skills. carapace's own builder builds a skill's commands from its pinned `flake.lock`, and sandboxes only substitute the finished store paths from the builder's cache. Nothing is installed at run time and dependencies don't drift, so skills break less often. The images are built with Nix too. See [docs/skill-flakes.md](docs/skill-flakes.md).
 - ☸️ Kubernetes-ready sandboxes. Docker and Kubernetes runtimes are both supported, with StatefulSet-backed sandbox sessions, per-session PVCs, idle-to-zero scaling, and an optional warm pool of prestarted base sandboxes for faster Kubernetes claims.
 - 🗃️ Git-native per-user knowledge repos. `SOUL.md`, `USER.md`, `SECURITY.md`, skills, and archived sessions live in files you can inspect, diff, sync, and push upstream.
 - 🚫 No-direct-internet sandboxes. Sandbox workloads do not get ambient internet access; outbound traffic is forced through the proxy path.
-- 🔑 Context-scoped credentials. Secrets stay in your vault, with native Bitwarden support, and are only injected or fetched on demand for exec calls that have the matching approved skill context. Neither the agent nor the backend have a giant `.env` with all of your secrets.
+- 🔑 Exec-scoped credentials. Secrets stay in your vault, with native Bitwarden support, and are fetched on demand by the command that needs them, approved for that one exec. Neither the agent nor the backend have a giant `.env` with all of your secrets.
 - 👥 Multi-user. Bootstrap an admin user, then manage users, roles, passwords, per-user models, Matrix, Git, and credential backends from Settings. Invite your family!
 - 📊 Diagrams in chat. ` ```mermaid ` blocks render as diagrams in the web UI (source toggle, copy, SVG download), and a bundled `mermaid` skill teaches the agent when and how to draw them.
 - 🧠 Long-term memory you can inspect. Archived sessions are distilled into per-session extractions and weekly and monthly digests of what was on your mind and what was learned about you, each with full provenance (model, prompt version, input, cost). LLM work runs as tasks in a budgeted queue that you control, and the results are mirrored as Markdown into your knowledge repo.
@@ -89,7 +90,7 @@ Who doesn't want a personal assistant? OpenClaw showed that this is achievable w
   <img src="docs/assets/screenshots/post_readonly.png" width="1000">
 </p>
 
-<p align="center"><em>Example of a tool call that was intercepted and blocked by the sentinel due to security policy.</em></p>
+<p align="center"><em>Example of a request that was blocked by the sentinel due to security policy.</em></p>
 
 ## Remarks
 
@@ -105,7 +106,7 @@ carapace treats long-term agent state as a repository, not as an opaque internal
 
 - The agent's policy lives in `SECURITY.md`.
 - Its personality and user model live in `SOUL.md` and `USER.md`.
-- Skills are plain files in AgentSkills format.
+- Skills are plain files in AgentSkills format, plus a Nix flake for the skills that have commands.
 - Durable context is markdown and other plain files on disk.
 - Session histories can be archived into the owning user's knowledge repo and pushed upstream.
 - Long-term memory is mirrored into `memory/` as Markdown, with provenance in every file.
@@ -114,12 +115,12 @@ That makes the system inspectable in a way most agent projects are not. You can 
 
 ## Security Model
 
-- Sentinel agent evaluates every non-trivial action against a natural-language policy, not a rigid matrix of rules.
-- Strict veto semantics apply: if the safe path, sentinel, or user says no, the action does not proceed.
+- Sentinel agent evaluates every boundary request (proxy domain, credential, up-front `cgate request`, knowledge-repo push) against a natural-language policy, not a rigid matrix of rules. Tool calls are not reviewed, but every one is in the action log the sentinel judges with.
+- Strict veto semantics apply: if the sentinel or the user says no, the request does not proceed.
 - Sandboxed execution provides a hard boundary for file and process activity.
 - Outbound traffic goes through a proxy, with domain plausibility checks and visible approval events.
 - Domains, credentials, and tunnels are scoped to individual exec calls, so privileges do not accumulate across a long-running session.
-- Credential access is session-aware and auditable, with a fast path only when a matching skill context explicitly covers it.
+- Credential access is reviewed per exec and auditable; a skill command can declare its credentials up front for one review.
 - Git pushes from the knowledge workflow are security-reviewed like other sensitive actions.
 
 See [docs/security.md](docs/security.md), [docs/credentials.md](docs/credentials.md), and [docs/sandbox.md](docs/sandbox.md) for the full model.
@@ -128,7 +129,7 @@ See [docs/security.md](docs/security.md), [docs/credentials.md](docs/credentials
 
 ```bash
 cp .env.example .env
-# fill in ANTHROPIC_API_KEY and CARAPACE_TOKEN
+# fill in ANTHROPIC_API_KEY, CARAPACE_TOKEN and CARAPACE_BUILDER_TOKEN
 # CARAPACE_TOKEN is only the initial password for the bootstrap admin user
 
 docker compose --profile build pull
@@ -137,7 +138,7 @@ docker compose up -d
 
 This starts the proxy at `http://localhost:3001`, serving the frontend and routing `/api` to the backend internally.
 
-Published images target Linux x64. On Apple Silicon, use the [native ARM Linux build instructions](docs/development.md#native-linux-images-on-apple-silicon) and local Compose overlay instead of x86 emulation. Nix is the single build/check definition for the server, frontend, and Bitwarden images; only the sandbox remains a Dockerfile. The maintained Compose and Helm configurations run the application images non-root with read-only roots.
+Published images target Linux x64. On Apple Silicon, use the [native ARM Linux build instructions](docs/development.md#native-linux-images-on-apple-silicon) and local Compose overlay instead of x86 emulation. Nix is the single build/check definition for all images, the sandbox included. The maintained Compose and Helm configurations run the application images non-root with read-only roots.
 
 Optional CLI connection:
 
@@ -155,7 +156,7 @@ For the full Docker Compose setup, multi-user auth model, UI-managed configurati
 
 ## Architecture
 
-The server runs the agent loop, session lifecycle, and security system. The CLI, web UI, and Matrix channel are thin clients. Owner-scoped knowledge repos are a first-class part of the design: session output can be promoted into Git-backed knowledge, and outbound Git operations are security-reviewed instead of treated as an afterthought.
+The server runs the agent loop, session lifecycle, and security system. The CLI, web UI, and Matrix channel are thin clients. A separate skill builder builds the skill flakes and is the only binary cache the sandboxes substitute from. Owner-scoped knowledge repos are a first-class part of the design: session output can be promoted into Git-backed knowledge, and outbound Git operations are security-reviewed instead of treated as an afterthought.
 
 See [docs/architecture.md](docs/architecture.md) for the diagrams and fuller architecture breakdown.
 
@@ -164,14 +165,17 @@ See [docs/architecture.md](docs/architecture.md) for the diagrams and fuller arc
 | Topic                                                          | What it covers                                                             |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | [docs/quickstart.md](docs/quickstart.md)                       | Docker Compose setup, users, UI settings, credentials, and Matrix          |
-| [docs/security.md](docs/security.md)                           | Sentinel policy model, audit trail, approvals, and veto semantics          |
-| [docs/skills.md](docs/skills.md)                               | AgentSkills support, context-scoped access, providers, and command aliases |
-| [docs/credentials.md](docs/credentials.md)                     | Vault-backed credentials, approval flow, and per-exec injection            |
+| [docs/upgrading-to-skill-flakes.md](docs/upgrading-to-skill-flakes.md) | Upgrading an existing install to skill flakes and boundary review |
+| [docs/security.md](docs/security.md)                           | Sentinel policy model, boundary requests, audit trail, and approvals       |
+| [docs/skills.md](docs/skills.md)                               | AgentSkills support, `read_skill`, builds, and bundled skills              |
+| [docs/skill-flakes.md](docs/skill-flakes.md)                   | Writing a skill flake: commands, their needs, MCP servers, uv and npm      |
+| [docs/builder.md](docs/builder.md)                             | The skill builder: API, binary cache, GC, and deployment                   |
+| [docs/credentials.md](docs/credentials.md)                     | Vault-backed credentials, `ccred`, and the approval flow                   |
 | [docs/jobs.md](docs/jobs.md)                                   | Saved jobs, cron scheduling, persistent-session jobs, and job API          |
 | [docs/notifications.md](docs/notifications.md)                 | Web Push delivery, presence tracking, suppression, and notification APIs   |
 | [docs/persistent-context.md](docs/persistent-context.md)       | Persistent context, workspace files, and archived session snapshots        |
 | [docs/memory.md](docs/memory.md)                               | Long-term memory: extractions, digests, tasks, budget, mirror, Memory UI   |
-| [docs/sandbox.md](docs/sandbox.md)                             | Docker/Kubernetes sandboxes, proxy behavior, and exec-scoped tunnels       |
+| [docs/sandbox.md](docs/sandbox.md)                             | Docker/Kubernetes sandboxes, skill commands on PATH, proxy, `cgate`, tunnels |
 | [docs/sessions-and-channels.md](docs/sessions-and-channels.md) | Session lifecycle, session controls, Matrix behavior, and approvals        |
 | [docs/compaction.md](docs/compaction.md)                       | Session compaction: `/compact`, fold/tool strategies                       |
 | [docs/debug-view.md](docs/debug-view.md)                       | Live per-session view of every agent role's latest LLM context             |
@@ -180,7 +184,7 @@ See [docs/architecture.md](docs/architecture.md) for the diagrams and fuller arc
 
 ## Kubernetes Deployment
 
-carapace supports Kubernetes as a sandbox runtime. Sandboxes run as StatefulSets with per-session PVCs. On idle timeout the StatefulSet scales to zero while preserving persistent state, and on resume the sandbox is recreated with its committed knowledge and activated setup restored. If `CARAPACE_SANDBOX_WARM_POOL_SIZE` is greater than `0`, the server also maintains a generic base-image warm pool and can claim one of those sandboxes for a new session instead of paying the full cold-start path.
+carapace supports Kubernetes as a sandbox runtime. Sandboxes run as StatefulSets with per-session PVCs. On idle timeout the StatefulSet scales to zero while preserving persistent state, and on resume the sandbox is recreated with its committed knowledge, and the skill commands come back onto `PATH`. If `CARAPACE_SANDBOX_WARM_POOL_SIZE` is greater than `0`, the server also maintains a generic base-image warm pool and can claim one of those sandboxes for a new session instead of paying the full cold-start path.
 
 Use the included Helm chart in [charts/carapace](charts/carapace) and see [charts/carapace/README.md](charts/carapace/README.md) for installation details.
 
@@ -197,7 +201,7 @@ npm --prefix frontend run lint
 For local development without Docker Compose:
 
 ```bash
-docker build -t carapace-sandbox:local sandbox
+docker load -i "$(nix build .#packages.x86_64-linux.sandbox-image --no-link --print-out-paths)"  # aarch64-linux.sandbox-image-lite on Apple Silicon
 CARAPACE_SANDBOX_BASE_IMAGE=carapace-sandbox:local uv run carapace-server
 npm --prefix frontend run dev
 uv run carapace

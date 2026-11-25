@@ -5,11 +5,15 @@ import base64
 import contextlib
 import ssl
 from collections.abc import Awaitable, Callable
+from typing import Any
 from urllib.parse import urlsplit
 
 from loguru import logger
 
+from ..builder.models import CACHE_HOST, cache_path_allowed
+from ..security.context import BoundaryEvaluation
 from ..spans import span
+from .destinations import DestinationPolicy, DestinationRefusedError, ip_literal
 
 _CONNECT_OK = b"HTTP/1.1 200 Connection Established\r\n\r\n"
 _PROXY_AUTH_REQUIRED = (
@@ -21,8 +25,29 @@ _PROXY_AUTH_REQUIRED = (
 _FORBIDDEN_RESPONSE = (
     b"HTTP/1.1 403 Forbidden\r\nContent-Length: 30\r\nConnection: close\r\n\r\nDomain blocked by proxy policy"
 )
+_NO_APPROVAL_PATH = BoundaryEvaluation(allowed=False, rejection="Domain blocked by proxy policy")
 _BAD_REQUEST = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\nConnection: close\r\n\r\nBad Request"
 _RELAY_BUF = 32 * 1024
+# Refuses every internal destination; the server passes the operator's exceptions.
+_NO_EXCEPTIONS = DestinationPolicy()
+
+
+def _denied_response(rejection: str) -> bytes:
+    """A 403 whose body tells the requesting command why, so it can decide how to continue."""
+    body = f"{rejection}\n".encode()
+    return (
+        b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n"
+        + f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
+        + body
+    )
+
+
+def domain_allowed(domain: str, allowed: set[str]) -> bool:
+    """Whether an allowlist (``*`` allows everything) covers *domain*."""
+    if "*" in allowed:
+        return True
+    domain = domain.lower()
+    return any(domain_matches(domain, p.lower()) for p in allowed)
 
 
 def domain_matches(domain: str, pattern: str) -> bool:
@@ -39,7 +64,7 @@ def domain_matches(domain: str, pattern: str) -> bool:
 
 
 class ProxyServer:
-    """Async HTTP forward-proxy with per-session domain allowlists.
+    """Async HTTP forward-proxy that lets through only domains approved for the running exec.
 
     Supports plain HTTP forwarding and HTTPS via CONNECT tunnelling.
     No MITM -- domain-level control only.
@@ -50,8 +75,10 @@ class ProxyServer:
         verify_session_token: Callable[[str, str], bool],
         get_allowed_domains: Callable[[str], set[str]],
         attach_sandbox_call: Callable[[str], contextlib.AbstractContextManager[None]],
-        request_approval: Callable[[str, str], Awaitable[bool]] | None = None,
-        notify_domain_access: Callable[[str, str, bool], None] | None = None,
+        request_approval: Callable[[str, str], Awaitable[BoundaryEvaluation]] | None = None,
+        notify_domain_access: Callable[[str, str, bool, str | None], None] | None = None,
+        destinations: DestinationPolicy = _NO_EXCEPTIONS,
+        builder_cache_url: str | None = None,
         host: str = "0.0.0.0",
         port: int = 3128,
     ) -> None:
@@ -61,6 +88,9 @@ class ProxyServer:
         self._attach_sandbox_call = attach_sandbox_call
         self._request_approval = request_approval
         self._notify_domain_access = notify_domain_access
+        self._destinations = destinations
+        # The one internal destination every sandbox reaches without a decision: read-only and fixed.
+        self._builder_cache = urlsplit(builder_cache_url) if builder_cache_url else None
         self._host = host
         self._port = port
         self._server: asyncio.Server | None = None
@@ -191,17 +221,24 @@ class ProxyServer:
         target: str,
     ) -> None:
         domain, port = self._parse_host_port(target, default_port=443)
-        if not await self._authorize_domain(session_id, domain):
-            logger.warning(f"Proxy CONNECT denied: {domain} (session={session_id}, ip={client_ip})")
-            writer.write(_FORBIDDEN_RESPONSE)
+        if domain == CACHE_HOST:
+            writer.write(_denied_response(f"{CACHE_HOST} is reached with plain HTTP through the proxy, not CONNECT."))
             await writer.drain()
+            return
+        if ip_literal(domain) is not None and await self._checked_addresses(writer, session_id, domain, port) is None:
+            return
+        evaluation = await self._authorize_domain(session_id, domain)
+        if not evaluation.allowed:
+            logger.warning(f"Proxy CONNECT denied: {domain} (session={session_id}, ip={client_ip})")
+            writer.write(_denied_response(evaluation.rejection))
+            await writer.drain()
+            return
+        addresses = await self._checked_addresses(writer, session_id, domain, port)
+        if addresses is None:
             return
 
         try:
-            remote_reader, remote_writer = await asyncio.wait_for(
-                asyncio.open_connection(domain, port),
-                timeout=30,
-            )
+            remote_reader, remote_writer = await self._open_remote(addresses, port)
         except Exception as exc:
             logger.debug(f"Proxy CONNECT: cannot reach {domain}:{port} — {exc}")
             writer.write(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
@@ -236,12 +273,85 @@ class ProxyServer:
             await writer.drain()
             return
 
-        if not await self._authorize_domain(session_id, domain):
+        if domain == CACHE_HOST:
+            await self._handle_cache(reader, writer, session_id, method, path, http_version, raw_headers)
+            return
+        if ip_literal(domain) is not None and await self._checked_addresses(writer, session_id, domain, port) is None:
+            return
+        evaluation = await self._authorize_domain(session_id, domain)
+        if not evaluation.allowed:
             logger.warning(f"Proxy HTTP denied: {method} {domain}{path} (session={session_id}, ip={client_ip})")
-            writer.write(_FORBIDDEN_RESPONSE)
+            writer.write(_denied_response(evaluation.rejection))
             await writer.drain()
             return
+        addresses = await self._checked_addresses(writer, session_id, domain, port)
+        if addresses is None:
+            return
 
+        # The name, not the address, is what the certificate must match.
+        tls: dict[str, Any] = {"ssl": self._tls_context, "server_hostname": domain} if use_tls else {}
+        logger.info(f"Proxy HTTP allowed: {method} {domain}{path} (session={session_id})")
+        await self._forward(
+            reader, writer, lambda: self._open_remote(addresses, port, **tls), method, path, http_version, raw_headers
+        )
+
+    async def _handle_cache(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        session_id: str,
+        method: str,
+        path: str,
+        http_version: str,
+        raw_headers: list[bytes],
+    ) -> None:
+        """Forward a binary cache request to the builder's cache: no decision, no destination check.
+
+        Only reads of the cache info, narinfos and NARs pass, so the mapping cannot reach anything
+        else on the builder, and every other substituter still goes through the domain decision.
+        """
+        cache = self._builder_cache
+        if cache is None or cache.hostname is None:
+            rejection = f"No builder cache is configured, so {CACHE_HOST} is unavailable."
+        elif method not in ("GET", "HEAD") or not cache_path_allowed(path.split("?", 1)[0]):
+            rejection = f"{CACHE_HOST} serves only reads of nix-cache-info, narinfos and NARs."
+        else:
+            hostname = cache.hostname
+            port = cache.port or (443 if cache.scheme == "https" else 80)
+            tls: dict[str, Any] = (
+                {"ssl": self._tls_context, "server_hostname": hostname} if cache.scheme == "https" else {}
+            )
+            logger.debug(f"Proxy cache: {method} {path} (session={session_id})")
+            await self._forward(
+                reader,
+                writer,
+                lambda: asyncio.wait_for(asyncio.open_connection(hostname, port, **tls), timeout=30),
+                method,
+                cache.path.rstrip("/") + path,
+                http_version,
+                raw_headers,
+                host=cache.netloc,
+            )
+            return
+        logger.warning(f"Proxy cache refused: {method} {path} (session={session_id}): {rejection}")
+        writer.write(_denied_response(rejection))
+        await writer.drain()
+
+    async def _forward(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        connect: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        method: str,
+        path: str,
+        http_version: str,
+        raw_headers: list[bytes],
+        host: str | None = None,
+    ) -> None:
+        """Send the request to the remote *connect* opens and stream the response back.
+
+        *host* replaces the client's Host header when the request goes elsewhere than it names.
+        """
         # Filter out proxy-specific and hop-by-hop headers, then find content-length.
         # Drop any existing Connection header — we will inject "Connection: close"
         # so the server closes the TCP connection after sending its response.
@@ -253,9 +363,13 @@ class ProxyServer:
             lower = hdr.lower()
             if lower.startswith(b"proxy-") or lower.startswith(b"connection:"):
                 continue
+            if host is not None and lower.startswith(b"host:"):
+                continue
             if lower.startswith(b"content-length:"):
                 content_length = int(hdr.split(b":", 1)[1].strip())
             headers.append(hdr)
+        if host is not None:
+            headers.append(f"Host: {host}\r\n".encode())
         headers.append(b"Connection: close\r\n")
 
         body = b""
@@ -263,28 +377,12 @@ class ProxyServer:
             body = await asyncio.wait_for(reader.readexactly(content_length), timeout=30)
 
         try:
-            if use_tls:
-                remote_reader, remote_writer = await asyncio.wait_for(
-                    asyncio.open_connection(
-                        domain,
-                        port,
-                        ssl=self._tls_context,
-                        server_hostname=domain,
-                    ),
-                    timeout=30,
-                )
-            else:
-                remote_reader, remote_writer = await asyncio.wait_for(
-                    asyncio.open_connection(domain, port),
-                    timeout=30,
-                )
+            remote_reader, remote_writer = await connect()
         except Exception as exc:
-            logger.debug(f"Proxy HTTP: cannot reach {domain}:{port} — {exc}")
+            logger.debug(f"Proxy HTTP: cannot reach the remote for {path} — {exc}")
             writer.write(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
             await writer.drain()
             return
-
-        logger.info(f"Proxy HTTP allowed: {method} {domain}{path} (session={session_id})")
 
         # Rebuild request with relative path
         request_line = f"{method} {path} {http_version}\r\n".encode()
@@ -308,6 +406,46 @@ class ProxyServer:
             pass
         finally:
             remote_writer.close()
+
+    # ------------------------------------------------------------------
+    # Destination check and connection to the checked addresses
+    # ------------------------------------------------------------------
+
+    async def _checked_addresses(
+        self, writer: asyncio.StreamWriter, session_id: str, domain: str, port: int
+    ) -> list[str] | None:
+        """Resolve *domain* and check its addresses; answer the client and return None when refused.
+
+        An IP literal is checked before the domain decision, so the sentinel is never asked about an
+        internal address. A name is resolved only after its decision: resolving first would let any
+        sandbox send data out as DNS queries for names nobody approved.
+        """
+        try:
+            return await self._destinations.resolve(domain, port)
+        except DestinationRefusedError as exc:
+            logger.warning(f"Proxy refused internal destination {domain}:{port} (session={session_id}): {exc}")
+            if self._notify_domain_access:
+                self._notify_domain_access(session_id, domain, False, str(exc))
+            writer.write(_denied_response(str(exc)))
+        except OSError as exc:
+            logger.debug(f"Proxy: cannot resolve {domain} — {exc}")
+            writer.write(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
+        await writer.drain()
+        return None
+
+    @staticmethod
+    async def _open_remote(
+        addresses: list[str], port: int, **kwargs: Any
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        """Connect to the first reachable of the already checked *addresses*."""
+        error: Exception | None = None
+        for address in addresses:
+            try:
+                return await asyncio.wait_for(asyncio.open_connection(address, port, **kwargs), timeout=30)
+            except (OSError, TimeoutError) as exc:
+                error = exc
+        assert error is not None, "resolve() returns at least one address"
+        raise error
 
     # ------------------------------------------------------------------
     # Bidirectional relay for CONNECT tunnels
@@ -349,42 +487,35 @@ class ProxyServer:
     # Domain authorization (allowlist check + optional approval request)
     # ------------------------------------------------------------------
 
-    async def _authorize_domain(self, session_id: str, domain: str) -> bool:
+    async def _authorize_domain(self, session_id: str, domain: str) -> BoundaryEvaluation:
         with self._attach_sandbox_call(session_id), span("domain", domain, domain=domain) as check:
-            allowed = await self._decide_domain(session_id, domain)
-            check.attrs["allowed"] = allowed
-        return allowed
+            evaluation = await self._decide_domain(session_id, domain)
+            check.attrs["allowed"] = evaluation.allowed
+        return evaluation
 
-    async def _decide_domain(self, session_id: str, domain: str) -> bool:
-        """Return True if *domain* is allowed for *session_id*.
+    async def _decide_domain(self, session_id: str, domain: str) -> BoundaryEvaluation:
+        """Decide whether *session_id* may reach *domain*.
 
         If the domain is not in the allowlist and a ``request_approval``
-        callback is configured, the connection is suspended until the user
-        makes a decision (the callback is responsible for updating the
-        allowlist on approval).  Without a callback, unknown domains are
-        denied immediately.
+        callback is configured, the connection is suspended until the
+        sentinel or the user decides (the callback is responsible for
+        updating the allowlist on approval).  Without a callback, unknown
+        domains are denied immediately.
         """
         if self._is_allowed(session_id, domain):
             if self._notify_domain_access:
-                self._notify_domain_access(session_id, domain, True)
-            return True
+                self._notify_domain_access(session_id, domain, True, None)
+            return BoundaryEvaluation(allowed=True, rejection="")
         if self._request_approval is None:
             if self._notify_domain_access:
-                self._notify_domain_access(session_id, domain, False)
-            return False
+                self._notify_domain_access(session_id, domain, False, None)
+            return _NO_APPROVAL_PATH
         logger.info(f"Proxy: suspending connection to {domain} (session={session_id}), requesting approval")
-        allowed = await self._request_approval(session_id, domain)
-        # Note: request_approval already notifies for sentinel/user outcomes,
-        # but for denied-without-callback and silently-allowed cases, we
-        # notify above.
-        return allowed
+        # request_approval notifies for sentinel/user outcomes itself; the cases above notify here.
+        return await self._request_approval(session_id, domain)
 
     def _is_allowed(self, session_id: str, domain: str) -> bool:
-        allowed = self._get_domains(session_id)
-        if "*" in allowed:
-            return True
-        domain = domain.lower()
-        return any(domain_matches(domain, p.lower()) for p in allowed)
+        return domain_allowed(domain, self._get_domains(session_id))
 
     # ------------------------------------------------------------------
     # URL / host parsing helpers
@@ -392,13 +523,13 @@ class ProxyServer:
 
     @staticmethod
     def _parse_host_port(target: str, default_port: int = 443) -> tuple[str, int]:
-        if ":" in target:
-            host, port_str = target.rsplit(":", 1)
-            try:
-                return host, int(port_str)
-            except ValueError:
-                return target, default_port
-        return target, default_port
+        # urlsplit handles bracketed IPv6 literals such as [::1]:443.
+        parsed = urlsplit(f"//{target}")
+        try:
+            port = parsed.port or default_port
+        except ValueError:
+            port = default_port
+        return parsed.hostname or target, port
 
     @staticmethod
     def _parse_absolute_url(url: str) -> tuple[str, int, str]:

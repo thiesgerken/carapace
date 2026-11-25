@@ -12,7 +12,7 @@ import { ToolCallBadge } from "./tool-call-badge";
 const SERVER = "https://carapace.example.test";
 
 function reference(artifactReference: ArtifactReference) {
-  return <ToolCallBadge tool="show_artifact" args={{ slug: artifactReference.slug }} detail="" result="{}" exitCode={0} approvalSource="safe-list" approvalVerdict="allow" server={SERVER} sessionId="s1" artifactReference={artifactReference} />;
+  return <ToolCallBadge tool="show_artifact" args={{ slug: artifactReference.slug }} detail="" result="{}" exitCode={0} server={SERVER} sessionId="s1" artifactReference={artifactReference} />;
 }
 
 function serveArtifact(title: string | null): string[] {

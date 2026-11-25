@@ -50,6 +50,11 @@ let
       carapace = [ "server" ];
     }
   );
+  # Only the bridge's own interpreter sees it; the agent's python3 is python-build-standalone.
+  mcpBridgeEnv = pythonSet.mkVirtualEnv "carapace-mcp-bridge-env" { mcp = [ ]; };
+  builder = pythonSet.mkVirtualEnv "carapace-builder" { carapace = [ "builder" ]; };
+  # The base package is the CLI client; the bundled carapace skill wraps it.
+  cli = pythonSet.mkVirtualEnv "carapace-cli" workspace.deps.default;
   dev = pythonSet.mkVirtualEnv "carapace-checks" workspace.deps.all;
   encodingCacheEntry =
     name: sha256:
@@ -70,6 +75,7 @@ let
     fileset = lib.fileset.unions [
       ../src
       ../tests
+      ../charts
       ../sandbox
       ../scripts
       ../pyproject.toml
@@ -92,6 +98,8 @@ let
           pkgs.bash
           pkgs.coreutils
           pkgs.jq
+          # tests/test_pod_security.py renders the chart.
+          pkgs.kubernetes-helm
         ];
       }
       ''
@@ -100,24 +108,19 @@ let
         cp -R "$src" source
         chmod -R u+w source
         cd source
-        # Activator paths bypass agent-controlled PATH; only this check copy uses Nix paths.
-        substituteInPlace sandbox/carapace-skill-activator \
-          --replace-fail /usr/bin/jq ${pkgs.jq}/bin/jq \
-          --replace-fail /usr/bin/git ${pkgs.gitMinimal}/bin/git \
-          --replace-fail /usr/bin/base64 ${pkgs.coreutils}/bin/base64 \
-          --replace-fail /usr/bin/mktemp ${pkgs.coreutils}/bin/mktemp \
-          --replace-fail /bin/mkdir ${pkgs.coreutils}/bin/mkdir \
-          --replace-fail /bin/rm ${pkgs.coreutils}/bin/rm \
-          --replace-fail /bin/chmod ${pkgs.coreutils}/bin/chmod \
-          --replace-fail /bin/mv ${pkgs.coreutils}/bin/mv \
-          --replace-fail " /bin/sh " " ${pkgs.bash}/bin/sh "
         patchShebangs sandbox
         ${command}
         touch "$out"
       '';
 in
 {
-  inherit server tokenizerCache;
+  inherit
+    server
+    builder
+    cli
+    tokenizerCache
+    mcpBridgeEnv
+    ;
   checks = {
     pytest = check "pytest" "pytest";
     pyrefly = check "pyrefly" "pyrefly check --python-interpreter-path ${dev}/bin/python";

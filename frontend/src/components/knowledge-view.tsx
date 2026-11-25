@@ -2,22 +2,15 @@
 
 import {
   BookText,
-  Cable,
   CircleAlert,
-  CircleDashed,
   Check,
   ChevronRight,
   Copy,
   Download,
   GitCommitHorizontal,
-  Globe,
-  KeyRound,
   Lightbulb,
   Loader2,
-  Plug,
   Puzzle,
-  Terminal,
-  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -29,6 +22,7 @@ import { ArtifactPreview } from "@/components/artifact-preview";
 import { useAppLocale } from "@/components/locale-provider";
 import { GlobalGitPanel, KNOWLEDGE_GIT_CHANGED_EVENT, useGlobalGit } from "@/components/git-sync";
 import { MarkdownContent } from "@/components/markdown-content";
+import { SkillBuildPanel } from "@/components/skill-build-panel";
 import {
   browseKnowledge,
   knowledgeArtifactUrl,
@@ -234,32 +228,10 @@ function SkillSection({ icon, label, children }: { icon: ReactNode; label: strin
 
 const sectionIconClass = "h-3.5 w-3.5 shrink-0";
 
-/** Frontmatter of a skill's SKILL.md as a card: what it exposes, reaches, and needs. */
-function VaultBadge({ status }: { status?: string }) {
-  const t = useTranslations("knowledge.skill");
-  if (!status) return null;
-  const map: Record<string, { icon: ReactNode; cls: string; label: string }> = {
-    present: { icon: <Check className="h-3 w-3" />, cls: "text-emerald-600 dark:text-emerald-400", label: t("vaultPresent") },
-    absent: { icon: <X className="h-3 w-3" />, cls: "text-red-600 dark:text-red-400", label: t("vaultAbsent") },
-    unconfigured: { icon: <CircleDashed className="h-3 w-3" />, cls: "text-muted-foreground", label: t("vaultUnconfigured") },
-    error: { icon: <CircleAlert className="h-3 w-3" />, cls: "text-muted-foreground", label: t("vaultError") },
-  };
-  const s = map[status] ?? map.error;
-  return (
-    <span className={`inline-flex items-center gap-0.5 text-[10px] ${s.cls}`} title={s.label}>
-      {s.icon}
-    </span>
-  );
-}
-
-function SkillCard({ skill, vaultStatus }: { skill: KnowledgeSkill; vaultStatus?: Record<string, string> }) {
+/** Frontmatter of a skill's SKILL.md as a card: name, description, and hints. */
+function SkillCard({ skill }: { skill: KnowledgeSkill }) {
   const t = useTranslations("knowledge.skill");
   const carapace = skill.carapace;
-  const domains = carapace?.network.domains ?? [];
-  const tunnels = carapace?.network.tunnels ?? [];
-  const credentials = carapace?.credentials ?? [];
-  const commands = carapace?.commands ?? [];
-  const mcpServers = carapace?.mcp ?? [];
   const hints = Object.entries(carapace?.hints ?? {});
 
   return (
@@ -278,98 +250,8 @@ function SkillCard({ skill, vaultStatus }: { skill: KnowledgeSkill; vaultStatus?
         </p>
       ) : null}
 
-      {commands.length || domains.length || tunnels.length || credentials.length || mcpServers.length || hints.length ? (
+      {hints.length ? (
         <div className="mt-4 flex flex-col gap-3 border-t border-border/70 pt-3 text-sm">
-          {commands.length ? (
-            <SkillSection icon={<Terminal className={sectionIconClass} />} label={t("commands")}>
-              {commands.map((command) => (
-                <div key={command.name} className="flex min-w-0 flex-col gap-0.5">
-                  <code className="break-all font-mono text-xs font-semibold">{command.name}</code>
-                  <code className="break-all font-mono text-xs text-muted-foreground">{command.command}</code>
-                </div>
-              ))}
-            </SkillSection>
-          ) : null}
-
-          {domains.length ? (
-            <SkillSection icon={<Globe className={sectionIconClass} />} label={t("domains")}>
-              {domains.map((domain) => (
-                <code key={domain} className="break-all font-mono text-xs">{domain}</code>
-              ))}
-            </SkillSection>
-          ) : null}
-
-          {tunnels.length ? (
-            <SkillSection icon={<Cable className={sectionIconClass} />} label={t("tunnels")}>
-              {tunnels.map((tunnel) => (
-                <div key={`${tunnel.host}:${tunnel.remote_port}`} className="min-w-0">
-                  <code className="break-all font-mono text-xs">
-                    localhost:{tunnel.local_port} → {tunnel.host}:{tunnel.remote_port}
-                  </code>
-                  {tunnel.description ? (
-                    <span className="ml-2 break-words text-xs text-muted-foreground">{tunnel.description}</span>
-                  ) : null}
-                </div>
-              ))}
-            </SkillSection>
-          ) : null}
-
-          {credentials.length ? (
-            <SkillSection icon={<KeyRound className={sectionIconClass} />} label={t("credentials")}>
-              {credentials.map((credential) => (
-                <div key={credential.vault_path} className="flex min-w-0 flex-col gap-0.5">
-                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                    <code className="break-all font-mono text-xs font-semibold">
-                      {credential.env_var ?? credential.file ?? t("credential")}
-                    </code>
-                    {credential.description ? (
-                      <span className="break-words text-xs text-muted-foreground">{credential.description}</span>
-                    ) : null}
-                  </div>
-                  <div className="flex min-w-0 items-center gap-1">
-                    <code className="break-all font-mono text-xs text-muted-foreground">{credential.vault_path}</code>
-                    <VaultBadge status={vaultStatus?.[credential.vault_path]} />
-                  </div>
-                </div>
-              ))}
-            </SkillSection>
-          ) : null}
-
-          {mcpServers.length ? (
-            <SkillSection icon={<Plug className={sectionIconClass} />} label={t("mcp")}>
-              {mcpServers.map((server) => (
-                <div key={server.name} className="flex min-w-0 flex-col gap-0.5">
-                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                    <code className="break-all font-mono text-xs font-semibold">{server.name}</code>
-                    {server.description ? (
-                      <span className="break-words text-xs text-muted-foreground">{server.description}</span>
-                    ) : null}
-                  </div>
-                  <code className="break-all font-mono text-xs text-muted-foreground">
-                    {server.command ? `stdio: ${server.command}` : server.url}
-                  </code>
-                  {server.auth ? (
-                    <div className="flex min-w-0 items-center gap-1">
-                      <code className="break-all font-mono text-xs text-muted-foreground">
-                        {t("mcpAuth", { type: server.auth.type })} · {server.auth.vault_path}
-                      </code>
-                      <VaultBadge status={vaultStatus?.[server.auth.vault_path]} />
-                    </div>
-                  ) : null}
-                  {server.auth?.type === "oauth" && vaultStatus?.[server.auth.vault_path] !== "present" ? (
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      {t("oauthHint")}{" "}
-                      <code className="break-all font-mono">
-                        python scripts/mcp_oauth_blob.py --token-url … --client-id … --refresh-token …
-                      </code>{" "}
-                      {t("oauthHintStore")}
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </SkillSection>
-          ) : null}
-
           {hints.length ? (
             <SkillSection icon={<Lightbulb className={sectionIconClass} />} label={t("hints")}>
               {hints.map(([key, value]) => (
@@ -576,7 +458,17 @@ export function KnowledgeView() {
                 ))}
               </div>
             )}
-            {result.skill ? <div className="mt-6"><SkillCard skill={result.skill} vaultStatus={result.vault_status} /></div> : null}
+            {result.skill ? <div className="mt-6"><SkillCard skill={result.skill} /></div> : null}
+            {result.build ? (
+              <div className="mt-4">
+                <SkillBuildPanel
+                  key={`${result.path}:${result.build.tree}`}
+                  server={server}
+                  skill={result.path.split("/").pop() ?? ""}
+                  initial={result.build}
+                />
+              </div>
+            ) : null}
             {result.doc ? (
               <section className="mt-6">
                 <h2 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">

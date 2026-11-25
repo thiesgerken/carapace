@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import socket
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from carapace.sandbox.exec_flow import KILL_LEFTOVER_PROCESSES_COMMAND
 from carapace.sandbox.runtime import ContainerRuntime, ExecResult, SandboxInspection
@@ -25,6 +30,7 @@ def make_runtime_mock() -> MagicMock:
     runtime.list_sandboxes = AsyncMock(return_value={})
     runtime.retained_sandbox_session_ids = AsyncMock(return_value=set())
     runtime.list_pool_sandboxes = AsyncMock(return_value={})
+    runtime.list_egress_probes = AsyncMock(return_value={})
     runtime.claim_warm_sandbox = AsyncMock(return_value=False)
     runtime.inspect_sandbox = AsyncMock(
         side_effect=lambda _session_id, _name, container_id=None: SandboxInspection(
@@ -45,3 +51,25 @@ def make_runtime_mock() -> MagicMock:
     runtime.logs = AsyncMock(return_value="")
     runtime.write_stdout_log = AsyncMock()
     return runtime
+
+
+def fake_dns(monkeypatch: pytest.MonkeyPatch, answers: dict[str, list[str]]) -> list[str]:
+    """Answer getaddrinfo from *answers*; IP literals resolve to themselves, other names fail.
+
+    Returns the list of looked-up hosts, to assert which names went out to DNS.
+    """
+    names = {name.lower(): addresses for name, addresses in answers.items()}
+    lookups: list[str] = []
+
+    async def getaddrinfo(_loop: Any, host: str, port: int, **_kwargs: Any) -> list[tuple[Any, ...]]:
+        lookups.append(host)
+        if host.lower() not in names:
+            try:
+                socket.inet_pton(socket.AF_INET6 if ":" in host else socket.AF_INET, host)
+            except OSError as exc:
+                raise socket.gaierror(socket.EAI_NONAME, f"unknown host {host}") from exc
+        addresses = names.get(host.lower(), [host])
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port)) for address in addresses]
+
+    monkeypatch.setattr(asyncio.BaseEventLoop, "getaddrinfo", getaddrinfo)
+    return lookups

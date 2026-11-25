@@ -5,31 +5,13 @@ description: >-
   sessions, send messages and wait for turns, resolve pending approvals by id, and manage jobs
   (list/get/create/update/delete/run). Use this to let the agent configure, read, start, and
   interact with carapace sessions and jobs over the JSON CLI. Requires a scoped API key in the vault.
-metadata:
-  carapace:
-    network:
-      # Replace with your deployment's public API domain. The sandbox blocks
-      # loopback/internal hosts, so 127.0.0.1 / localhost will NOT work.
-      domains:
-        - carapace.example.com
-    credentials:
-      # Create a scoped API key in the carapace UI, store it in your vault, and
-      # point vault_path at it. See REFERENCE.md.
-      - vault_path: <backend>/<your-carapace-api-key-id>
-        description: carapace API key (Bearer) for driving the server
-        env_var: CARAPACE_API_KEY
-    commands:
-      # CARAPACE_SERVER must match the network.domains entry above. Edit both when
-      # you change the deployment domain.
-      - name: carapace
-        command: sh -c 'CARAPACE_SERVER="https://carapace.example.com" exec uv run --no-sync --directory /workspace/skills/carapace carapace "$@"' carapace
 ---
 
 # carapace CLI
 
 Drive a carapace server over its non-interactive JSON CLI. Authentication is automatic:
 `CARAPACE_API_KEY` (from the vault) and `CARAPACE_SERVER` (baked into the `carapace` command)
-are already set once the skill is active — never pass `--api-key` on the command line.
+are set by the `carapace` command itself — never pass `--api-key` on the command line.
 
 ## Exposed Commands
 

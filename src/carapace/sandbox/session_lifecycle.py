@@ -15,9 +15,11 @@ from sqlalchemy.exc import IntegrityError
 
 from ..database.engine import SessionFactory
 from ..database.models import SandboxTokenRow
-from ..security.context import ApprovalSource, ApprovalVerdict
+from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
 from ..spans import span
-from .runtime import ContainerRuntime, DuplicateSandboxError, PoolSandbox, SandboxConfig
+from .egress_check import PROBE_SCRIPT, EgressProbeError, probe_env, raise_for_leaks
+from .exec_scope import RunningExec
+from .runtime import EGRESS_PROBE_LABEL, ContainerRuntime, DuplicateSandboxError, PoolSandbox, SandboxConfig
 from .state import load_sandbox_snapshot
 
 
@@ -36,20 +38,15 @@ class SandboxSessionLifecycleState:
     sessions: dict[str, SessionContainer]
     token_to_session: dict[str, str]
     session_tokens: dict[str, str]
-    allowed_domains: dict[str, set[str]]
     exec_temp_domains: dict[str, set[str]]
-    exec_context_skill_domains: dict[str, set[str]]
     session_current_command: dict[str, str]
-    domain_approval_cbs: dict[str, Callable[[str, str], Awaitable[bool]]]
+    domain_approval_cbs: dict[str, Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]]
     domain_notify_cbs: dict[
         str,
         Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],
     ]
     exec_locks: dict[str, asyncio.Lock]
-    proxy_bypass_sessions: set[str]
     stashed_session_env: dict[str, dict[str, str]]
-    credential_cache: dict[str, dict[str, str]]
-    session_current_contexts: dict[str, list[str]]
     exec_notified_domains: dict[str, set[str]]
     exec_notified_credentials: dict[str, set[str]]
 
@@ -75,6 +72,7 @@ class SandboxSessionLifecycle:
         warm_pool_size: int,
         knowledge_repo_name_for_session: Callable[[str], str],
         git_author_for_session: Callable[[str], str],
+        nix_config: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._runtime = runtime
         self._state = state
@@ -88,6 +86,8 @@ class SandboxSessionLifecycle:
         self._warm_pool_size = warm_pool_size
         self._knowledge_repo_name_for_session = knowledge_repo_name_for_session
         self._git_author_for_session = git_author_for_session
+        # The builder's cache settings for Nix in the sandbox, once the builder has answered.
+        self._nix_config = nix_config
         self._warm_claim_lock = asyncio.Lock()
         self._warm_refill_tasks: set[asyncio.Task[int]] = set()
 
@@ -226,7 +226,10 @@ class SandboxSessionLifecycle:
             )
         proxy_url = f"http://{host_ip}:{self._proxy_port}"
         logger.info(f"Proxy URL for session {session_id}: {proxy_url}")
-        return self.build_proxy_env(session_id, proxy_token, proxy_url)
+        env = self.build_proxy_env(session_id, proxy_token, proxy_url)
+        if self._nix_config is not None:
+            env["NIX_CONFIG"] = await self._nix_config()
+        return env
 
     def build_proxy_env(self, session_id: str, proxy_token: str, proxy_url: str) -> dict[str, str]:
         """Build HTTP_PROXY / NO_PROXY env vars for session containers."""
@@ -280,7 +283,7 @@ class SandboxSessionLifecycle:
         git identity and generated command shims is lost and must be restored.
 
         Not serialized here: callers go through ``SandboxManager``, which holds the
-        per-session startup lock around this call and the skill setup rerun.
+        per-session startup lock around this call.
         """
         sandbox_id = self.sandbox_id_for_session(session_id)
         sandbox_name = self.sandbox_name_for_id(sandbox_id)
@@ -571,6 +574,49 @@ class SandboxSessionLifecycle:
         logger.info(f"Created warm sandbox {sandbox_name} ({container_id[:12]})")
         return container_id
 
+    async def verify_no_direct_egress(self, resolv_conf: Path) -> None:
+        """Probe from a throwaway sandbox that nothing leaves it except through the session proxy.
+
+        Raises ``EgressCheckError`` when the probe got out, ``EgressProbeError`` when it could not tell.
+        The probe is a real sandbox, so it sits behind the same network, labels and NetworkPolicy as every
+        session's. The session proxy must already listen: it is the probe's positive control.
+        *resolv_conf* is the server's own resolver config (``/etc/resolv.conf``), whose resolvers the probe must
+        not reach.
+        """
+        proxy_host = await self._runtime.get_host_ip(self._network_name)
+        if proxy_host is None:
+            raise EgressProbeError(f"no address of the session proxy on network '{self._network_name}'")
+        env = probe_env(proxy_host, self._proxy_port, resolv_conf.read_text())
+        # Unique per run: Kubernetes deletes a StatefulSet asynchronously, so a name is not free again right after
+        # the previous run's probe was deleted, and releases sharing a namespace must not share a probe.
+        probe_id = f"egress-check-{secrets.token_hex(4)}"
+        name = self.sandbox_name_for_id(probe_id)
+        with span("sandbox", "egress check"):
+            # A server killed during an earlier check left its probe behind.
+            for leftover_id, leftover_container in (await self._runtime.list_egress_probes()).items():
+                await self._runtime.destroy_sandbox(
+                    leftover_id, self.sandbox_name_for_id(leftover_id), leftover_container
+                )
+                logger.info(f"Removed leftover egress-check sandbox {leftover_id}")
+            container_id = await self._runtime.create_sandbox(
+                SandboxConfig(
+                    name=name,
+                    sandbox_id=probe_id,
+                    session_id=probe_id,
+                    image=self._base_image,
+                    labels={"carapace.sandbox": probe_id, "carapace.managed": "true", EGRESS_PROBE_LABEL: "true"},
+                    environment={},
+                    command=self._sandbox_command(configure_proxy=False),
+                )
+            )
+            try:
+                await self.wait_for_ready(container_id, probe_id)
+                result = await self._runtime.exec(container_id, ["bash", "-c", PROBE_SCRIPT], timeout=60, env=env)
+            finally:
+                await self._runtime.destroy_sandbox(probe_id, name, container_id)
+        raise_for_leaks(result)
+        logger.info("Sandbox egress self-test passed: no direct connection or DNS lookup got out")
+
     async def log_container_tail(self, container_id: str, session_id: str) -> None:
         """Log the last lines of a dead/stopped container for troubleshooting."""
         try:
@@ -691,12 +737,8 @@ class SandboxSessionLifecycle:
         token = self._state.session_tokens.pop(session_id, None)
         if token:
             self._state.token_to_session.pop(token, None)
-        self._state.allowed_domains.pop(session_id, None)
         self._state.exec_temp_domains.pop(session_id, None)
-        self._state.exec_context_skill_domains.pop(session_id, None)
         self._state.session_current_command.pop(session_id, None)
-        self._state.proxy_bypass_sessions.discard(session_id)
-        self._state.session_current_contexts.pop(session_id, None)
         self._state.exec_locks.pop(session_id, None)
 
     async def cleanup_session(self, session_id: str) -> None:
@@ -724,16 +766,11 @@ class SandboxSessionLifecycle:
         token = self._state.session_tokens.pop(session_id, None)
         if token:
             self._state.token_to_session.pop(token, None)
-        self._state.allowed_domains.pop(session_id, None)
         self._state.exec_temp_domains.pop(session_id, None)
-        self._state.exec_context_skill_domains.pop(session_id, None)
         self._state.session_current_command.pop(session_id, None)
         self._state.domain_approval_cbs.pop(session_id, None)
         self._state.domain_notify_cbs.pop(session_id, None)
         self._state.exec_locks.pop(session_id, None)
-        self._state.proxy_bypass_sessions.discard(session_id)
-        self._state.credential_cache.pop(session_id, None)
-        self._state.session_current_contexts.pop(session_id, None)
         self._state.exec_notified_domains.pop(session_id, None)
         self._state.exec_notified_credentials.pop(session_id, None)
 

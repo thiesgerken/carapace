@@ -22,13 +22,13 @@ from pydantic_ai.usage import RunUsage
 from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps, TaskDone, TaskFailed
 from carapace.agent.loop import _snapshot_on_failure, run_agent_turn
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models.config import Config
 from carapace.models.session import SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import AgentResponseEntry, SessionSecurity
-from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
 
@@ -50,13 +50,13 @@ class _FakeResult:
 def _make_deps(tmp_path: Path, *, unattended: bool) -> Deps:
     session_id = "session-1"
     return Deps(
+        skill_builds=SkillBuilds(None),
         config=Config(),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
         session_state=SessionState.now(session_id=session_id, unattended=unattended),
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity(session_id, unattended=unattended),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",

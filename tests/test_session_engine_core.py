@@ -20,9 +20,7 @@ from pydantic_ai.messages import (
 )
 
 import carapace.usage as usage_mod
-from carapace.models.credentials import CredentialRegistryProtocol
 from carapace.models.session import SessionFork
-from carapace.models.skills import ContextGrant, SkillCredentialDecl
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.usage import InputShapeRatios, LlmRequestLog, LlmRequestRecord, LlmRequestState, ModelUsage
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel, _without_timestamps
@@ -33,78 +31,6 @@ async def _drain_background_tasks(active: Any) -> None:
         await asyncio.gather(active.agent_task, return_exceptions=True)
     while active._pending_sends:
         await asyncio.gather(*tuple(active._pending_sends), return_exceptions=True)
-
-
-@pytest.mark.anyio
-async def test_skill_activation_inputs_use_context_grant(tmp_path: Path, db_factory):
-    """Automatic skill setup reuses approved env/file credentials from the persisted context grant."""
-    skill_name = "reinject-skill"
-    skill_dir = tmp_path / "skills" / skill_name
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(
-        f"---\n"
-        f"name: {skill_name}\n"
-        "metadata:\n"
-        "  carapace:\n"
-        "    credentials:\n"
-        "      - vault_path: vault/secret\n"
-        "        description: API key\n"
-        "        env_var: API_KEY\n"
-        "        file: .secrets/key.txt\n"
-        "---\n"
-    )
-
-    mock_reg = AsyncMock(spec=CredentialRegistryProtocol)
-    mock_reg.fetch = AsyncMock(return_value="secret-value")
-
-    with _patch_sentinel():
-        engine = _make_engine(tmp_path, session_factory=db_factory, credential_registry=mock_reg)
-
-    state = engine.session_mgr.create_session(user="thies")
-    sid = state.session_id
-    active = engine.get_or_activate(sid)
-    active.state.context_grants[skill_name] = ContextGrant(
-        skill_name=skill_name,
-        credential_decls=[
-            SkillCredentialDecl(
-                vault_path="vault/secret",
-                description="API key",
-                env_var="API_KEY",
-                file=".secrets/key.txt",
-            ),
-        ],
-    )
-
-    result = await engine._skill_activation_inputs(sid, skill_name)
-    assert result.environment == {"API_KEY": "secret-value"}
-    assert [(cred.path, cred.value) for cred in result.file_credentials] == [(".secrets/key.txt", "secret-value")]
-    mock_reg.fetch.assert_awaited_once_with("vault/secret")
-
-    active.state.context_grants.pop(skill_name, None)
-    mock_reg.fetch.reset_mock()
-    empty = await engine._skill_activation_inputs(sid, skill_name)
-    assert empty.environment == {}
-    assert empty.file_credentials == []
-    mock_reg.fetch.assert_not_called()
-
-    active.state.context_grants[skill_name] = ContextGrant(
-        skill_name=skill_name,
-        credential_decls=[
-            SkillCredentialDecl(
-                vault_path="vault/secret",
-                description="API key",
-                env_var="API_KEY",
-                file=".secrets/key.txt",
-            ),
-        ],
-    )
-    engine.session_mgr.save_state(active.state)
-    engine.deactivate(sid)
-    mock_reg.fetch.reset_mock()
-    mock_reg.fetch = AsyncMock(return_value="from-disk")
-    result = await engine._skill_activation_inputs(sid, skill_name)
-    assert result.environment == {"API_KEY": "from-disk"}
-    assert [(cred.path, cred.value) for cred in result.file_credentials] == [(".secrets/key.txt", "from-disk")]
 
 
 def test_record_tool_call_event_reuses_sentinel_row_for_user_decision(tmp_path: Path, db_factory) -> None:
@@ -217,8 +143,6 @@ def test_fork_session_copies_transcript_and_security_context(tmp_path: Path, db_
     active.state.attributes.pinned = True
     active.state.attributes.favorite = True
     active.state.approved_operations = ["exec"]
-    active.state.activated_skills = ["web"]
-    active.state.context_grants["web"] = ContextGrant(skill_name="web", domains={"example.com"})
     active.state.knowledge_last_archive_path = "sessions/archive.json"
     active.state.knowledge_last_commit_trigger = "manual"
     active.state.knowledge_last_committed_at = datetime.now(tz=UTC)
@@ -262,8 +186,6 @@ def test_fork_session_copies_transcript_and_security_context(tmp_path: Path, db_
     assert forked.attributes.pinned is False
     assert forked.attributes.favorite is False
     assert forked.approved_operations == ["exec"]
-    assert forked.activated_skills == ["web"]
-    assert forked.context_grants["web"].domains == {"example.com"}
     assert forked.knowledge_last_committed_at is None
     assert forked.knowledge_last_archive_path is None
     assert forked.knowledge_last_commit_trigger is None
@@ -634,10 +556,10 @@ def test_truncate_incomplete_events_keeps_completed_user_approved_exec(tmp_path:
                 "role": "tool_call",
                 "tool": "exec",
                 "args": {"command": "pwd"},
-                "detail": "[safe-list] auto-allowed",
-                "approval_source": "safe-list",
-                "approval_verdict": "allow",
-                "approval_explanation": "auto-allowed",
+                "detail": "",
+                "approval_source": None,
+                "approval_verdict": None,
+                "approval_explanation": None,
                 "tool_id": "later-exec",
             },
         ],

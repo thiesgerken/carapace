@@ -1,0 +1,10 @@
+{{- $namespace := include "carapace.builder.namespace" . }}
+{{- if and .Values.builder.enabled .Values.builder.createNamespace (ne $namespace .Release.Namespace) }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $namespace }}
+  labels:
+    {{- include "carapace.labels" . | nindent 4 }}
+    pod-security.kubernetes.io/enforce: privileged
+{{- end }}

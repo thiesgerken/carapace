@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -65,7 +65,6 @@ class HistoryMessage(BaseModel):
     tool: str | None = None
     args: dict[str, Any] | None = None
     detail: str | None = None
-    contexts: list[str] | None = None
     approval_source: ApprovalSource | None = None
     approval_verdict: ApprovalVerdict | None = None
     approval_explanation: str | None = None
@@ -86,7 +85,7 @@ class HistoryMessage(BaseModel):
     vault_paths: list[str] | None = None
     names: list[str] | None = None
     descriptions: list[str] | None = None
-    skill_name: str | None = None
+    domains: list[str] | None = None
     tool_id: str | None = None
     model_tool_call_id: str | None = None
     parent_tool_id: str | None = None
@@ -108,16 +107,6 @@ class HistoryMessage(BaseModel):
     rejected: bool | None = None
     # On the error event of a turn that stopped on an unexpected error.
     traceback: str | None = None
-
-    @model_validator(mode="after")
-    def _contexts_from_args_when_missing(self) -> Self:
-        """Legacy events only stored contexts inside ``args``; expose them top-level."""
-        if self.role != "tool_call" or self.contexts is not None:
-            return self
-        raw = self.args.get("contexts") if self.args else None
-        if isinstance(raw, list):
-            return self.model_copy(update={"contexts": list(raw)})
-        return self
 
 
 @router.get("/sessions/{session_id}/history", response_model=list[HistoryMessage], response_model_exclude_none=True)
@@ -264,15 +253,12 @@ def _history_from_messages(session_id: str) -> list[HistoryMessage]:
             for part in msg.parts:
                 if isinstance(part, ToolCallPart):
                     args = normalize_tool_call_args(part.tool_name, part.args) if isinstance(part.args, dict) else {}
-                    ctx_raw = args.get("contexts")
-                    contexts = list(ctx_raw) if isinstance(ctx_raw, list) else None
                     result.append(
                         HistoryMessage(
                             role="tool_call",
                             content="",
                             tool=part.tool_name,
                             args=args,
-                            contexts=contexts,
                         )
                     )
                 elif isinstance(part, TextPart):

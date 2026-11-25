@@ -59,21 +59,27 @@
         "largeFileNotice": "Syntax highlighting is off for this file — it is too large.",
         "tooLarge": "This file is too large to preview — download it instead.",
         "skill": {
-            "commands": "Commands",
-            "domains": "Domains",
-            "tunnels": "Tunnels",
-            "credentials": "Credentials",
-            "credential": "Credential",
-            "mcp": "MCP servers",
-            "mcpAuth": "{type} auth",
-            "vaultPresent": "Found in vault",
-            "vaultAbsent": "Not found in vault",
-            "vaultUnconfigured": "Vault backend not configured",
-            "vaultError": "Vault unreachable",
-            "oauthHint": "No OAuth token stored. Generate one with",
-            "oauthHintStore": "then save the JSON in the vault entry above.",
             "hints": "Hints",
-            "invalid": "Invalid frontmatter, the skill cannot be activated: {error}"
+            "invalid": "Invalid frontmatter: {error}",
+            "build": {
+                "title": "Build",
+                "tree": "Git tree of the skill at HEAD",
+                "retry": "Retry",
+                "log": "Build log",
+                "needsDomains": "reaches {domains}",
+                "state": {
+                    "building": "Building",
+                    "succeeded": "Built",
+                    "failed": "Failed",
+                    "unavailable": "Builder unavailable"
+                },
+                "hint": {
+                    "building": "The builder is working on the committed version of this skill.",
+                    "succeeded": "Its commands are available in new sessions.",
+                    "failed": "Its commands are not available. Fix the skill and push, or retry if the failure was transient.",
+                    "unavailable": "The skill builder cannot be reached; the build starts once it is back."
+                }
+            }
         }
     },
     "memory": {
@@ -875,7 +881,7 @@
             "enabledTitle": "YOLO",
             "enabledDescription": "Disable sentinel review and allow operations immediately.",
             "disabledTitle": "Reviewed",
-            "disabledDescription": "Keep actions gated by safe-list and sentinel review."
+            "disabledDescription": "The sentinel reviews what commands ask for outside the sandbox."
         },
         "unattended": {
             "enabledTitle": "Unattended",
@@ -926,15 +932,9 @@
             "title": "Approval Required",
             "toolLabel": "Tool:",
             "reasonLabel": "Reason:",
-            "riskLabel": "Risk:",
             "arguments": "Arguments",
             "allow": "Approve",
-            "denyPlaceholder": "Why should this be blocked?",
-            "risk": {
-                "high": "high",
-                "medium": "medium",
-                "low": "low"
-            }
+            "denyPlaceholder": "Why should this be blocked?"
         },
         "denialNote": {
             "deny": "Deny",
@@ -944,7 +944,9 @@
         },
         "credential": {
             "title": "Credential Request",
-            "skillLabel": "Skill:",
+            "accessTitle": "Access Request",
+            "domainsLabel": "Domains:",
+            "credentialsLabel": "Credentials:",
             "allow": "Allow",
             "denyPlaceholder": "Why should this credential access be blocked?",
             "decision": {
@@ -987,7 +989,9 @@
         "status": {
             "sentinel": "Sentinel reviewing…",
             "sandbox": "Starting sandbox…",
-            "skill": "Activating skill…",
+            "skill": "Preparing skill…",
+            "skillBuild": "Waiting for the skill build…",
+            "skillProfile": "Installing the skill's commands…",
             "credential": "Fetching credential…",
             "domain": "Checking domain {domain}…",
             "wait": "Waiting for approval…"
@@ -999,19 +1003,32 @@
             "skill": "skill",
             "bypass": "bypass",
             "denied": "denied",
-            "autonomy": "autonomy limit"
+            "autonomy": "autonomy limit",
+            "policy": "internal",
+            "titles": {
+                "sentinelPending": "The sentinel is reviewing this",
+                "sentinel_allow": "Allowed by the sentinel",
+                "sentinel_deny": "Denied by the sentinel",
+                "sentinel_escalate": "The sentinel left this to you",
+                "userAllow": "Allowed by you",
+                "userDeny": "Denied by you",
+                "skill": "Allowed by an active skill",
+                "autonomy": "Stopped by the autonomy limit",
+                "bypass": "Allowed without review (YOLO mode)",
+                "policy": "Refused as an internal destination",
+                "denied": "Denied"
+            }
         },
         "fallbacks": {
             "missingPath": "(missing path)",
             "missingCommand": "(missing command)",
-            "missingSkillName": "(missing skill_name)",
             "credential": "credential"
         },
         "labels": {
             "read": "read",
             "wrote": "wrote",
             "replaced": "replaced",
-            "activatedSkill": "activated skill",
+            "readSkill": "read skill",
             "executed": "executed",
             "listedCredentials": "listed credentials",
             "credentialDenied": "credential denied",
@@ -1021,7 +1038,7 @@
             "gitPush": "git push",
             "readAction": "read",
             "write": "write",
-            "activateSkill": "activate skill",
+            "readSkillAction": "read skill",
             "execute": "execute",
             "listCredentials": "list credentials",
             "accessCredential": "access credential",
@@ -1043,23 +1060,12 @@
             "allMatchesSuffix": " (all matches)"
         },
         "details": {
-            "activateSkillPromptPrefix": "Agent wants to activate the",
-            "activateSkillPromptSuffix": "skill.",
             "sentinelLabel": "Sentinel:",
+            "proxyLabel": "Proxy:",
             "sentinelReviewing": "Reviewing this tool call.",
-            "sentinelRequestsChanges": "Requests changes:",
             "commentForAgent": "Sentinel to the agent:",
             "userLabel": "User:",
             "deniedByUser": "Denied by user.",
-            "contexts": "Contexts:",
-            "domains": "Domains:",
-            "mcpServers": "MCP servers:",
-            "credentials": "Credentials",
-            "name": "Name",
-            "path": "Path",
-            "description": "Description",
-            "activation": "Activation",
-            "skillInstructions": "Skill Instructions",
             "source": "Source",
             "replacement": "Replacement",
             "diff": "Diff",
@@ -1075,7 +1081,7 @@
             "read": "{count, plural, one {read # file} other {read # files}}",
             "write": "{count, plural, one {wrote # file} other {wrote # files}}",
             "edit": "{count, plural, one {edited # file} other {edited # files}}",
-            "skill": "{count, plural, one {used # skill} other {used # skills}}",
+            "skill": "{count, plural, one {read # skill} other {read # skills}}",
             "other": "{count, plural, one {# more action} other {# more actions}}"
         },
         "present": {
@@ -1083,7 +1089,7 @@
             "read": "{count, plural, one {reading # file} other {reading # files}}",
             "write": "{count, plural, one {writing # file} other {writing # files}}",
             "edit": "{count, plural, one {editing # file} other {editing # files}}",
-            "skill": "{count, plural, one {using # skill} other {using # skills}}",
+            "skill": "{count, plural, one {reading # skill} other {reading # skills}}",
             "other": "{count, plural, one {# more action} other {# more actions}}"
         }
     },
@@ -1434,7 +1440,7 @@
         "savedJobs": "Saved Jobs",
         "loading": "Loading jobs...",
         "paused": "Paused",
-        "unattendedTooltip": "Unattended sessions cannot escalate tool calls",
+        "unattendedTooltip": "Runs without anyone to approve requests",
         "confirmDelete": "Delete job {name}?",
         "summary": {
             "onDemandOnly": "On-demand only",

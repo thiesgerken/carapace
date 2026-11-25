@@ -1,79 +1,83 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from loguru import logger
 
-from ..security.context import ApprovalSource, ApprovalVerdict
-from .file_ops import ContextFileCredential, WrittenContextFile
-from .runtime import ContainerGoneError, ContainerRuntime, ExecResult, NetworkTunnel
+from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
+from .exec_scope import RunningExec
+from .runtime import ContainerGoneError, ContainerRuntime, ExecResult
 from .session_lifecycle import SessionContainer
+from .skill_profile import KILLER_MARKER, KILLER_SYNC_PID, SkillProfileSync
+from .tunnels import ExecEndedError, Tunnel, close_script, listen_addresses, open_script
 
-type DomainApprovalCallback = Callable[[str, str], Awaitable[bool]]
+type DomainApprovalCallback = Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]
 type DomainNotifyCallback = Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None]
-type AfterExecCredentialNotify = Callable[[], None]
 type EnsureSessionCallback = Callable[[str], Awaitable[SessionContainer]]
 type RecreateSessionCallback = Callable[[str], Awaitable[SessionContainer]]
 type LogContainerTailCallback = Callable[[str, str], Awaitable[None]]
 type ExecInContainerCallback = Callable[..., Awaitable[ExecResult]]
-type PrepareContextTunnelsCallback = Callable[[SessionContainer, list[NetworkTunnel]], Awaitable[None]]
-type CleanupContextTunnelsCallback = Callable[[SessionContainer, list[NetworkTunnel]], Awaitable[None]]
-type WriteContextFileCredentialsCallback = Callable[
-    [SessionContainer, list[ContextFileCredential]],
-    Awaitable[list[WrittenContextFile]],
-]
-type DeleteContextFileCredentialsCallback = Callable[[str, list[WrittenContextFile]], Awaitable[None]]
 
 # Kills every process in the sandbox except PID 1 (the container's `sleep infinity`) and
 # prints how many live ones it found. Only bash builtins, since a fork would count itself.
 # kill(-1) signals everything but PID 1 and the caller in one kernel pass, so a forking
 # process cannot slip through. Zombies are not counted: `sleep infinity` never reaps them.
 # The killer must be the top process of its exec, or kill(-1) would take its wrapper down.
-KILL_LEFTOVER_PROCESSES_SCRIPT = """\
+KILL_LEFTOVER_PROCESSES_SCRIPT = f"""\
 if [[ $PPID != 0 ]]; then
     echo "process killer must not run below another process in the sandbox (parent $PPID)" >&2
     exit 1
 fi
+{KILLER_SYNC_PID}
 leftover=0
 for proc in /proc/[0-9]*; do
-    pid=${proc#/proc/}
+    pid=${{proc#/proc/}}
     [[ $pid == 1 || $pid == $$ ]] && continue
     read -r stat 2>/dev/null < "$proc/stat" || continue
-    state=${stat##*) }
-    [[ ${state%% *} == Z ]] || leftover=$((leftover + 1))
+    read -r state ppid _ <<< "${{stat##*) }}"
+    [[ $state == Z ]] && continue
+    # The skill profile sync dies like every other process, but it is no leftover of the agent's.
+    [[ -n $sync && ($pid == "$sync" || $ppid == "$sync") ]] && continue
+    leftover=$((leftover + 1))
 done
 # As root, kill(-1) only fails with ESRCH: everything counted has exited by itself meanwhile.
 kill -9 -1 2>/dev/null || true
 echo "$leftover"
+{KILLER_MARKER}
 """
-# Absolute path: /workspace/.carapace/bin comes first in PATH and holds skill shims.
+# A process that outlived its exec asks for nothing: what it was granted ended with that exec.
+ORPHANED_REQUEST_REJECTION = "Denied: no exec is running, the request comes from a process an earlier exec left behind."
+# The decision was made for an exec that is gone; granting it now would reach no one or the wrong exec.
+EXEC_ENDED_REJECTION = "Denied: the exec that asked ended before the decision came back."
+
+# Absolute path: the agent can write to directories on PATH.
 KILL_LEFTOVER_PROCESSES_COMMAND = ["/bin/bash", "-c", KILL_LEFTOVER_PROCESSES_SCRIPT]
 
 
 @dataclass
 class SandboxExecState:
     sessions: dict[str, SessionContainer]
-    allowed_domains: dict[str, set[str]]
     exec_temp_domains: dict[str, set[str]]
-    exec_context_skill_domains: dict[str, set[str]]
     session_current_command: dict[str, str]
     domain_approval_cbs: dict[str, DomainApprovalCallback]
     domain_notify_cbs: dict[str, DomainNotifyCallback]
     exec_locks: dict[str, asyncio.Lock]
-    proxy_bypass_sessions: set[str]
-    session_current_contexts: dict[str, list[str]]
     exec_notified_domains: dict[str, set[str]]
     exec_notified_credentials: dict[str, set[str]]
+    # One per running exec; what it was granted needs no further review until it ends.
+    running_execs: dict[str, RunningExec]
 
 
 class SandboxExecCoordinator:
-    def __init__(self, *, runtime: ContainerRuntime, state: SandboxExecState) -> None:
+    def __init__(self, *, runtime: ContainerRuntime, state: SandboxExecState, profile_sync: SkillProfileSync) -> None:
         self._runtime = runtime
         self._state = state
+        self._profile_sync = profile_sync
+        # What the last killer reported per session, until the sync it interrupted is started again.
+        self._profile_markers: dict[str, str] = {}
 
     def get_exec_lock(self, session_id: str) -> asyncio.Lock:
         if session_id not in self._state.exec_locks:
@@ -86,41 +90,18 @@ class SandboxExecCoordinator:
         command: str,
         timeout: int = 30,
         *,
-        bypass_proxy: bool = False,
         workdir: str | None = None,
-        extra_env: dict[str, str] | None = None,
         stdin: bytes | None = None,
     ) -> ExecResult:
         """Run *command* in *sc* without acquiring the exec lock."""
-        if bypass_proxy:
-            await self.kill_leftover_processes(sc)
-        # A bypassed install (e.g. skill re-activation after a sandbox restart) opens
-        # one connection per package; without a dedupe set each one becomes a UI entry.
-        # An enclosing exec() already owns a set, so only create (and drop) our own.
-        owns_notified_domains = bypass_proxy and sc.session_id not in self._state.exec_notified_domains
-        if owns_notified_domains:
-            self._state.exec_notified_domains[sc.session_id] = set()
-        if bypass_proxy:
-            self._state.proxy_bypass_sessions.add(sc.session_id)
-            logger.info(f"Proxy bypass ENABLED for session {sc.session_id}")
-        try:
-            env = sc.session_env or None
-            if extra_env:
-                env = {**(sc.session_env or {}), **extra_env}
-            return await self._runtime.exec(
-                sc.container_id,
-                command,
-                timeout=timeout,
-                workdir=workdir,
-                env=env,
-                stdin=stdin,
-            )
-        finally:
-            if bypass_proxy:
-                self._state.proxy_bypass_sessions.discard(sc.session_id)
-                logger.info(f"Proxy bypass DISABLED for session {sc.session_id}")
-            if owns_notified_domains:
-                self._state.exec_notified_domains.pop(sc.session_id, None)
+        return await self._runtime.exec(
+            sc.container_id,
+            command,
+            timeout=timeout,
+            workdir=workdir,
+            env=sc.session_env or None,
+            stdin=stdin,
+        )
 
     async def exec(
         self,
@@ -132,48 +113,21 @@ class SandboxExecCoordinator:
         recreate_session: RecreateSessionCallback,
         log_container_tail: LogContainerTailCallback,
         exec_in_container: ExecInContainerCallback,
-        prepare_context_tunnels: PrepareContextTunnelsCallback,
-        cleanup_context_tunnels: CleanupContextTunnelsCallback,
-        write_context_file_credentials: WriteContextFileCredentialsCallback,
-        delete_context_file_credentials: DeleteContextFileCredentialsCallback,
-        bypass_proxy: bool = False,
         workdir: str | None = None,
-        contexts: list[str] | None = None,
-        extra_env: dict[str, str] | None = None,
-        context_domains: set[str] | None = None,
-        context_tunnels: list[NetworkTunnel] | None = None,
-        context_file_creds: list[ContextFileCredential] | None = None,
-        after_exec_credential_notify: AfterExecCredentialNotify | None = None,
         stdin: bytes | None = None,
     ) -> ExecResult:
         """Run a command in the sandbox and return the raw ExecResult.
 
-        Leftover processes are killed before anything is granted to the session, so
-        only processes started by this call see its contexts, domains and credentials.
+        Leftover processes are killed before the exec scope opens, so only processes started by this
+        call can use what its boundary requests are granted.
         """
-        contexts = contexts or []
-        written_files: list[WrittenContextFile] = []
-        sc: SessionContainer | None = None
-        tunnels_prepared = False
 
         async def run_in(container: SessionContainer) -> ExecResult:
-            nonlocal written_files, tunnels_prepared
             leftover_processes_killed = await self.kill_leftover_processes(container)
-            self._grant_exec_scope(session_id, command, contexts, context_domains, bypass_proxy=bypass_proxy)
-            if context_tunnels:
-                await prepare_context_tunnels(container, context_tunnels)
-                tunnels_prepared = True
-            if context_file_creds:
-                written_files = await write_context_file_credentials(container, context_file_creds)
-            result = await exec_in_container(
-                container,
-                command,
-                timeout,
-                workdir=workdir,
-                bypass_proxy=False,
-                extra_env=extra_env,
-                stdin=stdin,
-            )
+            self._resume_profile_sync(container)
+            self._grant_exec_scope(session_id, command)
+            result = await exec_in_container(container, command, timeout, workdir=workdir, stdin=stdin)
+            result = self._profile_sync.with_hint(session_id, result)
             return result.model_copy(update={"leftover_processes_killed": leftover_processes_killed})
 
         async with self.get_exec_lock(session_id):
@@ -181,116 +135,121 @@ class SandboxExecCoordinator:
                 sc = await ensure_session(session_id)
                 sc.last_used = time.time()
                 logger.debug(f"Exec in session {session_id}: {command}")
-
                 try:
-                    exec_result = await run_in(sc)
+                    return await run_in(sc)
                 except ContainerGoneError:
                     logger.warning(f"Container gone for session {session_id}, recreating sandbox")
-                    self._revoke_exec_scope(session_id, bypass_proxy=bypass_proxy)
-                    tunnels_prepared = False
-                    written_files.clear()
+                    self._revoke_exec_scope(session_id)
                     await log_container_tail(sc.container_id, session_id)
-                    sc = await recreate_session(session_id)
-                    exec_result = await run_in(sc)
-
-                if after_exec_credential_notify is not None:
-                    after_exec_credential_notify()
-                return exec_result
+                    return await run_in(await recreate_session(session_id))
             finally:
-                original_exc = sys.exc_info()[1]
-                cleanup_exc: Exception | None = None
-                self._revoke_exec_scope(session_id, bypass_proxy=bypass_proxy)
+                running = self._state.running_execs.get(session_id)
+                self._revoke_exec_scope(session_id)
+                if running is not None:
+                    await self._close_tunnels(running)
 
-                if sc is not None and tunnels_prepared and context_tunnels:
-                    try:
-                        await cleanup_context_tunnels(sc, context_tunnels)
-                    except Exception as exc:
-                        cleanup_exc = exc
-                        logger.opt(exception=True).warning(
-                            f"Failed to clean up context tunnels for session {session_id}"
-                        )
+    async def open_tunnels(self, running: RunningExec, tunnels: list[Tunnel]) -> str | None:
+        """Open *tunnels* for the running exec; why they could not be opened, or None.
 
-                if written_files:
-                    await delete_context_file_credentials(session_id, written_files)
+        Runs while that exec holds the exec lock, so it goes to the container directly. Raises
+        ``ExecEndedError`` when the exec ended before the tunnels could be opened.
+        """
+        async with running.tunnel_lock:
+            if not self.is_running(running):
+                raise ExecEndedError
+            new = listen_addresses(running.tunnels, [tunnel for tunnel in tunnels if tunnel not in running.tunnels])
+            if not new:
+                return None
+            sc = self._state.sessions[running.session_id]
+            script = open_script(new, running.tunnels)
+            # Recorded first: the close at the end of the exec also cleans up a half-opened tunnel.
+            running.tunnels.update(new)
+            result = await self._runtime.exec(
+                sc.container_id, ["/bin/bash", "-c", script], timeout=30, env=sc.session_env or None
+            )
+            if result.exit_code != 0:
+                # Closes the exec's other tunnels too: recorded as open, a failed one would let a retry
+                # answer 200 with nothing listening. Starting over is the simple way to keep the record true.
+                await self._run_close_script(sc)
+                running.tunnels.clear()
+                return f"The tunnels could not be opened: {result.output.strip()[-2000:]}"
+            return None
 
-                if cleanup_exc is not None and original_exc is None:
-                    raise cleanup_exc
+    async def _close_tunnels(self, running: RunningExec) -> None:
+        """Close what the exec opened; waits for an open that is still running."""
+        async with running.tunnel_lock:
+            sc = self._state.sessions.get(running.session_id)
+            if not running.tunnels or sc is None:
+                return
+            try:
+                await self._run_close_script(sc)
+            except ContainerGoneError:
+                return
+
+    async def _run_close_script(self, sc: SessionContainer) -> None:
+        result = await self._runtime.exec(sc.container_id, ["/bin/bash", "-c", close_script()], timeout=30)
+        if result.exit_code != 0:
+            # Left open, /etc/hosts would keep pointing the hosts at forwarders the next killer ends.
+            raise RuntimeError(f"Failed to close the tunnels of session {sc.session_id}: {result.output}")
+
+    async def sync_skill_profile(self, session_id: str, *, ensure_session: EnsureSessionCallback) -> str | None:
+        """Bring the session's skill profile to its plan and wait for it: why it failed, or None.
+
+        Under the exec lock, so no exec's killer ends the sync halfway.
+        """
+        async with self.get_exec_lock(session_id):
+            sc = await ensure_session(session_id)
+            return await self._profile_sync.sync(session_id, sc.container_id)
 
     async def kill_leftover_processes(self, sc: SessionContainer) -> int:
-        """Kill every process in *sc* except PID 1 and return how many were alive."""
+        """Kill every process in *sc* except PID 1 and return how many the agent left behind.
+
+        That includes a running skill profile sync. The caller starts it again with ``_resume_profile_sync``.
+        """
+        self._profile_sync.stop(sc.session_id)
         result = await self._runtime.exec(sc.container_id, KILL_LEFTOVER_PROCESSES_COMMAND, timeout=30)
         if result.exit_code != 0:
             raise RuntimeError(f"Failed to kill leftover processes in session {sc.session_id}: {result.output}")
-        killed = int(result.stdout)
+        count, _, marker = result.stdout.partition("\n")
+        self._profile_markers[sc.session_id] = marker.strip()
+        killed = int(count)
         if killed:
             logger.info(f"Killed {killed} leftover process(es) in session {sc.session_id}")
         return killed
 
-    def _grant_exec_scope(
-        self,
-        session_id: str,
-        command: str,
-        contexts: list[str],
-        context_domains: set[str] | None,
-        *,
-        bypass_proxy: bool,
-    ) -> None:
+    def _resume_profile_sync(self, sc: SessionContainer) -> None:
+        """Start the profile sync the killer interrupted."""
+        marker = self._profile_markers.pop(sc.session_id, None)
+        if marker is not None:
+            self._profile_sync.start(sc.session_id, sc.container_id, marker=marker)
+
+    def _grant_exec_scope(self, session_id: str, command: str) -> None:
         self._state.session_current_command[session_id] = command
-        self._state.session_current_contexts[session_id] = contexts
-        self._state.exec_temp_domains[session_id] = set(context_domains or ())
-        self._state.exec_context_skill_domains[session_id] = set(context_domains or ())
+        self._state.exec_temp_domains[session_id] = set()
         self._state.exec_notified_domains[session_id] = set()
         self._state.exec_notified_credentials[session_id] = set()
-        if bypass_proxy:
-            self._state.proxy_bypass_sessions.add(session_id)
-            logger.info(f"Proxy bypass ENABLED for session {session_id}")
+        self._state.running_execs[session_id] = RunningExec(
+            session_id=session_id,
+            command=command,
+            domains=self._state.exec_temp_domains[session_id],
+            credentials=set(),
+        )
 
-    def _revoke_exec_scope(self, session_id: str, *, bypass_proxy: bool) -> None:
-        if bypass_proxy and session_id in self._state.proxy_bypass_sessions:
-            self._state.proxy_bypass_sessions.discard(session_id)
-            logger.info(f"Proxy bypass DISABLED for session {session_id}")
+    def _revoke_exec_scope(self, session_id: str) -> None:
         self._state.session_current_command.pop(session_id, None)
-        self._state.session_current_contexts.pop(session_id, None)
         self._state.exec_temp_domains.pop(session_id, None)
-        self._state.exec_context_skill_domains.pop(session_id, None)
         self._state.exec_notified_domains.pop(session_id, None)
         self._state.exec_notified_credentials.pop(session_id, None)
-
-    def allow_domains(self, session_id: str, domains: set[str]) -> None:
-        existing = self._state.allowed_domains.setdefault(session_id, set())
-        existing.update(domains)
-        logger.info(f"Allowed domains for session {session_id}: {existing}")
-
-    def get_allowed_domains(self, session_id: str) -> set[str]:
-        return self._state.allowed_domains.get(session_id, set())
+        self._state.running_execs.pop(session_id, None)
 
     def get_domain_info(self, session_id: str) -> list[dict[str, str]]:
-        entries: list[dict[str, str]] = []
-        for domain in sorted(self._state.allowed_domains.get(session_id, set())):
-            entries.append({"domain": domain, "scope": "permanent"})
-        for domain in sorted(self._state.exec_temp_domains.get(session_id, set())):
-            entries.append({"domain": domain, "scope": "this exec only"})
-        return entries
+        return [
+            {"domain": domain, "scope": "this exec only"}
+            for domain in sorted(self._state.exec_temp_domains.get(session_id, set()))
+        ]
 
     def get_effective_domains(self, session_id: str) -> set[str]:
-        if session_id in self._state.proxy_bypass_sessions:
-            return {"*"}
-        domains = set(self._state.allowed_domains.get(session_id, set()))
-        domains.update(self._state.exec_temp_domains.get(session_id, set()))
-        return domains
-
-    def get_current_contexts(self, session_id: str) -> list[str]:
-        return self._state.session_current_contexts.get(session_id, [])
-
-    def is_domain_skill_granted(self, session_id: str, domain: str) -> bool:
-        from .proxy import domain_matches
-
-        skill_domains = self._state.exec_context_skill_domains.get(session_id, set())
-        domain_lower = domain.lower()
-        return any(domain_matches(domain_lower, pattern.lower()) for pattern in skill_domains)
-
-    def is_domain_bypass(self, session_id: str) -> bool:
-        return session_id in self._state.proxy_bypass_sessions
+        return set(self._state.exec_temp_domains.get(session_id, set()))
 
     def mark_credential_notified(self, session_id: str, vault_path: str) -> bool:
         notified = self._state.exec_notified_credentials.get(session_id)
@@ -301,26 +260,24 @@ class SandboxExecCoordinator:
         notified.add(vault_path)
         return False
 
-    def notify_domain_access(self, session_id: str, domain: str, allowed: bool) -> None:
-        cb = self._state.domain_notify_cbs.get(session_id)
-        if cb is None:
-            return
+    def running_exec(self, session_id: str) -> RunningExec | None:
+        """The scope of the running exec, or None between execs."""
+        return self._state.running_execs.get(session_id)
 
-        if allowed:
-            if self.is_domain_bypass(session_id):
-                notified = self._state.exec_notified_domains.get(session_id)
-                if notified is not None and domain in notified:
-                    return
-                if notified is not None:
-                    notified.add(domain)
-                cb(domain, f"[bypass] {domain}", "bypass", "allow", "proxy bypass active")
-            elif self.is_domain_skill_granted(session_id, domain):
-                notified = self._state.exec_notified_domains.get(session_id)
-                if notified is not None and domain in notified:
-                    return
-                if notified is not None:
-                    notified.add(domain)
-                cb(domain, f"[skill] {domain}", "skill", "allow", "skill-declared domain")
+    def is_running(self, running: RunningExec) -> bool:
+        # Every exec gets its own scope objects, so identity tells this exec apart from a later one. The
+        # domain set is checked too: session teardown drops it without knowing about running execs.
+        return (
+            self._state.running_execs.get(running.session_id) is running
+            and self._state.exec_temp_domains.get(running.session_id) is running.domains
+        )
+
+    def notify_domain_access(self, session_id: str, domain: str, allowed: bool, refusal: str | None = None) -> None:
+        """Show a denial no reviewer made; *refusal* is the destination policy's reason, if that refused it."""
+        if allowed or (cb := self._state.domain_notify_cbs.get(session_id)) is None:
+            return
+        if refusal is not None:
+            cb(domain, f"[denied] {domain}", "policy", "deny", refusal)
         else:
             cb(domain, f"[denied] {domain}", "unknown", "deny", "no approval callback configured")
 
@@ -336,30 +293,34 @@ class SandboxExecCoordinator:
         else:
             self._state.domain_notify_cbs[session_id] = cb
 
-    async def request_domain_approval(self, session_id: str, domain: str) -> bool:
+    async def request_domain_approval(self, session_id: str, domain: str) -> BoundaryEvaluation:
         cb = self._state.domain_approval_cbs.get(session_id)
         if cb is None:
             logger.warning(f"No domain approval callback for session {session_id}, denying {domain}")
-            return False
+            return BoundaryEvaluation(allowed=False, rejection="No approval path is set up for this session.")
 
-        # No live exec: the request comes from a process orphaned by a cancelled
-        # exec (e.g. an interrupted skill install still hitting registry.npmjs.org).
+        # No live exec: the request comes from a process an earlier exec left behind.
         # Deny without invoking the sentinel so orphaned traffic can't burn tokens.
-        if session_id not in self._state.session_current_command:
+        running = self.running_exec(session_id)
+        if running is None:
             logger.info(f"Denying {domain} for session {session_id}: no active exec (orphaned request)")
-            return False
+            return BoundaryEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
 
-        command = self._state.session_current_command.get(session_id, "")
-        allowed = await cb(domain, command)
-        if allowed:
-            self._state.exec_temp_domains.setdefault(session_id, set()).add(domain)
+        evaluation = await cb(domain, running)
+        if not self.is_running(running):
+            logger.info(f"Denying {domain} for session {session_id}: its exec ended during the review")
+            return BoundaryEvaluation(allowed=False, rejection=EXEC_ENDED_REJECTION)
+        running.boundary_reviewed = True
+        if evaluation.allowed:
+            running.domains.add(domain)
             logger.info(f"Security approved {domain} for session {session_id}")
         else:
             logger.info(f"Security denied {domain} for session {session_id}")
-        return allowed
+        return evaluation
 
     def cleanup_tracking(self, session_id: str) -> None:
         self._state.domain_approval_cbs.pop(session_id, None)
         self._state.domain_notify_cbs.pop(session_id, None)
         self._state.exec_notified_domains.pop(session_id, None)
         self._state.exec_notified_credentials.pop(session_id, None)
+        self._state.running_execs.pop(session_id, None)

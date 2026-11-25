@@ -106,18 +106,6 @@ class TestGitStoreEnsureRepo:
 
         assert (repo_dir / ".git").is_dir()
 
-    @pytest.mark.parametrize("existing", [False, True])
-    async def test_reachable_revision_fetch_enabled(self, repo_dir: Path, existing: bool) -> None:
-        store = GitStore(repo_dir)
-        if existing:
-            await store.ensure_repo()
-            await store._run("config", "uploadpack.allowReachableSHA1InWant", "false")
-        await store.ensure_repo()
-
-        code, value = await store._run("config", "uploadpack.allowReachableSHA1InWant")
-        assert code == 0
-        assert value == "true"
-
     async def test_update_instead_configured(self, repo_dir: Path):
         store = GitStore(repo_dir)
         await store.ensure_repo()
@@ -207,9 +195,36 @@ class TestPreReceiveHook:
         assert ("initial" in str(payload["commits"])) is (branch == "feature")
         assert '+incoming "quoted" content' in str(payload["diff"])
         assert ("-initial" in str(payload["diff"])) is (branch == "main")
+        assert payload["flake_locks"] == []
         receiver = GitStore(sender.repo_dir.parent / "receiver")
         _, pushed_sha = await receiver._run("rev-parse", f"refs/heads/{branch}")
         assert pushed_sha == await sender.head_sha()
+
+    async def test_push_sends_both_sides_of_each_changed_flake_lock(
+        self,
+        sender: GitStore,
+        hook_env: None,
+        sentinel_api: SentinelStub,
+    ) -> None:
+        lock = sender.repo_dir / "skills" / "demo" / "flake.lock"
+        lock.parent.mkdir(parents=True)
+        lock.write_text('{"version": 7}\n')
+        await sender.commit(["skills/demo/flake.lock"], "add lock")
+        assert (await sender._run("push", "origin", "HEAD:refs/heads/main"))[0] == 0
+        lock.write_text('{"version": 7, "changed": true}\n')
+        await sender.commit(["skills/demo/flake.lock"], "bump lock")
+        sentinel_api.responses.append((200, b'{"verdict": "allow"}'))
+        assert (await sender._run("push", "origin", "HEAD:refs/heads/main"))[0] == 0
+
+        added, bumped = (payload["flake_locks"] for payload in sentinel_api.requests)
+        assert added == [{"path": "skills/demo/flake.lock", "old": None, "new": '{"version": 7}\n'}]
+        assert bumped == [
+            {
+                "path": "skills/demo/flake.lock",
+                "old": '{"version": 7}\n',
+                "new": '{"version": 7, "changed": true}\n',
+            }
+        ]
 
     async def test_oversized_artifact_rejected_before_sentinel(
         self,

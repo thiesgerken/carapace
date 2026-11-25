@@ -17,6 +17,7 @@ from loguru import logger
 
 from .k8s_exec_v5 import EXEC_V5_PROTOCOL, ExecProtocolError, exec_v5
 from .runtime import (
+    EGRESS_PROBE_LABEL,
     ContainerConfig,
     ContainerGoneError,
     ContainerRuntime,
@@ -155,6 +156,7 @@ class KubernetesRuntime(ContainerRuntime):
         priority_class: str | None = None,
         owner_ref: bool = True,
         server_deployment_name: str = "carapace",
+        server_service: str,
         sandboxes_name: str | None = "carapace-sandboxes",
         app_instance: str = "carapace",
         session_pvc_size: str = "1Gi",
@@ -163,6 +165,8 @@ class KubernetesRuntime(ContainerRuntime):
         resource_requests_memory: str = "",
         resource_limits_cpu: str = "",
         resource_limits_memory: str = "",
+        resource_requests_ephemeral_storage: str = "",
+        resource_limits_ephemeral_storage: str = "",
     ) -> None:
         self._namespace = namespace
         self._pvc_claim = pvc_claim
@@ -173,36 +177,30 @@ class KubernetesRuntime(ContainerRuntime):
         self._session_pvc_size = session_pvc_size
         self._session_pvc_storage_class = session_pvc_storage_class or None
         self._resource_spec = self._build_resource_spec(
-            resource_requests_cpu,
-            resource_requests_memory,
-            resource_limits_cpu,
-            resource_limits_memory,
+            requests={
+                "cpu": resource_requests_cpu,
+                "memory": resource_requests_memory,
+                "ephemeral-storage": resource_requests_ephemeral_storage,
+            },
+            limits={
+                "cpu": resource_limits_cpu,
+                "memory": resource_limits_memory,
+                "ephemeral-storage": resource_limits_ephemeral_storage,
+            },
         )
         self._want_owner_ref = owner_ref
         self._server_deployment_name = server_deployment_name
+        self._server_service = server_service
         self._sandboxes_name = sandboxes_name
         self._sandbox_owner: _SandboxOwner | None = None
 
         logger.info(f"KubernetesRuntime initialized (namespace={namespace}, pvc={pvc_claim}, data_dir={data_dir})")
 
     @staticmethod
-    def _build_resource_spec(
-        req_cpu: str,
-        req_mem: str,
-        lim_cpu: str,
-        lim_mem: str,
-    ) -> dict | None:
-        """Build a Kubernetes container resources dict, or None if nothing is set."""
-        requests: dict[str, str] = {}
-        limits: dict[str, str] = {}
-        if req_cpu:
-            requests["cpu"] = req_cpu
-        if req_mem:
-            requests["memory"] = req_mem
-        if lim_cpu:
-            limits["cpu"] = lim_cpu
-        if lim_mem:
-            limits["memory"] = lim_mem
+    def _build_resource_spec(*, requests: dict[str, str], limits: dict[str, str]) -> dict | None:
+        """Build a Kubernetes container resources dict from the set values, or None if nothing is set."""
+        requests = {name: value for name, value in requests.items() if value}
+        limits = {name: value for name, value in limits.items() if value}
         if not requests and not limits:
             return None
         spec: dict = {}
@@ -613,6 +611,22 @@ class KubernetesRuntime(ContainerRuntime):
                 result.setdefault(session_id, []).append(f"{sts.name}-0")
         return result
 
+    async def list_egress_probes(self) -> dict[str, str]:
+        api = await self._ensure_api()
+        result: dict[str, str] = {}
+        async for sts in StatefulSet.list(
+            namespace=self._namespace,
+            label_selector=(
+                f"app.kubernetes.io/managed-by=carapace-server,"
+                f"app.kubernetes.io/instance={self._app_instance},{EGRESS_PROBE_LABEL}=true"
+            ),
+            api=api,
+        ):
+            sts = cast(StatefulSet, sts)
+            if not _is_terminating(sts):
+                result[sts.labels["carapace.sandbox"]] = f"{sts.name}-0"
+        return result
+
     async def retained_sandbox_session_ids(self) -> set[str]:
         """A scaled-down StatefulSet keeps its PVC, so every listed sandbox is retained."""
         return set(await self.list_sandboxes())
@@ -813,7 +827,7 @@ class KubernetesRuntime(ContainerRuntime):
             env_prefix = " ".join(f"{shlex.quote(k)}={shlex.quote(v)}" for k, v in env.items())
             shell_cmd = f"/usr/bin/env {env_prefix} /bin/bash -c {shlex.quote(shell_cmd)}"
 
-        # Absolute paths: /workspace/.carapace/bin comes first in PATH and holds skill shims.
+        # Absolute paths: the agent can write to the directories on PATH.
         exec_command = ["/bin/bash", "-c", shell_cmd]
         logger.debug(f"Exec in pod {container_id}: {command_preview} (timeout={timeout}s)")
 
@@ -957,17 +971,12 @@ class KubernetesRuntime(ContainerRuntime):
             return {}
 
     async def get_host_ip(self, network: str) -> str | None:
-        """Return the carapace service ClusterIP."""
-        service_host = os.environ.get("CARAPACE_SERVICE_HOST")
-        if service_host:
-            return service_host
-
-        svc_dns = f"carapace.{self._namespace}.svc.cluster.local"
+        """Return the ClusterIP of the server's Service, where sandboxes reach the proxy."""
+        svc_dns = f"{self._server_service}.{self._namespace}.svc"
         try:
             return await asyncio.to_thread(socket.gethostbyname, svc_dns)
-        except socket.gaierror:
-            logger.warning(f"Could not resolve {svc_dns}")
-            return None
+        except socket.gaierror as exc:
+            raise RuntimeError(f"Cannot resolve the server Service {svc_dns}: {exc}") from exc
 
     async def write_stdout_log(self, container_id: str, message: str) -> None:
         quoted_message = shlex.quote(message)

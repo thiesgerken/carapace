@@ -13,25 +13,25 @@ from pydantic_ai.usage import RunUsage
 from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps
 from carapace.agent.tools import create_agent
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models.config import Config
 from carapace.models.session import SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity
-from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
 
 def _deps(tmp_path: Path) -> Deps:
     return Deps(
+        skill_builds=SkillBuilds(None),
         config=Config(),
         data_dir=tmp_path / "data",
         knowledge_dir=tmp_path / "knowledge",
         session_state=SessionState.now(session_id="s1"),
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1"),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
@@ -49,14 +49,13 @@ async def _call(deps: Deps, tool_name: str, arg: str) -> Any:
 
 
 @pytest.mark.anyio
-async def test_show_artifact_references_a_pushed_artifact_without_asking_the_sentinel(tmp_path: Path) -> None:
+async def test_show_artifact_references_a_pushed_artifact(tmp_path: Path) -> None:
     deps = _deps(tmp_path)
     index = deps.knowledge_dir / "artifacts" / "report" / "index.html"
     index.parent.mkdir(parents=True)
     index.write_text("<head><title> Quarterly\n report </title></head>")
 
     assert json.loads(await _call(deps, "show_artifact", "report")) == {"slug": "report", "title": "Quarterly report"}
-    assert not deps.sentinel.mock_calls
     assert not deps.sandbox.mock_calls
 
 

@@ -152,7 +152,6 @@ class ToolCallInfo(BaseModel):
     tool: str
     args: dict[str, Any]
     detail: str
-    contexts: list[str] = []
     approval_source: ApprovalSource | None = None
     approval_verdict: ApprovalVerdict | None = None
     approval_explanation: str | None = None
@@ -216,7 +215,6 @@ class ApprovalRequest(BaseModel):
     tool: str
     args: dict[str, Any]
     explanation: str = ""
-    risk_level: str = ""
 
 
 class DomainAccessApprovalRequest(BaseModel):
@@ -239,14 +237,14 @@ class GitPushApprovalRequest(BaseModel):
 
 
 class CredentialApprovalRequest(BaseModel):
-    """Server → Client: sentinel escalated a credential access request to the user."""
+    """Server → Client: sentinel escalated a credential request, or an up-front request with domains, to the user."""
 
     type: Literal["credential_approval_request"] = "credential_approval_request"
     request_id: str
     vault_paths: list[str]
     names: list[str]
     descriptions: list[str]
-    skill_name: str | None = None
+    domains: list[str]
     explanation: str = ""
 
 

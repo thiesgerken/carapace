@@ -14,9 +14,11 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 from .. import security as security_mod
 from ..models.tooling import normalize_tool_call_args
 from ..notifications.router import NotificationRouter, build_escalation_notification_id
+from ..sandbox.exec_scope import RunningExec
 from ..security.context import (
     ApprovalSource,
     ApprovalVerdict,
+    BoundaryEvaluation,
     SessionSecurity,
     UserEscalationDecision,
     normalize_optional_message,
@@ -64,7 +66,7 @@ def _escalation_response_event(
     }
     match kind:
         case "credential_access":
-            return {"role": "credential_approval", "vault_paths": [context.get("vault_path", subject)], **common}
+            return {"role": "credential_approval", "vault_paths": context["vault_paths"], **common}
         case "git_push":
             return {"role": "git_push_approval", "domain": subject, "command": cmd, **common}
         case _:
@@ -98,7 +100,6 @@ class SessionApprovalMixin:
         match_args: dict[str, Any] | None = None,
     ) -> str:
         normalized_args = normalize_tool_call_args(tool, args)
-        contexts_raw = normalized_args.get("contexts")
         matching_args = normalize_tool_call_args(tool, match_args) if match_args is not None else normalized_args
         event: dict[str, Any] = {
             "role": "tool_call",
@@ -113,8 +114,6 @@ class SessionApprovalMixin:
             event["parent_tool_id"] = parent_tool_id
         if approval_comment is not None:
             event["approval_comment"] = approval_comment
-        if isinstance(contexts_raw, list):
-            event["contexts"] = list(contexts_raw)
 
         is_pending_sentinel_update = approval_source == "sentinel" and approval_verdict is None
         should_update_existing = approval_source in {"sentinel", "user"} and (
@@ -239,19 +238,22 @@ class SessionApprovalMixin:
             )
             await self._broadcast(active, "on_git_push_approval_request", request_id, ref, explanation, changed_files)
         elif kind == "credential_access":
-            vault_path = context.get("vault_path", subject)
-            cred_name = context.get("name", vault_path)
-            cred_desc = context.get("description", "")
-            explanation = context.get("explanation", "")
+            # Credentials and, for an up-front request, the domains it declared next to them.
+            vault_paths: list[str] = context["vault_paths"]
+            names: list[str] = context["names"]
+            descriptions: list[str] = context["descriptions"]
+            domains: list[str] = context["domains"]
+            explanation = context["explanation"]
             self._session_mgr.append_events(
                 session_id,
                 [
                     {
                         "role": "credential_approval",
                         "request_id": request_id,
-                        "vault_paths": [vault_path],
-                        "names": [cred_name],
-                        "descriptions": [cred_desc],
+                        "vault_paths": vault_paths,
+                        "names": names,
+                        "descriptions": descriptions,
+                        "domains": domains,
                         "explanation": explanation,
                     }
                 ],
@@ -260,10 +262,11 @@ class SessionApprovalMixin:
                 {
                     "request_id": request_id,
                     "kind": "credential_access",
-                    "vault_path": vault_path,
-                    "vault_paths": [vault_path],
-                    "names": [cred_name],
-                    "descriptions": [cred_desc],
+                    "vault_path": context["vault_path"],
+                    "vault_paths": vault_paths,
+                    "names": names,
+                    "descriptions": descriptions,
+                    "domains": domains,
                     "explanation": explanation,
                 }
             )
@@ -271,10 +274,10 @@ class SessionApprovalMixin:
                 active,
                 "on_credential_approval_request",
                 request_id,
-                [vault_path],
-                [cred_name],
-                [cred_desc],
-                None,
+                vault_paths,
+                names,
+                descriptions,
+                domains,
                 explanation,
             )
         else:
@@ -466,26 +469,28 @@ class SessionApprovalMixin:
         security: SessionSecurity,
         sentinel: Sentinel,
         active: ActiveSession,
-    ) -> Callable[[str, str], Awaitable[bool]]:
+    ) -> Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]:
         """Build a callback for SandboxManager.request_domain_approval."""
 
-        async def _eval(domain: str, command: str) -> bool:
+        async def _eval(domain: str, running: RunningExec) -> BoundaryEvaluation:
             with self.llm_request_recording(active):
                 try:
                     return await security_mod.evaluate_domain_with(
                         security,
                         sentinel,
                         domain,
-                        command,
+                        running.command,
+                        exec_id=running.exec_id,
+                        follow_up=running.boundary_reviewed,
                         usage_tracker=active.usage_tracker,
                         assert_llm_budget_available=lambda: self._assert_llm_budget_available(active),
                         usage_limits=self._remaining_aux_usage_limits(active),
                     )
                 except SessionBudgetExceededError as exc:
                     logger.info(f"Session budget blocked domain evaluation for {active.state.session_id}: {exc}")
-                    return False
+                    return BoundaryEvaluation(allowed=False, rejection=str(exc))
                 except UsageLimitExceeded as exc:
                     logger.info(f"Usage limits blocked domain evaluation for {active.state.session_id}: {exc}")
-                    return False
+                    return BoundaryEvaluation(allowed=False, rejection=str(exc))
 
         return _eval

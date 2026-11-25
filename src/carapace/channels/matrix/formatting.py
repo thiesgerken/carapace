@@ -37,26 +37,7 @@ def format_command_result_text(result: CommandResult) -> str:
             ]
             return "\n".join(lines)
 
-        case "approve-context":
-            return data.get("message", "Context approved.")
-
         case "session":
-            grants = dict_of_dicts(data.get("context_grants"))
-            if grants:
-                grant_lines: list[str] = []
-                for skill, info in grants.items():
-                    parts_g = [f"- **{skill}**"]
-                    domains_list = info.get("domains")
-                    if isinstance(domains_list, list) and domains_list:
-                        parts_g.append(f"  domains: {', '.join(str(d) for d in domains_list)}")
-                    vps = info.get("vault_paths")
-                    cached = info.get("cached_credentials", 0)
-                    if isinstance(vps, list) and vps:
-                        parts_g.append(f"  credentials: {len(vps)} declared, {cached} cached")
-                    grant_lines.append("\n".join(parts_g))
-                grants_str = "\n" + "\n".join(grant_lines)
-            else:
-                grants_str = " (none)"
             domain_entries = list_of_dicts(data.get("allowed_domains"))
             if domain_entries:
                 domains_str = "\n" + "\n".join(
@@ -67,7 +48,6 @@ def format_command_result_text(result: CommandResult) -> str:
             lines = [
                 f"**Session:** `{data.get('session_id', '?')}`",
                 f"**Channel:** {data.get('channel_type', '?')}",
-                f"**Context grants:**{grants_str}",
                 f"**Allowed domains:**{domains_str}",
             ]
             return "\n".join(lines)
@@ -349,8 +329,6 @@ def format_approval_request(req: ApprovalRequest) -> str:
     ]
     if req.explanation:
         parts.append(f"**Reason:** {req.explanation}")
-    if req.risk_level:
-        parts.append(f"**Risk level:** {req.risk_level}")
     parts += [
         f"**Arguments:**\n```json\n{args_text}\n```",
         "",

@@ -16,6 +16,7 @@ from docker.utils.socket import consume_socket_output, demux_adaptor, frames_ite
 from loguru import logger
 
 from .runtime import (
+    EGRESS_PROBE_LABEL,
     ContainerConfig,
     ContainerGoneError,
     ContainerRuntime,
@@ -27,6 +28,8 @@ from .runtime import (
 )
 
 _FALLBACK_SOCKETS = (Path.home() / ".docker/run/docker.sock",)
+# Evaluating nixpkgs for an ad-hoc `nix run` peaks around 1.3 GiB (#548).
+_SANDBOX_MEMORY_LIMIT = "2g"
 
 
 def _connect() -> docker.DockerClient:
@@ -290,6 +293,13 @@ class DockerRuntime(ContainerRuntime):
 
         return await asyncio.to_thread(_list)
 
+    async def list_egress_probes(self) -> dict[str, str]:
+        def _list() -> dict[str, str]:
+            containers = self._client.containers.list(all=True, filters={"label": [f"{EGRESS_PROBE_LABEL}=true"]})
+            return {c.labels["carapace.sandbox"]: c.id or "" for c in containers}
+
+        return await asyncio.to_thread(_list)
+
     async def retained_sandbox_session_ids(self) -> set[str]:
         """Sessions with a container or a kept workspace.
 
@@ -375,6 +385,7 @@ class DockerRuntime(ContainerRuntime):
             mounts=mounts,
             network=config.network,
             environment=config.environment or None,
+            mem_limit=_SANDBOX_MEMORY_LIMIT,
             detach=True,
         )
 
@@ -410,7 +421,7 @@ class DockerRuntime(ContainerRuntime):
                 container = self._client.containers.get(container_id)
             except NotFound as err:
                 raise ContainerGoneError(f"Container {container_id[:12]} no longer exists") from err
-            # Absolute path: /workspace/.carapace/bin comes first in PATH and holds skill shims.
+            # Absolute path: the agent can write to the directories on PATH.
             cmd = ["/bin/bash", "-c", command] if isinstance(command, str) else command
 
             try:

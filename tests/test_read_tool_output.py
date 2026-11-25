@@ -12,13 +12,13 @@ from pydantic_ai.usage import RunUsage
 from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps
 from carapace.agent.tools import create_agent
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models.config import Config
 from carapace.models.session import SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity
-from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
 _EVENTS: list[dict[str, Any]] = [
@@ -30,13 +30,13 @@ _EVENTS: list[dict[str, Any]] = [
 
 def _deps(tmp_path: Path) -> Deps:
     return Deps(
+        skill_builds=SkillBuilds(None),
         config=Config(),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
         session_state=SessionState.now(session_id="s1"),
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1"),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
@@ -54,11 +54,10 @@ async def _call(deps: Deps, tool_call_id: str) -> Any:
 
 
 @pytest.mark.anyio
-async def test_returns_the_original_output_without_asking_the_sentinel(tmp_path: Path) -> None:
+async def test_returns_the_original_output(tmp_path: Path) -> None:
     deps = _deps(tmp_path)
 
     assert await _call(deps, "call-1") == "pod-a Running\npod-b Running"
-    assert not deps.sentinel.mock_calls
 
 
 @pytest.mark.anyio

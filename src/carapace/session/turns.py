@@ -96,8 +96,6 @@ def _summarize_tool_args_for_log(args: dict[str, Any]) -> str:
         value = args[key]
         if key == "command" and isinstance(value, str):
             parts.append(f"command={_truncate_for_log(value, 100)}")
-        elif key == "contexts" and isinstance(value, list):
-            parts.append(f"contexts={','.join(str(entry) for entry in value[:4])}")
         else:
             parts.append(f"{key}={_truncate_for_log(str(value), 60)}")
     return ", ".join(parts) if parts else "-"
@@ -281,7 +279,8 @@ class SessionTurnMixin(SessionTurnHost):
             tool_call_id: str | None = None,
             approval_comment: str | None = None,
         ) -> None:
-            if approval_verdict == "allow":
+            # Every call that runs counts; only the autonomy limit reports a call it holds back, as a deny.
+            if approval_verdict != "deny":
                 budget = active.state.budget
                 if budget.tool_calls is not None and active.usage_tracker.tool_calls >= budget.tool_calls:
                     raise SessionBudgetExceededError(self._budget_gauges(active))
@@ -578,7 +577,6 @@ class SessionTurnMixin(SessionTurnHost):
                     "tool": req.tool,
                     "args": req.args,
                     "explanation": req.explanation,
-                    "risk_level": req.risk_level,
                 }
             ],
         )

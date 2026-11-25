@@ -206,8 +206,14 @@ export interface SentFile {
   size: number;
 }
 
-/** The verdict of the sentinel or the user on an action; `revise` sends it back to the agent for changes. */
-export type ApprovalVerdict = "allow" | "revise" | "deny" | "escalate";
+/** The verdict of the sentinel or the user on an action. */
+export type ApprovalVerdict = "allow" | "deny" | "escalate";
+/**
+ * Who decided: `policy` is the proxy's destination policy, not a reviewer. `skill` and `safe-list` only appear on
+ * tool calls stored by older versions; their transcripts still render. `safe-list` marked every unreviewed tool
+ * call, so it gets no badge, like a tool call without a decision today.
+ */
+export type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "policy" | "unknown";
 
 export interface HistoryMessage {
   role: string;
@@ -233,15 +239,7 @@ export interface HistoryMessage {
   tool?: string;
   args?: Record<string, unknown>;
   detail?: string;
-  contexts?: string[];
-  approval_source?:
-    | "safe-list"
-    | "sentinel"
-    | "user"
-    | "skill"
-    | "bypass"
-    | "autonomy"
-    | "unknown";
+  approval_source?: ApprovalSource;
   approval_verdict?: ApprovalVerdict;
   approval_explanation?: string;
   /** What the sentinel told the agent about an operation it allowed. */
@@ -258,13 +256,12 @@ export interface HistoryMessage {
   decision_source?: "user" | "system";
   message?: string;
   explanation?: string;
-  risk_level?: string;
   ref?: string;
   changed_files?: string[];
   vault_paths?: string[];
   names?: string[];
   descriptions?: string[];
-  skill_name?: string;
+  domains?: string[];
   tool_id?: string;
   parent_tool_id?: string;
   compaction?: CompactionAnnotation;
@@ -370,15 +367,7 @@ export interface ToolCallInfo {
   tool: string;
   args: Record<string, unknown>;
   detail: string;
-  contexts?: string[];
-  approval_source?:
-    | "safe-list"
-    | "sentinel"
-    | "user"
-    | "skill"
-    | "bypass"
-    | "autonomy"
-    | "unknown";
+  approval_source?: ApprovalSource;
   approval_verdict?: ApprovalVerdict;
   approval_explanation?: string;
   /** What the sentinel told the agent about an operation it allowed. */
@@ -426,7 +415,6 @@ export interface ApprovalRequest {
   tool: string;
   args: Record<string, unknown>;
   explanation: string;
-  risk_level: string;
 }
 
 export interface DomainAccessApprovalRequest {
@@ -450,7 +438,8 @@ export interface CredentialApprovalRequest {
   vault_paths: string[];
   names: string[];
   descriptions: string[];
-  skill_name?: string;
+  /** Domains an up-front request (`cgate request`) asks for next to its credentials. */
+  domains: string[];
   explanation: string;
 }
 
@@ -689,15 +678,7 @@ export type ChatMessage =
       tool: string;
       args: Record<string, unknown>;
       detail: string;
-      contexts?: string[];
-      approvalSource?:
-        | "safe-list"
-        | "sentinel"
-        | "user"
-        | "skill"
-        | "bypass"
-        | "autonomy"
-        | "unknown";
+      approvalSource?: ApprovalSource;
       approvalVerdict?: ApprovalVerdict;
       approvalExplanation?: string;
       approvalComment?: string;
@@ -725,15 +706,7 @@ export type ChatMessage =
         tool: string;
         args: Record<string, unknown>;
         detail: string;
-        contexts?: string[];
-        approvalSource?:
-          | "safe-list"
-          | "sentinel"
-          | "user"
-          | "skill"
-          | "bypass"
-          | "autonomy"
-          | "unknown";
+        approvalSource?: ApprovalSource;
         approvalVerdict?: ApprovalVerdict;
         approvalExplanation?: string;
         approvalComment?: string;

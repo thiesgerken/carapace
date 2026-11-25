@@ -98,13 +98,13 @@ function buildSummary(
   const read = distinctPathCount(calls, "read");
   const write = distinctPathCount(calls, "write");
   const edit = distinctPathCount(calls, "str_replace");
-  const skill = calls.filter((c) => c.tool === "use_skill").length;
+  const skill = calls.filter((c) => c.tool === "read_skill").length;
   const counted = new Set([
     "exec",
     "read",
     "write",
     "str_replace",
-    "use_skill",
+    "read_skill",
   ]);
   const other = calls.filter((c) => !counted.has(c.tool)).length;
 

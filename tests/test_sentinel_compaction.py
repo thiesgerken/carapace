@@ -128,7 +128,7 @@ async def test_conversation_above_threshold_is_compacted_before_the_evaluation(t
     models = _Models()
     engine, sid, active = _engine(tmp_path, db_factory, models)
 
-    verdict = await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "ls"})
+    verdict = await active.sentinel.evaluate_domain_access(active.security, ["example.com"], "ls", follow_up=False)
 
     assert verdict.decision == "allow"
     # Fold of evaluation 1 plus a summary of the large skill file in the kept evaluation 2.
@@ -154,13 +154,13 @@ async def test_fold_summary_runs_with_the_sentinel_prompt_and_keeps_decisions(tm
     models = _Models()
     _, _sid, active = _engine(tmp_path, db_factory, models)
 
-    await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "ls"})
+    await active.sentinel.evaluate_domain_access(active.security, ["example.com"], "ls", follow_up=False)
 
     fold_request = next(r for r in models.summary_requests if "<evaluations>" in str(r[0].parts[0].content))
     instructions = _instructions(fold_request)
     assert instructions.startswith("You are the security gate")
     assert _SECURITY_MD in instructions
-    for fact in ("what the user approved and what the user denied", "revise, escalate, deny", "Granted contexts"):
+    for fact in ("what the user approved and what the user denied", "(escalate, deny)", "Skills the agent read"):
         assert fact in instructions
     assert 'Sentinel verdict: {"decision":"deny","explanation":"reason 1"}' in str(fold_request[0].parts[0].content)
 
@@ -170,7 +170,7 @@ async def test_conversation_below_threshold_is_left_alone(tmp_path: Path, db_fac
     models = _Models()
     _, sid, active = _engine(tmp_path, db_factory, models, threshold_tokens=None)
 
-    await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "ls"})
+    await active.sentinel.evaluate_domain_access(active.security, ["example.com"], "ls", follow_up=False)
 
     assert models.summary_requests == []
     assert not any(is_fold_message(m) for m in _restarted(sid, db_factory).sentinel_messages)
@@ -183,7 +183,7 @@ async def test_failing_compaction_fails_the_evaluation(tmp_path: Path, db_factor
     before = list(active.security.sentinel_messages)
 
     with pytest.raises(RuntimeError, match="compaction model unavailable"):
-        await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "ls"})
+        await active.sentinel.evaluate_domain_access(active.security, ["example.com"], "ls", follow_up=False)
 
     assert models.sentinel_requests == []
     assert _restarted(sid, db_factory).sentinel_messages == before
@@ -211,7 +211,7 @@ async def test_compaction_forgets_which_skill_files_were_provided(tmp_path: Path
     security = SessionSecurity("session-1")
     security.replace_sentinel_messages(_evaluation(1, decision="allow"))
 
-    await sentinel.evaluate_tool_call(security, "exec", {"command": "ls"})
+    await sentinel.evaluate_domain_access(security, ["example.com"], "ls", follow_up=False)
 
     assert sentinel._read_skill_file_cached(skills_dir, "mail", "run.py") == "import smtplib\n"
 
@@ -222,8 +222,10 @@ async def test_repeated_compaction_keeps_one_summary(tmp_path: Path, db_factory)
     models = _Models()
     _, sid, active = _engine(tmp_path, db_factory, models)
 
-    await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": f"echo {_FILLER * 2}"})
-    await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "pwd"})
+    await active.sentinel.evaluate_domain_access(
+        active.security, ["example.com"], f"echo {_FILLER * 2}", follow_up=False
+    )
+    await active.sentinel.evaluate_domain_access(active.security, ["example.com"], "pwd", follow_up=False)
 
     folds = [r for r in models.summary_requests if "<evaluations>" in str(r[0].parts[0].content)]
     assert len(folds) == 2
@@ -252,7 +254,7 @@ async def test_a_sentinel_model_switch_strips_foreign_compaction_below_the_thres
     )
     active.security.replace_sentinel_messages(conversation)
 
-    await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "ls"})
+    await active.sentinel.evaluate_domain_access(active.security, ["example.com"], "ls", follow_up=False)
 
     for messages in (models.sentinel_requests[0], _restarted(sid, db_factory).sentinel_messages):
         assert not any(isinstance(p, CompactionPart) for m in messages for p in m.parts)
@@ -284,7 +286,9 @@ async def test_the_sentinels_provider_compaction_counts_under_compaction(tmp_pat
     _, _, active = _engine(tmp_path, db_factory, _CompactingSentinelModels(), threshold_tokens=None)
     tracker = UsageTracker()
 
-    await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "ls"}, usage_tracker=tracker)
+    await active.sentinel.evaluate_domain_access(
+        active.security, ["example.com"], "ls", follow_up=False, usage_tracker=tracker
+    )
 
     categories = tracker.categories
     assert categories["compaction"].input_tokens == 400

@@ -4,9 +4,6 @@ import base64
 import json
 import shlex
 from collections.abc import Awaitable, Callable
-from typing import Protocol
-
-from loguru import logger
 
 from .container_scripts import SANDBOX_FILE_READ_BYTES_SCRIPT, build_file_read_script
 from .container_scripts import (
@@ -25,39 +22,27 @@ SANDBOX_READ_BODY_SEPARATOR = "-" * 24
 
 FILE_READ_SCRIPT = build_file_read_script(SANDBOX_READ_BODY_SEPARATOR)
 
-type ContextFileCredential = tuple[str, str, str]
-type WrittenContextFile = tuple[str, str]
 
-
-class SessionContainerLike(Protocol):
-    session_id: str
-
-
-def _shell_path(path: str, *, quote: bool) -> str:
+def _shell_path(path: str) -> str:
     """Return a shell-safe path, expanding ``~/`` inside the shell when needed."""
     if path.startswith("~/"):
         suffix = path[2:]
-        if quote:
-            # Keep $HOME unquoted so shell expands it; quote only the suffix.
-            return "$HOME/" if not suffix else f"$HOME/{shlex.quote(suffix)}"
-        return f'"$HOME/{suffix}"'
-    return shlex.quote(path) if quote else f'"{path}"'
+        # Keep $HOME unquoted so shell expands it; quote only the suffix.
+        return "$HOME/" if not suffix else f"$HOME/{shlex.quote(suffix)}"
+    return shlex.quote(path)
 
 
-def _file_write_command(path: str, *, mode: int | None, quote: bool) -> str:
+def _file_write_command(path: str) -> str:
     """Return the command that writes its stdin to *path*, creating the parent dir.
 
-    The old file is removed first, so a read-only credential file can be replaced. A
-    failed write removes the partial file; a failed ``chmod`` keeps the written content.
+    The old file is removed first, so a read-only file can be replaced. A failed write
+    removes the partial file.
     """
-    shell_path = _shell_path(path, quote=quote)
-    cmd = (
+    shell_path = _shell_path(path)
+    return (
         f'mkdir -p "$(dirname {shell_path})" && rm -f {shell_path} '
         f"&& {{ cat > {shell_path} || {{ rm -f {shell_path}; exit 1; }}; }}"
     )
-    if mode is not None:
-        cmd += f" && chmod {mode:04o} {shell_path}"
-    return cmd
 
 
 def _line_count(content: str) -> int:
@@ -71,12 +56,8 @@ class SandboxFileOps:
         self,
         *,
         exec_in_session: Callable[..., Awaitable[ExecResult]],
-        exec_in_container: Callable[..., Awaitable[ExecResult]],
-        get_session: Callable[[str], SessionContainerLike | None],
     ) -> None:
         self._exec_in_session = exec_in_session
-        self._exec_in_container = exec_in_container
-        self._get_session = get_session
 
     async def file_read(self, session_id: str, path: str, *, offset: int = 0, limit: int = 100) -> str:
         """Read a text file (windowed), summarize a binary file, or list a directory inside the sandbox."""
@@ -114,39 +95,13 @@ class SandboxFileOps:
                 return f"Error: cannot decode {path}: {exc}"
         return output or f"Error: cannot read {path}"
 
-    @staticmethod
-    async def _run_file_write(
-        exec_one: Callable[[str, bytes], Awaitable[ExecResult]],
-        path: str,
-        content: str,
-        *,
-        mode: int | None,
-        quote: bool,
-    ) -> ExecResult:
-        result = await exec_one(_file_write_command(path, mode=mode, quote=quote), content.encode())
+    async def file_write(self, session_id: str, path: str, content: str) -> ExecResult:
+        """Write content to a file inside the sandbox."""
+        result = await self._exec_in_session(session_id, _file_write_command(path), timeout=10, stdin=content.encode())
         if result.exit_code != 0:
             output = result.output or f"Error: cannot write {path} (exit {result.exit_code})."
             return ExecResult(stdout=result.stdout, exit_code=result.exit_code, output=output)
         return ExecResult(stdout="", exit_code=0, output=f"Wrote {_line_count(content)} line(s) to {path}.")
-
-    async def file_write(
-        self,
-        session_id: str,
-        path: str,
-        content: str,
-        *,
-        mode: int | None = None,
-        workdir: str | None = None,
-        quote: bool = True,
-    ) -> ExecResult:
-        """Write content to a file inside the sandbox."""
-        return await self._run_file_write(
-            lambda cmd, data: self._exec_in_session(session_id, cmd, timeout=10, workdir=workdir, stdin=data),
-            path,
-            content,
-            mode=mode,
-            quote=quote,
-        )
 
     async def file_str_replace(
         self,
@@ -164,80 +119,3 @@ class SandboxFileOps:
         result = await self._exec_in_session(session_id, cmd, timeout=10, stdin=payload.encode())
         output = result.output or f"Error: cannot replace in {path}"
         return ExecResult(stdout=result.stdout, exit_code=result.exit_code, output=output)
-
-    async def file_write_in_container(
-        self,
-        sc: SessionContainerLike,
-        path: str,
-        content: str,
-        *,
-        mode: int | None = None,
-        workdir: str | None = None,
-        quote: bool = True,
-    ) -> ExecResult:
-        """Write a file using an existing container while the exec lock is already held."""
-        return await self._run_file_write(
-            lambda cmd, data: self._exec_in_container(sc, cmd, timeout=10, workdir=workdir, stdin=data),
-            path,
-            content,
-            mode=mode,
-            quote=quote,
-        )
-
-    async def file_delete_in_container(
-        self,
-        sc: SessionContainerLike,
-        path: str,
-        *,
-        workdir: str | None = None,
-        quote: bool = True,
-    ) -> ExecResult:
-        """Delete a file using an existing container while the exec lock is already held."""
-        shell_path = _shell_path(path, quote=quote)
-        cmd = f"rm -f {shell_path}"
-        return await self._exec_in_container(sc, cmd, timeout=5, workdir=workdir)
-
-    async def write_context_file_credentials(
-        self,
-        sc: SessionContainerLike,
-        context_file_creds: list[ContextFileCredential],
-    ) -> list[WrittenContextFile]:
-        """Write file-based credentials into the container, returning written ``(file_path, skill_name)`` pairs."""
-        written: list[WrittenContextFile] = []
-        for skill_name, file_path, value in context_file_creds:
-            skill_dir = f"/workspace/skills/{skill_name}"
-            result = await self.file_write_in_container(
-                sc,
-                file_path,
-                value,
-                mode=0o400,
-                workdir=skill_dir,
-                quote=False,
-            )
-            if result.exit_code != 0:
-                logger.error(f"Failed to write credential file {file_path} for {skill_name}: {result.output}")
-            else:
-                written.append((file_path, skill_name))
-        return written
-
-    async def delete_context_file_credentials(
-        self,
-        session_id: str,
-        written_files: list[WrittenContextFile],
-    ) -> None:
-        """Delete file-based credentials that were written for an exec."""
-        sc = self._get_session(session_id)
-        if sc is None:
-            return
-        for file_path, skill_name in written_files:
-            skill_dir = f"/workspace/skills/{skill_name}"
-            try:
-                result = await self.file_delete_in_container(sc, file_path, workdir=skill_dir, quote=False)
-            except Exception as exc:
-                logger.warning(f"Could not delete credential file {file_path} (skill {skill_name!r}) after exec: {exc}")
-                continue
-            if result.exit_code != 0:
-                logger.warning(
-                    f"Failed to delete credential file {file_path} (skill {skill_name!r}) after exec: "
-                    f"{result.output or '(no output)'}"
-                )

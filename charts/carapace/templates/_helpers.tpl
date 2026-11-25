@@ -122,3 +122,52 @@ Standalone Bitwarden resource name for one instance.
 {{ printf "%s-bitwarden-%s" $root.Release.Name $instance.name | trunc 63 | trimSuffix "-" }}
 {{- end -}}
 {{- end }}
+
+{{/*
+Builder image with tag defaulting to appVersion
+*/}}
+{{- define "carapace.builderImage" -}}
+{{ .Values.builder.image.registry }}/{{ .Values.builder.image.repository }}:{{ .Values.builder.image.tag | default .Chart.AppVersion }}
+{{- end }}
+
+{{/*
+Namespace of the in-cluster builder. Its pod needs Pod Security level `privileged`, which a
+namespace grants to all of its pods, sandboxes included; a separate namespace keeps that apart.
+*/}}
+{{- define "carapace.builder.namespace" -}}
+{{- .Values.builder.namespace | default (printf "%s-builder" .Release.Namespace) -}}
+{{- end }}
+
+{{/*
+Builder token Secret name (generated for the in-cluster builder, or the user-provided existingSecret).
+*/}}
+{{- define "carapace.builder.secretName" -}}
+{{- .Values.builder.auth.existingSecret | default (printf "%s-builder" .Release.Name) -}}
+{{- end }}
+
+{{/*
+CARAPACE_BUILDER_URL, _CACHE_URL and _TOKEN for the server: the in-cluster builder, or one on another machine.
+*/}}
+{{- define "carapace.builderEnv" -}}
+{{- if .Values.builder.enabled -}}
+- name: CARAPACE_BUILDER_URL
+  value: {{ printf "http://%s-builder.%s:8330" .Release.Name (include "carapace.builder.namespace" .) | quote }}
+- name: CARAPACE_BUILDER_CACHE_URL
+  value: {{ printf "http://%s-builder.%s:8331" .Release.Name (include "carapace.builder.namespace" .) | quote }}
+- name: CARAPACE_BUILDER_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "carapace.builder.secretName" . }}
+      key: token
+{{- else if .Values.builder.externalUrl -}}
+- name: CARAPACE_BUILDER_URL
+  value: {{ .Values.builder.externalUrl | quote }}
+- name: CARAPACE_BUILDER_CACHE_URL
+  value: {{ required "builder.externalCacheUrl is required with builder.externalUrl" .Values.builder.externalCacheUrl | quote }}
+- name: CARAPACE_BUILDER_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "builder.auth.existingSecret is required with builder.externalUrl" .Values.builder.auth.existingSecret }}
+      key: token
+{{- end -}}
+{{- end }}

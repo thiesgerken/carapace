@@ -6,40 +6,18 @@ description: Documents the credential system — how to list, fetch, and use sec
 # Credentials
 
 carapace provides a pull-based credential system. Credentials live in an
-external vault (password manager or file) and are fetched on demand.
-Auto-injected credentials (via `metadata.carapace`) are placed directly into the
-sandbox as env vars or files — **you must not read, echo, or return their
-values**. On-demand credentials fetched with `ccred get` pass through the
-sandbox shell; wire them into commands via `-o` or subshell capture so that
-values are consumed by tools without being exposed.
+external vault (password manager or file) and are fetched on demand, so they
+pass through the sandbox shell: wire them into commands via `-o`, a pipe or
+subshell capture so that tools consume the values without exposing them.
 
-## Auto-injection via carapace metadata
+## Credentials of skill commands
 
-Skills that need credentials declare them in `SKILL.md` frontmatter under `metadata.carapace`:
-
-```yaml
-metadata:
-  carapace:
-    credentials:
-      - vault_path: <backend>/9742101e-...
-        description: Gmail app password
-        env_var: GMAIL_APP_PASSWORD
-      - vault_path: <backend>/ssh-deploy-key
-        description: SSH deploy key
-        file: ~/.ssh/id_ed25519
-```
-
-When you activate the skill with `use_skill`, carapace:
-
-1. Sends all declared credentials through the security sentinel
-2. Asks the user for approval (one prompt for the whole bundle)
-3. Fetches the values from the vault
-4. Injects `env_var` entries as environment variables (available in all
-   subsequent `exec` calls for the session)
-5. Writes `file` entries to the specified path with mode `0400`
-
-You don't need to do anything — just call `use_skill` and the credentials
-are ready.
+A skill command that needs a credential declares it in the skill's
+`flake.nix` (`needs.credentials`, see the `create-skill` skill). When you run
+the command, its wrapper asks for everything it declared at once, fetches the
+credentials and exports them as environment variables for that command only.
+You do not need to do anything but run the command.
+**Never read, echo or return those values.**
 
 ## Listing available credentials
 
@@ -49,10 +27,11 @@ ccred search gmail      # filter by name or description
 ```
 
 The list shows metadata only (name, vault path, description) — never values.
+It still enumerates the vault, so it is reviewed like `ccred get`.
 
 ## Fetching a credential on demand
 
-For credentials not declared in `metadata.carapace`, use `ccred get`:
+For credentials no skill command declares, use `ccred get`:
 
 ```bash
 # Write to a file with restrictive permissions (0400; -o is also subject to approval)
@@ -84,5 +63,8 @@ for the task.
   return secret values as command output
 - **Never** include credential values in tool call arguments or responses
 - **Never** store credentials in files that will be committed to git
-- If a credential is already approved for the session, `ccred get` returns
-  it immediately without re-prompting
+- If a credential was already approved earlier in the same `exec` (in the same
+  form: password, `--login` or `--json`), `ccred get` returns it immediately
+  without re-prompting; the next `exec` asks again
+- A denial makes `ccred` exit with status 1 and print the reason on stderr;
+  do not retry the same request unchanged

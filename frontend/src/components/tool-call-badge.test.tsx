@@ -117,12 +117,79 @@ test("a streaming exec shows its title once the model finished it, the command's
     assert.equal(summary(), null, "nothing half-written, and no missing-command fallback");
     await view.rerender(card('{"command": "cat > stats.py <<\'EOF\'\\nimport stat'));
     assert.equal(summary(), "cat > stats.py <<'EOF' …", "an untitled call shows its command's first line");
-    await view.rerender(card('{"title": "Average the ratings", "contexts": [], "command": "cat > stats.py <<\'EOF\'\\nimport stat'));
+    await view.rerender(card('{"title": "Average the ratings", "command": "cat > stats.py <<\'EOF\'\\nimport stat'));
     assert.equal(summary(), "Average the ratings");
     // The final card shows the same, so nothing jumps.
-    await view.rerender(card('{"title": "Average the ratings", "contexts": [], "command": "cat > stats.py <<\'EOF\'\\nEOF"}', false));
+    await view.rerender(card('{"title": "Average the ratings", "command": "cat > stats.py <<\'EOF\'\\nEOF"}', false));
     assert.equal(summary(), "Average the ratings");
     await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("read_skill names the skill, says what it waits for, and shows the skill once read", async () => {
+  const restore = installDom();
+  try {
+    const card = (props: Partial<Parameters<typeof ToolCallBadge>[0]>) => (
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <ToolCallBadge tool="read_skill" args={{ skill_name: "weather" }} detail="" {...props} />
+      </NextIntlClientProvider>
+    );
+    const tool = { spanId: "t", kind: "tool", name: "read_skill" };
+    const view = await renderReact(card({ loading: true, runningSpans: [tool, { spanId: "b", kind: "skill", name: "build wait" }] }));
+    const text = () => view.container.textContent ?? "";
+    assert.match(text(), /read skill/);
+    assert.match(text(), /weather/);
+    assert.match(text(), /Waiting for the skill build…/);
+
+    await view.rerender(card({ loading: true, runningSpans: [tool, { spanId: "p", kind: "skill", name: "profile sync" }] }));
+    assert.match(text(), /Installing the skill's commands…/);
+
+    await view.rerender(card({ result: "# weather\n\n# Commands\n- `weather`: Current weather\n\nThe commands are on PATH." }));
+    assert.doesNotMatch(text(), /Installing|Waiting/);
+    (view.container.querySelector("button") as HTMLButtonElement).click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.match(text(), /The commands are on PATH\./);
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("approval badges: none for an unreviewed call, an icon per verdict, and a tooltip that says who decided", async () => {
+  const restore = installDom();
+  try {
+    const badge = async (props: Partial<Parameters<typeof ToolCallBadge>[0]>) => {
+      const view = await renderReact(
+        <NextIntlClientProvider locale="en" messages={messages}>
+          <ToolCallBadge tool="exec" args={{ command: "ls" }} detail="" {...props} />
+        </NextIntlClientProvider>,
+      );
+      const icon = [...view.container.querySelectorAll("[title] > svg")]
+        .map((svg) => svg.getAttribute("class")?.match(/lucide-((?:shield|user|ban)[a-z-]*)/)?.[1])
+        .find(Boolean);
+      const shown = {
+        title: icon ? view.container.querySelector(`[title] > svg.lucide-${icon}`)?.parentElement?.getAttribute("title") ?? null : null,
+        icon: icon ?? null,
+      };
+      await view.unmount();
+      return shown;
+    };
+
+    assert.deepEqual(await badge({}), { title: null, icon: null }, "an unreviewed tool call");
+    assert.deepEqual(await badge({ approvalSource: "safe-list", approvalVerdict: "allow" }), { title: null, icon: null }, "stored by an older version");
+    assert.deepEqual(
+      await badge({ approvalSource: "sentinel", approvalVerdict: "allow", approvalExplanation: "Reads a public page." }),
+      { title: "Allowed by the sentinel: Reads a public page.", icon: "shield-check" },
+    );
+    assert.deepEqual(await badge({ approvalSource: "sentinel", approvalVerdict: "deny", approvalExplanation: "Posts data." }), { title: "Denied by the sentinel: Posts data.", icon: "shield-x" });
+    assert.deepEqual(await badge({ approvalSource: "sentinel", approvalVerdict: "escalate", approvalExplanation: "Unclear." }), { title: "The sentinel left this to you: Unclear.", icon: "shield-exclamation-point" });
+    assert.deepEqual(await badge({ approvalSource: "user", approvalVerdict: "deny" }), { title: "Denied by you", icon: "user-x" });
+    assert.deepEqual(
+      await badge({ approvalSource: "policy", approvalVerdict: "deny", approvalExplanation: "10.0.0.5 is internal." }),
+      { title: "Refused as an internal destination: 10.0.0.5 is internal.", icon: "ban" },
+    );
   } finally {
     restore();
   }

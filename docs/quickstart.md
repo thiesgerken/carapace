@@ -2,6 +2,8 @@
 
 This guide walks you through deploying carapace with Docker Compose. For Kubernetes, see the [Helm chart README](../charts/carapace/README.md).
 
+Upgrading an install from before skill flakes? Follow [Upgrading to skill flakes](upgrading-to-skill-flakes.md) first.
+
 ## Prerequisites
 
 - **Docker** with the Compose plugin
@@ -20,12 +22,15 @@ Fill in the required values:
 # Required
 ANTHROPIC_API_KEY=sk-ant-...
 CARAPACE_TOKEN=pick-a-bootstrap-admin-password
+CARAPACE_BUILDER_TOKEN=pick-a-random-builder-token
 
 # Optional — uncomment if needed
 # GOOGLE_API_KEY=...
 ```
 
 If no enabled admin user exists yet, `CARAPACE_TOKEN` becomes the bootstrap `admin` user's initial password and must be at least 16 characters long. After startup, normal web UI, CLI, REST, WebSocket, and admin access uses username/password login and an HttpOnly session cookie.
+
+`CARAPACE_BUILDER_TOKEN` authenticates the server to the [skill builder](builder.md); any long random string works (`openssl rand -hex 20`).
 
 ## 2. Pull and start
 
@@ -38,7 +43,8 @@ This starts:
 
 - **Proxy** at `http://localhost:3001`, serving the frontend and routing `/api` to the backend container internally
 - **Redis** for mandatory session-list caching
-- **Sandbox image** is pulled with the other images; it remains a Debian Dockerfile for local builds
+- **Skill builder**, which builds skill flakes for the server ([builder](builder.md)); its Nix store lives in the `builder-nix` volume
+- **Sandbox image** is pulled with the other images
 
 Log in to the web UI as `admin` with the `CARAPACE_TOKEN` value, then open **Settings** -> **Admin** -> **Users** to create your normal user. carapace is multi-user by default: sessions, jobs, notification subscriptions, Matrix channels, Git remotes, model defaults, and credential backends are owned by the authenticated user. You can also use the admin API after logging in and storing the session cookie:
 
@@ -55,7 +61,7 @@ curl -X POST http://localhost:3001/api/admin/users \
 
 The web UI uses the same origin for frontend and API requests, so it only prompts for username and password on first connect.
 
-Set `CARAPACE_IMAGE_TAG` to a matching release or PR tag when you need a version other than `latest`. Server, frontend, and Bitwarden images are built with Nix, not Dockerfiles. For local builds use the [development guide](development.md) and `docker-compose.local.yml`; the server source is not bind-mounted.
+Set `CARAPACE_IMAGE_TAG` to a matching release or PR tag when you need a version other than `latest`. All images are built with Nix, not Dockerfiles. For local builds use the [development guide](development.md) and `docker-compose.local.yml`; the server source is not bind-mounted.
 
 The frontend listens on 8080 internally. If your API is on another origin, mount a one-line nginx snippet instead of setting an environment variable:
 
@@ -180,7 +186,7 @@ carapace starts one Matrix channel per enabled user config, joins the allowed ro
 
 ## 6. Set up credentials
 
-carapace can fetch credentials from a password manager on demand. The agent does not have blanket access — every credential request is evaluated by the sentinel agent and requires explicit user approval the first time it is used in a session. Credentials are intended to be consumed inside the sandbox (auto-injected via skill config or fetched with `ccred`) and must never be echoed or logged. Two backends are available.
+carapace can fetch credentials from a password manager on demand. The agent does not have blanket access — every credential request is evaluated by the sentinel agent for the `exec` it comes from, and escalated to you when the sentinel is unsure. Credentials are intended to be consumed inside the sandbox (exported by a skill command's wrapper or fetched with `ccred`) and must never be echoed or logged. Two backends are available.
 
 ### File backend (local trusted users only)
 
@@ -297,11 +303,11 @@ If you use the file backend, add the key to your secrets file:
 echo "brave-api-key=your-brave-search-api-key" >> data/secrets.env
 ```
 
-Then make sure the credential is reachable as `vault/brave-api-key`. The simplest option is a file credential backend named `vault` that points at `data/secrets.env`. If you use a different backend name or path shape, update the bundled web skill metadata to match.
+Then make sure the credential is reachable as `vault/brave-api-key`. The simplest option is a file credential backend named `vault` that points at `data/secrets.env`. If you use a different backend name or path shape, change `credentials.BRAVE_API_KEY` in the bundled web skill's `flake.nix` to match.
 
 You can get a Brave Search API key at <https://brave.com/search/api/>.
 
-Once that is in place, activate the `web` skill and run a simple `web_search` call. If the command succeeds, you have verified both the credential lookup and the per-exec skill injection path.
+Once that is in place, ask the agent to search the web with the `web` skill. If the search succeeds, you have verified the credential lookup and its approval.
 
 ## 8. Personalise
 

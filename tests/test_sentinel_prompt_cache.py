@@ -93,32 +93,34 @@ async def test_every_sentinel_request_extends_the_previous_one(tmp_path: Path, d
     security.append(UserMessageEntry(content="ja, 1 und 2"))
     model.read_skill("moneta", "SKILL.md")
     model.judge("allow")
-    await sentinel.evaluate_tool_call(security, "exec", {"command": "moneta query --fix"})
+    await sentinel.evaluate_domain_access(security, ["example.com"], "moneta query --fix", follow_up=False)
 
     security.append(ToolCallEntry(tool="exec", args={"command": "moneta query --fix"}, decision="allowed"))
     security.append(ToolResultEntry(tool="exec"))
     security.append(AgentResponseEntry(text="Fixed. Committing and pushing."))
     model.judge("allow")
-    await sentinel.evaluate_domain_access(security, "api.example.com", "moneta query --fix")
+    await sentinel.evaluate_domain_access(security, ["api.example.com"], "moneta query --fix", follow_up=False)
 
     # A restart reloads the sentinel state and builds a new sentinel; the cache must not notice.
     security = _restarted(session_id, db_factory)
     sentinel = _sentinel(tmp_path, model)
-    model.judge("revise")
-    await sentinel.evaluate_tool_call(security, "exec", {"command": "git commit -am fix && git push && rm -rf /tmp"})
-
-    security.append(
-        ToolCallEntry(tool="exec", args={"command": "git commit -am fix && git push"}, decision="changes_requested")
+    model.judge("deny")
+    await sentinel.evaluate_domain_access(
+        security, ["example.com"], "git commit -am fix && git push && rm -rf /tmp", follow_up=False
     )
+
+    security.append(ToolCallEntry(tool="exec", args={"command": "git commit -am fix && git push"}, decision="allowed"))
     model.judge("escalate")
     await sentinel.evaluate_push(
-        security, "refs/heads/main", True, "abc fix", "--- a/x\n+++ b/x", shared_artifacts=set()
+        security, "refs/heads/main", True, "abc fix", "--- a/x\n+++ b/x", shared_artifacts=set(), flake_input_changes=[]
     )
 
     security.append(ApprovalEntry(tool="git_push", args={"ref": "refs/heads/main"}, decision="approved"))
     security.append(GitPushEntry(ref="refs/heads/main", decision="allowed"))
     model.judge("allow")
-    await sentinel.evaluate_credential_access(security, "moneta/token", "token", "API token", "moneta query")
+    await sentinel.evaluate_credential_access(
+        security, "moneta/token", "token", "API token", "`ccred get` (password)", "moneta query", follow_up=True
+    )
 
     requests = model.requests
     assert len(requests) == 6

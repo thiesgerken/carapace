@@ -52,7 +52,7 @@ For every enabled user, startup runs the same sequence against that user's repo:
 1. Initialize or open the local repo at `$CARAPACE_DATA_DIR/knowledges/<normalized-user>/`.
 2. If `config.git.remote` is set, add or update the `origin` remote for that repo.
 3. Pull the configured remote branch before any bootstrap seeding.
-4. Seed default files such as `SECURITY.md`, `SOUL.md`, `USER.md`, and bundled example skills only if they are still missing.
+4. Seed default files such as `SECURITY.md`, `SOUL.md`, `USER.md`, and bundled skills only if they are still missing.
 5. If bootstrap created new files, commit them and push them to that user's remote.
 
 Users without a remote still get a local Git-backed repo. They skip the remote add, pull, and upstream push steps.
@@ -79,7 +79,7 @@ Sandbox /workspace  <->  carapace /git/<owner>  <->  owner's upstream remote
 1. Clone on creation. When a sandbox starts, `git clone $GIT_REPO_URL /workspace` pulls the latest state for the session owner from the server.
 2. Agent commits and pushes. The agent can run `git add`, `git commit`, and `git push` inside the sandbox. Pushes go to the server's Git HTTP backend.
 3. Owner validation. The Git HTTP backend validates that the session token may only access the repo for that session's owner and rejects cross-user paths.
-4. Security gate. Every push triggers a pre-receive hook that sends the full diff to the sentinel agent for evaluation.
+4. Security gate. Every push triggers a pre-receive hook that sends the full diff to the sentinel agent for evaluation, together with both sides of every `flake.lock` it changes. The server renders those as one line per changed flake input for the sentinel (see [security.md](security.md#git-push-evaluation)). The hook has to send the contents itself: the incoming objects are only visible inside the hook until the push is accepted.
 5. Upstream propagation. If the push is accepted and that user has an upstream remote configured, the server pushes only that user's repo upstream.
 
 The pre-receive hook uses the server's Python interpreter and standard library, plus Git. It does not require a shell, `jq`, or `curl`. Startup rewrites the hook with the current interpreter path so image updates cannot leave a stale shebang. Sentinel connections have a 10-second connect timeout and no read timeout, since user approval can take arbitrarily long. An unreachable sentinel or a hook invocation with no refs rejects the push.

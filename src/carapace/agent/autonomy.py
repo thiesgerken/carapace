@@ -20,9 +20,6 @@ from ..usage import SessionBudgetExceededError, autonomy_budget_gauge
 
 AUTONOMY_WRAP_UP = "Autonomy limit reached. Stop calling tools and report what you have."
 
-# Marks approval requests raised by the autonomy limit in the deferred tool metadata.
-AUTONOMY_LIMIT_METADATA_KEY = "autonomy_limit"
-
 
 class AutonomyLimitReachedError(SessionBudgetExceededError):
     """The agent kept calling tools after its over-limit calls were denied; ends the turn."""
@@ -73,26 +70,19 @@ class AutonomyStreak:
 def resolve_user_approvals(
     streak: AutonomyStreak,
     decisions: dict[str, bool | ToolDenied],
-    autonomy_call_ids: set[str],
     limit: int | None,
 ) -> dict[str, bool | ToolDenied]:
-    """Apply the streak rules to one batch of user decisions.
+    """Apply the streak rules to one batch of autonomy-limit decisions.
 
-    Every user decision resets the count, except a deny of an autonomy-limit approval. If the batch
-    had autonomy-limit approvals and the user allowed none of them, the next tool call ends the
-    turn, whatever else the user decided in the batch. Denied autonomy-limit calls tell the model
-    to wrap up.
+    Allowing any call resets the count. If the user allowed none, the next tool call ends the turn.
+    Denied calls tell the model to wrap up.
     """
-    autonomy_decisions = {call_id: d for call_id, d in decisions.items() if call_id in autonomy_call_ids}
-    autonomy_allowed = any(d is True for d in autonomy_decisions.values())
-    if autonomy_allowed or len(autonomy_decisions) < len(decisions):
+    if any(d is True for d in decisions.values()):
         streak.note_user_decision()
-    if autonomy_decisions and not autonomy_allowed and limit is not None:
-        streak.stop_after(frozenset(autonomy_decisions), limit)
+    elif decisions and limit is not None:
+        streak.stop_after(frozenset(decisions), limit)
     return {
-        call_id: ToolDenied(f"{d.message} {AUTONOMY_WRAP_UP}")
-        if isinstance(d, ToolDenied) and call_id in autonomy_call_ids
-        else d
+        call_id: ToolDenied(f"{d.message} {AUTONOMY_WRAP_UP}") if isinstance(d, ToolDenied) else d
         for call_id, d in decisions.items()
     }
 
@@ -139,7 +129,6 @@ class AutonomyLimitCapability(AbstractCapability[AgentDepsT]):
                     "tool": call.tool_name,
                     "args": args,
                     "explanation": reason,
-                    AUTONOMY_LIMIT_METADATA_KEY: True,
                 }
             )
         self.streak.stop_after(_batch_tool_call_ids(ctx.messages), limit)

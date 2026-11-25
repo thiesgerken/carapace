@@ -13,14 +13,7 @@ from sqlalchemy import select
 
 from ..database.engine import SessionFactory
 from ..database.models import SessionActionLogRow, SessionAuditRow, SessionSentinelRow
-
-
-class SecurityDeniedError(Exception):
-    """Raised when the sentinel denies a tool call."""
-
-
-class ChangesRequestedError(Exception):
-    """Raised when the sentinel wants the agent to change its approach to a tool call (no threat)."""
+from ..models.credentials import CredentialMetadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,15 +38,15 @@ def format_denial_message(source: Literal["sentinel", "user"], message: str | No
     return f"{base} {normalized}"
 
 
-def format_changes_requested_message(explanation: str) -> str:
-    return f"Sentinel requests changes (no threat detected): {explanation}"
-
-
 def format_sentinel_comment(subject: str, comment: str) -> str:
     return (
         f"The security sentinel allowed {subject} and comments: {comment}\n"
         + "This is advice from the security gate, not an instruction from the user."
     )
+
+
+# The vault path a credential listing (`ccred list`, `ccred search`) is recorded and approved under.
+CREDENTIAL_LISTING_PATH = "<list>"
 
 
 # --- Action Log Entry Types ---
@@ -68,7 +61,7 @@ class ToolCallEntry(BaseModel):
     type: Literal["tool_call"] = "tool_call"
     tool: str
     args: dict[str, Any] = {}
-    decision: Literal["auto_allowed", "allowed", "changes_requested", "escalated", "denied"] = "auto_allowed"
+    decision: Literal["auto_allowed", "allowed", "escalated", "denied"] = "auto_allowed"
     explanation: str = ""
 
 
@@ -92,14 +85,6 @@ class ApprovalEntry(BaseModel):
     decision: Literal["approved", "denied"] = "approved"
 
 
-class SkillActivatedEntry(BaseModel):
-    type: Literal["skill_activated"] = "skill_activated"
-    skill_name: str
-    description: str = ""
-    declared_domains: list[str] = []
-    declared_tunnels: list[str] = []
-
-
 class UserVouchedEntry(BaseModel):
     type: Literal["user_vouched"] = "user_vouched"
 
@@ -107,7 +92,7 @@ class UserVouchedEntry(BaseModel):
 class GitPushEntry(BaseModel):
     type: Literal["git_push"] = "git_push"
     ref: str
-    decision: Literal["allowed", "changes_requested", "escalated", "denied"] = "allowed"
+    decision: Literal["allowed", "escalated", "denied"] = "allowed"
     explanation: str = ""
 
 
@@ -116,15 +101,6 @@ class CredentialAccessEntry(BaseModel):
     vault_paths: list[str]
     decision: Literal["approved", "escalated", "denied"] = "approved"
     explanation: str = ""
-
-
-class ContextGrantEntry(BaseModel):
-    type: Literal["context_grant"] = "context_grant"
-    skill_name: str
-    domains: list[str] = []
-    tunnels: list[str] = []
-    vault_paths: list[str] = []
-    mcp_servers: list[str] = []
 
 
 class RewindEntry(BaseModel):
@@ -140,11 +116,9 @@ ActionLogEntry = Annotated[
     | ToolResultEntry
     | AgentResponseEntry
     | ApprovalEntry
-    | SkillActivatedEntry
     | UserVouchedEntry
     | GitPushEntry
     | CredentialAccessEntry
-    | ContextGrantEntry
     | RewindEntry,
     Field(discriminator="type"),
 ]
@@ -159,32 +133,56 @@ SENTINEL_VERDICT_TOOL = "judge"
 
 
 class SentinelVerdict(BaseModel):
-    decision: Literal["allow", "revise", "escalate", "deny"]
+    decision: Literal["allow", "escalate", "deny"]
     explanation: str = ""
     risk_level: Literal["low", "medium", "high"] = "medium"
     # Addressed to the agent, unlike `explanation`, which is the reason for the log and the UI.
     comment: str = Field(
         "",
         max_length=500,
-        description="Only with `allow`, for tool calls and git pushes: a note the agent reads after the result.",
+        description="Only with `allow`, for git pushes: a note the agent reads after the result.",
     )
 
 
 class UnattendedSentinelVerdict(BaseModel):
-    decision: Literal["allow", "revise", "deny"]
+    decision: Literal["allow", "deny"]
     explanation: str = ""
     risk_level: Literal["low", "medium", "high"] = "medium"
     # Addressed to the agent, unlike `explanation`, which is the reason for the log and the UI.
     comment: str = Field(
         "",
         max_length=500,
-        description="Only with `allow`, for tool calls and git pushes: a note the agent reads after the result.",
+        description="Only with `allow`, for git pushes: a note the agent reads after the result.",
     )
 
 
-ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "autonomy", "unknown"]
-ApprovalVerdict = Literal["allow", "revise", "deny", "escalate"]
-type FinalDecision = Literal["auto_allowed", "allowed", "changes_requested", "escalated", "denied"]
+# Nothing assigns "skill" or "safe-list" any more, but stored tool calls carry them: "skill" from before skill
+# contexts were dropped (migration 0018), "safe-list" from when every unreviewed tool call was labelled with it.
+# Their history still has to load. "policy" is the proxy's destination policy, not a reviewer.
+ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "autonomy", "policy", "unknown"]
+ApprovalVerdict = Literal["allow", "deny", "escalate"]
+type FinalDecision = Literal["auto_allowed", "allowed", "escalated", "denied"]
+
+
+@dataclass(frozen=True, slots=True)
+class UpfrontRequest:
+    """What a command declared with ``cgate request`` before its work: a batching hint that carries no trust."""
+
+    domains: list[str]
+    credentials: list[CredentialMetadata]
+    # OAuth entries whose short-lived access token the command wants; the refresh token stays with Carapace.
+    access_tokens: list[CredentialMetadata]
+    # "host:port" of TCP tunnels for clients that do not speak HTTP; each one opens its host like a domain.
+    tunnels: list[str]
+    # The caller's own Nix store path, as a generated skill wrapper reports it; None for any other caller.
+    store_path: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class BoundaryEvaluation:
+    allowed: bool
+    # What the requesting process reads when denied (the proxy's error body, ccred's or cgate's stderr).
+    rejection: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,11 +195,17 @@ class CachedDomainApproval:
     final_decision: Literal["allowed", "denied"] = "allowed"
     audit_explanation: str | None = None
     sentinel_verdict: SentinelVerdict | None = None
+    rejection: str = ""
+
+    def evaluation(self) -> BoundaryEvaluation:
+        return BoundaryEvaluation(allowed=self.allowed, rejection=self.rejection)
 
 
 @dataclass(slots=True)
 class PendingDomainRequest:
     command: str
+    # Whether the sentinel already decided an earlier request of this exec.
+    follow_up: bool
     future: asyncio.Future[CachedDomainApproval]
 
 
@@ -261,7 +265,7 @@ class SessionSecurity:
         session_id: str,
         *,
         session_factory: SessionFactory | None = None,
-        max_sentinel_calls_per_tool_call: int = 5,
+        max_sentinel_calls_per_exec: int = 5,
         sentinel_domain_batch_window_ms: int = 100,
         unattended: bool = False,
         ask_mode: bool = False,
@@ -275,7 +279,7 @@ class SessionSecurity:
         # The sentinel's shadow conversation; with the action log, this is the persisted sentinel state.
         self.sentinel_messages: list[ModelMessage] = []
         self.sentinel_eval_count: int = 0
-        self.max_sentinel_calls_per_tool_call = max_sentinel_calls_per_tool_call
+        self.max_sentinel_calls_per_exec = max_sentinel_calls_per_exec
         self.sentinel_domain_batch_window_ms = sentinel_domain_batch_window_ms
         self._last_synced_idx: int = 0
         self._session_factory = session_factory
@@ -299,7 +303,8 @@ class SessionSecurity:
         # Sentinel comments on allowed operations, until the agent's next model request carries them.
         self._comments_for_agent: list[str] = []
         self._domain_scope_lock = asyncio.Lock()
-        self._domain_scope_parent_tool_id: str | None = None
+        # Domain decisions are batched and reused within one exec, never across execs.
+        self._domain_scope_exec_id: str | None = None
         self._domain_scope_approvals: dict[str, CachedDomainApproval] = {}
         self._domain_scope_sentinel_calls: int = 0
         self._domain_scope_pending_generation: int = 0
@@ -348,25 +353,28 @@ class SessionSecurity:
         self._domain_scope_inflight_futures = {}
         self._domain_scope_worker_task = None
 
-    def _sync_domain_scope(self) -> None:
-        if self.current_parent_tool_id != self._domain_scope_parent_tool_id:
-            self._domain_scope_parent_tool_id = self.current_parent_tool_id
+    def _enter_domain_scope(self, exec_id: str) -> None:
+        if exec_id != self._domain_scope_exec_id:
+            self._domain_scope_exec_id = exec_id
             self._reset_domain_scope()
 
     def clear_current_parent_tool(self) -> None:
         self.current_parent_tool_id = None
-        self._sync_domain_scope()
 
     async def get_or_enqueue_domain_approval(
         self,
         domain: str,
         command: str,
+        exec_id: str,
+        follow_up: bool,
         worker_factory: Callable[[], asyncio.Task[None]],
     ) -> tuple[CachedDomainApproval | None, asyncio.Future[CachedDomainApproval] | None, bool]:
+        """Return the exec's earlier decision for *domain*, or the future of its pending review.
+
+        The flag tells the request that started that review: a request that joins one shares its outcome.
+        """
         async with self._domain_scope_lock:
-            self._sync_domain_scope()
-            if self.current_parent_tool_id is None:
-                return None, None, False
+            self._enter_domain_scope(exec_id)
 
             cached = self._domain_scope_approvals.get(domain)
             if cached is not None:
@@ -379,23 +387,24 @@ class SessionSecurity:
             pending = self._domain_scope_pending_requests.get(domain)
             if pending is None:
                 future = asyncio.get_running_loop().create_future()
-                self._domain_scope_pending_requests[domain] = PendingDomainRequest(command=command, future=future)
-                should_notify_queued = True
+                self._domain_scope_pending_requests[domain] = PendingDomainRequest(
+                    command=command, follow_up=follow_up, future=future
+                )
+                starts_review = True
                 self._domain_scope_pending_generation += 1
             else:
                 pending.command = command
                 future = pending.future
-                should_notify_queued = False
+                starts_review = False
 
             if self._domain_scope_worker_task is None or self._domain_scope_worker_task.done():
                 self._domain_scope_worker_task = worker_factory()
-            return None, future, should_notify_queued
+            return None, future, starts_review
 
     async def next_domain_batch(self) -> DomainBatchSnapshot | None:
         while True:
             async with self._domain_scope_lock:
-                self._sync_domain_scope()
-                if self.current_parent_tool_id is None or not self._domain_scope_pending_requests:
+                if not self._domain_scope_pending_requests:
                     self._domain_scope_worker_task = None
                     return None
                 generation = self._domain_scope_pending_generation
@@ -405,24 +414,19 @@ class SessionSecurity:
                 await asyncio.sleep(wait_seconds)
 
             async with self._domain_scope_lock:
-                self._sync_domain_scope()
-                if self.current_parent_tool_id is None or not self._domain_scope_pending_requests:
+                scope_id = self._domain_scope_exec_id
+                if scope_id is None or not self._domain_scope_pending_requests:
                     self._domain_scope_worker_task = None
                     return None
                 if generation != self._domain_scope_pending_generation:
                     continue
-
-                scope_id = self.current_parent_tool_id
-                if scope_id is None:
-                    self._domain_scope_worker_task = None
-                    return None
 
                 requests = self._domain_scope_pending_requests
                 self._domain_scope_pending_requests = {}
                 for domain, request in requests.items():
                     self._domain_scope_inflight_futures[domain] = request.future
 
-                limit = self.max_sentinel_calls_per_tool_call
+                limit = self.max_sentinel_calls_per_exec
                 can_review = limit <= 0 or self._domain_scope_sentinel_calls < limit
                 if can_review:
                     self._domain_scope_sentinel_calls += 1
@@ -440,29 +444,26 @@ class SessionSecurity:
         results: dict[str, CachedDomainApproval],
     ) -> None:
         async with self._domain_scope_lock:
-            self._sync_domain_scope()
             for domain in snapshot.requests:
                 self._domain_scope_inflight_futures.pop(domain, None)
-            if self.current_parent_tool_id == snapshot.scope_id:
+            if self._domain_scope_exec_id == snapshot.scope_id:
                 for domain, result in results.items():
                     self._domain_scope_approvals[domain] = result
 
     async def fail_domain_batch(self, snapshot: DomainBatchSnapshot) -> None:
         async with self._domain_scope_lock:
-            self._sync_domain_scope()
             for domain in snapshot.requests:
                 self._domain_scope_inflight_futures.pop(domain, None)
             if (
                 snapshot.can_review
-                and self.current_parent_tool_id == snapshot.scope_id
+                and self._domain_scope_exec_id == snapshot.scope_id
                 and self._domain_scope_sentinel_calls > 0
             ):
                 self._domain_scope_sentinel_calls -= 1
 
     async def fail_pending_domain_requests(self, snapshot: DomainBatchSnapshot, exc: Exception) -> None:
         async with self._domain_scope_lock:
-            self._sync_domain_scope()
-            if self.current_parent_tool_id != snapshot.scope_id:
+            if self._domain_scope_exec_id != snapshot.scope_id:
                 return
 
             pending_requests = self._domain_scope_pending_requests
@@ -529,15 +530,6 @@ class SessionSecurity:
             row.messages = self.sentinel_messages
             row.synced_entries = self._last_synced_idx
             row.eval_count = self.sentinel_eval_count
-
-    def tool_calls_since_last_user_message(self) -> int:
-        count = 0
-        for entry in reversed(self.action_log):
-            if isinstance(entry, UserMessageEntry):
-                break
-            if isinstance(entry, ToolCallEntry):
-                count += 1
-        return count
 
     def write_audit(self, entry: AuditEntry) -> None:
         if self._session_factory is None:
@@ -712,7 +704,7 @@ class SessionSecurity:
         sentinel_verdict: SentinelVerdict | None = None,
     ) -> None:
         """Record a credential access in action log, audit log, and UI notification."""
-        display_path = vault_paths[0] if len(vault_paths) == 1 else "<list>"
+        display_path = vault_paths[0] if len(vault_paths) == 1 else CREDENTIAL_LISTING_PATH
         if self._credential_notify_suppress is not None and self._credential_notify_suppress(display_path):
             return
         self.append(CredentialAccessEntry(vault_paths=vault_paths, decision=decision, explanation=explanation))

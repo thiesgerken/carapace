@@ -2,12 +2,15 @@
 
 carapace supports Kubernetes as a sandbox runtime. Instead of Docker containers, sandbox sessions run as Kubernetes StatefulSets with per-session PVCs. Each session gets its own PersistentVolumeClaim via `volumeClaimTemplates`, eliminating the need for a shared RWX volume.
 
+Upgrading an install from before skill flakes? Follow [Upgrading to skill flakes](upgrading-to-skill-flakes.md) first.
+
 ## Prerequisites
 
-- **Kubernetes cluster** (1.27+) — tested with k3s, works with any conformant cluster. K8s 1.27+ is required for the `persistentVolumeClaimRetentionPolicy` feature (GA).
+- **Kubernetes cluster** (1.29+) — tested with k3s, works with any conformant cluster. Sandbox file writes need the `v5.channel.k8s.io` exec subprotocol (1.29+, see [Architecture](#architecture)), and the in-cluster builder needs user namespaces for pods (below).
 - **RWO StorageClass** — any standard ReadWriteOnce provisioner. The server pod has its own data PVC; sandbox sessions each get a dedicated PVC.
 - **Container images** pushed to a registry accessible by the cluster (GHCR by default)
 - **Helm 3** installed locally
+- **User namespaces for pods** on the nodes that run the [skill builder](builder.md#kubernetes) (`hostUsers: false`, `procMount: Unmasked`), and Pod Security level `privileged` for it. The chart puts the builder into its own namespace, `<release namespace>-builder`, so the release namespace can enforce `baseline` (see [Pod security](#pod-security)). Or run the builder on a separate machine and set `builder.enabled: false`.
 - Published application images support **Linux x64**; native ARM Linux builds are a local development target.
 
 ## Quick start
@@ -17,6 +20,7 @@ carapace supports Kubernetes as a sandbox runtime. Instead of Docker containers,
 #    The ANTHROPIC_API_KEY line is optional: drop it and the server still starts, so an admin can
 #    configure the model catalog under Settings -> Admin -> Platform first.
 kubectl create namespace carapace
+kubectl label namespace carapace pod-security.kubernetes.io/enforce=baseline
 kubectl create secret generic carapace-secrets -n carapace \
   --from-literal=ANTHROPIC_API_KEY=sk-ant-... \
   --from-literal=CARAPACE_TOKEN=my-bootstrap-admin-password
@@ -56,7 +60,7 @@ See the [chart README](../charts/carapace/README.md) for installation details an
 
 The server, frontend, and Bitwarden pods run as UID/GID/fsGroup **999**, with `runAsNonRoot` and seccomp `RuntimeDefault`. Their containers use a read-only root, disable privilege escalation, drop all capabilities, and mount an `emptyDir` at `/tmp`. The server and Bitwarden data mounts remain writable. The server UID and data-volume fsGroup stay 999. For legacy root-owned Bitwarden files, kubelet's default `fsGroupChangePolicy: Always` recursively applies group 999 and group read/write permissions on mount, so existing PVCs do not need a manual ownership migration.
 
-The server retains its service account token for sandbox lifecycle operations. Frontend and Bitwarden pods disable token automounting. The Bitwarden nginx proxy uses the unprivileged image and listens on 8080; its Service still defaults to 80. The frontend likewise listens on 8080 behind its port-80 Service. Postgres and the root/FHS sandbox image are not changed by this hardening.
+The server retains its service account token for sandbox lifecycle operations. Frontend and Bitwarden pods disable token automounting. The Bitwarden nginx proxy uses the unprivileged image and listens on 8080; its Service still defaults to 80. The frontend likewise listens on 8080 behind its port-80 Service. Postgres and the sandbox image (Nix-built, the agent is root in it) are not changed by this hardening.
 
 Bitwarden API-key login requires Vaultwarden 1.35.5 or newer. If Bitwarden persistence is disabled, its state gets an `emptyDir`, not the read-only root.
 
@@ -79,6 +83,13 @@ graph TD
         PvcB["PVC/session-data-…-bbb-0 (RWO)"]
     end
 
+    subgraph nsb ["Namespace: carapace-builder (Pod Security: privileged)"]
+        Builder["Deployment/carapace-builder<br/>(hostUsers: false)"]
+        SvcBuilder["Service/carapace-builder<br/>(ports 8330 + 8331)"]
+        BuilderPVC["PVC/carapace-builder (Nix store)"]
+        BuilderPol["NetworkPolicy (server only)"]
+    end
+
     Deploy -->|mounts| DataPVC
     Deploy -->|creates via K8s API| StsA & StsB
     StsA -->|volumeClaimTemplate| PvcA
@@ -87,6 +98,10 @@ graph TD
     SvcFront --> Frontend
     Route --> SvcServer & SvcFront
     NetPol -.->|restricts| StsA & StsB
+    Deploy -->|builds skills, proxies the cache| SvcBuilder
+    SvcBuilder --> Builder
+    Builder -->|mounts| BuilderPVC
+    BuilderPol -.->|restricts| Builder
 ```
 
 The server pod manages sandbox StatefulSets directly via the Kubernetes API. Each session gets its own StatefulSet (replicas=1) with a per-session PVC created via `volumeClaimTemplates`. Commands are executed in the pod `{sts-name}-0` via `kubectl exec`. File writes, `str_replace` and uploads pass their data on the exec's stdin, in one exec per file. That needs the `v5.channel.k8s.io` exec subprotocol (Kubernetes 1.29 or newer), the only one that can close stdin. kr8s speaks only v4, so carapace opens that websocket itself and fails loudly if the API server doesn't agree to v5.
@@ -103,7 +118,7 @@ Set **`CARAPACE_SANDBOX_K8S_OWNER_REF=false`** to omit `ownerReferences` entirel
 
 ### Idle lifecycle
 
-When a session is idle (configurable timeout, default 60 min), the StatefulSet is scaled to **0 replicas**. The PVC is retained (`whenScaled: Retain`), preserving the workspace, skill venvs, and all session files. When the session resumes, the StatefulSet is scaled back to 1 replica — the pod mounts the existing PVC, so no git clone is needed. The image-provided activator still reruns for active skills, which restores anything kept outside the PVC (see [sandbox.md](sandbox.md#container-lifecycle)).
+When a session is idle (configurable timeout, default 60 min), the StatefulSet is scaled to **0 replicas**. The PVC is retained (`whenScaled: Retain`), preserving the workspace and all session files. When the session resumes, the StatefulSet is scaled back to 1 replica — the pod mounts the existing PVC, so no git clone is needed. Anything kept outside the PVC is gone; the skill commands come back with the profile sync (see [sandbox.md](sandbox.md#container-lifecycle)).
 
 If `CARAPACE_SANDBOX_WARM_POOL_SIZE` is greater than `0`, the server also keeps that many unattached generic warm sandboxes ready. New sessions can claim one of those prestarted StatefulSets instead of waiting for a full cold start. After a successful claim, carapace immediately refills the pool toward the configured target. The claimed sandbox keeps its original unique `sandbox_id` such as `pool-3f9c…`, which is persisted in the session snapshot and shown in the web UI's sandbox inspector. If a claim fails (for example the knowledge repo clone fails), the claimed pool StatefulSet is deleted and the session falls back to a cold-created sandbox. StatefulSets that are already being deleted are ignored when resolving a session's sandbox. Two live StatefulSets labelled with the same session are treated as an error for that session only: starting its sandbox fails until one of them is removed manually, while other sessions are unaffected. Startup orphan cleanup removes every StatefulSet of a deleted session.
 
@@ -231,7 +246,6 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | ------------------------------------------------ | ------------------------- | ---------------------------------------------------------- |
 | `CARAPACE_SANDBOX_RUNTIME`                       | `docker`                  | `docker` or `kubernetes`                                   |
 | `CARAPACE_SANDBOX_BASE_IMAGE`                    | `carapace-sandbox:latest` | Sandbox container image (pin version)                      |
-| `CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS` | `600`                   | Whole-skill activator timeout                              |
 | `CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES`          | `60`                      | Idle sandbox cleanup interval                              |
 | `CARAPACE_SANDBOX_WARM_POOL_SIZE`                | `0`                       | Number of generic warm sandboxes to keep ready             |
 | `CARAPACE_SANDBOX_MAX_PER_USER`                  | `100`                     | Sandboxes one user may hold; `0` disables                  |
@@ -245,7 +259,15 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | `CARAPACE_SANDBOX_K8S_OWNER_REF`                 | `true`                    | Attach `ownerReferences` to sandboxes                      |
 | `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`            | `carapace-sandboxes`      | Required `Sandboxes` owner; set `null`/`""` for Deployment |
 | `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`    | `carapace`                | Server Deployment name (Helm sets to release name)         |
+| `CARAPACE_SANDBOX_K8S_SERVER_SERVICE`            | (required on Kubernetes)  | Server Service; sandboxes reach the proxy at its ClusterIP (Helm sets to release name) |
 | `CARAPACE_SANDBOX_NETWORK_NAME`                  | `carapace-sandbox`        | Docker network name (Docker only)                          |
+| `CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS`        | `[]`                      | CIDRs the proxy may reach despite being [internal](sandbox.md#internal-destinations) (Helm: `sandbox.allowedInternalNetworks`) |
+| `CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS`           | `[]`                      | Host names allowed to resolve to internal addresses (Helm: `sandbox.allowedInternalHosts`) |
+| `CARAPACE_SANDBOX_K8S_RESOURCE_REQUESTS_EPHEMERAL_STORAGE` | `2Gi`           | Sandbox ephemeral storage request, for skill store paths (Helm: `sandbox.resources.requests.ephemeral-storage`) |
+| `CARAPACE_BUILDER_URL`                           | (none: no builder)        | [Skill builder](builder.md) API URL (Helm sets it)         |
+| `CARAPACE_BUILDER_CACHE_URL`                     | (required with a URL)     | Builder [binary cache](builder.md#binary-cache) URL (Helm sets it) |
+| `CARAPACE_BUILDER_TOKEN`                         | (required with a URL)     | Builder token (Helm reads it from the builder Secret)      |
+| `CARAPACE_BUILDER_TIMEOUT_SECONDS`               | `1800`                    | Upper bound for one build request                          |
 
 ## Storage
 
@@ -256,6 +278,7 @@ The server uses a single RWO PVC (`carapace-data`) for its own data (config, ses
 | Server              | `carapace-data` (RWO)                 | `/data`      | RW   |
 | Sandbox StatefulSet | `session-data` (per-session PVC, RWO) | `/workspace` | RW   |
 | Sandbox StatefulSet | `session-data` (per-session PVC, RWO) | `/tmp`       | RW   |
+| Skill builder       | `<release>-builder` (RWO, 20Gi)       | `/nix`       | RW   |
 
 Sandbox pods have **no access** to the server's data PVC. The per-session PVC is mounted twice with `subPath`s (`workspace` and `tmp`) so workspace contents and temp files survive StatefulSet scale-down without a second claim. The workspace is populated via `git clone` from the server's Git HTTP backend on first start. Changes are persisted back via `git push`.
 
@@ -296,7 +319,7 @@ the server being reachable on `localhost` (see [chatgpt-subscription.md](chatgpt
 
 ### Proxy
 
-Sandbox pods reach the internet exclusively through the HTTP proxy running inside the server pod (port 3128). The proxy enforces per-session domain allowlisting with token-based auth. Sandbox pods receive **only** `HTTP_PROXY` / `HTTPS_PROXY` env vars pointing to the carapace service.
+Sandbox pods reach the internet exclusively through the HTTP proxy running inside the server pod (port 3128). The proxy lets a domain through only once it is approved for the running exec, with token-based auth, and it refuses cluster-internal and private destinations (other pods, Services, the Kubernetes API, the node network) unless `sandbox.allowedInternalNetworks` or `sandbox.allowedInternalHosts` allows them; see [Internal destinations](sandbox.md#internal-destinations). Sandbox pods receive **only** `HTTP_PROXY` / `HTTPS_PROXY` env vars pointing to the carapace service.
 
 Git operations (`git clone`, `git push`) use the **sandbox API** (port 8322) directly with HTTP Basic Auth (`session_id:token`). The sandbox API hostname is added to `NO_PROXY` so Git traffic bypasses the HTTP proxy.
 
@@ -311,9 +334,11 @@ The included `networkpolicy.yaml` restricts sandbox pods:
 
 This mirrors the Docker setup where sandbox containers are on an internal network with no direct internet access.
 
+A second policy, in the builder namespace, covers the [skill builder](builder.md#kubernetes): ingress only from the server pod, on ports 8330 (build API) and 8331 (binary cache). Sandboxes reach the cache only through the server's session proxy, never directly. If the release namespace restricts egress, the server needs egress rules to the API server and the builder namespace (see [builder](builder.md#kubernetes)).
+
 > **⚠️ SECURITY WARNING — NetworkPolicy is critical to carapace's security model**
 >
-> Sandbox pods must **never** have direct internet access. All outbound traffic is forced through the server's HTTP proxy, which enforces per-session domain allowlisting and the human-in-the-loop approval flow. If a sandbox pod can reach the internet without going through the proxy, an agent can exfiltrate data or interact with external services without any approval.
+> Sandbox pods must **never** have direct internet access. All outbound traffic is forced through the server's HTTP proxy, which lets a domain through only once the sentinel (or the user) approved it for the running exec. If a sandbox pod can reach the internet without going through the proxy, an agent can exfiltrate data or interact with external services without any approval.
 >
 > **The NetworkPolicy is the only thing preventing this.** If any of the following are true, the approval system can be trivially defeated:
 >
@@ -321,13 +346,19 @@ This mirrors the Docker setup where sandbox containers are on an internal networ
 > - Another NetworkPolicy in the same namespace grants sandbox pods broader egress (Kubernetes NetworkPolicy is **additive** — a permissive policy cannot be overridden by a restrictive one).
 > - Namespace-level or cluster-level network rules (e.g. Cilium `CiliumNetworkPolicy`, Calico `GlobalNetworkPolicy`) open additional egress paths for sandbox pods.
 >
-> **Before deploying to production**, verify your setup:
+> The server checks this at every start: it creates a probe sandbox pod and refuses to start if that pod can open a direct connection or resolve a name (see [Start-up egress self-test](security.md#start-up-egress-self-test)). A server that crash-loops with `Sandbox egress self-test failed` in its log is the symptom of one of the cases above. The check covers a few public addresses; a policy that blocks exactly those would still pass, so after changing network rules you can also check by hand:
 >
 > ```bash
-> # After deploying, exec into a sandbox pod and confirm it cannot reach the internet directly
+> # Exec into a sandbox pod and confirm it cannot reach the internet directly
 > kubectl exec -it <sandbox-pod> -- curl -m 5 https://example.com
 > # This MUST fail (timeout / connection refused). If it succeeds, your NetworkPolicy is not being enforced.
 > ```
+
+## Pod security
+
+Label the release namespace `pod-security.kubernetes.io/enforce: baseline`. The chart doesn't own that namespace, so it doesn't set the label. Every pod there passes `baseline`: the chart's own Deployments and the sandbox pods the server creates (`allowPrivilegeEscalation: false`, all capabilities dropped, PVC volumes only). `restricted` doesn't fit, because sandboxes run as root. The label is a second layer behind the server: should the server's service account be misused, admission still rejects hostPath, host network and privileged pods.
+
+The builder needs `privileged` and gets its own namespace for it, `<release namespace>-builder` by default, created and labelled by the chart (`builder.namespace`, `builder.createNamespace`; see [builder](builder.md#kubernetes)). Only the server reaches it: the builder's NetworkPolicy admits server pods from the release namespace on ports 8330 and 8331.
 
 ## RBAC
 

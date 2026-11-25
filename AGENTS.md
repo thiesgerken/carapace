@@ -16,7 +16,7 @@ carapace is a security-first personal AI agent with LLM-powered security gating.
 - Run type checks: `uv run pyrefly check`
 - Run tests: `uv run pytest`
 - Run single test: `uv run pytest tests/test_cli.py -k test_help`
-- Build runtime images: `nix build .#packages.<system>.{server,frontend,bitwarden}-image`; use `aarch64-linux` via the native Linux builder on Apple Silicon.
+- Build runtime images: `nix build .#packages.<system>.{server,frontend,bitwarden,sandbox,builder}-image`; use `aarch64-linux` via the native Linux builder on Apple Silicon.
 - Nix checks: `nix flake check` on Linux, or `nix flake check --system aarch64-linux` through the builder. See `docs/development.md`.
 
 ## Code style
@@ -72,15 +72,19 @@ src/carapace/          # main package
     __init__.py        # re-exports (GitHttpHandler, GitStore)
     http.py            # Git HTTP Smart Protocol handler (git http-backend CGI)
     store.py           # Git CLI wrapper (init, commit, push, pull, hooks)
+  builder/
+    app.py             # skill builder service (carapace-builder): build API, start-up sandbox probe
+    nix.py             # the nix build/eval subprocesses behind it
+    client.py          # the server's client for the builder
   memory/
     service.py         # MemoryService facade: long-term memory tasks, worker, queries (see docs/memory.md)
   security/
-    __init__.py        # public API: evaluate(), evaluate_domain(), safe-list
+    __init__.py        # public API: record_tool_call(), evaluate_domain_with(), boundary and push evaluations
     sentinel.py        # LLM-powered security agent (shadow conversation)
     context.py         # action log entries, sentinel verdict, session security state
   sandbox/
     manager.py         # sandbox container lifecycle and auth
-    proxy.py           # HTTP forward proxy with domain allowlisting
+    proxy.py           # HTTP forward proxy with per-exec domain approvals
     runtime.py         # abstract container runtime interface
     docker.py          # Docker runtime implementation
     kubernetes.py      # Kubernetes runtime implementation
@@ -106,10 +110,10 @@ data/                  # runtime data directory (config, sessions, notifications
 ## CI
 
 - GitHub Actions PR CI calls reusable `nix-verify.yml`: nix-fast-build realizes `ciBuilds.x86_64-linux` (pytest, pyrefly, Ruff, frontend lint/test/build, Helm, packages, and images).
-- The sandbox remains a Dockerfile. Verification builds it, loads all images, runs `scripts/smoke-images.py`, and uploads verified archives without registry write permissions.
+- Verification loads all images, runs `scripts/smoke-images.py`, and uploads verified archives without registry write permissions.
 - `prek` stays a separate job because its hooks fetch from the network.
 - Trusted `workflow_run` PR publication checks open-PR/same-repo/same-SHA provenance before publishing archives and charts.
-- `release.yml` releases every push to `main` with Presswerk (declared in the flake's `presswerk.default`): the push run prepares and pushes the release commit, the dispatched candidate run verifies it with `nix-verify.yml` and publishes tag, Nix images, chart and GitHub Release from Cachix. The sandbox archive is pushed with Skopeo just before.
+- `release.yml` releases every push to `main` with Presswerk (declared in the flake's `presswerk.default`): the push run prepares and pushes the release commit, the dispatched candidate run verifies it with `nix-verify.yml` and publishes tag, Nix images, chart and GitHub Release from Cachix.
 - Python 3.14 comes from pinned nixpkgs; Python dependencies come from `uv.lock` via uv2nix. Nix is the single build/check definition for application images.
 
 ## Key conventions
@@ -117,11 +121,11 @@ data/                  # runtime data directory (config, sessions, notifications
 - Commit messages use [gitmoji](https://gitmoji.dev/) (e.g. `🐛 fix:`, `✨ feat:`, `♻️ refactor:`). The emoji sets the release level per [Presswerk's Gitmoji catalog](https://presswerk.dev/reference/analyzers/gitmoji/), with ♻️ and 👷 raised to patch
 - Try to commit isolated fixes / features
 - Security policy is a natural-language `SECURITY.md` that becomes the sentinel agent's system prompt
-- Every tool call goes through a safe-list check, then an LLM sentinel gate (`security.evaluate()`)
+- Tool calls are not reviewed: `security.record_tool_call()` puts each one into the action log. The LLM sentinel reviews what crosses the sandbox boundary (proxy domains, credentials, `cgate request`, git pushes)
 - The sentinel maintains a persistent shadow conversation per session for contextual decisions
 - An append-only action log tracks all agent actions, user messages, and security decisions
 - Skills follow the open [AgentSkills](https://agentskills.io/) format
 - All runtime state lives under `$CARAPACE_DATA_DIR` (defaults to `./data`)
 - Secrets come from a password manager, never stored in the repo
 - UI PRs get screenshots of the changed pages (before/after, light/dark, phone if the layout changes), demo data only, attached with `gh pr edit --attach`; see "Screenshots" in `docs/development.md`
-- Prefix caching is a hard requirement, not an optimization: a miss re-bills the whole system prompt and conversation (as a cache write on Anthropic). LLM system prompts put the stable shared prefix first (`prompt_prefix.shared_prompt_prefix()`), then role instructions, and anything volatile (current time, session ID, per-call data) last. Never put volatile text or a per-role split before the long shared text, and don't change tool definitions or instructions mid-session. Anything that has to break the prefix needs a stated reason and a mention in `docs/persistent-context.md` (see its known breaks, e.g. skill MCP tools)
+- Prefix caching is a hard requirement, not an optimization: a miss re-bills the whole system prompt and conversation (as a cache write on Anthropic). LLM system prompts put the stable shared prefix first (`prompt_prefix.shared_prompt_prefix()`), then role instructions, and anything volatile (current time, session ID, per-call data) last. Never put volatile text or a per-role split before the long shared text, and don't change tool definitions or instructions mid-session. Anything that has to break the prefix needs a stated reason and a mention in `docs/persistent-context.md` (see its known breaks)

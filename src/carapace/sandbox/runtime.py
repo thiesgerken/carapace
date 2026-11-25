@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import ipaddress
-from typing import ClassVar, Literal, Protocol
+from typing import Literal, Protocol
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel
+
+EGRESS_PROBE_LABEL = "carapace.egress-check"
 
 
 class ContainerGoneError(Exception):
@@ -12,74 +13,6 @@ class ContainerGoneError(Exception):
 
 class DuplicateSandboxError(RuntimeError):
     """Raised when more than one live sandbox claims the same session."""
-
-
-class SkillActivationError(Exception):
-    """Raised when automatic skill activation/setup fails."""
-
-
-class SkillFileCredential(BaseModel):
-    path: str
-    value: str
-
-
-class SkillActivationInputs(BaseModel):
-    environment: dict[str, str] = {}
-    file_credentials: list[SkillFileCredential] = []
-
-
-class NetworkTunnel(BaseModel):
-    host: str
-    remote_port: int = Field(ge=1, le=65535)
-    local_port: int = Field(ge=1024, le=65535)
-    description: str = ""
-
-    _BLOCKED_HOSTS: ClassVar[set[str]] = {
-        "localhost",
-        "host.docker.internal",
-        "gateway.docker.internal",
-        "kubernetes.default.svc",
-        "kubernetes.default.svc.cluster.local",
-    }
-    _BLOCKED_SUFFIXES: ClassVar[tuple[str, ...]] = (
-        ".localhost",
-        ".local",
-        ".internal",
-        ".home.arpa",
-        ".localdomain",
-        ".svc",
-        ".cluster.local",
-    )
-
-    @field_validator("host")
-    @classmethod
-    def _validate_host(cls, value: str) -> str:
-        host = value.strip().lower().rstrip(".")
-        if not host:
-            raise ValueError("network tunnel host must not be empty")
-        if "*" in host:
-            raise ValueError("network tunnel host must be exact; wildcards are not allowed")
-        if any(ch in host for ch in ("/", ":", " ", "\t", "\n", "\r")):
-            raise ValueError("network tunnel host must be a plain hostname")
-        try:
-            ipaddress.ip_address(host)
-        except ValueError:
-            pass
-        else:
-            raise ValueError("network tunnel host must not be an IP literal")
-        if host in cls._BLOCKED_HOSTS or host in {"127.0.0.1", "::1", "0.0.0.0"}:
-            raise ValueError("network tunnel host must not target loopback or wildcard addresses")
-        if any(host.endswith(suffix) for suffix in cls._BLOCKED_SUFFIXES):
-            raise ValueError("network tunnel host must not target internal-only service names")
-        return host
-
-    @property
-    def endpoint(self) -> str:
-        return f"{self.host}:{self.remote_port}"
-
-    @property
-    def display(self) -> str:
-        return f"{self.host}:{self.remote_port} via :{self.local_port}"
 
 
 class Mount(BaseModel):
@@ -182,6 +115,13 @@ class ContainerRuntime(Protocol):
 
     async def list_pool_sandboxes(self) -> dict[str, PoolSandbox]:
         """Return ``{sandbox_id: PoolSandbox}`` for unattached warm-pool sandboxes."""
+        ...
+
+    async def list_egress_probes(self) -> dict[str, str]:
+        """Return ``{sandbox_id: container_or_pod_id}`` for this server's live egress-check probes.
+
+        A server killed during its start-up self-test leaves its probe behind, and the next start removes it.
+        """
         ...
 
     async def claim_warm_sandbox(self, name: str, session_id: str) -> bool:

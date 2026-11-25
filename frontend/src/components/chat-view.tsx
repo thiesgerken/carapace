@@ -35,6 +35,7 @@ import {
   wsUrl,
 } from "@/lib/api";
 import type {
+  ApprovalSource,
   ApprovalVerdict,
   Attachment,
   ChatMessage,
@@ -90,7 +91,7 @@ interface ChatViewProps {
   onInitialMessageSent?: () => void;
 }
 
-const SANDBOX_STARTUP_TOOL_NAMES = new Set(["use_skill", "read", "write", "str_replace", "exec", "send_file"]);
+const SANDBOX_STARTUP_TOOL_NAMES = new Set(["read_skill", "read", "write", "str_replace", "exec", "send_file"]);
 // Sent as a plain user message: the history already holds the failed turn's tool calls, so the
 // agent picks up from there. English on purpose, every model follows it whatever the UI language.
 const CONTINUE_PROMPT = "Continue.";
@@ -399,40 +400,21 @@ function applyApprovedApprovalToMessages(
 function isUserApprovedReplay(
   tool: string,
   detail: string | undefined,
-  approvalSource: ChatMessage extends never ? never :
-    | "safe-list"
-    | "sentinel"
-    | "user"
-    | "skill"
-    | "bypass"
-    | "autonomy"
-    | "unknown"
-    | undefined,
+  approvalSource: ApprovalSource | undefined,
   approvalVerdict: ApprovalVerdict | undefined,
 ): boolean {
   return (
     approvalSource === "user" &&
     approvalVerdict === "allow" &&
     detail === "[user approved]" &&
-    (tool === "exec" || tool === "use_skill")
+    tool === "exec"
   );
 }
 
 type ToolCallMessage = Extract<ChatMessage, { kind: "tool_call" }>;
 type ToolCallChildMessage = NonNullable<ToolCallMessage["children"]>[number];
 
-function isToolCallLoading(
-  tool: string,
-  approvalSource?:
-    | "safe-list"
-    | "sentinel"
-    | "user"
-    | "skill"
-    | "bypass"
-    | "autonomy"
-    | "unknown",
-  approvalVerdict?: ApprovalVerdict,
-): boolean {
+function isToolCallLoading(tool: string, approvalVerdict?: ApprovalVerdict): boolean {
   const isGitPush = tool === "git_push";
   if (
     tool === "proxy_domain" ||
@@ -441,10 +423,8 @@ function isToolCallLoading(
   ) {
     return false;
   }
-  if (approvalSource === "sentinel" && approvalVerdict == null) {
-    return true;
-  }
-  return approvalVerdict === "allow";
+  // Nothing reviews a tool call by itself, so one without a decision is running; held back ones carry a deny.
+  return approvalVerdict == null || approvalVerdict === "allow";
 }
 
 function updateToolCallMessageById(
@@ -512,12 +492,6 @@ function normalizeStringList(value: unknown): string[] | undefined {
 
 function normalizeToolArgs(args: unknown): Record<string, unknown> {
   return isRecord(args) ? args : {};
-}
-
-function normalizeHistoryContexts(message: HistoryMessage): string[] | undefined {
-  const directContexts = normalizeStringList(message.contexts);
-  if (directContexts) return directContexts;
-  return normalizeStringList(normalizeToolArgs(message.args).contexts);
 }
 
 function findLaterEscalationDecision(
@@ -717,11 +691,7 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
     if (entry.role === "tool_call") {
       const tool = entry.tool ?? "";
       const args = normalizeToolArgs(entry.args);
-      const loading = isToolCallLoading(
-        tool,
-        entry.approval_source,
-        entry.approval_verdict,
-      );
+      const loading = isToolCallLoading(tool, entry.approval_verdict);
 
       // The server usually overwrites the escalated event in place with the approved one, so
       // there may be no escalated message to patch; then render this event as the tool call.
@@ -749,7 +719,6 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         tool,
         args,
         detail: entry.detail ?? "",
-        contexts: normalizeHistoryContexts(entry),
         approvalSource: entry.approval_source,
         approvalVerdict: entry.approval_verdict,
         approvalExplanation: entry.approval_explanation,
@@ -814,7 +783,6 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         tool: entry.tool ?? "",
         args: normalizeToolArgs(entry.args),
         explanation: entry.explanation ?? "",
-        risk_level: entry.risk_level ?? "",
       };
       const response = history.find(
         (candidate) =>
@@ -910,7 +878,7 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
               vault_paths: normalizeStringList(entry.vault_paths) ?? [],
               names: normalizeStringList(entry.names) ?? [],
               descriptions: normalizeStringList(entry.descriptions) ?? [],
-              skill_name: normalizeOptionalString(entry.skill_name),
+              domains: normalizeStringList(entry.domains) ?? [],
               explanation: entry.explanation ?? "",
             },
             decision,
@@ -1488,20 +1456,12 @@ export function ChatView({
           if (shouldOptimisticallyShowPendingSandbox(msg.tool, currentSandbox)) {
             applySandboxSnapshot(optimisticPendingSandbox(currentSandbox));
           }
-          const isLoading = isToolCallLoading(
-            msg.tool,
-            msg.approval_source,
-            msg.approval_verdict,
-          );
-          const rawContexts = msg.contexts ?? msg.args?.contexts;
+          const isLoading = isToolCallLoading(msg.tool, msg.approval_verdict);
           const newMsg: ChatMessage = {
             kind: "tool_call",
             tool: msg.tool,
             args: msg.args,
             detail: msg.detail,
-            contexts: Array.isArray(rawContexts)
-              ? (rawContexts as string[])
-              : undefined,
             approvalSource: msg.approval_source,
             approvalVerdict: msg.approval_verdict,
             approvalExplanation: msg.approval_explanation,

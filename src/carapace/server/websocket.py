@@ -143,15 +143,11 @@ class WebSocketSubscriber:
         tool_call_id: str | None = None,
         approval_comment: str | None = None,
     ) -> None:
-        normalized_args = normalize_tool_call_args(tool, args)
-        contexts_raw = normalized_args.get("contexts")
-        contexts = list(contexts_raw) if isinstance(contexts_raw, list) else []
         await self._safe_send(
             ToolCallInfo(
                 tool=tool,
-                args=normalized_args,
+                args=normalize_tool_call_args(tool, args),
                 detail=detail,
-                contexts=contexts,
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
@@ -325,7 +321,7 @@ class WebSocketSubscriber:
         vault_paths: list[str],
         names: list[str],
         descriptions: list[str],
-        skill_name: str | None,
+        domains: list[str],
         explanation: str,
     ) -> None:
         await self._safe_send(
@@ -334,7 +330,7 @@ class WebSocketSubscriber:
                 vault_paths=vault_paths,
                 names=names,
                 descriptions=descriptions,
-                skill_name=skill_name,
+                domains=domains,
                 explanation=explanation,
             )
         )
@@ -417,7 +413,7 @@ async def chat_ws(
                         vault_paths=pp.get("vault_paths", []),
                         names=pp.get("names", []),
                         descriptions=pp.get("descriptions", []),
-                        skill_name=pp.get("skill_name"),
+                        domains=pp["domains"],
                         explanation=pp.get("explanation", ""),
                     ),
                 )

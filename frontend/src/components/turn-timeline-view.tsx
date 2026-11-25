@@ -88,7 +88,7 @@ const FACT_CLASS: Record<Fact["tone"], string> = {
   bad: "rounded bg-red-500/15 px-1 text-red-700 dark:text-red-300",
 };
 
-const VERDICT_TONE: Record<string, Fact["tone"]> = { allow: "good", revise: "warn", escalate: "warn", deny: "bad" };
+const VERDICT_TONE: Record<string, Fact["tone"]> = { allow: "good", escalate: "warn", deny: "bad" };
 
 export const CATEGORY_CLASS: Record<TimeCategory, string> = {
   preparation: "bg-yellow-300 dark:bg-yellow-200",
@@ -370,6 +370,9 @@ function spanText({ kind, name, attrs }: Span): { text: string; mono: boolean } 
       return { text: name === "exec" ? (attr("command") ?? name) : [name, attr("tool")].filter(Boolean).join(" "), mono: true };
     case "file":
       return { text: [name, attr("path")].filter(Boolean).join(" "), mono: true };
+    // build wait: which skill it was for (profile sync has no skill attribute).
+    case "skill":
+      return { text: [name, attr("skill")].filter(Boolean).join(" · "), mono: false };
     // Its name is the check's type and its subject repeats the call or domain next to it.
     case "sentinel":
       return { text: kind, mono: false };

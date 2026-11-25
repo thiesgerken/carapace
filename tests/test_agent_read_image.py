@@ -17,6 +17,7 @@ from carapace.agent.tools import (
     _image_media_type,
     create_agent,
 )
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.llm import model_supports_vision
@@ -25,7 +26,6 @@ from carapace.models.session import SessionState
 from carapace.models.tooling import ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity
-from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
 VISION_MODEL = "anthropic:claude-sonnet-4-6"
@@ -51,13 +51,13 @@ def _deps(tmp_path: Path, *, model_id: str, vision: bool, results: list[ToolResu
     sandbox.file_read = AsyncMock(return_value="TEXT-STUB")
     sandbox.file_read_bytes = AsyncMock(return_value=b"\x89PNG-bytes")
     return Deps(
+        skill_builds=SkillBuilds(None),
         config=_config(vision_default=vision),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
         session_state=SessionState.now(session_id="s1", unattended=False),
         sandbox=sandbox,
         security=SessionSecurity("s1", unattended=False),
-        sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         agent_model_id=model_id,

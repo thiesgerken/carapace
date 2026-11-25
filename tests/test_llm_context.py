@@ -153,7 +153,9 @@ async def test_sentinel_timeout_marks_its_context_failed(tmp_path: Path, db_fact
     sentinel = _sentinel(tmp_path, ReplayStreamModel(_hang))
 
     with engine.llm_request_recording(active):
-        verdict = await sentinel.evaluate_tool_call(SessionSecurity("s"), "exec", {"command": "echo hi"})
+        verdict = await sentinel.evaluate_domain_access(
+            SessionSecurity("s"), ["example.com"], "echo hi", follow_up=False
+        )
 
     context = engine.session_mgr.load_llm_context(active.state.session_id, "sentinel")
     assert context is not None
@@ -206,7 +208,7 @@ async def test_sentinel_timeout_between_requests_leaves_the_completed_context_al
         return "unreachable"
 
     with engine.llm_request_recording(active):
-        await sentinel.evaluate_tool_call(SessionSecurity("s"), "exec", {"command": "echo hi"})
+        await sentinel.evaluate_domain_access(SessionSecurity("s"), ["example.com"], "echo hi", follow_up=False)
 
     context = engine.session_mgr.load_llm_context(active.state.session_id, "sentinel")
     assert context is not None
@@ -397,7 +399,7 @@ async def test_sentinel_streams_so_its_requests_record_their_phases(tmp_path: Pa
 
     sentinel = _sentinel(tmp_path, ReplayStreamModel(verdict), timeout=timedelta(seconds=5))
     with engine.llm_request_recording(active):
-        await sentinel.evaluate_tool_call(SessionSecurity("s"), "exec", {"command": "echo hi"})
+        await sentinel.evaluate_domain_access(SessionSecurity("s"), ["example.com"], "echo hi", follow_up=False)
 
     [record] = engine.session_mgr.load_llm_request_log(active.state.session_id).records
     assert record.source == "sentinel"

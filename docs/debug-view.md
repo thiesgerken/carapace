@@ -84,9 +84,9 @@ failed, budget-stopped or stopped one.
 - **Summary**: wall time, system time, and the time spent waiting for you (approvals, domain
   access, credential release). A stacked bar splits the wall time by category: preparation
   (`turn.prepare`), the agent's LLM requests (until the first token, thinking, output), sentinel
-  (gates, sentinel calls and their LLM requests, proxy domain checks), sandbox, skills, exec and
+  (sentinel calls and their LLM requests, proxy domain checks, and the gates of older turns), sandbox, skills, exec and
   files, credentials, compaction (with its LLM requests), other (e.g. a tool's own time outside its
-  gate and exec), and **not covered**. Each instant of the turn counts once, for the sequential main path: starting at the
+  exec), and **not covered**. Each instant of the turn counts once, for the sequential main path: starting at the
   turn, it steps into the running child that started first, level by level, and the instant
   belongs to where that stops, so parallel work never counts twice. Anything inside a `wait` span
   is waiting for you. Instants that stop at the turn itself are not covered: time no span measured.
@@ -103,9 +103,9 @@ failed, budget-stopped or stopped one.
   name and a duration up to minutes keep their room.
 - A span whose only child covers at least three quarters of it merges with that child into one
   row, and so on down, once both have ended `ok`; running, failed and interrupted spans keep their
-  own rows. A gate, its sentinel call and the sentinel's LLM request become one
-  `sentinel` row with the verdict. The row shows the head's duration and every member's bar. It is
-  named by its first member that isn't a gate, since a gate's name is its tool's. The turn itself
+  own rows. A sentinel call and its LLM request become one `sentinel` row with the verdict (in older
+  turns with the tool's gate in front). The row shows the head's duration and every member's bar. It
+  is named by its first member that isn't a gate, since a gate's name is its tool's. The turn itself
   never merges.
 - Clicking a row opens its details, one block per merged span: start (relative to the turn),
   duration, status and attributes. An LLM span adds model, phase durations, tokens, output speed, cache and
@@ -318,8 +318,8 @@ keeps them.
 | --- | --- | --- | --- |
 | `turn` | `turn` | the whole turn | `prompt` |
 | `turn.prepare` | `prepare` | resume, memory snapshot, history for the agent model (compaction after a model switch included) | |
-| `tool` | tool name | one tool call of the agent or the sentinel, gate and approval hold included (`ToolSpanCapability`) | `deferred` when it waits for approval |
-| `gate` | tool name | the security gate of a tool call: safe-list, sentinel | `denied` |
+| `tool` | tool name | one tool call of the agent or the sentinel, an autonomy-limit hold included (`ToolSpanCapability`) | `deferred` when it waits for approval |
+| `gate` | tool name | the security gate of a tool call; only in turns recorded before tool calls stopped being reviewed | `denied` |
 | `sentinel` | evaluation kind | one sentinel evaluation, its compaction and requests included | `subject`, `verdict` |
 | `wait` | `approval`, or the escalation's subject | the user's answer: tool approvals, domain, credential and git push escalations | `reason` (`approval`, `domain`, `credential`), `calls` |
 | `credential` | vault path | one credential or metadata fetch | `fetch` |
@@ -335,18 +335,17 @@ escalation waits with reason `approval`. The title is generated after the turn a
 | Kind | Name | Where | Attrs |
 | --- | --- | --- | --- |
 | `exec` | `exec` | the `exec` tool's sandbox call | `command` (≤ 200 chars), `exit_code` |
-| `exec` | `mcp:<server>` | a stdio MCP bridge call (list or tool call) | `skill`, `mode`, `tool`, `exit_code` |
 | `file` | `read`, `write`, `str_replace`, `send_file` | the file tools' sandbox calls | `path` (≤ 200 chars) |
 | `sandbox` | `ensure` | a sandbox start, resume or re-attach before a call can run | |
 | `sandbox` | `create`, `resume`, `warm claim`, `wait_for_ready`, `knowledge clone`, `hooks`, `proxy setup`, `git identity` | the steps of a start, under `ensure` | `claimed` on `warm claim`, `ready` on `wait_for_ready` |
-| `skill` | `activate` | the sandbox skill activator, also when a restart reruns it | `skill`, `exit_code` |
-| `skill` | `mcp prewarm` | `use_skill` connecting the skill's MCP servers | `skill` |
+| `skill` | `build wait` | `read_skill` waiting for the skill's build | `skill` |
+| `skill` | `profile sync` | bringing the sandbox's skill profile to the owner's head ([sandbox.md](sandbox.md#skill-commands-on-path)) | `paths` |
+| `skill` | `list tools` | `read_skill` running an MCP server's `<server> --list-tools` | `server` |
 | `domain` | the domain (≤ 200 chars) | a proxy domain check | `domain` (≤ 200 chars), `allowed` |
 
 A sandbox that is already running gets no `ensure` span, so the common case adds no row per call.
 Warm pool refills run in a fresh context, so the pool's own startups never land in the turn that
 triggered them.
-The exec span's command is not the MCP bridge's: that one carries the tool arguments.
 
 Calls from inside the sandbox reach the server outside the turn's task: the proxy's domain checks,
 the sandbox API (credentials, git) and the pre-receive hook's push evaluation. They enter

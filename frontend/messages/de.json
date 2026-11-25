@@ -59,21 +59,27 @@
         "largeFileNotice": "Syntax-Hervorhebung ist für diese Datei deaktiviert — sie ist zu groß.",
         "tooLarge": "Diese Datei ist zu groß für eine Vorschau — bitte herunterladen.",
         "skill": {
-            "commands": "Befehle",
-            "domains": "Domains",
-            "tunnels": "Tunnel",
-            "credentials": "Zugangsdaten",
-            "credential": "Zugangsdatum",
-            "mcp": "MCP-Server",
-            "mcpAuth": "{type}-Auth",
-            "vaultPresent": "Im Vault vorhanden",
-            "vaultAbsent": "Nicht im Vault",
-            "vaultUnconfigured": "Vault-Backend nicht konfiguriert",
-            "vaultError": "Vault nicht erreichbar",
-            "oauthHint": "Kein OAuth-Token hinterlegt. Erzeuge eines mit",
-            "oauthHintStore": "und speichere das JSON im obigen Vault-Eintrag.",
             "hints": "Hinweise",
-            "invalid": "Ungültiges Frontmatter, der Skill kann nicht aktiviert werden: {error}"
+            "invalid": "Ungültiges Frontmatter: {error}",
+            "build": {
+                "title": "Build",
+                "tree": "Git-Tree des Skills im HEAD",
+                "retry": "Erneut versuchen",
+                "log": "Build-Log",
+                "needsDomains": "erreicht {domains}",
+                "state": {
+                    "building": "Wird gebaut",
+                    "succeeded": "Gebaut",
+                    "failed": "Fehlgeschlagen",
+                    "unavailable": "Builder nicht erreichbar"
+                },
+                "hint": {
+                    "building": "Der Builder baut die committete Version dieses Skills.",
+                    "succeeded": "Seine Befehle sind in neuen Sessions verfügbar.",
+                    "failed": "Seine Befehle sind nicht verfügbar. Skill korrigieren und pushen, oder erneut versuchen, wenn der Fehler vorübergehend war.",
+                    "unavailable": "Der Skill-Builder ist nicht erreichbar; der Build startet, sobald er wieder da ist."
+                }
+            }
         }
     },
     "memory": {
@@ -873,9 +879,9 @@
         },
         "yolo": {
             "enabledTitle": "YOLO",
-            "enabledDescription": "Alle Tool-Calls sofort erlauben.",
+            "enabledDescription": "Sentinel-Prüfung abschalten und Zugriffe sofort erlauben.",
             "disabledTitle": "Mit Prüfung",
-            "disabledDescription": "Aktionen weiter durch Safe-List und Sentinel prüfen."
+            "disabledDescription": "Der Sentinel prüft, was Befehle außerhalb der Sandbox anfordern."
         },
         "unattended": {
             "enabledTitle": "Unbeaufsichtigt",
@@ -926,15 +932,9 @@
             "title": "Freigabe erforderlich",
             "toolLabel": "Tool:",
             "reasonLabel": "Grund:",
-            "riskLabel": "Risiko:",
             "arguments": "Argumente",
             "allow": "Freigeben",
-            "denyPlaceholder": "Warum sollte das blockiert werden?",
-            "risk": {
-                "high": "hoch",
-                "medium": "mittel",
-                "low": "niedrig"
-            }
+            "denyPlaceholder": "Warum sollte das blockiert werden?"
         },
         "denialNote": {
             "deny": "Ablehnen",
@@ -944,7 +944,9 @@
         },
         "credential": {
             "title": "Zugangsdatenanfrage",
-            "skillLabel": "Skill:",
+            "accessTitle": "Zugriffsanfrage",
+            "domainsLabel": "Domains:",
+            "credentialsLabel": "Zugangsdaten:",
             "allow": "Erlauben",
             "denyPlaceholder": "Warum sollte dieser Zugang blockiert werden?",
             "decision": {
@@ -987,7 +989,9 @@
         "status": {
             "sentinel": "Sentinel prüft…",
             "sandbox": "Sandbox startet…",
-            "skill": "Skill wird aktiviert…",
+            "skill": "Bereite Skill vor…",
+            "skillBuild": "Warte auf den Skill-Build…",
+            "skillProfile": "Installiere die Befehle des Skills…",
             "credential": "Lade Zugangsdaten…",
             "domain": "Domain-Check {domain}…",
             "wait": "Warte auf Freigabe…"
@@ -999,19 +1003,32 @@
             "skill": "Skill",
             "bypass": "Bypass",
             "denied": "abgelehnt",
-            "autonomy": "Autonomie-Limit"
+            "autonomy": "Autonomie-Limit",
+            "policy": "intern",
+            "titles": {
+                "sentinelPending": "Der Sentinel prüft das gerade",
+                "sentinel_allow": "Vom Sentinel erlaubt",
+                "sentinel_deny": "Vom Sentinel abgelehnt",
+                "sentinel_escalate": "Der Sentinel überlässt dir die Entscheidung",
+                "userAllow": "Von dir erlaubt",
+                "userDeny": "Von dir abgelehnt",
+                "skill": "Von einem aktiven Skill erlaubt",
+                "autonomy": "Vom Autonomie-Limit gestoppt",
+                "bypass": "Ohne Prüfung erlaubt (YOLO-Modus)",
+                "policy": "Als internes Ziel abgelehnt",
+                "denied": "Abgelehnt"
+            }
         },
         "fallbacks": {
             "missingPath": "(Pfad fehlt)",
             "missingCommand": "(Befehl fehlt)",
-            "missingSkillName": "(skill_name fehlt)",
             "credential": "Zugangsdaten"
         },
         "labels": {
             "read": "Las",
             "wrote": "Geschrieben",
             "replaced": "Ersetzt",
-            "activatedSkill": "Skill aktiviert",
+            "readSkill": "Skill gelesen",
             "executed": "Ausgeführt",
             "listedCredentials": "Zugangsdaten aufgelistet",
             "credentialDenied": "Zugangsdaten abgelehnt",
@@ -1021,7 +1038,7 @@
             "gitPush": "Git Push",
             "readAction": "Lese",
             "write": "Schreibe",
-            "activateSkill": "Aktiviere Skill",
+            "readSkillAction": "Skill lesen",
             "execute": "Führe aus",
             "listCredentials": "Liste Zugangsdaten auf",
             "accessCredential": "Zugangsdaten verwenden",
@@ -1043,23 +1060,12 @@
             "allMatchesSuffix": " (alle Treffer)"
         },
         "details": {
-            "activateSkillPromptPrefix": "Agent möchte den",
-            "activateSkillPromptSuffix": "Skill aktivieren.",
             "sentinelLabel": "Sentinel:",
+            "proxyLabel": "Proxy:",
             "sentinelReviewing": "Dieser Tool-Aufruf wird geprüft.",
-            "sentinelRequestsChanges": "Bittet um Änderungen:",
             "commentForAgent": "Sentinel an den Agenten:",
             "userLabel": "Benutzer:",
             "deniedByUser": "Vom Benutzer abgelehnt.",
-            "contexts": "Kontext:",
-            "domains": "Domains:",
-            "mcpServers": "MCP-Server:",
-            "credentials": "Zugangsdaten",
-            "name": "Name",
-            "path": "Pfad",
-            "description": "Beschreibung",
-            "activation": "Aktivierung",
-            "skillInstructions": "Skill-Anweisungen",
             "source": "Quelle",
             "replacement": "Ersetzung",
             "diff": "Diff",
@@ -1075,7 +1081,7 @@
             "read": "{count, plural, one {# Datei gelesen} other {# Dateien gelesen}}",
             "write": "{count, plural, one {# Datei geschrieben} other {# Dateien geschrieben}}",
             "edit": "{count, plural, one {# Datei bearbeitet} other {# Dateien bearbeitet}}",
-            "skill": "{count, plural, one {# Skill genutzt} other {# Skills genutzt}}",
+            "skill": "{count, plural, one {# Skill gelesen} other {# Skills gelesen}}",
             "other": "{count, plural, one {# weitere Aktion} other {# weitere Aktionen}}"
         },
         "present": {
@@ -1083,7 +1089,7 @@
             "read": "{count, plural, one {lese # Datei} other {lese # Dateien}}",
             "write": "{count, plural, one {schreibe # Datei} other {schreibe # Dateien}}",
             "edit": "{count, plural, one {bearbeite # Datei} other {bearbeite # Dateien}}",
-            "skill": "{count, plural, one {nutze # Skill} other {nutze # Skills}}",
+            "skill": "{count, plural, one {liest # Skill} other {liest # Skills}}",
             "other": "{count, plural, one {# weitere Aktion} other {# weitere Aktionen}}"
         }
     },
@@ -1434,7 +1440,7 @@
         "savedJobs": "Gespeicherte Jobs",
         "loading": "Jobs werden geladen...",
         "paused": "Pausiert",
-        "unattendedTooltip": "Unbeaufsichtigte Sitzungen können Tool-Aufrufe nicht eskalieren",
+        "unattendedTooltip": "Läuft ohne jemanden, der Anfragen freigibt",
         "confirmDelete": "Job {name} löschen?",
         "summary": {
             "onDemandOnly": "Nur manuell",

@@ -5,28 +5,34 @@ from __future__ import annotations
 import base64
 import contextlib
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 
+from carapace.builder.client import BuilderUnavailableError
 from carapace.database.models import SandboxTokenRow
 from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
-from carapace.models.skills import SkillCarapaceConfig
-from carapace.sandbox.exec_flow import SandboxExecCoordinator, SandboxExecState
-from carapace.sandbox.manager import _CONTEXT_TUNNEL_HELPER
+from carapace.sandbox.exec_flow import (
+    EXEC_ENDED_REJECTION,
+    ORPHANED_REQUEST_REJECTION,
+    SandboxExecCoordinator,
+    SandboxExecState,
+)
+from carapace.sandbox.exec_scope import RunningExec
 from carapace.sandbox.manager import SandboxManager as _SandboxManager
 from carapace.sandbox.proxy import ProxyServer, domain_matches
 from carapace.sandbox.runtime import (
     ContainerGoneError,
     ExecResult,
-    NetworkTunnel,
 )
 from carapace.sandbox.session_lifecycle import SessionContainer
+from carapace.sandbox.skill_profile import SkillProfileSync
+from carapace.security.context import BoundaryEvaluation
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillDocumentError, SkillRegistry
-from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, make_runtime_mock
+from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, fake_dns, make_runtime_mock
 
 
 def _seed_session_row(session_factory, data_dir: Path, *session_ids: str) -> None:
@@ -171,6 +177,7 @@ class TestProxyParsing:
 
 @pytest.mark.anyio
 async def test_handle_http_supports_absolute_https_urls(monkeypatch: pytest.MonkeyPatch):
+    fake_dns(monkeypatch, {"paperless.gerken.haus": ["93.184.215.14"]})
     proxy = ProxyServer(
         verify_session_token=lambda sid, tok: True,
         get_allowed_domains=lambda sid: {"paperless.gerken.haus"},
@@ -236,7 +243,8 @@ async def test_handle_http_supports_absolute_https_urls(monkeypatch: pytest.Monk
         [b"Host: paperless.gerken.haus\r\n"],
     )
 
-    assert opened["host"] == "paperless.gerken.haus"
+    # Connects to the checked address, verifies the certificate against the name.
+    assert opened["host"] == "93.184.215.14"
     assert opened["port"] == 443
     assert opened["kwargs"].get("server_hostname") == "paperless.gerken.haus"
     assert opened["kwargs"].get("ssl") is not None
@@ -247,31 +255,16 @@ async def test_handle_http_supports_absolute_https_urls(monkeypatch: pytest.Monk
 # ── SandboxManager allowlists ───────────────────────────────────────
 
 
-class TestSandboxManagerAllowlists:
+async def _session_env(mgr: _SandboxManager) -> dict[str, str]:
+    """The env a session sandbox starts with; the token lookup is stubbed (no session row needed)."""
+    mgr._session_lifecycle.get_or_create_token = lambda _session_id: "tok"  # type: ignore[method-assign]
+    return await mgr._session_lifecycle.build_session_proxy_env("sess-1")
+
+
+class TestSandboxManagerProxyEnv:
     def _make_manager(self, tmp_path: Path, db_factory):
         runtime = make_runtime_mock()
         return _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-
-    def test_empty_by_default(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        assert mgr.get_allowed_domains("sess-1") == set()
-
-    def test_allow_domains(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        mgr.allow_domains("sess-1", {"a.com", "b.com"})
-        assert mgr.get_allowed_domains("sess-1") == {"a.com", "b.com"}
-
-    def test_allow_domains_accumulates(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        mgr.allow_domains("sess-1", {"a.com"})
-        mgr.allow_domains("sess-1", {"b.com"})
-        assert mgr.get_allowed_domains("sess-1") == {"a.com", "b.com"}
-
-    def test_cleanup_clears_domains(self, tmp_path: Path, db_factory):
-        mgr = self._make_manager(tmp_path, db_factory)
-        mgr.allow_domains("sess-1", {"a.com"})
-        mgr._cleanup_tracking("sess-1")
-        assert mgr.get_allowed_domains("sess-1") == set()
 
     def test_proxy_env_includes_token(self, tmp_path: Path, db_factory):
         mgr = self._make_manager(tmp_path, db_factory)
@@ -285,6 +278,38 @@ class TestSandboxManagerAllowlists:
         mgr = self._make_manager(tmp_path, db_factory)
         env = mgr._build_proxy_env("sess-1", "tok", "http://172.18.0.2:3128")
         assert env["CARAPACE_SESSION_ID"] == "sess-1"
+
+    async def test_session_env_points_nix_at_the_builder_cache(self, tmp_path: Path, db_factory):
+        async def nix_config() -> str:
+            return "substituters = http://cache.carapace.internal"
+
+        mgr = _sandbox_manager(
+            runtime=make_runtime_mock(),
+            data_dir=tmp_path,
+            knowledge_dir=tmp_path,
+            session_factory=db_factory,
+            nix_config=nix_config,
+        )
+        env = await _session_env(mgr)
+        assert env["NIX_CONFIG"] == "substituters = http://cache.carapace.internal"
+
+    async def test_session_env_fails_when_the_builder_does_not_answer(self, tmp_path: Path, db_factory):
+        async def nix_config() -> str:
+            raise BuilderUnavailableError("The skill builder is configured but unreachable")
+
+        mgr = _sandbox_manager(
+            runtime=make_runtime_mock(),
+            data_dir=tmp_path,
+            knowledge_dir=tmp_path,
+            session_factory=db_factory,
+            nix_config=nix_config,
+        )
+        with pytest.raises(BuilderUnavailableError):
+            await _session_env(mgr)
+
+    async def test_session_env_has_no_nix_config_without_a_builder(self, tmp_path: Path, db_factory):
+        env = await _session_env(self._make_manager(tmp_path, db_factory))
+        assert "NIX_CONFIG" not in env
 
     def test_proxy_env_uses_owner_repo_name(self, tmp_path: Path, db_factory):
         runtime = make_runtime_mock()
@@ -377,42 +402,7 @@ class TestSandboxManagerAllowlists:
 
 
 @pytest.mark.anyio
-async def test_exec_recreate_preserves_domains(tmp_path: Path, db_factory):
-    runtime = make_runtime_mock()
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
-    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-    _git_exists = ExecResult(stdout="", exit_code=0, output="")
-    runtime.exec = AsyncMock(
-        side_effect=[
-            _git_exists,  # knowledge repo probe after first create
-            _git_exists,  # install_commit_msg_hook
-            _git_exists,  # setup_git_identity
-            NO_LEFTOVER_PROCESSES,  # leftover process kill
-            ContainerGoneError(),  # exec_command triggers recreate
-            _git_exists,  # knowledge repo probe after recreate
-            _git_exists,  # install_commit_msg_hook
-            _git_exists,  # setup_git_identity
-            NO_LEFTOVER_PROCESSES,  # leftover process kill in the new sandbox
-            ExecResult(stdout="ok", exit_code=0, output="ok"),  # actual command retry
-        ]
-    )
-
-    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-    _seed_session_row(db_factory, tmp_path, "sess-1")
-    session_id = "sess-1"
-    await mgr.ensure_session(session_id)
-    mgr.allow_domains(session_id, {"api.example.com"})
-
-    output = await mgr.exec_command(session_id, "curl https://api.example.com")
-    assert output.output == "ok"
-    assert output.stdout == "ok"
-    assert mgr.get_allowed_domains(session_id) == {"api.example.com"}
-
-
-@pytest.mark.anyio
-async def test_exec_container_gone_recovery_reruns_skill_setup(tmp_path: Path, db_factory):
+async def test_exec_container_gone_recovery_restores_git_identity(tmp_path: Path, db_factory):
     runtime = make_runtime_mock()
     runtime.sandbox_exists = AsyncMock(return_value="container-1")
     runtime.exec = AsyncMock(
@@ -431,63 +421,14 @@ async def test_exec_container_gone_recovery_reruns_skill_setup(tmp_path: Path, d
         created_at=1.0,
         last_used=1.0,
     )
-    mgr.set_activated_skills_callback(lambda _sid: ["email"])
-    mgr.rerun_skill_setup = AsyncMock()
 
     result = await mgr.exec_command("sess-1", "check-mail")
 
     assert result.output == "ok"
     # The runtime already restarted the container, so the lifecycle re-attaches
-    # without reporting a fresh runtime; recovery must restore identity and skills anyway.
+    # without reporting a fresh runtime; recovery must restore the identity anyway.
     runtime.create_sandbox.assert_not_awaited()
     assert "git config --global user.name" in runtime.exec.await_args_list[1].args[1]
-    mgr.rerun_skill_setup.assert_awaited_once_with("sess-1", ["email"])
-
-
-@pytest.mark.anyio
-async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_path: Path, db_factory):
-    runtime = make_runtime_mock()
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.create_sandbox = AsyncMock(return_value="container-1")
-    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-    runtime.exec = AsyncMock(
-        side_effect=[
-            ExecResult(stdout="", exit_code=0, output=""),  # _clone_knowledge_repo probe after create
-            ExecResult(stdout="", exit_code=0, output=""),  # install_commit_msg_hook
-            ExecResult(stdout="", exit_code=0, output=""),  # setup_git_identity
-            NO_LEFTOVER_PROCESSES,  # leftover process kill before the activator
-            ExecResult(exit_code=0, output="", stdout='{"protocol_version":1}'),
-            NO_LEFTOVER_PROCESSES,  # leftover process kill before alias registration
-            ExecResult(stdout="", exit_code=0, output=""),  # command alias registration
-        ]
-    )
-
-    skill_dir = tmp_path / "skills" / "web"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("---\nname: web\n---\nBody.\n")
-
-    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-    _seed_session_row(db_factory, tmp_path, "sess-1")
-    mgr.set_skill_command_aliases_callback(
-        lambda _session_id, skill_name: (
-            [("web", "uv run --directory /workspace/skills/web web-search")] if skill_name == "web" else []
-        )
-    )
-
-    store = mgr._repo_for_session("sess-1").git_store
-    await store.ensure_repo()
-    await store.commit(["skills/web/SKILL.md"], "add skill")
-    result = await mgr.activate_skill("sess-1", "web")
-
-    assert "Command aliases registered: web." in result
-    assert "PATH" not in mgr.get_session_env("sess-1")
-
-    register_call = runtime.exec.call_args_list[6]
-    shell_cmd = register_call.args[1]
-    wrapper = '#!/bin/sh\nexec uv run --directory /workspace/skills/web web-search "$@"\n'
-    assert "/workspace/.carapace/bin/web" in shell_cmd
-    assert base64.b64encode(wrapper.encode()).decode() in shell_cmd
 
 
 # ── SKILL.md metadata parsing ───────────────────────────────────────
@@ -497,75 +438,6 @@ class TestSkillMetadataParsing:
     def _write_skill_md(self, skill_dir: Path, body: str) -> None:
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(body)
-
-    def test_parse_frontmatter_carapace_metadata(self, tmp_path: Path):
-        skill_dir = tmp_path / "inline"
-        self._write_skill_md(
-            skill_dir,
-            "---\n"
-            "name: inline\n"
-            "metadata:\n"
-            "  carapace:\n"
-            "    network:\n"
-            "      domains:\n"
-            "        - api.example.com\n"
-            "    commands:\n"
-            "      - name: inline-search\n"
-            "        command: uv run inline-search\n"
-            "---\n"
-            "Body.\n",
-        )
-
-        registry = SkillRegistry(tmp_path)
-        cfg = registry.get_carapace_config("inline")
-        assert cfg is not None
-        assert cfg.network.domains == ["api.example.com"]
-        assert len(cfg.commands) == 1
-        assert cfg.commands[0].name == "inline-search"
-
-    def test_parse_network_domains(self, tmp_path: Path):
-        skill_dir = tmp_path / "web-search"
-        self._write_skill_md(
-            skill_dir,
-            "---\n"
-            "name: web-search\n"
-            "metadata:\n"
-            "  carapace:\n"
-            "    network:\n"
-            "      domains:\n"
-            "        - api.example.com\n"
-            "        - '*.cdn.example.com'\n"
-            "---\n"
-            "Body.\n",
-        )
-
-        registry = SkillRegistry(tmp_path)
-        cfg = registry.get_carapace_config("web-search")
-        assert cfg is not None
-        assert cfg.network.domains == ["api.example.com", "*.cdn.example.com"]
-
-    def test_parse_network_tunnels(self, tmp_path: Path):
-        skill_dir = tmp_path / "zoho-mail"
-        self._write_skill_md(
-            skill_dir,
-            "---\n"
-            "name: zoho-mail\n"
-            "metadata:\n"
-            "  carapace:\n"
-            "    network:\n"
-            "      tunnels:\n"
-            "        - host: imap.zoho.eu\n"
-            "          remote_port: 993\n"
-            "          local_port: 1993\n"
-            "---\n"
-            "Body.\n",
-        )
-
-        registry = SkillRegistry(tmp_path)
-        cfg = registry.get_carapace_config("zoho-mail")
-        assert cfg is not None
-        assert len(cfg.network.tunnels) == 1
-        assert cfg.network.tunnels[0].display == "imap.zoho.eu:993 via :1993"
 
     def test_no_carapace_metadata(self, tmp_path: Path):
         skill_dir = tmp_path / "plain"
@@ -583,469 +455,28 @@ class TestSkillMetadataParsing:
             "metadata:\n"
             "  carapace:\n"
             "    commands:\n"
-            "      - name: bad command\n"
+            "      - name: ok\n"
             "        command: uv run ok\n"
             "---\n"
             "Body.\n",
         )
 
         registry = SkillRegistry(tmp_path)
-        with pytest.raises(SkillDocumentError):
+        with pytest.raises(SkillDocumentError, match="moved out of the frontmatter into the skill's flake"):
             registry.get_carapace_config("bad-inline")
-
-    def test_invalid_tunnel_host_rejects_config(self, tmp_path: Path):
-        skill_dir = tmp_path / "bad-tunnel"
-        self._write_skill_md(
-            skill_dir,
-            "---\n"
-            "name: bad-tunnel\n"
-            "metadata:\n"
-            "  carapace:\n"
-            "    network:\n"
-            "      tunnels:\n"
-            "        - host: '*.zoho.eu'\n"
-            "          remote_port: 993\n"
-            "          local_port: 1993\n"
-            "---\n"
-            "Body.\n",
-        )
-
-        registry = SkillRegistry(tmp_path)
-        with pytest.raises(SkillDocumentError):
-            registry.get_carapace_config("bad-tunnel")
-
-    def test_invalid_tunnel_ip_literal_rejects_config(self, tmp_path: Path):
-        skill_dir = tmp_path / "bad-tunnel-ip"
-        self._write_skill_md(
-            skill_dir,
-            "---\n"
-            "name: bad-tunnel-ip\n"
-            "metadata:\n"
-            "  carapace:\n"
-            "    network:\n"
-            "      tunnels:\n"
-            "        - host: 10.0.0.1\n"
-            "          remote_port: 993\n"
-            "          local_port: 1993\n"
-            "---\n"
-            "Body.\n",
-        )
-
-        registry = SkillRegistry(tmp_path)
-        with pytest.raises(SkillDocumentError):
-            registry.get_carapace_config("bad-tunnel-ip")
-
-    def test_invalid_tunnel_internal_service_rejects_config(self, tmp_path: Path):
-        skill_dir = tmp_path / "bad-tunnel-svc"
-        self._write_skill_md(
-            skill_dir,
-            "---\n"
-            "name: bad-tunnel-svc\n"
-            "metadata:\n"
-            "  carapace:\n"
-            "    network:\n"
-            "      tunnels:\n"
-            "        - host: kubernetes.default.svc\n"
-            "          remote_port: 443\n"
-            "          local_port: 1443\n"
-            "---\n"
-            "Body.\n",
-        )
-
-        registry = SkillRegistry(tmp_path)
-        with pytest.raises(SkillDocumentError):
-            registry.get_carapace_config("bad-tunnel-svc")
-
-    def test_invalid_tunnel_trailing_dot_blocked_host_rejects_config(self, tmp_path: Path):
-        skill_dir = tmp_path / "bad-tunnel-dot"
-        self._write_skill_md(
-            skill_dir,
-            "---\n"
-            "name: bad-tunnel-dot\n"
-            "metadata:\n"
-            "  carapace:\n"
-            "    network:\n"
-            "      tunnels:\n"
-            "        - host: localhost.\n"
-            "          remote_port: 443\n"
-            "          local_port: 1443\n"
-            "---\n"
-            "Body.\n",
-        )
-
-        registry = SkillRegistry(tmp_path)
-        with pytest.raises(SkillDocumentError):
-            registry.get_carapace_config("bad-tunnel-dot")
-
-    def test_empty_network_section(self, tmp_path: Path):
-        skill_dir = tmp_path / "minimal"
-        self._write_skill_md(
-            skill_dir,
-            "---\n"
-            "name: minimal\n"
-            "metadata:\n"
-            "  carapace:\n"
-            "    hints:\n"
-            "      likely_classification: read_external\n"
-            "---\n"
-            "Body.\n",
-        )
-
-        registry = SkillRegistry(tmp_path)
-        cfg = registry.get_carapace_config("minimal")
-        assert cfg is not None
-        assert cfg.network.domains == []
-
-    def test_model_validation(self):
-        cfg = SkillCarapaceConfig.model_validate(
-            {
-                "network": {
-                    "domains": ["a.com"],
-                    "tunnels": [{"host": "imap.a.com", "remote_port": 993, "local_port": 1993}],
-                },
-                "credentials": [{"vault_path": "x/y", "description": "Test cred", "env_var": "FOO"}],
-                "commands": [{"name": "demo", "command": "uv run demo"}],
-            }
-        )
-        assert cfg.network.domains == ["a.com"]
-        assert cfg.network.tunnels[0].display == "imap.a.com:993 via :1993"
-        assert len(cfg.credentials) == 1
-        assert cfg.credentials[0].vault_path == "x/y"
-        assert cfg.credentials[0].env_var == "FOO"
-        assert len(cfg.commands) == 1
-        assert cfg.commands[0].name == "demo"
-        assert cfg.commands[0].command == "uv run demo"
-
-    def test_model_validation_rejects_multiline_command(self):
-        with pytest.raises(ValueError, match="single line"):
-            SkillCarapaceConfig.model_validate(
-                {
-                    "commands": [{"name": "demo", "command": "uv run demo\necho nope"}],
-                }
-            )
-
-    def test_model_validation_rejects_duplicate_command_names(self):
-        with pytest.raises(ValueError, match="duplicate skill command name"):
-            SkillCarapaceConfig.model_validate(
-                {
-                    "commands": [
-                        {"name": "demo", "command": "uv run demo"},
-                        {"name": "demo", "command": "uv run demo --help"},
-                    ]
-                }
-            )
-
-    def test_model_validation_rejects_duplicate_local_ports(self):
-        with pytest.raises(ValueError, match="local_port 1993"):
-            SkillCarapaceConfig.model_validate(
-                {
-                    "network": {
-                        "tunnels": [
-                            {"host": "imap.a.com", "remote_port": 993, "local_port": 1993},
-                            {"host": "imap.b.com", "remote_port": 993, "local_port": 1993},
-                        ]
-                    }
-                }
-            )
-
-    @pytest.mark.anyio
-    async def test_context_tunnel_helper_accepts_minimal_connect_response(self):
-        namespace: dict[str, Any] = {"__name__": "test_context_tunnel_helper"}
-        compile(_CONTEXT_TUNNEL_HELPER, "carapace_tunnel_helper.py", "exec")
-        exec(_CONTEXT_TUNNEL_HELPER, namespace)
-        open_proxy_tunnel = cast(Any, namespace["_open_proxy_tunnel"])
-        helper_asyncio = cast(Any, namespace["asyncio"])
-
-        class FakeReader:
-            def __init__(self, chunks: list[bytes]):
-                self._chunks = list(chunks)
-
-            async def read(self, _size: int) -> bytes:
-                if self._chunks:
-                    return self._chunks.pop(0)
-                return b""
-
-        class FakeWriter:
-            def __init__(self):
-                self.writes: list[bytes] = []
-
-            def write(self, data: bytes) -> None:
-                self.writes.append(data)
-
-            async def drain(self) -> None:
-                return None
-
-        reader = FakeReader([b"HTTP/1.1 200 Connection Established\r\n\r\n"])
-        writer = FakeWriter()
-
-        async def fake_open_connection(host: str, port: int):
-            assert host == "proxy.internal"
-            assert port == 8080
-            return reader, writer
-
-        original_open_connection = helper_asyncio.open_connection
-        helper_asyncio.open_connection = fake_open_connection
-        try:
-            prebuffer, upstream_reader, upstream_writer = await open_proxy_tunnel(
-                "http://proxy.internal:8080",
-                "imap.zoho.eu",
-                993,
-            )
-        finally:
-            helper_asyncio.open_connection = original_open_connection
-
-        assert prebuffer == b""
-        assert upstream_reader is reader
-        assert upstream_writer is writer
-        assert writer.writes == [b"CONNECT imap.zoho.eu:993 HTTP/1.1\r\nHost: imap.zoho.eu:993\r\n\r\n"]
-
-
-@pytest.mark.anyio
-async def test_exec_command_sets_up_and_cleans_up_tunnels(tmp_path: Path, db_factory):
-    runtime = make_runtime_mock()
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.create_sandbox = AsyncMock(return_value="container-1")
-    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-
-    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-    _seed_session_row(db_factory, tmp_path, "sess-1")
-
-    result = await mgr.exec_command(
-        "sess-1",
-        "run-mail-sync",
-        context_tunnels=[NetworkTunnel(host="imap.zoho.eu", remote_port=993, local_port=1993)],
-    )
-
-    assert result.output == "ok"
-
-    commands = [call.args[1] for call in runtime.exec.call_args_list]
-    assert any("carapace-tunnel-helper-sess-1.py" in command for command in commands)
-    assert any("cp /etc/hosts /tmp/carapace-tunnel-hosts-sess-1.bak" in command for command in commands)
-    assert any("{ nohup python3 /tmp/carapace-tunnel-helper-sess-1.py" in command for command in commands)
-    assert any("--listen-port 1993" in command and "--target-port 993" in command for command in commands)
-    assert any("--ready-file /tmp/carapace-tunnel-sess-1-1993.ready" in command for command in commands)
-    assert any(command == "run-mail-sync" for command in commands)
-    assert any("echo $! > /tmp/carapace-tunnel-sess-1-1993.pid; } && kill -0" in command for command in commands)
-    assert any("while [ ! -f /tmp/carapace-tunnel-sess-1-1993.ready ]" in command for command in commands)
-    assert any('kill "$(cat /tmp/carapace-tunnel-sess-1-1993.pid)"' in command for command in commands)
-    assert not any("do;" in command for command in commands)
-    assert not any("then;" in command for command in commands)
-
-
-@pytest.mark.anyio
-async def test_exec_command_rejects_conflicting_tunnel_local_ports(tmp_path: Path, db_factory):
-    runtime = make_runtime_mock()
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.create_sandbox = AsyncMock(return_value="container-1")
-    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-
-    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-    _seed_session_row(db_factory, tmp_path, "sess-1")
-
-    with pytest.raises(ValueError, match=r"Conflicting network\.tunnels declarations"):
-        await mgr.exec_command(
-            "sess-1",
-            "run-mail-sync",
-            context_tunnels=[
-                NetworkTunnel(host="imap.zoho.eu", remote_port=993, local_port=1993),
-                NetworkTunnel(host="smtp.zoho.eu", remote_port=465, local_port=1993),
-            ],
-        )
-
-
-@pytest.mark.anyio
-async def test_exec_command_allows_duplicate_tunnel_with_different_descriptions(tmp_path: Path, db_factory):
-    runtime = make_runtime_mock()
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.create_sandbox = AsyncMock(return_value="container-1")
-    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-
-    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-    _seed_session_row(db_factory, tmp_path, "sess-1")
-
-    result = await mgr.exec_command(
-        "sess-1",
-        "run-mail-sync",
-        context_tunnels=[
-            NetworkTunnel(
-                host="imap.zoho.eu",
-                remote_port=993,
-                local_port=1993,
-                description="Primary IMAP tunnel",
-            ),
-            NetworkTunnel(
-                host="imap.zoho.eu",
-                remote_port=993,
-                local_port=1993,
-                description="Same tunnel from another skill",
-            ),
-        ],
-    )
-
-    assert result.output == "ok"
-
-    commands = [call.args[1] for call in runtime.exec.call_args_list]
-    assert sum("nohup python3 /tmp/carapace-tunnel-helper-sess-1.py" in command for command in commands) == 1
-
-
-@pytest.mark.anyio
-async def test_exec_command_recreates_tunnels_before_retry(tmp_path: Path, db_factory):
-    runtime = make_runtime_mock()
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.sandbox_exists = AsyncMock(return_value=None)
-    runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
-    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-
-    _ok = ExecResult(stdout="", exit_code=0, output="")
-    runtime.exec = AsyncMock(
-        side_effect=[
-            _ok,  # clone probe (create)
-            _ok,  # install_commit_msg_hook
-            _ok,  # setup_git_identity
-            NO_LEFTOVER_PROCESSES,  # leftover process kill
-            _ok,  # tunnel prep
-            _ok,
-            _ok,
-            _ok,
-            ContainerGoneError(),  # command exec triggers recreate
-            _ok,  # clone probe (recreate)
-            _ok,  # install_commit_msg_hook
-            _ok,  # setup_git_identity
-            NO_LEFTOVER_PROCESSES,  # leftover process kill in the new sandbox
-            _ok,  # tunnel prep
-            _ok,
-            _ok,
-            _ok,
-            ExecResult(stdout="ok", exit_code=0, output="ok"),  # retried command
-            _ok,  # cleanup
-        ]
-    )
-
-    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-    _seed_session_row(db_factory, tmp_path, "sess-1")
-
-    result = await mgr.exec_command(
-        "sess-1",
-        "run-mail-sync",
-        context_tunnels=[NetworkTunnel(host="imap.zoho.eu", remote_port=993, local_port=1993)],
-    )
-
-    assert result.output == "ok"
-    assert runtime.create_sandbox.await_count == 2
-
-    commands = [call.args[1] for call in runtime.exec.call_args_list]
-    assert sum("carapace-tunnel-helper-sess-1.py" in command for command in commands) >= 2
-    assert sum("--listen-port 1993" in command and "--target-port 993" in command for command in commands) == 2
-
-
-@pytest.mark.anyio
-async def test_exec_command_cleans_up_tunnels_after_command_failure(tmp_path: Path, db_factory):
-    runtime = make_runtime_mock()
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.create_sandbox = AsyncMock(return_value="container-1")
-    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-    runtime.exec = AsyncMock(
-        side_effect=[
-            ExecResult(stdout="", exit_code=0, output=""),  # clone probe
-            ExecResult(stdout="", exit_code=0, output=""),  # install_commit_msg_hook
-            ExecResult(stdout="", exit_code=0, output=""),  # setup_git_identity
-            NO_LEFTOVER_PROCESSES,  # leftover process kill
-            ExecResult(stdout="", exit_code=0, output=""),  # tunnel prep
-            ExecResult(stdout="", exit_code=0, output=""),
-            ExecResult(stdout="", exit_code=0, output=""),
-            ExecResult(stdout="", exit_code=0, output=""),
-            ExecResult(stdout="mail failed", exit_code=5, output="mail failed"),  # command
-            ExecResult(stdout="", exit_code=0, output=""),  # cleanup
-        ]
-    )
-
-    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-    _seed_session_row(db_factory, tmp_path, "sess-1")
-
-    result = await mgr.exec_command(
-        "sess-1",
-        "run-mail-sync",
-        context_tunnels=[NetworkTunnel(host="imap.zoho.eu", remote_port=993, local_port=1993)],
-    )
-
-    assert result.exit_code == 5
-    assert "mail failed" in result.output
-    assert "[exit code: 5]" in result.output
-
-    cleanup_command = runtime.exec.call_args_list[-1].args[1]
-    assert 'kill "$(cat /tmp/carapace-tunnel-sess-1-1993.pid)"' in cleanup_command
-    assert "cp /tmp/carapace-tunnel-hosts-sess-1.bak /etc/hosts" in cleanup_command
-
-
-@pytest.mark.anyio
-async def test_exec_cleanup_tunnel_error_does_not_mask_command_error_or_skip_credential_cleanup():
-    runtime = make_runtime_mock()
-    state = SandboxExecState(
-        sessions={},
-        allowed_domains={},
-        exec_temp_domains={},
-        exec_context_skill_domains={},
-        session_current_command={},
-        domain_approval_cbs={},
-        domain_notify_cbs={},
-        exec_locks={},
-        proxy_bypass_sessions=set(),
-        session_current_contexts={},
-        exec_notified_domains={},
-        exec_notified_credentials={},
-    )
-    coordinator = SandboxExecCoordinator(runtime=runtime, state=state)
-    sc1 = SessionContainer(container_id="container-1", session_id="sess-1", created_at=0, last_used=0)
-    sc2 = SessionContainer(container_id="container-2", session_id="sess-1", created_at=0, last_used=0)
-    written_files = [("example", "/workspace/skills/example/.secrets/token.txt")]
-
-    ensure_session = AsyncMock(return_value=sc1)
-    recreate_session = AsyncMock(return_value=sc2)
-    log_container_tail = AsyncMock()
-    exec_in_container = AsyncMock(side_effect=[ContainerGoneError("gone"), RuntimeError("command failed")])
-    prepare_context_tunnels = AsyncMock()
-    cleanup_context_tunnels = AsyncMock(side_effect=ContainerGoneError("cleanup failed"))
-    write_context_file_credentials = AsyncMock(side_effect=[list(written_files), list(written_files)])
-    delete_context_file_credentials = AsyncMock()
-
-    with pytest.raises(RuntimeError, match="command failed"):
-        await coordinator.exec(
-            "sess-1",
-            "run-mail-sync",
-            ensure_session=ensure_session,
-            recreate_session=recreate_session,
-            log_container_tail=log_container_tail,
-            exec_in_container=exec_in_container,
-            prepare_context_tunnels=prepare_context_tunnels,
-            cleanup_context_tunnels=cleanup_context_tunnels,
-            write_context_file_credentials=write_context_file_credentials,
-            delete_context_file_credentials=delete_context_file_credentials,
-            context_tunnels=[NetworkTunnel(host="imap.zoho.eu", remote_port=993, local_port=1993)],
-            context_file_creds=[("example", ".secrets/token.txt", "secret")],
-        )
-
-    delete_context_file_credentials.assert_awaited_once_with("sess-1", written_files)
 
 
 def _make_exec_state(**overrides) -> SandboxExecState:
     base = dict(
         sessions={},
-        allowed_domains={},
         exec_temp_domains={},
-        exec_context_skill_domains={},
         session_current_command={},
         domain_approval_cbs={},
         domain_notify_cbs={},
         exec_locks={},
-        proxy_bypass_sessions=set(),
-        session_current_contexts={},
         exec_notified_domains={},
         exec_notified_credentials={},
+        running_execs={},
     )
     base.update(overrides)
     return SandboxExecState(**base)
@@ -1054,13 +485,15 @@ def _make_exec_state(**overrides) -> SandboxExecState:
 @pytest.mark.anyio
 async def test_request_domain_approval_denies_orphaned_request_without_sentinel():
     """No live exec → deny without invoking the sentinel callback (orphaned process)."""
-    cb = AsyncMock(return_value=True)
+    cb = AsyncMock(return_value=BoundaryEvaluation(allowed=True, rejection=""))
     state = _make_exec_state(domain_approval_cbs={"sess-1": cb})
-    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    coordinator = SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
+    )
 
-    allowed = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
+    evaluation = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
 
-    assert allowed is False
+    assert evaluation == BoundaryEvaluation(allowed=False, rejection=ORPHANED_REQUEST_REJECTION)
     cb.assert_not_awaited()
     assert "registry.npmjs.org" not in state.exec_temp_domains.get("sess-1", set())
 
@@ -1068,18 +501,161 @@ async def test_request_domain_approval_denies_orphaned_request_without_sentinel(
 @pytest.mark.anyio
 async def test_request_domain_approval_consults_sentinel_during_live_exec():
     """Live exec (command recorded) → callback is consulted as before."""
-    cb = AsyncMock(return_value=True)
-    state = _make_exec_state(
-        domain_approval_cbs={"sess-1": cb},
-        session_current_command={"sess-1": "npm ci"},
+    cb = AsyncMock(return_value=BoundaryEvaluation(allowed=True, rejection=""))
+    state = _make_exec_state(domain_approval_cbs={"sess-1": cb})
+    coordinator = SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
     )
-    coordinator = SandboxExecCoordinator(runtime=make_runtime_mock(), state=state)
+    _grant(coordinator, "npm ci")
 
-    allowed = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
+    running = coordinator.running_exec("sess-1")
 
-    assert allowed is True
-    cb.assert_awaited_once_with("registry.npmjs.org", "npm ci")
+    evaluation = await coordinator.request_domain_approval("sess-1", "registry.npmjs.org")
+
+    assert evaluation.allowed is True
+    cb.assert_awaited_once_with("registry.npmjs.org", running)
     assert "registry.npmjs.org" in state.exec_temp_domains["sess-1"]
+
+
+@pytest.mark.anyio
+async def test_credential_approval_lasts_until_the_exec_ends():
+    state = _make_exec_state()
+    coordinator = SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
+    )
+    sc = SessionContainer(container_id="container-1", session_id="sess-1", created_at=0, last_used=0)
+    captured: list[RunningExec] = []
+
+    async def exec_in_container(*_args: Any, **_kwargs: Any) -> ExecResult:
+        running = coordinator.running_exec("sess-1")
+        assert running is not None and running.command == "ccred get vault/token"
+        running.credentials.add(("vault/token", "password"))
+        captured.append(running)
+        return ExecResult(exit_code=0, output="", stdout="")
+
+    await coordinator.exec(
+        "sess-1",
+        "ccred get vault/token",
+        ensure_session=AsyncMock(return_value=sc),
+        recreate_session=AsyncMock(),
+        log_container_tail=AsyncMock(),
+        exec_in_container=exec_in_container,
+    )
+
+    assert coordinator.running_exec("sess-1") is None
+    assert coordinator.is_running(captured[0]) is False
+
+
+def _grant(coordinator: SandboxExecCoordinator, command: str) -> None:
+    coordinator._grant_exec_scope("sess-1", command)
+
+
+@pytest.mark.anyio
+async def test_domain_approval_after_its_exec_ended_is_not_granted():
+    state = _make_exec_state()
+    coordinator = SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
+    )
+    _grant(coordinator, "curl https://api.example.com &")
+
+    async def review_outlasting_the_exec(_domain: str, _running: RunningExec) -> BoundaryEvaluation:
+        coordinator._revoke_exec_scope("sess-1")
+        return BoundaryEvaluation(allowed=True, rejection="")
+
+    state.domain_approval_cbs["sess-1"] = review_outlasting_the_exec
+
+    evaluation = await coordinator.request_domain_approval("sess-1", "api.example.com")
+
+    assert evaluation == BoundaryEvaluation(allowed=False, rejection=EXEC_ENDED_REJECTION)
+    assert "api.example.com" not in coordinator.get_effective_domains("sess-1")
+
+
+@pytest.mark.anyio
+async def test_domain_approval_does_not_land_in_the_next_exec():
+    state = _make_exec_state()
+    coordinator = SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
+    )
+    _grant(coordinator, "curl https://api.example.com &")
+
+    async def review_until_the_next_exec(_domain: str, _running: RunningExec) -> BoundaryEvaluation:
+        coordinator._revoke_exec_scope("sess-1")
+        _grant(coordinator, "ls")
+        return BoundaryEvaluation(allowed=True, rejection="")
+
+    state.domain_approval_cbs["sess-1"] = review_until_the_next_exec
+
+    evaluation = await coordinator.request_domain_approval("sess-1", "api.example.com")
+
+    assert evaluation.allowed is False
+    assert "api.example.com" not in coordinator.get_effective_domains("sess-1")
+
+
+@pytest.mark.anyio
+async def test_only_later_requests_of_the_same_exec_are_follow_ups():
+    """Parallel tool calls run their execs one after the other; each exec starts with the full form."""
+    state = _make_exec_state()
+    coordinator = SandboxExecCoordinator(
+        runtime=make_runtime_mock(), state=state, profile_sync=SkillProfileSync(make_runtime_mock())
+    )
+    seen: list[tuple[str, str, bool]] = []
+
+    async def review(domain: str, running: RunningExec) -> BoundaryEvaluation:
+        seen.append((domain, running.command, running.boundary_reviewed))
+        return BoundaryEvaluation(allowed=True, rejection="")
+
+    state.domain_approval_cbs["sess-1"] = review
+
+    _grant(coordinator, "fetch-a")
+    await coordinator.request_domain_approval("sess-1", "a.example.com")
+    await coordinator.request_domain_approval("sess-1", "b.example.com")
+    coordinator._revoke_exec_scope("sess-1")
+    _grant(coordinator, "fetch-b")
+    await coordinator.request_domain_approval("sess-1", "c.example.com")
+
+    assert seen == [
+        ("a.example.com", "fetch-a", False),
+        ("b.example.com", "fetch-a", True),
+        ("c.example.com", "fetch-b", False),
+    ]
+
+
+@pytest.mark.anyio
+async def test_denied_connect_answers_with_the_rejection_in_the_body(monkeypatch: pytest.MonkeyPatch):
+    fake_dns(monkeypatch, {"evil.example.com": ["93.184.215.14"]})
+    proxy = ProxyServer(
+        verify_session_token=lambda sid, tok: True,
+        get_allowed_domains=lambda sid: set(),
+        attach_sandbox_call=lambda sid: contextlib.nullcontext(),
+        request_approval=AsyncMock(
+            return_value=BoundaryEvaluation(allowed=False, rejection="Sentinel denied this operation. Not needed.")
+        ),
+    )
+
+    class FakeWriter:
+        def __init__(self) -> None:
+            self.writes: list[bytes] = []
+
+        def write(self, data: bytes) -> None:
+            self.writes.append(data)
+
+        async def drain(self) -> None:
+            return None
+
+    writer = FakeWriter()
+    await proxy._handle_connect(
+        AsyncMock(),  # type: ignore[arg-type]
+        writer,  # type: ignore[arg-type]
+        "sess-1",
+        "127.0.0.1",
+        "evil.example.com:443",
+    )
+
+    response = b"".join(writer.writes)
+    head, _, body = response.partition(b"\r\n\r\n")
+    assert head.startswith(b"HTTP/1.1 403 Forbidden")
+    assert f"Content-Length: {len(body)}".encode() in head
+    assert body == b"Sentinel denied this operation. Not needed.\n"
 
 
 # ── Proxy token extraction ───────────────────────────────────────────

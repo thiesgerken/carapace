@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, IPvAnyNetwork, SecretStr, model_serializer, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..notifications.models import NotificationsConfig
@@ -228,11 +228,11 @@ class AgentConfig(ConfigModel):
 
     max_parallel_llm: int = 2
 
-    # Maximum number of sentinel-backed proxy domain review batches one tool call can trigger.
+    # Maximum number of sentinel-backed proxy domain review batches one exec can trigger.
     # 0 disables the cap.
-    max_sentinel_calls_per_tool_call: int = 10
+    max_sentinel_calls_per_exec: int = 10
 
-    # Debounce window for coalescing proxy domain requests within a tool call.
+    # Debounce window for coalescing proxy domain requests within an exec.
     sentinel_domain_batch_window_ms: int = 100
 
     # Max wall-clock time for one sentinel LLM review.
@@ -243,8 +243,8 @@ class AgentConfig(ConfigModel):
 
     @model_validator(mode="after")
     def _defaults_listed_in_available_models(self) -> AgentConfig:
-        if self.max_sentinel_calls_per_tool_call < 0:
-            raise ValueError("agent.max_sentinel_calls_per_tool_call must be >= 0")
+        if self.max_sentinel_calls_per_exec < 0:
+            raise ValueError("agent.max_sentinel_calls_per_exec must be >= 0")
         if self.sentinel_domain_batch_window_ms < 0:
             raise ValueError("agent.sentinel_domain_batch_window_ms must be >= 0")
         catalog = {e.model_id: e for e in self.available_models}
@@ -329,14 +329,17 @@ class SandboxConfig(BaseSettings):
     runtime: Literal["docker", "kubernetes"] = "docker"
     # Container image used for sandbox pods/containers.
     base_image: str = "carapace-sandbox:latest"
-    # Maximum duration of one whole-skill activator invocation.
-    skill_activator_timeout_seconds: int = Field(default=600, ge=1)
     # Minutes of inactivity before a sandbox is automatically cleaned up.
     idle_timeout_minutes: int = 60
     # Docker network to attach sandbox containers to (docker runtime only).
     network_name: str = "carapace-sandbox"
     # Port of the HTTP proxy sidecar that sandbox traffic is routed through.
     proxy_port: int = 3128
+    # The proxy refuses private and internal destinations. These lift that for hosts a skill should
+    # reach anyway (a homelab, in-cluster services): CIDRs, and host names matched exactly. A
+    # domain approval is still needed. See docs/sandbox.md#internal-destinations.
+    proxy_allowed_networks: list[IPvAnyNetwork] = []
+    proxy_allowed_hosts: list[str] = []
     # Number of generic warm sandboxes to keep ready ahead of assignment (Kubernetes runtime only).
     warm_pool_size: int = Field(default=0, ge=0)
     # Sandboxes a user may hold (running or suspended, until their session is deleted or reset).
@@ -357,6 +360,9 @@ class SandboxConfig(BaseSettings):
     k8s_owner_ref: bool = True
     # Server Deployment name for ownerReference fallback (Helm: release name).
     k8s_server_deployment_name: str = "carapace"
+    # Service in front of the server (Helm: release name). Sandboxes have no DNS, so the server resolves
+    # it to the ClusterIP they reach the proxy at. Required with the kubernetes runtime.
+    k8s_server_service: str | None = None
     # Preferred owner for sandbox resources (namespaced Sandboxes CRD singleton).
     # Set to null or an empty string to use k8s_server_deployment_name instead.
     # When set, the named Sandboxes object must exist.
@@ -374,8 +380,37 @@ class SandboxConfig(BaseSettings):
     k8s_resource_requests_memory: str = ""
     k8s_resource_limits_cpu: str = ""
     k8s_resource_limits_memory: str = ""
+    # The skill profile and its store paths live in the container layer: 2 to 8 GB depending on the skill
+    # set. A modest request keeps warm-pool and idle sandboxes schedulable on small nodes; size it up for
+    # large skill sets. No limit by default, since exceeding one evicts the pod.
+    k8s_resource_requests_ephemeral_storage: str = "2Gi"
+    k8s_resource_limits_ephemeral_storage: str = ""
     # Remove sandbox resources for sessions that no longer exist on disk at startup.
     cleanup_orphans_on_startup: bool = True
+    # The start-up egress self-test (docs/security.md). Only for development on a Mac, where a server on the host
+    # is unreachable from Docker Desktop's sandboxes and the test can never pass; production must keep it.
+    egress_self_test: bool = True
+
+
+class BuilderConfig(BaseSettings):
+    """Where the skill builder is; see docs/builder.md. No URL means no builder."""
+
+    model_config = SettingsConfigDict(env_prefix="CARAPACE_BUILDER_", extra="forbid")
+
+    url: str | None = None
+    token: SecretStr | None = None
+    # The builder's binary cache listener, which the session proxy forwards sandboxes to.
+    cache_url: str | None = None
+    # A build blocks its request until it ends, and a cold uv skill takes minutes.
+    timeout_seconds: float = Field(default=1800, gt=0)
+
+    @model_validator(mode="after")
+    def _token_with_url(self) -> BuilderConfig:
+        if self.url is not None and not (self.token and self.token.get_secret_value()):
+            raise ValueError("CARAPACE_BUILDER_TOKEN is required when CARAPACE_BUILDER_URL is set")
+        if (self.url is None) != (self.cache_url is None):
+            raise ValueError("CARAPACE_BUILDER_URL and CARAPACE_BUILDER_CACHE_URL go together")
+        return self
 
 
 class SessionCommitConfig(ConfigModel):
@@ -474,6 +509,7 @@ class Config(ConfigModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     sessions: SessionsConfig = Field(default_factory=SessionsConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
+    builder: BuilderConfig = Field(default_factory=BuilderConfig)
     # Absolute data root (sessions, auth secrets, sqlite, vapid keys, knowledges/). Sourced
     # from CARAPACE_DATA_DIR via config.build_config; default "./data".
     data_dir: str = "./data"

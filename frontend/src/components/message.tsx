@@ -798,7 +798,6 @@ export function Message({
           tool={message.tool}
           args={message.args}
           detail={message.detail}
-          contexts={message.contexts}
           approvalSource={message.approvalSource}
           approvalVerdict={message.approvalVerdict}
           approvalExplanation={message.approvalExplanation}
@@ -821,7 +820,6 @@ export function Message({
             tool: c.tool,
             args: c.args,
             detail: c.detail,
-            contexts: c.contexts,
             approvalSource: c.approvalSource,
             approvalVerdict: c.approvalVerdict,
             approvalExplanation: c.approvalExplanation,

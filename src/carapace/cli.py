@@ -148,9 +148,6 @@ def _render_command_result(data: dict[str, Any]) -> None:
                 )
             )
 
-        case "approve-context":
-            console.print(f"[green]{payload.get('message', 'Context approved.')}[/green]")
-
         case "retitle":
             console.print(f"[green]{payload.get('message', '')}[/green]")
 
@@ -163,26 +160,10 @@ def _render_command_result(data: dict[str, Any]) -> None:
                 domains_str = f"\n{domain_lines}"
             else:
                 domains_str = " (none)"
-            grants: dict[str, dict[str, Any]] = payload.get("context_grants") or {}
-            if grants:
-                grant_lines: list[str] = []
-                for skill, info in grants.items():
-                    parts_g = [f"  [bold]{skill}[/bold]"]
-                    if info.get("domains"):
-                        parts_g.append(f"    domains: {', '.join(info['domains'])}")
-                    vps = info.get("vault_paths") or []
-                    cached = info.get("cached_credentials", 0)
-                    if vps:
-                        parts_g.append(f"    credentials: {len(vps)} declared, {cached} cached")
-                    grant_lines.append("\n".join(parts_g))
-                grants_str = "\n" + "\n".join(grant_lines)
-            else:
-                grants_str = " (none)"
             console.print(
                 Panel(
                     f"[bold]Session ID:[/bold] {payload['session_id']}\n"
                     f"[bold]Channel:[/bold] {payload['channel_type']}\n"
-                    f"[bold]Context grants:[/bold]{grants_str}\n"
                     f"[bold]Allowed domains:[/bold]{domains_str}",
                     title="Session State",
                 )
@@ -475,9 +456,15 @@ async def _render_credential_escalation(data: dict[str, Any]) -> tuple[str, str 
     """Render a sentinel-escalated credential request and return the decision."""
     names = data.get("names", [])
     descriptions = data.get("descriptions", [])
+    domains = data.get("domains", [])
     explanation = data.get("explanation", "")
 
     panel_lines: list[str] = []
+    if domains:
+        panel_lines.append("Domains:")
+        panel_lines.extend(f"  [bold]{domain}[/bold]" for domain in domains)
+    if domains and names:
+        panel_lines.append("Credentials:")
     for name, desc in zip(names, descriptions, strict=False):
         line = f"[bold]{name}[/bold]"
         if desc:
@@ -490,7 +477,7 @@ async def _render_credential_escalation(data: dict[str, Any]) -> tuple[str, str 
     console.print(
         Panel(
             "\n".join(panel_lines),
-            title="[yellow]Credential Request[/yellow]",
+            title="[yellow]Access Request[/yellow]" if domains else "[yellow]Credential Request[/yellow]",
             border_style="yellow",
         )
     )
@@ -512,10 +499,6 @@ async def _render_approval_request(data: dict[str, Any]) -> tuple[bool, str | No
     explanation = data.get("explanation", "")
     if explanation:
         panel_lines.append(f"[bold]Reason:[/bold] {explanation}")
-    risk_level = data.get("risk_level", "")
-    if risk_level:
-        risk_style = {"high": "red", "medium": "yellow", "low": "green"}.get(risk_level, "dim")
-        panel_lines.append(f"[bold]Risk level:[/bold] [{risk_style}]{risk_level}[/{risk_style}]")
 
     console.print()
     console.print(
@@ -685,6 +668,13 @@ async def _read_server_responses(ws, *, show_tool_events: bool = True) -> None:
                     if show_tool_events:
                         detail = msg.get("detail", "")
                         console.print(f"  [dim]{msg['tool']}({msg['args']}) {detail}[/dim]")
+
+                case "span" if show_tool_events and msg.get("status") == "running":
+                    # Only `read_skill` waits for a build. Profile syncs also run on every sandbox start,
+                    # where nothing waits for them, so they are not announced.
+                    if (msg.get("kind"), msg.get("name")) == ("skill", "build wait"):
+                        _stop_live()
+                        console.print("  [dim]waiting for the skill build…[/dim]")
 
                 case "tool_result":
                     _stop_live()

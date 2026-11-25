@@ -16,7 +16,6 @@ from carapace.server.knowledge import (
     list_dir,
     read_text_content,
     resolve_target,
-    resolve_vault_status,
     session_archive_entry,
 )
 
@@ -188,21 +187,8 @@ name: weather
 description: Forecast via Home Assistant
 metadata:
   carapace:
-    network:
-      domains:
-        - homeassistant.example
-    credentials:
-      - vault_path: vault/abc
-        env_var: HA_TOKEN
-    commands:
-      - name: weather
-        command: uv run weather
-    mcp:
-      - name: hass
-        url: https://homeassistant.example/api/mcp
-        auth:
-          type: bearer
-          vault_path: vault/abc
+    hints:
+      weather: Prefer metric units.
 ---
 
 # Weather
@@ -230,11 +216,7 @@ def test_list_dir_strips_frontmatter_into_skill(tmp_path: Path) -> None:
     assert (listing.skill.name, listing.skill.description) == ("weather", "Forecast via Home Assistant")
     carapace = listing.skill.carapace
     assert carapace is not None
-    assert carapace.network.domains == ["homeassistant.example"]
-    assert [c.name for c in carapace.commands] == ["weather"]
-    assert [c.env_var for c in carapace.credentials] == ["HA_TOKEN"]
-    assert [(s.name, s.url) for s in carapace.mcp] == [("hass", "https://homeassistant.example/api/mcp")]
-    assert carapace.mcp[0].auth is not None and carapace.mcp[0].auth.vault_path == "vault/abc"
+    assert carapace.hints == {"weather": "Prefer metric units."}
 
 
 def test_disabled_skill_remains_browsable_and_readable(tmp_path: Path) -> None:
@@ -267,14 +249,14 @@ def test_list_dir_skill_without_carapace_metadata(tmp_path: Path) -> None:
 
 def test_list_dir_skill_with_invalid_carapace_keeps_prose(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
-    # commands must be a list of {name, command}; a bare string fails validation.
-    _skill(root, "broken", "---\nname: broken\nmetadata:\n  carapace:\n    commands: nope\n---\n\nBody.\n")
+    # hints must map names to text; a bare string fails validation.
+    _skill(root, "broken", "---\nname: broken\nmetadata:\n  carapace:\n    hints: nope\n---\n\nBody.\n")
 
     listing = list_dir(root, (root / "skills" / "broken").resolve())
 
     assert listing.skill is not None
     assert listing.skill.carapace is None
-    assert listing.skill.error == "invalid metadata.carapace: commands: Input should be a valid list"
+    assert listing.skill.error == "invalid metadata.carapace: hints: Input should be a valid dictionary"
     assert listing.doc == "Body.\n"
 
 
@@ -472,34 +454,6 @@ class _FakeRegistry:
         if vault_path not in self._present:
             raise KeyError(vault_path)
         return CredentialMetadata(vault_path=vault_path, name=vault_path)
-
-
-async def test_resolve_vault_status_present_absent_error():
-    from carapace.models.skills import SkillCarapaceConfig
-
-    cfg = SkillCarapaceConfig.model_validate(
-        {
-            "credentials": [
-                {"vault_path": "vault/have", "env_var": "A"},
-                {"vault_path": "vault/missing", "env_var": "B"},
-            ],
-            "mcp": [
-                {"name": "o", "url": "https://e.example/mcp", "auth": {"type": "oauth", "vault_path": "vault/down"}},
-            ],
-        }
-    )
-    registry = _FakeRegistry(present={"vault/have"}, errors={"vault/down"})
-    status = await resolve_vault_status(cfg, registry)
-    assert status == {"vault/have": "present", "vault/missing": "absent", "vault/down": "error"}
-
-
-async def test_resolve_vault_status_unconfigured_backend():
-    """An unregistered/disabled backend is 'unconfigured', not a missing secret."""
-    from carapace.models.skills import SkillCarapaceConfig
-
-    cfg = SkillCarapaceConfig.model_validate({"credentials": [{"vault_path": "vault/x", "env_var": "A"}]})
-    registry = _FakeRegistry(present=set(), unconfigured={"vault/x"})
-    assert await resolve_vault_status(cfg, registry) == {"vault/x": "unconfigured"}
 
 
 def test_artifact_directory_label_uses_its_html_title(tmp_path: Path) -> None:

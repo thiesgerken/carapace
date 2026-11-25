@@ -53,6 +53,32 @@
       forSystems = nixpkgs.lib.genAttrs systems;
       forLinux = nixpkgs.lib.genAttrs linuxSystems;
       linuxFor = system: if system == "aarch64-darwin" then "aarch64-linux" else system;
+      # What skills get from the skills subflake (nix/skills/flake.nix), here on this flake's inputs.
+      skillLib = import ./nix/skills {
+        inherit
+          nixpkgs
+          pyproject-nix
+          uv2nix
+          pyproject-build-systems
+          ;
+      };
+      # Built against this checkout's lib, as the skills of a knowledge repo are against their pinned one.
+      # CI also builds the bundled ones against their own flake.lock (.github/workflows/nix-verify.yml).
+      skillFlakes =
+        prefix: dir:
+        forLinux (
+          system:
+          nixpkgs.lib.mapAttrs' (
+            name: _:
+            nixpkgs.lib.nameValuePair "${prefix}-${name}"
+              ((import "${dir}/${name}/flake.nix").outputs {
+                inherit nixpkgs;
+                carapace.lib = skillLib;
+              }).packages.${system}.default
+          ) (nixpkgs.lib.filterAttrs (name: _: builtins.pathExists "${dir}/${name}/flake.nix") (builtins.readDir dir))
+        );
+      skillExamples = skillFlakes "skill-example" ./nix/skills/examples;
+      bundledSkills = skillFlakes "skill-bundled" ./src/carapace/assets/skills;
       project = forSystems (
         system:
         let
@@ -71,8 +97,14 @@
             inherit (tools) nodejs;
           };
           images = import ./nix/images.nix {
-            inherit pkgs;
-            inherit (backend) server tokenizerCache;
+            inherit pkgs nixpkgs;
+            inherit (tools) nodejs;
+            inherit (backend)
+              server
+              builder
+              tokenizerCache
+              mcpBridgeEnv
+              ;
             inherit (frontend) frontend;
           };
           # The version comes from the committed Chart.yaml, which the release commit bumps.
@@ -125,7 +157,54 @@
         in
         p.backend.checks
         // p.frontend.checks
+        // skillExamples.${system}
+        // bundledSkills.${system}
         // {
+          skill-wrapper-contract = import ./nix/skills/tests.nix {
+            inherit (p) pkgs;
+            skillLib = skillLib.skill p.pkgs;
+          };
+          # The examples' local commands run: the venv imports its packages, Node finds node_modules, the
+          # nixpkgs script finds its runtimeInputs.
+          skill-examples-run =
+            let
+              examples = skillExamples.${system};
+            in
+            p.pkgs.runCommand "skill-examples-run" { } ''
+              [ "$(${examples.skill-example-uv}/bin/demo-usage Ada)" = "hello, Ada" ]
+              ${examples.skill-example-npm}/bin/demo-npm-hello Ada | grep -q "hello, Ada"
+              # A hand-written one-page PDF: qpdf adds the missing cross-reference table (with warnings),
+              # then doubles it.
+              printf '%s\n' '%PDF-1.4' '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj' \
+                '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj' \
+                '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 10 10]/Resources<<>>>>endobj' \
+                'trailer<</Size 4/Root 1 0 R>>' '%%EOF' > broken.pdf
+              ${p.pkgs.qpdf}/bin/qpdf --warning-exit-0 broken.pdf one.pdf
+              ${p.pkgs.qpdf}/bin/qpdf --empty --pages one.pdf one.pdf -- two.pdf
+              # Warnings alone must not fail the command. An assignment, so its exit status counts.
+              pages="$(${examples.skill-example-nix}/bin/demo-nix-pages broken.pdf)"
+              [ "$pages" = 1 ]
+              [ "$(${examples.skill-example-nix}/bin/demo-nix-pages two.pdf)" = 2 ]
+              [ "$(echo '{"a":1}' | ${examples.skill-example-nix}/bin/demo-nix-jq .a)" = 1 ]
+              touch $out
+            '';
+          # The bundled commands start: their wrappers ask cgate and ccred first, stubbed here.
+          skill-bundled-run =
+            let
+              bundled = bundledSkills.${system};
+              cgate = p.pkgs.writeShellScriptBin "cgate" "exit 0";
+              ccred = p.pkgs.writeShellScriptBin "ccred" "echo demo-secret";
+            in
+            p.pkgs.runCommand "skill-bundled-run" { nativeBuildInputs = [ cgate ccred ]; } ''
+              # Into a file: grep -q would stop reading and fail the writer with SIGPIPE under pipefail.
+              shows_usage() { "$1" --help > help.txt; grep -qi usage help.txt; }
+              shows_usage ${bundled.skill-bundled-wikipedia}/bin/wiki-search
+              shows_usage ${bundled.skill-bundled-wikipedia}/bin/wiki-fetch
+              shows_usage ${bundled.skill-bundled-web}/bin/web_search
+              shows_usage ${bundled.skill-bundled-web}/bin/web_fetch
+              shows_usage ${bundled.skill-bundled-carapace}/bin/carapace
+              touch $out
+            '';
           helm =
             p.pkgs.runCommand "carapace-helm"
               {
@@ -151,7 +230,8 @@
           inherit (p) chart;
           tools = project.${system}.tools.ci;
         }
-        // p.images
+        # The lite sandbox image is for local Mac builds only; CI builds and publishes the full one.
+        // removeAttrs p.images [ "sandbox-image-lite" ]
         # The release jobs run there and substitute the CLI from our cache, not a third party's.
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
           presswerk = presswerk.packages.${system}.default;
@@ -239,7 +319,6 @@
             artifacts = self.packages.x86_64-linux;
           in
           {
-            # carapace-sandbox is a Dockerfile build, not a store path; the publish job pushes it.
             oci-image =
               nixpkgs.lib.mapAttrs
                 (
@@ -255,6 +334,8 @@
                   carapace = artifacts.server-image;
                   carapace-frontend = artifacts.frontend-image;
                   carapace-bitwarden-cli = artifacts.bitwarden-image;
+                  carapace-sandbox = artifacts.sandbox-image;
+                  carapace-builder = artifacts.builder-image;
                 };
             oci-helm.carapace = ghcr // {
               repository = "ghcr.io/thiesgerken/charts/carapace";
@@ -272,6 +353,7 @@
                 docker pull ghcr.io/thiesgerken/carapace-frontend:{{ version }}
                 docker pull ghcr.io/thiesgerken/carapace-sandbox:{{ version }}
                 docker pull ghcr.io/thiesgerken/carapace-bitwarden-cli:{{ version }}
+                docker pull ghcr.io/thiesgerken/carapace-builder:{{ version }}
                 ```
 
                 ## Helm Chart
