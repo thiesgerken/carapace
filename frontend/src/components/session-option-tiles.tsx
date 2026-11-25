@@ -154,8 +154,8 @@ export function SessionOptionTiles({ items, className }: SessionOptionTilesProps
 }
 
 /**
- * The same options as compact switches, for the chat inspector. A switch is labelled by what it turns on;
- * the description of the current state moves to the tooltip.
+ * The same options as compact switches, for the chat inspector. A switch is labelled by what it turns on,
+ * with the description of the current state as one line of help text.
  */
 export function SessionOptionSwitches({ items }: { items: SessionOptionTileItem[] }) {
   const t = useTranslations("newSessionButton");
@@ -167,7 +167,7 @@ export function SessionOptionSwitches({ items }: { items: SessionOptionTileItem[
           key={item.key}
           checked={item.active}
           label={getOptionCopy(t, item.key, true).title}
-          title={getOptionCopy(t, item.key, item.active).description}
+          description={getOptionCopy(t, item.key, item.active).description}
           warning={lowersSafeguard(item.key)}
           disabled={item.disabled}
           onCheckedChange={() => item.onClick?.()}

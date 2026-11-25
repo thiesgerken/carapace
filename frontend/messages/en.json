@@ -1759,7 +1759,8 @@
     },
     "sessionView": {
         "menu": "Session actions",
-        "debug": "Debug view"
+        "debug": "Debug view",
+        "copyId": "Copy session ID"
     },
     "debugView": {
         "backToChat": "Back to chat",

@@ -1759,7 +1759,8 @@
     },
     "sessionView": {
         "menu": "Sitzungsaktionen",
-        "debug": "Debug-Ansicht"
+        "debug": "Debug-Ansicht",
+        "copyId": "Sitzungs-ID kopieren"
     },
     "debugView": {
         "backToChat": "Zurück zum Chat",

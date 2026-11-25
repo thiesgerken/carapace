@@ -2982,7 +2982,8 @@ export function ChatView({
         {inspectorOpen ? (
           <aside className="hidden min-h-0 flex-col bg-surface lg:flex">
             <div className="px-4 pt-3">{inspectorTabs}</div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4">{inspectorPanel}</div>
+            {/* Keyed by tab, so a new tab (or a jump to one) starts at its top. */}
+            <div key={inspectorTab} className="min-h-0 flex-1 overflow-y-auto px-4">{inspectorPanel}</div>
           </aside>
         ) : null}
       </div>
@@ -3019,7 +3020,7 @@ export function ChatView({
               </div>
             </div>
             <div className="px-4 pt-3">{inspectorTabs}</div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(1.5rem,calc(env(safe-area-inset-bottom)+0.75rem))]">
+            <div key={inspectorTab} className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(1.5rem,calc(env(safe-area-inset-bottom)+0.75rem))]">
               {inspectorPanel}
             </div>
           </div>
