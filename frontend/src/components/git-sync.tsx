@@ -301,9 +301,9 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
     return () => clearTimeout(id);
   }, [refresh]);
 
-  // Several of these hooks are mounted at once (sidebar indicator, account menu,
-  // knowledge browser). A pull or push from any of them moves the repo for all, so
-  // they re-read status together instead of the others going stale until remount.
+  // Several of these hooks are mounted at once (the Knowledge nav dot, the knowledge
+  // browser). A refresh, pull or push from any of them changes what all of them should
+  // show, so they re-read status together instead of the others going stale until remount.
   useEffect(() => {
     const onChanged = () => void refresh();
     window.addEventListener(KNOWLEDGE_GIT_CHANGED_EVENT, onChanged);
@@ -336,7 +336,8 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
     loading,
     busy,
     outcome,
-    refresh: () => void refresh(),
+    // Through the event, like pull and push: the acting instance re-reads via its own listener.
+    refresh: () => { window.dispatchEvent(new Event(KNOWLEDGE_GIT_CHANGED_EVENT)); },
     pull: () => void runAction("pull", () => globalGitPull(server, token)),
     push: () => void runAction("push", () => globalGitPush(server, token)),
   };

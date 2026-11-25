@@ -64,8 +64,8 @@ export function SidebarFooter({
   const globalGit = useGlobalGit(server, token);
 
   return (
-    // The drawer is fixed to the viewport on phones, so the body's safe-area padding does not reach it.
-    <div className="border-t border-border px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+    // Below md the drawer is fixed to the viewport, so the body's safe-area padding does not reach it.
+    <div className="border-t border-border px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:pb-2">
       <nav aria-label={t("navigation.label")} className="space-y-0.5">
         {NAV_ITEMS.map(({ href, labelKey, icon: Icon }) => {
           const active = isActiveRoute(pathname, href);
