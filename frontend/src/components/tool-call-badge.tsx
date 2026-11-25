@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   Archive,
   Ban,
@@ -30,6 +30,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { diffLines } from "diff";
 import { MarkdownContent } from "./markdown-content";
+import { CodeBlockShell } from "./markdown-code-pre";
 import { FilePreview } from "./file-preview";
 import { ArtifactPreview } from "./artifact-preview";
 import { BrailleSpinner } from "./braille-spinner";
@@ -39,11 +40,13 @@ import {
   languageFromFilePath,
   splitReadToolResult,
 } from "@/lib/sandbox-read";
+import { splitHeredocs, type CommandFragment } from "@/lib/shell-heredoc";
 import type { ApprovalSource, ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, SentFile } from "@/lib/types";
 import { toolCallStatus } from "@/lib/tool-call-status";
 import { cn } from "@/lib/utils";
 import { getArtifact, knowledgeArtifactUrl, knowledgeRawUrl } from "@/lib/api";
 import { ArtifactIcon, artifactViewerHref, type ArtifactReference } from "@/lib/artifacts";
+import { useDebounced } from "@/hooks/use-debounced";
 import { useKeyedFetch } from "@/hooks/use-keyed-fetch";
 import { parseStreamingArgs } from "@/lib/live-tool-calls";
 
@@ -300,13 +303,14 @@ function normalizeOptionalLabel(value: string): string {
   return trimmed;
 }
 
-function buildShellTranscript(command: string, output?: string): string {
-  const body = ["❯ " + command];
-  const normalizedOutput = output?.replace(/\n+$/, "") ?? "";
-  if (normalizedOutput.length > 0) body.push(normalizedOutput);
-  const payload = body.join("\n");
-  const fence = payload.includes("~~~") ? "~~~~" : "~~~";
-  return `${fence}shell\n${payload}\n${fence}`;
+/** *command* as shell and heredoc fragments, with *prompt* in front of its first line. */
+function promptedFragments(command: string, prompt: string): CommandFragment[] {
+  const [first, ...rest] = splitHeredocs(command);
+  return [{ ...first, code: prompt + first.code }, ...rest];
+}
+
+function fragmentsMarkdown(fragments: CommandFragment[]): string {
+  return fragments.map(({ language, code }) => fencedCodeBlock(language, code)).join("\n\n");
 }
 
 function formatSkillResult(result: string): string {
@@ -633,9 +637,10 @@ export function ToolCallBadge({
   const execTitle = isExecTool
     ? normalizeOptionalLabel(stringArg(argsStreaming ? parseStreamingArgs(argsText ?? "", false) ?? {} : args, "title"))
     : "";
-  const execTranscript = isExecTool
-    ? buildShellTranscript(execCommand || t("fallbacks.missingCommand"), result)
+  const execCommandMarkdown = isExecTool
+    ? fragmentsMarkdown(promptedFragments(execCommand || t("fallbacks.missingCommand"), "❯ "))
     : "";
+  const execOutput = isExecTool ? result?.replace(/\n+$/, "") ?? "" : "";
   const skillResult = isReadSkillTool && result != null ? formatSkillResult(result) : "";
   const writePath = isWriteTool ? stringArg(args, "path") : "";
   const writeContent = isWriteTool ? stringArg(args, "content") : "";
@@ -852,7 +857,7 @@ export function ToolCallBadge({
         </div>
       )}
 
-      {argsStreaming && !open && <StreamingArgs text={streamingPreview(tool, args, argsText ?? "")} />}
+      {argsStreaming && !open && <StreamingArgs fragments={streamingPreview(tool, args, argsText ?? "")} />}
 
       {expanded && (
         <div className="tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2 text-xs">
@@ -924,8 +929,16 @@ export function ToolCallBadge({
                   {execTitle}
                 </div>
               )}
-              <div className={cn("exec-terminal-block")}>
-                <MarkdownContent content={execTranscript} />
+              <div className="exec-terminal-block">
+                {/* One block for the whole command, so its single copy button copies it runnable. */}
+                <div className="prose">
+                  <CodeBlockShell language="shell" copyText={() => execCommand}>
+                    <div className="code-fragments exec-command">
+                      <MarkdownContent content={execCommandMarkdown} />
+                    </div>
+                  </CodeBlockShell>
+                </div>
+                {execOutput && <MarkdownContent content={fencedCodeBlock("text", execOutput)} />}
               </div>
             </>
           ) : isReadSkillTool ? (
@@ -1118,36 +1131,61 @@ export function ToolCallBadge({
   );
 }
 
-/** What a streaming call's args will mainly show once it is final: the command, or the file text. */
-function streamingPreview(tool: string, args: Record<string, unknown>, argsText: string): string {
+/** Shiki highlights the whole text each time, so a streaming preview re-highlights at most this often. */
+const STREAMING_HIGHLIGHT_INTERVAL_MS = 300;
+
+/**
+ * What a streaming call's args will mainly show once it is final: the command, or the file text. A
+ * fragment stays plain `text` until its language is known: `write`'s complete path, or an `exec`
+ * heredoc's interpreter or target file.
+ */
+function streamingPreview(tool: string, args: Record<string, unknown>, argsText: string): CommandFragment[] {
   switch (tool) {
-    case "exec":
-      return getExecCommand(args) && `$ ${getExecCommand(args)}`;
-    case "write":
-      return stringArg(args, "content");
+    case "exec": {
+      const command = getExecCommand(args);
+      if (!command) return [];
+      const fragments = promptedFragments(command, "$ ");
+      return fragments.length > 1 ? fragments : [{ language: "text", code: fragments[0].code }];
+    }
+    case "write": {
+      const path = stringArg(parseStreamingArgs(argsText, false) ?? {}, "path");
+      return [{ language: languageFromFilePath(path), code: stringArg(args, "content") }];
+    }
     case "str_replace":
-      return stringArg(args, "new_string");
+      return [{ language: "text", code: stringArg(args, "new_string") }];
     default:
-      return argsText;
+      return [{ language: "text", code: argsText }];
   }
 }
 
 /**
- * The args as the model writes them. Plain text, not the final card's highlighted Markdown, so a long
- * file stays cheap to re-render on every delta; the box keeps the newest lines in view.
+ * The args as the model writes them, in a compact box that keeps the newest lines in view. Plain text is
+ * cheap to re-render on every delta; highlighted fragments only update every few hundred milliseconds.
  */
-function StreamingArgs({ text }: { text: string }) {
-  const ref = useRef<HTMLPreElement>(null);
-  useLayoutEffect(() => {
-    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
-  }, [text]);
-  if (!text) return null;
+function StreamingArgs({ fragments }: { fragments: CommandFragment[] }) {
+  if (fragments.every(({ code }) => !code)) return null;
+  const plain = fragments.every(({ language }) => language === "text");
   return (
-    <pre
-      ref={ref}
-      className="ml-5 mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border/60 bg-muted/30 p-2 font-mono text-[11px] leading-4 text-foreground/75"
-    >
-      {text}
-    </pre>
+    // column-reverse anchors the scroll at the bottom, also when a highlight lands after this render.
+    <div className="ml-5 mt-1 flex max-h-48 flex-col-reverse overflow-auto rounded-lg border border-border/60 bg-muted/30 p-2 font-mono text-[11px] leading-4 text-foreground/75">
+      {plain ? (
+        <pre className="whitespace-pre-wrap break-words">{fragments.map(({ code }) => code).join("\n")}</pre>
+      ) : (
+        <HighlightedFragments markdown={fragmentsMarkdown(fragments)} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * `MarkdownContent` shows its unhighlighted fallback only until the first highlight; after that it keeps
+ * the last highlighted render on screen until the next one resolves, so nothing flashes.
+ */
+function HighlightedFragments({ markdown }: { markdown: string }) {
+  const settled = useDebounced(markdown, STREAMING_HIGHLIGHT_INTERVAL_MS, STREAMING_HIGHLIGHT_INTERVAL_MS);
+  return (
+    <div className="code-fragments streaming-code">
+      <MarkdownContent content={settled} />
+    </div>
   );
 }

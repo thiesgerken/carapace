@@ -3,7 +3,7 @@ import test from "node:test";
 import { NextIntlClientProvider } from "next-intl";
 
 import messages from "../../messages/en.json";
-import { installDom, renderReact } from "../../test/react-test-utils";
+import { click, installDom, renderReact } from "../../test/react-test-utils";
 
 import { parseStreamingArgs } from "@/lib/live-tool-calls";
 
@@ -122,6 +122,57 @@ test("a streaming exec shows its title once the model finished it, the command's
     // The final card shows the same, so nothing jumps.
     await view.rerender(card('{"title": "Average the ratings", "command": "cat > stats.py <<\'EOF\'\\nEOF"}', false));
     assert.equal(summary(), "Average the ratings");
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("an exec card shows its command as one block, heredoc bodies in their language, and the output apart", async () => {
+  const restore = installDom();
+  try {
+    const command = "python3 - <<'PY'\nprint(42)\nPY";
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <ToolCallBadge tool="exec" args={{ command }} detail="" result={"42\n[exit code: 0]\n"} exitCode={0} />
+      </NextIntlClientProvider>,
+    );
+    let copied = "";
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text: string) => void (copied = text) } });
+    await click(view.container.querySelector("button")!);
+
+    const fragments = [...view.container.querySelectorAll(".exec-command pre")];
+    assert.deepEqual(fragments.map((pre) => pre.textContent), ["❯ python3 - <<'PY'", "print(42)", "PY"]);
+    assert.deepEqual([...view.container.querySelectorAll(".exec-command .md-code-block-lang")].map((label) => label.textContent), ["shell", "python", "shell"]);
+    const pres = [...view.container.querySelectorAll(".exec-terminal-block pre")];
+    assert.equal(pres.at(-1)?.textContent, "42\n[exit code: 0]", "the output is a block of its own");
+
+    // The fragments' own copy buttons are hidden.
+    const copyButtons = [...view.container.querySelectorAll(".exec-terminal-block .md-code-block-copy")].filter((button) => !button.closest(".code-fragments"));
+    assert.equal(copyButtons.length, 2, "one copy button for the command, one for the output");
+    await click(copyButtons[0]);
+    assert.equal(copied, command, "the command's copy button copies it runnable, without the prompt");
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("a streaming exec highlights a heredoc once its opening line is complete", async () => {
+  const restore = installDom();
+  try {
+    const card = (command: string) => (
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <ToolCallBadge tool="exec" args={{ command }} argsText="" argsStreaming detail="" loading />
+      </NextIntlClientProvider>
+    );
+    const view = await renderReact(card("python3 - <<'PY'"));
+    assert.equal(view.container.querySelector(".streaming-code"), null, "plain until the interpreter is known");
+    assert.equal(view.container.querySelector("pre")?.textContent, "$ python3 - <<'PY'");
+
+    await view.rerender(card("python3 - <<'PY'\nimport js"));
+    const labels = [...view.container.querySelectorAll(".streaming-code .md-code-block-lang")].map((label) => label.textContent);
+    assert.deepEqual(labels, ["shell", "python"]);
     await view.unmount();
   } finally {
     restore();

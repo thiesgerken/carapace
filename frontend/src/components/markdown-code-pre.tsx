@@ -93,36 +93,54 @@ function wrapPlainFenceWithLineNumbers(children: ReactNode): ReactNode {
 }
 
 export function MarkdownPre({ children, ...props }: MarkdownPreProps) {
-  const t = useTranslations("message.codeBlock");
   const preRef = useRef<HTMLPreElement>(null);
   const preProps = { ...props };
   delete (preProps as { node?: unknown }).node;
   const record = preProps as Record<string, unknown>;
   const lang = readDataLanguage(record) ?? languageFromFenceCode(children);
-
-  const [copied, setCopied] = useState(false);
-  const copy = useCallback(async () => {
+  const copyText = useCallback(() => {
     const el = preRef.current;
     const code = el?.querySelector("code");
-    const text = (code?.textContent ?? el?.textContent ?? "").replace(
-      /\n$/,
-      "",
-    );
+    return (code?.textContent ?? el?.textContent ?? "").replace(/\n$/, "");
+  }, []);
+
+  return (
+    <CodeBlockShell language={lang} copyText={copyText}>
+      <pre ref={preRef} {...preProps}>
+        {wrapPlainFenceWithLineNumbers(children)}
+      </pre>
+    </CodeBlockShell>
+  );
+}
+
+/** A code block's frame: the language label and a copy button for *copyText* above *children*. */
+export function CodeBlockShell({
+  language,
+  copyText,
+  children,
+}: {
+  language?: string;
+  copyText: () => string;
+  children: ReactNode;
+}) {
+  const t = useTranslations("message.codeBlock");
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(copyText());
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
       /* clipboard may be denied; avoid throwing in UI */
     }
-  }, []);
+  }, [copyText]);
 
   return (
     <div className="md-code-block-shell not-prose">
       <div className="md-code-block-toolbar">
-        {lang ? (
-          <span className="md-code-block-lang" title={lang}>
-            {lang}
+        {language ? (
+          <span className="md-code-block-lang" title={language}>
+            {language}
           </span>
         ) : (
           <span className="min-w-0 shrink" aria-hidden />
@@ -141,9 +159,7 @@ export function MarkdownPre({ children, ...props }: MarkdownPreProps) {
           )}
         </button>
       </div>
-      <pre ref={preRef} {...preProps}>
-        {wrapPlainFenceWithLineNumbers(children)}
-      </pre>
+      {children}
     </div>
   );
 }

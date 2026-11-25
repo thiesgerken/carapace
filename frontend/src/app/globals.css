@@ -252,6 +252,55 @@ body {
   color: var(--shiki-dark) !important;
   background-color: transparent !important;
 }
+/* Code blocks shown as fragments of one block (an exec command split around its heredoc bodies):
+   no frame, toolbar or scrolling of their own, and line numbers running on across them. */
+.code-fragments {
+  counter-reset: line;
+}
+.code-fragments .prose figure[data-rehype-pretty-code-figure],
+.code-fragments .prose .md-code-block-shell {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+.code-fragments .prose .md-code-block-toolbar {
+  display: none;
+}
+.code-fragments .prose .md-code-block-shell > pre {
+  padding-block: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+.code-fragments .prose .md-code-block-shell > pre code[data-line-numbers] {
+  counter-reset: none;
+}
+.exec-command {
+  max-height: 20rem;
+  overflow-y: auto;
+}
+.exec-command > .prose > :first-child .md-code-block-shell > pre {
+  padding-top: 0.75rem !important;
+}
+.exec-command > .prose > :last-child .md-code-block-shell > pre {
+  padding-bottom: 0.75rem !important;
+}
+/* The streaming preview keeps its compact plain-text look, only coloured. */
+.streaming-code > .prose {
+  font-size: inherit;
+  line-height: inherit;
+}
+.streaming-code .prose .md-code-block-shell > pre {
+  padding: 0 !important;
+  background: transparent !important;
+  font-size: inherit !important;
+  line-height: inherit;
+}
+.streaming-code .prose .md-code-block-shell code {
+  font-size: inherit;
+}
+.streaming-code [data-line]::before {
+  content: none !important;
+}
 .font-mono {
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
