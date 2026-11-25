@@ -28,7 +28,8 @@ const INTERPRETER_LANGUAGES = new Map([
 // delimiter starts with a letter so arithmetic like `$((1<<2))` doesn't open a heredoc.
 const HEREDOC_OPERATOR = /(?<!<)<<(-?)[ \t]*(?:'([^'\n]+)'|"([^"\n]+)"|\\?([A-Za-z_]\w*))/g;
 const COMMAND_SEPARATOR = /&&|\|\||[;|()]/;
-const FILE_TARGET = /^(?:cat\s*>|tee(?:\s+-a)?\s)\s*([^\s>]\S*)$/;
+// `tee` also writes to stdout, which is often silenced: `tee f >/dev/null <<EOF`.
+const FILE_TARGET = /^(?:cat\s*>\s*([^\s>]+)|tee(?:\s+-a)?\s+([^\s>]+)(?:\s*>\s*\/dev\/null)?)$/;
 
 /**
  * *command* split into shell fragments and the bodies of its heredocs whose language is known from the
@@ -79,7 +80,8 @@ function heredocLanguage(simpleCommand: string, operatorIndex: number): string |
   const interpreterLanguage = INTERPRETER_LANGUAGES.get(program);
   if (interpreterLanguage && ["", "-"].includes(args.join(" "))) return interpreterLanguage;
 
-  const target = FILE_TARGET.exec(simpleCommand.replace(HEREDOC_OPERATOR, "").trim())?.[1];
+  const match = FILE_TARGET.exec(simpleCommand.replace(HEREDOC_OPERATOR, "").trim());
+  const target = match?.[1] ?? match?.[2];
   const fileLanguage = target ? languageFromFilePath(target.replace(/^(['"])(.*)\1$/, "$2")) : "text";
   return fileLanguage === "text" ? null : fileLanguage;
 }

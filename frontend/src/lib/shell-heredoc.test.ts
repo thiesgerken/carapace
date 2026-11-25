@@ -32,6 +32,8 @@ test("a heredoc written to a file is highlighted by the file's extension", () =>
   assert.deepEqual(fragmentsOf('cat <<EOF >"/workspace/run.py"\nprint(1)\nEOF'), [shell('cat <<EOF >"/workspace/run.py"'), { language: "python", code: "print(1)" }, shell("EOF")]);
   assert.deepEqual(fragmentsOf("tee config.yaml <<EOF\na: 1\nEOF"), [shell("tee config.yaml <<EOF"), { language: "yaml", code: "a: 1" }, shell("EOF")]);
   assert.deepEqual(fragmentsOf("tee -a notes.md <<EOF\n# Notes\nEOF"), [shell("tee -a notes.md <<EOF"), { language: "markdown", code: "# Notes" }, shell("EOF")]);
+  assert.deepEqual(fragmentsOf("tee app.py >/dev/null <<EOF\nx = 1\nEOF"), [shell("tee app.py >/dev/null <<EOF"), { language: "python", code: "x = 1" }, shell("EOF")]);
+  assert.deepEqual(fragmentsOf("tee -a app.py <<'EOF' > /dev/null\nx = 1\nEOF"), [shell("tee -a app.py <<'EOF' > /dev/null"), { language: "python", code: "x = 1" }, shell("EOF")]);
 });
 
 test("several heredocs, on separate lines or one, each get their own language", () => {
@@ -67,6 +69,8 @@ test("unknown interpreters, targets and unparsable commands stay one shell block
     "python3 -u - <<'PY'\nprint(1)\nPY",
     "cat <<EOF | python3\nprint(1)\nEOF",
     "cat >> log.py <<EOF\nprint(1)\nEOF",
+    "cat > a.py >/dev/null <<EOF\nprint(1)\nEOF",
+    "tee a.py > copy.py <<EOF\nprint(1)\nEOF",
     "cat > notes.txt <<EOF\nhello\nEOF",
     "python3 <<< 'print(1)'",
     "echo $((1<<2))\nls",
