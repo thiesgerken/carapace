@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Tortoise, type TortoisePose } from "@/components/tortoise";
 import { useNow } from "@/hooks/use-now";
 import { compactCount } from "@/lib/request-table";
-import type { LlmActivity, LlmActivityPhase } from "@/lib/types";
+import type { LlmActivity } from "@/lib/types";
 
 // A rough average for English text and code; the request record brings the real count.
 const CHARS_PER_TOKEN = 4;
@@ -22,7 +22,7 @@ type Phrase = { key: string; pose: TortoisePose };
 
 // Each phrase names the pose that acts it out. To add one: an entry here and its text under
 // `chatView.waiting.phrases` in both message files.
-export const PHRASES: Record<"processing_prompt" | "thinking" | "generating" | "sentinel", readonly Phrase[]> = {
+export const PHRASES: Record<"processing_prompt" | "thinking" | "sentinel", readonly Phrase[]> = {
   processing_prompt: [
     { key: "nibble", pose: "munch" },
     { key: "digest", pose: "munch" },
@@ -40,16 +40,8 @@ export const PHRASES: Record<"processing_prompt" | "thinking" | "generating" | "
     { key: "inShell", pose: "pulse" },
     { key: "unhurried", pose: "pulse" },
     { key: "stepByStep", pose: "walk" },
-  ],
-  generating: [
-    { key: "creep", pose: "walk" },
-    { key: "fullThrottle", pose: "walk" },
-    { key: "wordByWord", pose: "walk" },
     { key: "turbo", pose: "turbo" },
     { key: "overtaken", pose: "snail" },
-    { key: "writes", pose: "scribble" },
-    { key: "keepsShort", pose: "pulse" },
-    { key: "tinker", pose: "wrench" },
   ],
   // The sentinel's own requests: it is reviewing something that crosses the sandbox boundary.
   sentinel: [
@@ -58,16 +50,20 @@ export const PHRASES: Record<"processing_prompt" | "thinking" | "generating" | "
   ],
 };
 
-/** The phrase for the request's current phase. It depends only on request and phase, so a remounted line keeps it. */
-function pickPhrase(activity: LlmActivity): Phrase {
-  const bucket = activity.source === "sentinel" ? "sentinel" : phraseBucket(activity.phase);
-  const phrases = PHRASES[bucket];
-  return phrases[fnv1a(`${activity.request_id}:${bucket}`) % phrases.length];
+// While the answer streams, the text itself shows the work, so the tortoise acts without a phrase.
+// A tool call being written counts too: its live card replaces this line once it arrives.
+export const GENERATING_POSES: readonly TortoisePose[] = ["walk", "scribble", "wrench"];
+
+/** What the tortoise does for *activity*, and the phrase that goes with it, if any. One pick per turn and bucket. */
+function act(activity: LlmActivity | null, turnSeed: number): { pose: TortoisePose; phrase?: string } {
+  if (!activity) return { pose: "pulse" };
+  const bucket = activity.source === "sentinel" ? "sentinel" : activity.phase;
+  if (bucket === "generating" || bucket === "tool_call") return { pose: pick(GENERATING_POSES, turnSeed, "generating") };
+  const { key, pose } = pick(PHRASES[bucket], turnSeed, bucket);
+  return { pose, phrase: key };
 }
 
-// A tool call being written shows on its live card (see `streamingCallIndex`); this line covers the
-// moment before that card arrives, which reads as plain generating.
-const phraseBucket = (phase: LlmActivityPhase) => (phase === "tool_call" ? "generating" : phase);
+const pick = <T,>(items: readonly T[], turnSeed: number, bucket: string): T => items[fnv1a(`${turnSeed}:${bucket}`) % items.length];
 
 function fnv1a(text: string): number {
   let hash = 0x811c9dc5;
@@ -78,7 +74,6 @@ function fnv1a(text: string): number {
 /** When the request last showed progress: a new phase or more streamed characters. */
 function useLastProgressAt(activity: LlmActivity | null, now: number): number {
   const key = activity ? `${activity.request_id}:${activity.phase}:${activity.streamed_chars ?? 0}` : "";
-  // ponytail: a remount restarts the stall clock; the line remounts around live tool cards, which are progress anyway.
   const [progress, setProgress] = useState({ key, at: now });
   if (progress.key !== key) setProgress({ key, at: now });
   return progress.at;
@@ -99,24 +94,32 @@ export function ActivityCounter({ activity }: { activity: LlmActivity }) {
   return <span className="tabular-nums">{parts.join(" · ")}</span>;
 }
 
-/** What the agent's request is doing, acted out by the tortoise, with how long it has run and roughly how many tokens it has written. */
-export function WaitingIndicator({ activity }: { activity: LlmActivity | null }) {
+/**
+ * What the agent's request is doing, acted out by the tortoise, with how long it has run and roughly
+ * how many tokens it has written. Mount it once per turn and *hide* it rather than unmounting it, so
+ * the phrases, the stall clock and the shimmer hold for the whole turn instead of re-rolling.
+ */
+export function WaitingIndicator({ activity, hidden = false }: { activity: LlmActivity | null; hidden?: boolean }) {
   const t = useTranslations("chatView.waiting");
   const agent = activity?.source === "agent" ? activity : null;
   // Ticks for as long as the line is up, including the gaps between requests, so a new request's
   // progress is stamped with the current time rather than when the last one ended.
   const now = useNow(true);
   const lastProgressAt = useLastProgressAt(agent, now);
+  const [turnSeed] = useState(() => Math.floor(Math.random() * 2 ** 32));
   const [shimmerDelay] = useState(() => `-${Date.now() % SHIMMER_MS}ms`);
 
-  const phrase = activity ? pickPhrase(activity) : null;
+  const { pose, phrase } = act(activity, turnSeed);
   const stalled = agent !== null && now - lastProgressAt >= STALL_MS;
-  const pose = stalled ? "sleep" : (phrase?.pose ?? "pulse");
 
   return (
-    <div className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
-      <Tortoise pose={pose} className="h-6 w-auto shrink-0" />
-      <span className="text-shimmer" style={{ animationDelay: shimmerDelay }}>{phrase ? t(`phrases.${phrase.key}`) : t("working")}</span>
+    <div hidden={hidden} className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
+      <Tortoise pose={stalled ? "sleep" : pose} className="h-6 w-auto shrink-0" />
+      {phrase && (
+        <span className="text-shimmer" style={{ animationDelay: shimmerDelay }}>
+          {t(`phrases.${phrase}`)}
+        </span>
+      )}
       {agent && <ActivityCounter activity={agent} />}
     </div>
   );
