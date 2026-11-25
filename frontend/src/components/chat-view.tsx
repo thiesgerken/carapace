@@ -4,7 +4,7 @@ import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Bot, Brain, Check, Copy, ExternalLink, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal, Trash2 } from "lucide-react";
+import { Archive, Bot, Brain, Check, Copy, ExternalLink, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
 import { ChatMemorySection } from "@/components/chat-memory-section";
 import { ChatUsageSection, useSessionUsage } from "@/components/chat-usage-section";
@@ -71,6 +71,7 @@ import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 import { SessionArtifactsSection } from "./session-artifacts-section";
 import { ChatInput } from "./chat-input";
 import { SessionHeader } from "./session-header";
+import { SessionMenu } from "./session-menu";
 
 interface ChatViewProps {
   server: string;
@@ -2429,70 +2430,6 @@ export function ChatView({
   const inspectorContent = (
     <div className="divide-y divide-border">
       <section className="py-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-medium text-muted-foreground">
-            {t("inspector.actions")}
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-1">
-          <button
-            onClick={() => void handleTogglePinned()}
-            disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
-            title={sessionPinned ? t("actions.unpin") : t("actions.pin")}
-            aria-pressed={sessionPinned}
-            className={cn(inspectorActionClass, sessionPinned && "text-primary")}
-          >
-            {updatingSessionAttribute === "pinned" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Pin className={cn("h-3.5 w-3.5", sessionPinned && "fill-current")} />
-            )}
-          </button>
-          <button
-            onClick={() => void handleToggleFavorite()}
-            disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
-            title={sessionFavorite ? t("actions.unfavorite") : t("actions.favorite")}
-            aria-pressed={sessionFavorite}
-            className={cn(inspectorActionClass, sessionFavorite && "text-primary")}
-          >
-            {updatingSessionAttribute === "favorite" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Star className={cn("h-3.5 w-3.5", sessionFavorite && "fill-current")} />
-            )}
-          </button>
-          {sessionArchived || sessionCanArchive ? (
-            <button
-              onClick={() => void handleToggleArchived()}
-              disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
-              title={sessionArchived ? t("actions.unarchive") : t("actions.archive")}
-              className={inspectorActionClass}
-            >
-              {updatingSessionAttribute === "archived" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : sessionArchived ? (
-                <ArchiveRestore className="h-3.5 w-3.5" />
-              ) : (
-                <Archive className="h-3.5 w-3.5" />
-              )}
-            </button>
-          ) : null}
-          <button
-            onClick={() => void handleDeleteSession()}
-            disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession}
-            title={t("actions.delete")}
-            className={cn(inspectorActionClass, "hover:bg-destructive/10 hover:text-destructive")}
-          >
-            {deletingSession ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Trash2 className="h-3.5 w-3.5" />
-            )}
-          </button>
-          </div>
-        </div>
-      </section>
-
-      <section className="py-4">
         <div className="text-xs font-medium text-muted-foreground">
           {t("inspector.session")}
         </div>
@@ -2895,7 +2832,6 @@ export function ChatView({
           <SessionHeader
             sessionId={sessionId}
             title={session?.title}
-            view="chat"
             titleAccessory={hasMemory ? (
               <button
                 type="button"
@@ -2907,6 +2843,19 @@ export function ChatView({
               </button>
             ) : null}
           >
+            <SessionMenu
+              sessionId={sessionId}
+              pinned={sessionPinned}
+              favorite={sessionFavorite}
+              archived={sessionArchived}
+              canArchive={sessionCanArchive}
+              attributesDisabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
+              deleteDisabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession}
+              onTogglePinned={() => void handleTogglePinned()}
+              onToggleFavorite={() => void handleToggleFavorite()}
+              onToggleArchived={() => void handleToggleArchived()}
+              onDelete={() => void handleDeleteSession()}
+            />
             <button
               type="button"
               onClick={() => setMobileInspectorOpen(true)}

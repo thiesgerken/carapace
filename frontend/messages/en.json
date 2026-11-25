@@ -1260,7 +1260,6 @@
             "interactive": "Interactive"
         },
         "inspector": {
-            "actions": "Actions",
             "session": "Session"
         },
         "session": {
@@ -1757,11 +1756,11 @@
         }
     },
     "sessionView": {
-        "label": "Session view",
-        "chat": "Chat",
-        "debug": "Debug"
+        "menu": "Session actions",
+        "debug": "Debug view"
     },
     "debugView": {
+        "backToChat": "Back to chat",
         "usage": {
             "input": "Input tokens",
             "output": "Output tokens",
