@@ -197,19 +197,23 @@ async def test_agent_error_mid_stream_marks_its_context_failed(tmp_path: Path, d
 async def test_sentinel_timeout_between_requests_leaves_the_completed_context_alone(tmp_path: Path, db_factory) -> None:
     engine, active, _subscriber = _session(tmp_path, db_factory)
 
-    def _call_slow_tool(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
-        return ModelResponse(parts=[ToolCallPart("slow_tool", {})])
+    def _call_tool(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[ToolCallPart("tool_cut_by_timeout", {})])
 
-    sentinel = _sentinel(tmp_path, ReplayStreamModel(_call_slow_tool))
+    # The tool raises the sentinel's TimeoutError itself, so it lands between the requests for sure. A short
+    # real deadline would race the first request's bookkeeping on a slow runner; this one must just never fire.
+    sentinel = _sentinel(tmp_path, ReplayStreamModel(_call_tool), timeout=timedelta(hours=1))
 
     @sentinel._agent.tool_plain
-    async def slow_tool() -> str:
-        await asyncio.sleep(10)
-        return "unreachable"
+    async def tool_cut_by_timeout() -> str:
+        raise TimeoutError
 
     with engine.llm_request_recording(active):
-        await sentinel.evaluate_domain_access(SessionSecurity("s"), ["example.com"], "echo hi", follow_up=False)
+        verdict = await sentinel.evaluate_domain_access(
+            SessionSecurity("s"), ["example.com"], "echo hi", follow_up=False
+        )
 
+    assert "timed out" in verdict.explanation
     context = engine.session_mgr.load_llm_context(active.state.session_id, "sentinel")
     assert context is not None
     assert (context.status, context.error) == ("completed", None)
