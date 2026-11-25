@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Tortoise, type TortoisePose } from "@/components/tortoise";
 import { useNow } from "@/hooks/use-now";
 import { compactCount } from "@/lib/request-table";
-import type { LlmActivity } from "@/lib/types";
+import type { LlmActivity, LlmActivityPhase } from "@/lib/types";
 
 // A rough average for English text and code; the request record brings the real count.
 const CHARS_PER_TOKEN = 4;
@@ -22,32 +22,52 @@ type Phrase = { key: string; pose: TortoisePose };
 
 // Each phrase names the pose that acts it out. To add one: an entry here and its text under
 // `chatView.waiting.phrases` in both message files.
-export const PHRASES: Record<"processing_prompt" | "thinking" | "generating", readonly Phrase[]> = {
+export const PHRASES: Record<"processing_prompt" | "thinking" | "generating" | "sentinel", readonly Phrase[]> = {
   processing_prompt: [
     { key: "nibble", pose: "munch" },
-    { key: "finePrint", pose: "glass" },
     { key: "digest", pose: "munch" },
+    { key: "chewTwice", pose: "munch" },
+    { key: "eatThrough", pose: "munch" },
+    { key: "finePrint", pose: "glass" },
+    { key: "betweenLines", pose: "glass" },
+    { key: "history", pose: "book" },
+    { key: "plentyOfTime", pose: "hourglass" },
   ],
   thinking: [
     { key: "ponder", pose: "think" },
     { key: "hunch", pose: "think" },
+    { key: "experience", pose: "think" },
     { key: "inShell", pose: "pulse" },
+    { key: "unhurried", pose: "pulse" },
+    { key: "stepByStep", pose: "walk" },
   ],
   generating: [
     { key: "creep", pose: "walk" },
     { key: "fullThrottle", pose: "walk" },
-    { key: "writes", pose: "pulse" },
+    { key: "wordByWord", pose: "walk" },
+    { key: "turbo", pose: "turbo" },
+    { key: "overtaken", pose: "snail" },
+    { key: "writes", pose: "scribble" },
+    { key: "keepsShort", pose: "pulse" },
+    { key: "tinker", pose: "wrench" },
+  ],
+  // The sentinel's own requests: it is reviewing something that crosses the sandbox boundary.
+  sentinel: [
+    { key: "knocking", pose: "peek" },
+    { key: "peeksOut", pose: "peek" },
   ],
 };
 
 /** The phrase for the request's current phase. It depends only on request and phase, so a remounted line keeps it. */
 function pickPhrase(activity: LlmActivity): Phrase {
-  // A tool call being written shows on its live card (see `streamingCallIndex`); this line covers the
-  // moment before that card arrives, which reads as plain generating.
-  const phase = activity.phase === "tool_call" ? "generating" : activity.phase;
-  const phrases = PHRASES[phase];
-  return phrases[fnv1a(`${activity.request_id}:${phase}`) % phrases.length];
+  const bucket = activity.source === "sentinel" ? "sentinel" : phraseBucket(activity.phase);
+  const phrases = PHRASES[bucket];
+  return phrases[fnv1a(`${activity.request_id}:${bucket}`) % phrases.length];
 }
+
+// A tool call being written shows on its live card (see `streamingCallIndex`); this line covers the
+// moment before that card arrives, which reads as plain generating.
+const phraseBucket = (phase: LlmActivityPhase) => (phase === "tool_call" ? "generating" : phase);
 
 function fnv1a(text: string): number {
   let hash = 0x811c9dc5;
@@ -89,11 +109,9 @@ export function WaitingIndicator({ activity }: { activity: LlmActivity | null })
   const lastProgressAt = useLastProgressAt(agent, now);
   const [shimmerDelay] = useState(() => `-${Date.now() % SHIMMER_MS}ms`);
 
-  const phrase = agent ? pickPhrase(agent) : null;
-  // The sentinel's own requests are it reviewing something that crosses the sandbox boundary.
-  const idlePose: TortoisePose = activity?.source === "sentinel" ? "glass" : "pulse";
+  const phrase = activity ? pickPhrase(activity) : null;
   const stalled = agent !== null && now - lastProgressAt >= STALL_MS;
-  const pose = stalled ? "sleep" : (phrase?.pose ?? idlePose);
+  const pose = stalled ? "sleep" : (phrase?.pose ?? "pulse");
 
   return (
     <div className="flex items-center gap-2 px-2 text-xs text-muted-foreground">

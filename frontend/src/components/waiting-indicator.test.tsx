@@ -62,8 +62,10 @@ test("WaitingIndicator acts out the phase and counts time and approximate tokens
     assert.ok(prompt.text.endsWith("3 s"), prompt.text);
     assert.equal(prompt.pose, phraseIn(prompt.text, "processing_prompt").pose);
 
-    // Other roles' requests leave the label generic; the sentinel's get the magnifier.
-    assert.deepEqual(await shown({ ...GENERATING, source: "sentinel" }), { text: "Working…", pose: "glass" });
+    // The sentinel's requests get their own phrases and no counter, whatever their phase.
+    const sentinel = await shown({ ...GENERATING, source: "sentinel" });
+    assert.equal(sentinel.pose, phraseIn(sentinel.text, "sentinel").pose);
+    assert.ok(!sentinel.text.includes("tokens"), sentinel.text);
     assert.deepEqual(await shown(null), { text: "Working…", pose: "pulse" });
   } finally {
     restore();
