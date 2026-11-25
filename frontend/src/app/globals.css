@@ -252,7 +252,7 @@ body {
   color: var(--shiki-dark) !important;
   background-color: transparent !important;
 }
-/* Code blocks shown as fragments of one block (an exec command split around its heredoc bodies):
+/* Code blocks shown as fragments of one labelled block (an exec command split around its heredoc bodies):
    no frame, toolbar or scrolling of their own, and line numbers running on across them. */
 .code-fragments {
   counter-reset: line;
@@ -274,14 +274,14 @@ body {
 .code-fragments .prose .md-code-block-shell > pre code[data-line-numbers] {
   counter-reset: none;
 }
-.exec-command {
+.exec-block {
   max-height: 20rem;
   overflow-y: auto;
 }
-.exec-command > .prose > :first-child .md-code-block-shell > pre {
+.exec-block > .prose > :first-child .md-code-block-shell > pre {
   padding-top: 0.75rem !important;
 }
-.exec-command > .prose > :last-child .md-code-block-shell > pre {
+.exec-block > .prose > :last-child .md-code-block-shell > pre {
   padding-bottom: 0.75rem !important;
 }
 /* The streaming preview keeps its compact plain-text look, only coloured. */

@@ -128,7 +128,7 @@ test("a streaming exec shows its title once the model finished it, the command's
   }
 });
 
-test("an exec card shows its command as one block, heredoc bodies in their language, and the output apart", async () => {
+test("an exec card shows its command as one block, heredoc bodies in their language, and the output apart, both named by role", async () => {
   const restore = installDom();
   try {
     const command = "python3 - <<'PY'\nprint(42)\nPY";
@@ -141,17 +141,22 @@ test("an exec card shows its command as one block, heredoc bodies in their langu
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text: string) => void (copied = text) } });
     await click(view.container.querySelector("button")!);
 
-    const fragments = [...view.container.querySelectorAll(".exec-command pre")];
+    const blockLabels = [...view.container.querySelectorAll(".exec-terminal-block > .md-code-block-shell > .md-code-block-toolbar .md-code-block-lang")];
+    assert.deepEqual(blockLabels.map((label) => label.textContent), ["Command", "Output"]);
+    const [commandBlock, outputBlock] = [...view.container.querySelectorAll(".exec-terminal-block .exec-block")];
+
+    const fragments = [...commandBlock.querySelectorAll("pre")];
     assert.deepEqual(fragments.map((pre) => pre.textContent), ["❯ python3 - <<'PY'", "print(42)", "PY"]);
-    assert.deepEqual([...view.container.querySelectorAll(".exec-command .md-code-block-lang")].map((label) => label.textContent), ["shell", "python", "shell"]);
-    const pres = [...view.container.querySelectorAll(".exec-terminal-block pre")];
-    assert.equal(pres.at(-1)?.textContent, "42\n[exit code: 0]", "the output is a block of its own");
+    assert.deepEqual([...commandBlock.querySelectorAll(".md-code-block-lang")].map((label) => label.textContent), ["shell", "python", "shell"]);
+    assert.equal(outputBlock.querySelector("pre")?.textContent, "42\n[exit code: 0]", "the output is a block of its own");
 
     // The fragments' own copy buttons are hidden.
     const copyButtons = [...view.container.querySelectorAll(".exec-terminal-block .md-code-block-copy")].filter((button) => !button.closest(".code-fragments"));
     assert.equal(copyButtons.length, 2, "one copy button for the command, one for the output");
     await click(copyButtons[0]);
     assert.equal(copied, command, "the command's copy button copies it runnable, without the prompt");
+    await click(copyButtons[1]);
+    assert.equal(copied, "42\n[exit code: 0]");
     await view.unmount();
   } finally {
     restore();
@@ -167,7 +172,7 @@ test("an exec card keeps the blank lines that end a heredoc body, so the line nu
       </NextIntlClientProvider>,
     );
     await click(view.container.querySelector("button")!);
-    const lineCounts = [...view.container.querySelectorAll(".exec-command code")].map((code) => code.querySelectorAll("[data-line]").length);
+    const lineCounts = [...view.container.querySelector(".exec-block")!.querySelectorAll("code")].map((code) => code.querySelectorAll("[data-line]").length);
     assert.deepEqual(lineCounts, [1, 3, 1], "the body's two blank lines stay; the command's trailing newline adds none");
     await view.unmount();
   } finally {

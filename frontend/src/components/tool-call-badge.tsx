@@ -931,16 +931,20 @@ export function ToolCallBadge({
                   {execTitle}
                 </div>
               )}
-              <div className="exec-terminal-block">
-                {/* One block for the whole command, so its single copy button copies it runnable. */}
-                <div className="prose">
-                  <CodeBlockShell language="shell" copyText={() => execCommand}>
-                    <div className="code-fragments exec-command">
-                      <MarkdownContent content={execCommandMarkdown} />
+              {/* Blocks named by role: the command mixes languages, and its single copy button copies it runnable. */}
+              <div className="exec-terminal-block prose">
+                <CodeBlockShell label={t("details.command")} copyText={() => execCommand}>
+                  <div className="code-fragments exec-block">
+                    <MarkdownContent content={execCommandMarkdown} />
+                  </div>
+                </CodeBlockShell>
+                {execOutput && (
+                  <CodeBlockShell label={t("details.output")} copyText={() => execOutput}>
+                    <div className="code-fragments exec-block">
+                      <MarkdownContent content={fencedCodeBlock("text", execOutput)} />
                     </div>
                   </CodeBlockShell>
-                </div>
-                {execOutput && <MarkdownContent content={fencedCodeBlock("text", execOutput)} />}
+                )}
               </div>
             </>
           ) : isReadSkillTool ? (

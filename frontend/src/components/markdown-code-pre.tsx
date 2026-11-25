@@ -105,7 +105,7 @@ export function MarkdownPre({ children, ...props }: MarkdownPreProps) {
   }, []);
 
   return (
-    <CodeBlockShell language={lang} copyText={copyText}>
+    <CodeBlockShell label={lang} copyText={copyText}>
       <pre ref={preRef} {...preProps}>
         {wrapPlainFenceWithLineNumbers(children)}
       </pre>
@@ -113,13 +113,13 @@ export function MarkdownPre({ children, ...props }: MarkdownPreProps) {
   );
 }
 
-/** A code block's frame: the language label and a copy button for *copyText* above *children*. */
+/** A code block's frame: a label (usually the language) and a copy button for *copyText* above *children*. */
 export function CodeBlockShell({
-  language,
+  label,
   copyText,
   children,
 }: {
-  language?: string;
+  label?: string;
   copyText: () => string;
   children: ReactNode;
 }) {
@@ -138,9 +138,9 @@ export function CodeBlockShell({
   return (
     <div className="md-code-block-shell not-prose">
       <div className="md-code-block-toolbar">
-        {language ? (
-          <span className="md-code-block-lang" title={language}>
-            {language}
+        {label ? (
+          <span className="md-code-block-lang" title={label}>
+            {label}
           </span>
         ) : (
           <span className="min-w-0 shrink" aria-hidden />
