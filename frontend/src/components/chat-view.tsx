@@ -2480,7 +2480,7 @@ export function ChatView({
             onClick={() => void handleDeleteSession()}
             disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession}
             title={t("actions.delete")}
-            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+            className={cn(inspectorActionClass, "hover:bg-destructive/10 hover:text-destructive")}
           >
             {deletingSession ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2644,10 +2644,13 @@ export function ChatView({
           <button
             type="button"
             onClick={() => setModelsUnlocked((current) => !current)}
-            aria-pressed={modelsUnlocked}
+            aria-pressed={!modelsUnlocked}
             aria-label={modelsUnlocked ? tRoot("jobs.fields.modelsUnlinked") : tRoot("jobs.fields.modelsLinked")}
             title={modelsUnlocked ? tRoot("jobs.fields.modelsUnlinkedHelp") : tRoot("jobs.fields.modelsLinkedHelp")}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className={cn(
+              "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+              !modelsUnlocked && "text-primary",
+            )}
           >
             {modelsUnlocked ? <Link2Off className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
           </button>

@@ -21,8 +21,8 @@
   --primary-foreground: oklch(1 0 0);
   --success: oklch(0.52 0.11 160);
   --info: oklch(0.53 0.14 250);
-  --warning: oklch(0.56 0.15 62);
-  --destructive: oklch(0.577 0.245 27.33);
+  --warning: oklch(0.535 0.145 61);
+  --destructive: oklch(0.55 0.23 27.33);
   --destructive-foreground: oklch(0.985 0 0);
 }
 
@@ -43,7 +43,7 @@
   --info: oklch(0.75 0.11 248);
   --warning: oklch(0.8 0.14 78);
   --destructive: oklch(0.69 0.18 24);
-  --destructive-foreground: oklch(0.985 0 0);
+  --destructive-foreground: oklch(0.2 0.013 222);
 }
 
 @theme inline {
