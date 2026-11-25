@@ -1260,18 +1260,19 @@
             "interactive": "Interactive"
         },
         "inspector": {
-            "session": "Session"
+            "tabsLabel": "Session details",
+            "tabs": {
+                "session": "Session",
+                "usage": "Usage",
+                "environment": "Environment",
+                "content": "Content"
+            },
+            "show": "Show details",
+            "hide": "Hide details"
         },
         "session": {
-            "title": "Title",
-            "id": "ID",
-            "copyId": "Copy session id",
-            "idCopied": "Copied session id",
-            "idCopiedShort": "Copied",
-            "source": "Source",
             "created": "Created",
             "lastActive": "Last active",
-            "messages": "Messages",
             "totalCost": "Cost",
             "totalEquivalentCost": "Equivalent cost",
             "job": "Job",
@@ -1282,7 +1283,8 @@
             "yoloMode": "YOLO Mode",
             "yoloModeHelp": "Bypass sentinel approval and allow actions immediately.",
             "savingPrivate": "Saving…",
-            "updatingMode": "Updating mode…"
+            "updatingMode": "Updating mode…",
+            "meta": "Created {created} · active {lastActive} · {count, plural, one {# message} other {# messages}}"
         },
         "budget": {
             "title": "Budget",

@@ -32,7 +32,6 @@ export function ChatMemorySection({ sessionId, state, open, onOpenChange, onSour
 
   return (
     <details
-      data-memory-section
       open={open}
       onToggle={(event) => onOpenChange(event.currentTarget.open)}
       className="group/card py-4"

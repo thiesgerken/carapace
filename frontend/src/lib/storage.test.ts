@@ -5,6 +5,8 @@ import {
   clearConnection,
   clearNotificationSubscriptionId,
   getChatDraft,
+  getInspectorOpen,
+  getInspectorTab,
   getNotificationDeviceName,
   getNotificationSubscriptionId,
   getPresenceClientId,
@@ -14,6 +16,8 @@ import {
   hasConnection,
   saveChatDraft,
   saveConnection,
+  saveInspectorOpen,
+  saveInspectorTab,
   saveNotificationDeviceName,
   saveNotificationSubscriptionId,
   saveShowArchivedSessionsPreference,
@@ -183,4 +187,37 @@ test("archived chat visibility preference defaults to hidden and persists", () =
 
   saveShowArchivedSessionsPreference(false);
   assert.equal(getShowArchivedSessionsPreference(), false);
+});
+
+test("the inspector starts closed on the session tab and remembers open state and tab", () => {
+  assert.equal(getInspectorOpen(), false);
+  assert.equal(getInspectorTab(), "session");
+
+  saveInspectorOpen(true);
+  saveInspectorTab("usage");
+  assert.equal(getInspectorOpen(), true);
+  assert.equal(getInspectorTab(), "usage");
+
+  localStorage.setItem("carapace_inspector_tab", "gone");
+  assert.equal(getInspectorTab(), "session");
+});
+
+test("the inspector helpers survive a storage that throws", () => {
+  const throwing = {
+    getItem(): string | null {
+      throw new Error("blocked");
+    },
+    setItem(): void {
+      throw new Error("blocked");
+    },
+    removeItem(): void {
+      throw new Error("blocked");
+    },
+  };
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, writable: true, value: throwing });
+
+  saveInspectorOpen(true);
+  saveInspectorTab("content");
+  assert.equal(getInspectorOpen(), false);
+  assert.equal(getInspectorTab(), "session");
 });

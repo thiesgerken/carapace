@@ -1,3 +1,4 @@
+import { isInspectorTab, type InspectorTab } from "./inspector-tabs";
 import { normalizeServer } from "./server-url";
 
 const SERVER_KEY = "carapace_server";
@@ -9,6 +10,8 @@ const CHAT_DRAFT_KEY_PREFIX = "carapace_chat_draft_";
 const NOTIFICATION_SUBSCRIPTION_ID_KEY =
   "carapace_notification_subscription_id";
 const NOTIFICATION_DEVICE_NAME_KEY = "carapace_notification_device_name";
+const INSPECTOR_OPEN_KEY = "carapace_inspector_open";
+const INSPECTOR_TAB_KEY = "carapace_inspector_tab";
 
 export type LocaleOverride = "system" | "en" | "de";
 
@@ -130,4 +133,41 @@ export function getNotificationDeviceName(): string {
 
 export function saveNotificationDeviceName(deviceName: string): void {
   localStorage.setItem(NOTIFICATION_DEVICE_NAME_KEY, deviceName);
+}
+
+// The inspector layout is a convenience: without storage (blocked site data, private mode) it starts
+// closed on the first tab, and a failed write must not break toggling it.
+export function getInspectorOpen(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(INSPECTOR_OPEN_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function saveInspectorOpen(open: boolean): void {
+  try {
+    localStorage.setItem(INSPECTOR_OPEN_KEY, open ? "true" : "false");
+  } catch {
+    // Best effort, see above.
+  }
+}
+
+export function getInspectorTab(): InspectorTab {
+  if (typeof window === "undefined") return "session";
+  try {
+    const tab = localStorage.getItem(INSPECTOR_TAB_KEY);
+    return isInspectorTab(tab) ? tab : "session";
+  } catch {
+    return "session";
+  }
+}
+
+export function saveInspectorTab(tab: InspectorTab): void {
+  try {
+    localStorage.setItem(INSPECTOR_TAB_KEY, tab);
+  } catch {
+    // Best effort, see above.
+  }
 }

@@ -6,6 +6,10 @@ type SwitchRowProps = {
   checked: boolean;
   label: string;
   description?: string;
+  /** Tooltip, for a compact row that leaves the description out. */
+  title?: string;
+  /** The checked state lowers a safeguard (YOLO), so it warns instead of reading as a plain selection. */
+  warning?: boolean;
   disabled?: boolean;
   onCheckedChange: (checked: boolean) => void;
   className?: string;
@@ -15,6 +19,8 @@ export function SwitchRow({
   checked,
   label,
   description,
+  title,
+  warning = false,
   disabled = false,
   onCheckedChange,
   className,
@@ -26,6 +32,7 @@ export function SwitchRow({
       type="button"
       role="switch"
       aria-checked={checked}
+      title={title}
       disabled={disabled}
       onClick={() => onCheckedChange(!checked)}
       className={cn(
@@ -39,9 +46,7 @@ export function SwitchRow({
         className={cn(
           "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors",
           hasDescription && "mt-0.5",
-          checked
-            ? "border-primary bg-primary"
-            : "border-border bg-muted",
+          !checked ? "border-border bg-muted" : warning ? "border-warning bg-warning" : "border-primary bg-primary",
         )}
       >
         <span

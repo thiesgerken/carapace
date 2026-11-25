@@ -3,6 +3,7 @@
 import { BookOpen, Bot, Eye, Lock, MessageSquare, PencilLine, ShieldCheck, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { SwitchRow } from "@/components/switch-row";
 import { cn } from "@/lib/utils";
 
 export type SessionOptionKey = "private" | "ask_mode" | "yolo_mode" | "unattended";
@@ -83,6 +84,12 @@ function getOptionIcon(key: SessionOptionKey, active: boolean): LucideIcon {
   }
 }
 
+/** Whether *key* switched on lowers a safeguard, which the active state then shows as a warning. */
+function lowersSafeguard(key: SessionOptionKey): boolean {
+  // YOLO switches off the sentinel review.
+  return key === "yolo_mode";
+}
+
 function getOptionClasses(key: SessionOptionKey, active: boolean, disabled: boolean): string {
   if (disabled) {
     return active ? "border-border bg-muted text-foreground/70" : "border-border/60 text-muted-foreground";
@@ -92,8 +99,7 @@ function getOptionClasses(key: SessionOptionKey, active: boolean, disabled: bool
     return "border-border text-foreground hover:bg-muted";
   }
 
-  // YOLO switches off the sentinel review, so its active state warns instead of reading as a plain selection.
-  return key === "yolo_mode"
+  return lowersSafeguard(key)
     ? "border-warning/50 bg-warning/10 text-foreground hover:bg-warning/15"
     : "border-primary/50 bg-primary/10 text-foreground hover:bg-primary/15";
 }
@@ -143,6 +149,30 @@ export function SessionOptionTiles({ items, className }: SessionOptionTilesProps
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * The same options as compact switches, for the chat inspector. A switch is labelled by what it turns on;
+ * the description of the current state moves to the tooltip.
+ */
+export function SessionOptionSwitches({ items }: { items: SessionOptionTileItem[] }) {
+  const t = useTranslations("newSessionButton");
+
+  return (
+    <div className="space-y-1">
+      {items.map((item) => (
+        <SwitchRow
+          key={item.key}
+          checked={item.active}
+          label={getOptionCopy(t, item.key, true).title}
+          title={getOptionCopy(t, item.key, item.active).description}
+          warning={lowersSafeguard(item.key)}
+          disabled={item.disabled}
+          onCheckedChange={() => item.onClick?.()}
+        />
+      ))}
     </div>
   );
 }
