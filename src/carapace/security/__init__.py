@@ -100,7 +100,7 @@ async def evaluate_domain_with(
         )
         return BoundaryEvaluation(allowed=True, rejection="")
 
-    cached_approval, pending_result, should_notify_queued = await session.get_or_enqueue_domain_approval(
+    cached_approval, pending_result, starts_review = await session.get_or_enqueue_domain_approval(
         domain,
         command,
         exec_id,
@@ -138,9 +138,12 @@ async def evaluate_domain_with(
 
     assert pending_result is not None, "no earlier decision, so a review is pending"
 
-    if should_notify_queued:
-        session.notify_domain_decision(domain, "[sentinel] queued for batched review", approval_source="sentinel")
+    if not starts_review:
+        # Concurrent connections of one exec (npm opens several) share a review; the request that started it
+        # records the decision once.
+        return (await pending_result).evaluation()
 
+    session.notify_domain_decision(domain, "[sentinel] queued for batched review", approval_source="sentinel")
     result = await pending_result
     session.notify_domain_decision(
         domain,

@@ -7,7 +7,7 @@ import pytest
 from pydantic_ai.exceptions import UsageLimitExceeded
 
 from carapace.security import evaluate_domain_with
-from carapace.security.context import SentinelVerdict, SessionSecurity, UserEscalationDecision
+from carapace.security.context import AuditEntry, SentinelVerdict, SessionSecurity, UserEscalationDecision
 from carapace.security.sentinel import Sentinel
 
 
@@ -98,6 +98,41 @@ async def test_reuses_sentinel_domain_approval_within_exec() -> None:
     assert first is True
     assert second is True
     assert sentinel.calls == [{"api.example.com": command}]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("joins", ["pending", "in-flight"])
+async def test_concurrent_requests_share_one_review_and_record_it_once(
+    joins: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
+    review_blocker = asyncio.Event()
+    sentinel = StubSentinel(
+        verdicts=[SentinelVerdict(decision="allow", explanation="registry")], blocker=review_blocker
+    )
+    domain_updates: list[tuple[str, str | None]] = []
+    audits: list[AuditEntry] = []
+    session.set_domain_info_callback(
+        lambda _domain, detail, _src, verdict, _expl: domain_updates.append((detail, verdict))
+    )
+    monkeypatch.setattr(session, "write_audit", audits.append)
+    command = "npm install"
+
+    first = asyncio.create_task(evaluate_domain_with_stub(session, sentinel, "registry.npmjs.org", command))
+    if joins == "in-flight":
+        while not sentinel.calls:
+            await asyncio.sleep(0)
+    second = asyncio.create_task(evaluate_domain_with_stub(session, sentinel, "registry.npmjs.org", command))
+    review_blocker.set()
+
+    assert await asyncio.gather(first, second) == [True, True]
+    assert sentinel.calls == [{"registry.npmjs.org": command}]
+    assert domain_updates == [
+        ("[sentinel] queued for batched review", None),
+        ("[sentinel] reviewing", None),
+        ("[sentinel: allow] registry", "allow"),
+    ]
+    assert [audit.final_decision for audit in audits] == ["allowed"]
 
 
 @pytest.mark.anyio
