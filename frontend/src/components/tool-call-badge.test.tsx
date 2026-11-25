@@ -196,6 +196,27 @@ test("a streaming exec highlights a heredoc once its opening line is complete", 
   }
 });
 
+test("a long streaming write highlights only its last lines, with the rest plain above them", async () => {
+  const restore = installDom();
+  try {
+    const content = Array.from({ length: 250 }, (_, i) => `x${i} = ${i}`).join("\n");
+    const argsText = `{"path": "big.py", "content": ${JSON.stringify(content).slice(0, -1)}`;
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <ToolCallBadge tool="write" args={parseStreamingArgs(argsText)!} argsText={argsText} argsStreaming detail="" loading />
+      </NextIntlClientProvider>,
+    );
+    const plain = view.container.querySelector("pre:not(.streaming-code pre)")?.textContent ?? "";
+    const highlighted = view.container.querySelector(".streaming-code code")?.textContent ?? "";
+    assert.equal(plain.split("\n").length, 50);
+    assert.ok(plain.startsWith("x0 = 0\n") && plain.endsWith("x49 = 49"));
+    assert.ok(highlighted.startsWith("x50 = 50\n") && highlighted.endsWith("x249 = 249"), "the last 200 lines, each shown once");
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
 test("read_skill names the skill, says what it waits for, and shows the skill once read", async () => {
   const restore = installDom();
   try {

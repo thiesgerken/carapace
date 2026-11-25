@@ -94,3 +94,22 @@ function terminatorIndex(lines: string[], start: number, { delimiter, stripsTabs
   }
   return lines.length;
 }
+
+/** *fragments* split so that *tail* holds their last *count* lines, cutting the fragment that crosses the boundary. */
+export function splitLastLines(fragments: CommandFragment[], count: number): { head: CommandFragment[]; tail: CommandFragment[] } {
+  let remaining = count;
+  for (let index = fragments.length - 1; index >= 0; index--) {
+    const { language, code } = fragments[index];
+    const lines = code.split("\n");
+    if (lines.length < remaining) {
+      remaining -= lines.length;
+      continue;
+    }
+    const cut = lines.length - remaining;
+    return {
+      head: [...fragments.slice(0, index), ...(cut > 0 ? [{ language, code: lines.slice(0, cut).join("\n") }] : [])],
+      tail: [{ language, code: lines.slice(cut).join("\n") }, ...fragments.slice(index + 1)],
+    };
+  }
+  return { head: [], tail: fragments };
+}

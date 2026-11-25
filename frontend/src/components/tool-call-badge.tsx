@@ -41,7 +41,7 @@ import {
   splitReadToolResult,
   verbatimCodeBlock,
 } from "@/lib/sandbox-read";
-import { splitHeredocs, type CommandFragment } from "@/lib/shell-heredoc";
+import { splitHeredocs, splitLastLines, type CommandFragment } from "@/lib/shell-heredoc";
 import type { ApprovalSource, ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, SentFile } from "@/lib/types";
 import { toolCallStatus } from "@/lib/tool-call-status";
 import { cn } from "@/lib/utils";
@@ -1136,6 +1136,11 @@ export function ToolCallBadge({
 /** Shiki highlights the whole text each time, so a streaming preview re-highlights at most this often. */
 const STREAMING_HIGHLIGHT_INTERVAL_MS = 300;
 
+// ponytail: a streaming preview highlights only its last lines, the ones its box shows; the rest stays plain,
+// since highlighting a few thousand lines on every update freezes the page. Ceiling: a window that starts
+// inside a multi-line string or comment mis-highlights its first lines until they move up out of it.
+const STREAMING_HIGHLIGHT_LINES = 200;
+
 /**
  * What a streaming call's args will mainly show once it is final: the command, or the file text. A
  * fragment stays plain `text` until its language is known: `write`'s complete path, or an `exec`
@@ -1170,24 +1175,29 @@ function StreamingArgs({ fragments }: { fragments: CommandFragment[] }) {
   return (
     // column-reverse anchors the scroll at the bottom, also when a highlight lands after this render.
     <div className="ml-5 mt-1 flex max-h-48 flex-col-reverse overflow-auto rounded-lg border border-border/60 bg-muted/30 p-2 font-mono text-[11px] leading-4 text-foreground/75">
-      {plain ? (
-        <pre className="whitespace-pre-wrap break-words">{fragments.map(({ code }) => code).join("\n")}</pre>
-      ) : (
-        <HighlightedFragments markdown={fragmentsMarkdown(fragments)} />
-      )}
+      {plain ? <PlainFragments fragments={fragments} /> : <HighlightedFragments fragments={fragments} />}
     </div>
   );
 }
 
+function PlainFragments({ fragments }: { fragments: CommandFragment[] }) {
+  return <pre className="whitespace-pre-wrap break-words">{fragments.map(({ code }) => code).join("\n")}</pre>;
+}
+
 /**
- * `MarkdownContent` shows its unhighlighted fallback only until the first highlight; after that it keeps
- * the last highlighted render on screen until the next one resolves, so nothing flashes.
+ * The last lines highlighted below the plain rest. Both come from the same throttled snapshot, so no line
+ * shows twice at the boundary. `MarkdownContent` shows its unhighlighted fallback only until the first
+ * highlight; after that it keeps the last highlighted render on screen until the next one resolves.
  */
-function HighlightedFragments({ markdown }: { markdown: string }) {
-  const settled = useDebounced(markdown, STREAMING_HIGHLIGHT_INTERVAL_MS, STREAMING_HIGHLIGHT_INTERVAL_MS);
+function HighlightedFragments({ fragments }: { fragments: CommandFragment[] }) {
+  const settled = useDebounced(fragments, STREAMING_HIGHLIGHT_INTERVAL_MS, STREAMING_HIGHLIGHT_INTERVAL_MS);
+  const { head, tail } = splitLastLines(settled, STREAMING_HIGHLIGHT_LINES);
   return (
-    <div className="code-fragments streaming-code">
-      <MarkdownContent content={settled} />
+    <div>
+      {head.length > 0 && <PlainFragments fragments={head} />}
+      <div className="code-fragments streaming-code">
+        <MarkdownContent content={fragmentsMarkdown(tail)} />
+      </div>
     </div>
   );
 }

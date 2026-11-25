@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { splitHeredocs, type CommandFragment } from "./shell-heredoc";
+import { splitHeredocs, splitLastLines, type CommandFragment } from "./shell-heredoc";
 
 const shell = (code: string): CommandFragment => ({ language: "shell", code });
 
@@ -98,4 +98,15 @@ test("a heredoc still being written highlights once its opening line is complete
     shell("A"),
     { language: "python", code: "pri" },
   ]);
+});
+
+test("the last lines split off on line boundaries, cutting the fragment that crosses the boundary", () => {
+  const python = (code: string): CommandFragment => ({ language: "python", code });
+  const fragments = [shell("python3 - <<'PY'"), python("a = 1\nb = 2\nc = 3"), shell("PY\necho done")];
+
+  assert.deepEqual(splitLastLines(fragments, 3), { head: [shell("python3 - <<'PY'"), python("a = 1\nb = 2")], tail: [python("c = 3"), shell("PY\necho done")] });
+  assert.deepEqual(splitLastLines(fragments, 5), { head: [shell("python3 - <<'PY'")], tail: [python("a = 1\nb = 2\nc = 3"), shell("PY\necho done")] }, "a fragment that fits whole is not cut");
+  assert.deepEqual(splitLastLines(fragments, 1), { head: [shell("python3 - <<'PY'"), python("a = 1\nb = 2\nc = 3"), shell("PY")], tail: [shell("echo done")] });
+  assert.deepEqual(splitLastLines(fragments, 6), { head: [], tail: fragments });
+  assert.deepEqual(splitLastLines(fragments, 200), { head: [], tail: fragments });
 });
