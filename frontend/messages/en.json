@@ -1070,7 +1070,9 @@
             "replacement": "Replacement",
             "diff": "Diff",
             "arguments": "Arguments",
-            "result": "Result"
+            "result": "Result",
+            "command": "Command",
+            "output": "Output"
         }
     },
     "toolCallGroup": {
