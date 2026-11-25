@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.192.0 (2026-11-25)
+
+### ✨ Introduce new features
+
+- feat: highlight heredocs written by tee with stdout silenced
+- feat: highlight heredoc scripts in exec and streaming tool calls
+
+### 🐛 Fix a bug
+
+- fix: keep blank lines that end an exec command fragment
+
+### 💄 Add or update the UI and style files
+
+- ui: label the exec card's blocks command and output
+
+### ⚡️ Improve performance
+
+- perf: highlight only the last lines of a streaming preview
+
 ## v0.191.0 (2026-11-25)
 
 ### ✨ Introduce new features

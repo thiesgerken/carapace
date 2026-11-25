@@ -2998,7 +2998,7 @@ export function ChatView({
                   ),
                 );
               })()}
-              {waiting && streamingCall === -1 && <WaitingIndicator activity={llmActivity} />}
+              {waiting && <WaitingIndicator activity={llmActivity} hidden={streamingCall !== -1} />}
               <div ref={bottomRef} />
             </div>
           </div>

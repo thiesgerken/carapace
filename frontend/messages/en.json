@@ -1070,7 +1070,9 @@
             "replacement": "Replacement",
             "diff": "Diff",
             "arguments": "Arguments",
-            "result": "Result"
+            "result": "Result",
+            "command": "Command",
+            "output": "Output"
         }
     },
     "toolCallGroup": {
@@ -1182,10 +1184,32 @@
             "unattended": "This session is unattended. Fork it first to continue here."
         },
         "waiting": {
-            "processingPrompt": "Processing prompt...",
-            "thinking": "Thinking...",
-            "generating": "Generating...",
-            "working": "Working...",
+            "phrases": {
+                "nibble": "Nibbles on the prompt…",
+                "finePrint": "Reads the fine print…",
+                "digest": "Digests it first…",
+                "ponder": "Ponders…",
+                "hunch": "Has a hunch…",
+                "inShell": "Thinks it over in the shell…",
+                "chewTwice": "Chews every word twice…",
+                "eatThrough": "Eats its way through the context…",
+                "betweenLines": "Reads between the lines…",
+                "history": "Leafs through the history…",
+                "plentyOfTime": "Has time. Lots of it…",
+                "experience": "Draws on 150 years of experience…",
+                "unhurried": "Refuses to be rushed…",
+                "stepByStep": "Thinks step by step…",
+                "turbo": "Turbo on. Almost brisk…",
+                "overtaken": "Gets overtaken by a snail…",
+                "knocking": "Checks who's knocking…",
+                "peeksOut": "Peeks out carefully…",
+                "creep": "Creeps toward an answer…",
+                "fullThrottle": "Full throttle. Relatively speaking…",
+                "wordByWord": "Puts one word in front of the other…",
+                "writes": "Writes…",
+                "keepsShort": "Keeps it short. Tries to…",
+                "tinker": "Tinkers with the answer…"
+            },
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",
             "tokens": "{count} tokens"
