@@ -1182,10 +1182,18 @@
             "unattended": "Diese Sitzung ist unbeaufsichtigt. Forke sie zuerst, um hier weiterzumachen."
         },
         "waiting": {
-            "processingPrompt": "Prompt wird verarbeitet...",
-            "thinking": "Denke nach...",
-            "generating": "Generiere...",
-            "working": "Arbeite...",
+            "phrases": {
+                "nibble": "Knabbert am Prompt…",
+                "finePrint": "Liest das Kleingedruckte…",
+                "digest": "Verdaut erst mal…",
+                "ponder": "Grübelt…",
+                "hunch": "Hat da so eine Idee…",
+                "inShell": "Denkt im Panzer nach…",
+                "creep": "Schleicht zur Antwort…",
+                "fullThrottle": "Gibt Vollgas. Relativ gesehen…",
+                "writes": "Schreibt…"
+            },
+            "working": "Arbeitet…",
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",
             "tokens": "{count} Tokens"

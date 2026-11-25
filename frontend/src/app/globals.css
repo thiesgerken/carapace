@@ -381,3 +381,53 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .braille-spinner::before { content: "⠋"; }
 }
+
+/* The waiting tortoise (tortoise.tsx). Every pose reads as a still frame (head tucked in, bubble,
+   magnifier), so reduced motion only drops the animations below. */
+.tortoise { overflow: visible; }
+.tortoise * { transform-box: fill-box; }
+.tortoise .plate { fill: #2f96ad; }
+.tortoise .head { transform-origin: 0% 100%; }
+.tortoise-think .head { transform: rotate(-8deg); }
+.tortoise-glass .lens { fill: color-mix(in oklch, #a6eaf2 75%, transparent); }
+.tortoise-sleep .head { transform: translate(-30px, 6px); }
+.tortoise-sleep .plate { fill: color-mix(in oklch, #2f96ad 75%, var(--background)); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .tortoise-pulse .plate { animation: tortoise-plate 1.4s ease-in-out infinite; animation-delay: calc(var(--plate) * 350ms); }
+
+  .tortoise-munch .head { animation: tortoise-chew 0.5s ease-in-out infinite alternate; }
+  .tortoise-munch .leaf { transform-origin: 0% 50%; animation: tortoise-leaf 3s steps(6, end) infinite; }
+
+  .tortoise-think .dot { animation: tortoise-dot 1.2s infinite; }
+  .tortoise-think .dot:nth-of-type(2) { animation-delay: 0.2s; }
+  .tortoise-think .dot:nth-of-type(3) { animation-delay: 0.4s; }
+  .tortoise-think .puff { transform-origin: 50% 50%; animation: tortoise-puff 2.4s ease-in-out infinite; }
+
+  .tortoise-walk .ground { animation: tortoise-ground 0.6s linear infinite; }
+  .tortoise-walk .leg { transform-origin: 50% 0%; animation: tortoise-step 0.3s ease-in-out infinite alternate; }
+  .tortoise-walk .leg-b { animation-delay: -0.3s; }
+  .tortoise-walk .body { animation: tortoise-bob 0.15s ease-in-out infinite alternate; }
+  .tortoise-walk .head { animation: tortoise-nod 0.3s ease-in-out infinite alternate; }
+
+  .tortoise-glass .glass { transform-origin: 0% 100%; animation: tortoise-sweep 2.2s ease-in-out infinite; }
+  .tortoise-glass .head { animation: tortoise-peer 2.2s ease-in-out infinite; }
+
+  .tortoise-sleep .body { transform-origin: 50% 100%; animation: tortoise-breathe 3s ease-in-out infinite; }
+  .tortoise-sleep .z { opacity: 0; animation: tortoise-z 3s ease-out infinite; }
+  .tortoise-sleep .z:nth-of-type(2) { animation-delay: 1s; }
+  .tortoise-sleep .z:nth-of-type(3) { animation-delay: 2s; }
+}
+@keyframes tortoise-plate { 0%, 55%, 100% { fill: #2f96ad; } 18% { fill: #a6eaf2; } }
+@keyframes tortoise-chew { to { transform: rotate(9deg); } }
+@keyframes tortoise-leaf { from { transform: scale(1); } to { transform: scale(0.15); } }
+@keyframes tortoise-dot { 0%, 60%, 100% { opacity: 0.2; } 25% { opacity: 1; } }
+@keyframes tortoise-puff { 50% { transform: scale(1.06); } }
+@keyframes tortoise-ground { to { stroke-dashoffset: -24; } }
+@keyframes tortoise-step { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
+@keyframes tortoise-bob { to { transform: translateY(-2px); } }
+@keyframes tortoise-nod { to { transform: rotate(-4deg); } }
+@keyframes tortoise-sweep { 0%, 100% { transform: rotate(-12deg) translateX(-2px); } 50% { transform: rotate(10deg) translateX(3px); } }
+@keyframes tortoise-peer { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(4deg); } }
+@keyframes tortoise-breathe { 50% { transform: scaleY(1.035); } }
+@keyframes tortoise-z { 0% { opacity: 0; transform: translate(0, 4px) scale(0.6); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(10px, -14px) scale(1.2); } }

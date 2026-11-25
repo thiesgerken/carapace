@@ -1182,10 +1182,18 @@
             "unattended": "This session is unattended. Fork it first to continue here."
         },
         "waiting": {
-            "processingPrompt": "Processing prompt...",
-            "thinking": "Thinking...",
-            "generating": "Generating...",
-            "working": "Working...",
+            "phrases": {
+                "nibble": "Nibbles on the prompt…",
+                "finePrint": "Reads the fine print…",
+                "digest": "Digests first…",
+                "ponder": "Ponders…",
+                "hunch": "Has a hunch…",
+                "inShell": "Thinks it over in the shell…",
+                "creep": "Creeps toward an answer…",
+                "fullThrottle": "Full throttle. Relatively speaking…",
+                "writes": "Writes…"
+            },
+            "working": "Working…",
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",
             "tokens": "{count} tokens"
