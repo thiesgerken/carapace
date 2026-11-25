@@ -1200,7 +1200,13 @@
                 "turbo": "Turbo on. Almost brisk…",
                 "overtaken": "Gets overtaken by a snail…",
                 "knocking": "Checks who's knocking…",
-                "peeksOut": "Peeks out carefully…"
+                "peeksOut": "Peeks out carefully…",
+                "creep": "Creeps toward an answer…",
+                "fullThrottle": "Full throttle. Relatively speaking…",
+                "wordByWord": "Puts one word in front of the other…",
+                "writes": "Writes…",
+                "keepsShort": "Keeps it short. Tries to…",
+                "tinker": "Tinkers with the answer…"
             },
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",

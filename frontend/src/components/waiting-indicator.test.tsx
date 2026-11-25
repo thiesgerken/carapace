@@ -46,7 +46,7 @@ function setUp(t: TestContext, apis: ("Date" | "setInterval")[] = ["Date"]): () 
 }
 
 test("every phrase has its text in both languages, and every text a phrase", () => {
-  const keys = Object.values(PHRASES).flatMap((phrases) => phrases.map(({ key }) => key)).sort();
+  const keys = [...new Set(Object.values(PHRASES).flatMap((phrases) => phrases.map(({ key }) => key)))].sort();
   assert.deepEqual(Object.keys(en.chatView.waiting.phrases).sort(), keys);
   assert.deepEqual(Object.keys(de.chatView.waiting.phrases).sort(), keys);
 });

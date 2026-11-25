@@ -1200,7 +1200,13 @@
                 "turbo": "Turbo an. Fast schon zügig…",
                 "overtaken": "Wird von einer Schnecke überholt…",
                 "knocking": "Prüft, wer da klopft…",
-                "peeksOut": "Schaut vorsichtig raus…"
+                "peeksOut": "Schaut vorsichtig raus…",
+                "creep": "Schleicht zur Antwort…",
+                "fullThrottle": "Gibt Vollgas. Relativ gesehen…",
+                "wordByWord": "Setzt ein Wort vors andere…",
+                "writes": "Schreibt…",
+                "keepsShort": "Hält sich kurz. Versucht es…",
+                "tinker": "Schraubt an der Antwort…"
             },
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",

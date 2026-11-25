@@ -20,6 +20,16 @@ export const STALL_MS = 60_000;
 
 type Phrase = { key: string; pose: TortoisePose };
 
+// Phrases that fit prompt and thinking alike.
+const EITHER_PHASE: readonly Phrase[] = [
+  { key: "creep", pose: "walk" },
+  { key: "fullThrottle", pose: "walk" },
+  { key: "wordByWord", pose: "walk" },
+  { key: "writes", pose: "scribble" },
+  { key: "keepsShort", pose: "pulse" },
+  { key: "tinker", pose: "wrench" },
+];
+
 // Each phrase names the pose that acts it out. To add one: an entry here and its text under
 // `chatView.waiting.phrases` in both message files.
 export const PHRASES: Record<"processing_prompt" | "thinking" | "sentinel", readonly Phrase[]> = {
@@ -32,6 +42,7 @@ export const PHRASES: Record<"processing_prompt" | "thinking" | "sentinel", read
     { key: "betweenLines", pose: "glass" },
     { key: "history", pose: "book" },
     { key: "plentyOfTime", pose: "hourglass" },
+    ...EITHER_PHASE,
   ],
   thinking: [
     { key: "ponder", pose: "think" },
@@ -42,6 +53,7 @@ export const PHRASES: Record<"processing_prompt" | "thinking" | "sentinel", read
     { key: "stepByStep", pose: "walk" },
     { key: "turbo", pose: "turbo" },
     { key: "overtaken", pose: "snail" },
+    ...EITHER_PHASE,
   ],
   // The sentinel's own requests: it is reviewing something that crosses the sandbox boundary.
   sentinel: [
