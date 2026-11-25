@@ -93,3 +93,19 @@ test("WaitingIndicator dozes off without progress and wakes on the next token", 
     restore();
   }
 });
+
+test("WaitingIndicator starts a request awake after a long gap between requests", async (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: NOW });
+  const restore = installDom();
+  try {
+    // Between requests (a long tool run) the activity is null while the line stays up.
+    const view = await renderReact(node(null));
+    await runInAct(async () => t.mock.timers.tick(STALL_MS + 5_000));
+    await view.rerender(node({ ...GENERATING, request_id: "r2", phase: "processing_prompt", streamed_chars: 0 }));
+    await runInAct(async () => t.mock.timers.tick(1_000));
+    assert.notEqual(view.container.querySelector("svg")?.getAttribute("data-pose"), "sleep");
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});

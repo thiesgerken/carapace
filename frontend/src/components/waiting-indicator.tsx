@@ -83,7 +83,9 @@ export function ActivityCounter({ activity }: { activity: LlmActivity }) {
 export function WaitingIndicator({ activity }: { activity: LlmActivity | null }) {
   const t = useTranslations("chatView.waiting");
   const agent = activity?.source === "agent" ? activity : null;
-  const now = useNow(agent !== null);
+  // Ticks for as long as the line is up, including the gaps between requests, so a new request's
+  // progress is stamped with the current time rather than when the last one ended.
+  const now = useNow(true);
   const lastProgressAt = useLastProgressAt(agent, now);
   const [shimmerDelay] = useState(() => `-${Date.now() % SHIMMER_MS}ms`);
 

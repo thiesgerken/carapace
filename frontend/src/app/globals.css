@@ -384,14 +384,14 @@ body {
 
 /* The waiting tortoise (tortoise.tsx). Every pose reads as a still frame (head tucked in, bubble,
    magnifier), so reduced motion only drops the animations below. */
-.tortoise { overflow: visible; }
+.tortoise { --tortoise-plate: #2f96ad; --tortoise-glow: #a6eaf2; overflow: visible; }
 .tortoise * { transform-box: fill-box; }
-.tortoise .plate { fill: #2f96ad; }
+.tortoise .plate { fill: var(--tortoise-plate); }
 .tortoise .head { transform-origin: 0% 100%; }
 .tortoise-think .head { transform: rotate(-8deg); }
-.tortoise-glass .lens { fill: color-mix(in oklch, #a6eaf2 75%, transparent); }
+.tortoise-glass .lens { fill: color-mix(in oklch, var(--tortoise-glow) 75%, transparent); }
 .tortoise-sleep .head { transform: translate(-30px, 6px); }
-.tortoise-sleep .plate { fill: color-mix(in oklch, #2f96ad 75%, var(--background)); }
+.tortoise-sleep .plate { fill: color-mix(in oklch, var(--tortoise-plate) 75%, var(--background)); }
 
 @media (prefers-reduced-motion: no-preference) {
   .tortoise-pulse .plate { animation: tortoise-plate 1.4s ease-in-out infinite; animation-delay: calc(var(--plate) * 350ms); }
@@ -418,7 +418,7 @@ body {
   .tortoise-sleep .z:nth-of-type(2) { animation-delay: 1s; }
   .tortoise-sleep .z:nth-of-type(3) { animation-delay: 2s; }
 }
-@keyframes tortoise-plate { 0%, 55%, 100% { fill: #2f96ad; } 18% { fill: #a6eaf2; } }
+@keyframes tortoise-plate { 0%, 55%, 100% { fill: var(--tortoise-plate); } 18% { fill: var(--tortoise-glow); } }
 @keyframes tortoise-chew { to { transform: rotate(9deg); } }
 @keyframes tortoise-leaf { from { transform: scale(1); } to { transform: scale(0.15); } }
 @keyframes tortoise-dot { 0%, 60%, 100% { opacity: 0.2; } 25% { opacity: 1; } }
