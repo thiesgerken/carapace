@@ -102,7 +102,11 @@ export function languageFromFilePath(path: string): string {
 
 /** Wrap code for ``MarkdownContent`` with a fence that avoids breaking on embedded fences. */
 export function fencedCodeBlock(lang: string, code: string): string {
-  const trimmed = code.replace(/\n+$/, "");
-  const fence = trimmed.includes("```") ? "````" : "```";
-  return `${fence}${lang}\n${trimmed}\n${fence}`;
+  return verbatimCodeBlock(lang, code.replace(/\n+$/, ""));
+}
+
+/** Like ``fencedCodeBlock``, but keeps trailing blank lines: they may be lines of a larger whole. */
+export function verbatimCodeBlock(lang: string, code: string): string {
+  const fence = code.includes("```") ? "````" : "```";
+  return `${fence}${lang}\n${code}\n${fence}`;
 }

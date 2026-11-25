@@ -158,6 +158,23 @@ test("an exec card shows its command as one block, heredoc bodies in their langu
   }
 });
 
+test("an exec card keeps the blank lines that end a heredoc body, so the line numbers match the command", async () => {
+  const restore = installDom();
+  try {
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <ToolCallBadge tool="exec" args={{ command: "python3 - <<'PY'\nprint(1)\n\n\nPY\n" }} detail="" result="1" exitCode={0} />
+      </NextIntlClientProvider>,
+    );
+    await click(view.container.querySelector("button")!);
+    const lineCounts = [...view.container.querySelectorAll(".exec-command code")].map((code) => code.querySelectorAll("[data-line]").length);
+    assert.deepEqual(lineCounts, [1, 3, 1], "the body's two blank lines stay; the command's trailing newline adds none");
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
 test("a streaming exec highlights a heredoc once its opening line is complete", async () => {
   const restore = installDom();
   try {

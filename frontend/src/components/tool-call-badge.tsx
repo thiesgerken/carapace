@@ -39,6 +39,7 @@ import {
   fencedCodeBlock,
   languageFromFilePath,
   splitReadToolResult,
+  verbatimCodeBlock,
 } from "@/lib/sandbox-read";
 import { splitHeredocs, type CommandFragment } from "@/lib/shell-heredoc";
 import type { ApprovalSource, ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, SentFile } from "@/lib/types";
@@ -305,12 +306,13 @@ function normalizeOptionalLabel(value: string): string {
 
 /** *command* as shell and heredoc fragments, with *prompt* in front of its first line. */
 function promptedFragments(command: string, prompt: string): CommandFragment[] {
-  const [first, ...rest] = splitHeredocs(command);
+  const [first, ...rest] = splitHeredocs(command.replace(/\n+$/, ""));
   return [{ ...first, code: prompt + first.code }, ...rest];
 }
 
+/** Verbatim fences: blank lines ending a fragment are lines of the command, and its line numbers run on across fragments. */
 function fragmentsMarkdown(fragments: CommandFragment[]): string {
-  return fragments.map(({ language, code }) => fencedCodeBlock(language, code)).join("\n\n");
+  return fragments.map(({ language, code }) => verbatimCodeBlock(language, code)).join("\n\n");
 }
 
 function formatSkillResult(result: string): string {
