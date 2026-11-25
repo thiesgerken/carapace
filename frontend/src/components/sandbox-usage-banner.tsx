@@ -24,7 +24,7 @@ export function SandboxUsageBanner({ usage }: { usage: SandboxUsage | null }) {
     return (
       <div
         role="status"
-        className={cn(bannerClassName, "border-amber-500/50 bg-amber-500/10 text-amber-800 dark:text-amber-300")}
+        className={cn(bannerClassName, "border-warning/50 bg-warning/10 text-warning")}
       >
         <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
         <span>

@@ -56,7 +56,7 @@ export function VersionBadge({
       </span>
       {hasMismatch ? (
         <span className="flex shrink-0 items-center">
-          <AlertTriangle className={cn("h-3.5 w-3.5 text-amber-600", iconClassName)} />
+          <AlertTriangle className={cn("h-3.5 w-3.5 text-warning", iconClassName)} />
           <span className="sr-only">{t("mismatchSr")}</span>
         </span>
       ) : null}

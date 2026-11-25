@@ -102,7 +102,7 @@ function PeriodCalendar({ months, selectedKey }: { months: MemoryMonthNode[]; se
           const count = weeks.get(weekKey)?.days[dayIndex] ?? 0;
           if (count === 0) return null;
           return (
-            <span title={t("sessionsOnDay", { count })} className="rounded-full bg-[#236b86]/15 px-1.5 text-[11px] font-medium tabular-nums text-[#236b86] dark:bg-sky-400/15 dark:text-sky-300">
+            <span title={t("sessionsOnDay", { count })} className="rounded-full bg-primary/15 px-1.5 text-[11px] font-medium tabular-nums text-primary">
               {count}
             </span>
           );

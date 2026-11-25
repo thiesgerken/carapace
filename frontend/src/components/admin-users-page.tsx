@@ -247,12 +247,12 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
   const ContentElement = embedded ? "section" : "main";
 
   const mainContent = (
-    <ContentElement className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-clip", embedded && "bg-background/65")}>
+    <ContentElement className="flex min-h-0 min-w-0 flex-1 flex-col overflow-clip">
         {!embedded ? (
           <header className="border-b border-border/80 bg-background/70 px-4 py-3 backdrop-blur sm:px-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground md:hidden">
+                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground md:hidden">
                   <ShieldCheck className="h-4 w-4" />
                   {t("title")}
                 </div>
@@ -263,7 +263,7 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
                 type="button"
                 onClick={() => void refreshUsers()}
                 disabled={loading || !server.trim()}
-                className="inline-flex min-h-10 items-center justify-center gap-2 self-end rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-10 items-center justify-center gap-2 self-end rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 {loading ? t("actions.loading") : t("actions.load")}
@@ -278,9 +278,9 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
         ) : null}
 
         <div className="grid min-h-0 flex-1 content-start overflow-y-auto lg:content-stretch lg:grid-cols-[22rem_minmax(0,1fr)] lg:overflow-clip">
-          <section className="min-h-0 border-b border-border/80 bg-background/55 lg:border-r lg:border-b-0">
+          <section className="min-h-0 bg-surface">
             <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3 sm:px-5">
-              <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              <div className="text-xs font-medium text-muted-foreground">
                 {t("users.savedUsers")}
               </div>
               <div className="flex items-center gap-1">
@@ -317,7 +317,7 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
                   {t("users.loading")}
                 </div>
               ) : users.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border bg-background/80 px-4 py-6 text-sm text-muted-foreground">
+                <div className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
                   {t("users.empty")}
                 </div>
               ) : (
@@ -362,7 +362,7 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
                             <div className="flex shrink-0 flex-wrap justify-end gap-1">
                               <span className={cn(
                                 "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                                user.enabled ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700",
+                                user.enabled ? "bg-success/10 text-success" : "bg-warning/10 text-warning",
                               )}>
                                 {user.enabled ? t("users.enabled") : t("users.disabled")}
                               </span>
@@ -399,7 +399,7 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
 
           <section className="min-h-0 px-4 py-5 sm:px-6 lg:overflow-y-auto">
             {embedded && error ? (
-              <div className="mx-auto mb-4 max-w-3xl rounded-2xl border border-border bg-background/88 px-4 py-3 text-sm shadow-sm">
+              <div className="mx-auto mb-4 max-w-3xl rounded-2xl bg-surface px-4 py-3 text-sm">
                 <p className="text-destructive">{error}</p>
               </div>
             ) : null}
@@ -466,7 +466,7 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
                 <button
                   type="submit"
                   disabled={creating || !createDraft.username.trim() || !createDraft.password || !server.trim()}
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
                   {creating ? t("actions.creating") : t("actions.create")}
@@ -539,7 +539,7 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
                   <button
                     type="submit"
                     disabled={saving || !server.trim()}
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                     {saving ? t("actions.saving") : t("actions.save")}
@@ -553,7 +553,7 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
                 </div>
               </form>
             ) : (
-              <div className="mx-auto max-w-3xl rounded-lg border border-dashed border-border bg-background/75 px-4 py-6 text-sm text-muted-foreground">
+              <div className="mx-auto max-w-3xl rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
                 {t("users.selectUser")}
               </div>
             )}
@@ -567,8 +567,8 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
   }
 
   return (
-    <div className="flex h-dvh overflow-clip bg-[radial-gradient(circle_at_top_left,_color-mix(in_oklch,var(--accent)_55%,transparent),transparent_35%),linear-gradient(180deg,color-mix(in_oklch,var(--background)_96%,var(--muted))_0%,var(--background)_100%)]">
-      <aside className="hidden w-72 shrink-0 border-r border-border bg-background/88 md:flex md:flex-col">
+    <div className="flex h-dvh overflow-clip bg-background">
+      <aside className="hidden w-72 shrink-0 bg-surface md:flex md:flex-col">
         <div className="border-b border-border px-5 py-4">
           <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
             <ShieldCheck className="h-4 w-4 text-muted-foreground" />

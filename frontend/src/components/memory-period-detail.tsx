@@ -34,10 +34,10 @@ export function PeriodBadgeMark({ badge }: { badge: PeriodBadge }) {
   const tReasons = useTranslations("memory.timeline.staleReasons");
   switch (badge.kind) {
     case "current":
-      return <span title={t("current")} className="text-[#236b86]">✓</span>;
+      return <span title={t("current")} className="text-primary">✓</span>;
     case "stale":
       return (
-        <span title={badge.reasons.map((reason) => tReasons(reason)).join(", ")} className="text-amber-700 dark:text-amber-400">
+        <span title={badge.reasons.map((reason) => tReasons(reason)).join(", ")} className="text-warning">
           ⚠<span className="sr-only"> {t("stale")}</span>
         </span>
       );
@@ -196,14 +196,14 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
       {current ? <DigestBody record={current} detail={detail} /> : <p className="text-sm text-muted-foreground">{t("noDigest")}</p>}
 
       <section>
-        <h3 className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+        <h3 className="mb-2 text-xs font-medium text-muted-foreground">
           {node.level === "week" ? t("sourceSessions", { count: detail.sessions.length }) : t("sourceWeeks", { count: detail.weeks.length })}
         </h3>
         <ul className="divide-y divide-border/60 rounded-lg border border-border text-sm">
           {node.level === "week"
             ? detail.sessions.map((session) => (
               <li key={session.session_id} className="flex gap-3 px-3 py-2">
-                <span className={cn("shrink-0", session.extraction ? "text-[#236b86]" : "text-muted-foreground")}>{session.extraction ? "✓" : "○"}</span>
+                <span className={cn("shrink-0", session.extraction ? "text-primary" : "text-muted-foreground")}>{session.extraction ? "✓" : "○"}</span>
                 <span className="shrink-0 tabular-nums text-muted-foreground">
                   {new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(Date.parse(session.created_at))}
                 </span>
@@ -230,7 +230,7 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
 
       {detail.history.length > 0 ? (
         <details className="group">
-          <summary className="cursor-pointer text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
             {t("history", { count: detail.history.length })}
           </summary>
           <div className="mt-2 space-y-2">

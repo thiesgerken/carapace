@@ -657,7 +657,7 @@ export function ChatInput({
           }}
           className={cn(
             "flex items-end gap-2",
-            "rounded-xl border border-border bg-muted/30 px-3 py-2",
+            "rounded-xl border border-border bg-surface px-3 py-2",
             "focus-within:ring-2 focus-within:ring-ring/30 focus-within:border-ring",
             "transition-colors",
             isDragging && "ring-2 ring-ring/50 border-ring",
@@ -712,7 +712,7 @@ export function ChatInput({
               className={cn(
                 "shrink-0 rounded-lg p-2 transition-colors",
                 isListening
-                  ? "bg-red-500/20 text-red-500 animate-pulse hover:bg-red-500/30"
+                  ? "bg-destructive/15 text-destructive animate-pulse hover:bg-destructive/25"
                   : "text-muted-foreground hover:bg-muted"
               )}
             >
@@ -730,8 +730,8 @@ export function ChatInput({
             className={cn(
               "shrink-0 rounded-lg p-2 transition-colors",
               waiting
-                ? "bg-destructive/60 text-destructive-foreground hover:bg-destructive/75"
-                : "bg-foreground text-background hover:bg-foreground/90",
+                ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                : "bg-primary text-primary-foreground hover:bg-primary/90",
               "disabled:opacity-30 disabled:cursor-not-allowed",
             )}
           >
@@ -1088,7 +1088,7 @@ function AttachmentChip({
         "flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs",
         isError
           ? "border-destructive/40 bg-destructive/10 text-destructive"
-          : "border-border bg-muted/50 text-foreground",
+          : "border-border bg-muted text-foreground",
       )}
     >
       {attachment.status === "uploading" ? (

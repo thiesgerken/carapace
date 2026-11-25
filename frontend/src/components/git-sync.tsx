@@ -39,7 +39,7 @@ function AheadBehind({
   const behind = counts.behind ?? 0;
   if (ahead === 0 && behind === 0) {
     return (
-      <span className="inline-flex items-center gap-1 text-emerald-700">
+      <span className="inline-flex items-center gap-1 text-success">
         <Check className="h-3 w-3 shrink-0" />
         {upToDateLabel}
       </span>
@@ -48,11 +48,11 @@ function AheadBehind({
   // Order matches the button row (pull ↓behind, then push ↑ahead).
   return (
     <span className="inline-flex items-center gap-2 font-mono text-foreground">
-      <span className={cn("inline-flex items-center gap-0.5", behind > 0 ? "text-sky-700" : "text-muted-foreground")}>
+      <span className={cn("inline-flex items-center gap-0.5", behind > 0 ? "text-info" : "text-muted-foreground")}>
         <ArrowDown className="h-3 w-3 shrink-0" />
         {behind}
       </span>
-      <span className={cn("inline-flex items-center gap-0.5", ahead > 0 ? "text-amber-700" : "text-muted-foreground")}>
+      <span className={cn("inline-flex items-center gap-0.5", ahead > 0 ? "text-warning" : "text-muted-foreground")}>
         <ArrowUp className="h-3 w-3 shrink-0" />
         {ahead}
       </span>
@@ -115,7 +115,7 @@ function GitSyncControls({
             onClick={onRefresh}
             disabled={disabled || anyBusy}
             title={refreshTitle}
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
           </button>
@@ -124,7 +124,7 @@ function GitSyncControls({
             onClick={onPull}
             disabled={disabled || anyBusy || pullDisabled}
             title={pullTitle}
-            className="rounded-md p-1 text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy === "pull" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
           </button>
@@ -133,7 +133,7 @@ function GitSyncControls({
             onClick={onPush}
             disabled={disabled || anyBusy || pushDisabled}
             title={pushTitle}
-            className="rounded-md p-1 text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy === "push" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
           </button>
@@ -350,7 +350,7 @@ export function GlobalGitIndicator({ git, className }: { git: GlobalGit; classNa
   return (
     <span
       title={t("global.indicatorBehind", { count: behind })}
-      className={cn("h-2.5 w-2.5 rounded-full border-2 border-background bg-sky-500", className)}
+      className={cn("h-2.5 w-2.5 rounded-full border-2 border-surface bg-info", className)}
     />
   );
 }

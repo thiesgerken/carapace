@@ -74,7 +74,7 @@ export function ArtifactShareControls({ server, slug }: { server: string; slug: 
       />
       {publicUrl !== null && (
         <div className="flex min-w-0 max-w-64 items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
-          <a href={publicUrl} target="_blank" rel="noreferrer" title={publicUrl} className="min-w-0 flex-1 truncate text-xs text-teal-600 underline-offset-2 hover:underline dark:text-teal-400">
+          <a href={publicUrl} target="_blank" rel="noreferrer" title={publicUrl} className="min-w-0 flex-1 truncate text-xs text-primary underline-offset-2 hover:underline">
             {publicUrl}
           </a>
           <button

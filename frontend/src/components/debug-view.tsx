@@ -52,10 +52,10 @@ import { groupRequestsByTurn, llmSegments } from "@/lib/turn-timeline";
 import { cn } from "@/lib/utils";
 
 const STATUS_CLASS: Record<LlmContextStatus, string> = {
-  running: "border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-300",
-  completed: "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
+  running: "border-info/40 bg-info/10 text-info",
+  completed: "border-success/40 bg-success/10 text-success",
   failed: "border-destructive/40 bg-destructive/10 text-destructive",
-  interrupted: "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300",
+  interrupted: "border-warning/40 bg-warning/10 text-warning",
 };
 
 const TIMELINE_REFETCH_DEBOUNCE_MS = 250;
@@ -227,7 +227,7 @@ export function LlmContextView({ context, record }: { context: LlmContext; recor
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-start gap-x-8 gap-y-3 rounded-2xl border border-border bg-background/88 p-4 shadow-sm">
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-3 rounded-2xl bg-surface p-4">
         {/* Completed is the norm; only the exceptions show a status. */}
         {context.status === "completed" ? null : <Stat label={t("status")} value={<StatusBadge status={context.status} />} />}
         <Stat label={t("model")} value={<span className="font-mono">{context.model_name}</span>} />
@@ -342,7 +342,7 @@ function RequestTimeline({
       <div className="overflow-x-auto">
         <table className="w-full whitespace-nowrap text-xs">
           <thead>
-            <tr className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <tr className="text-xs font-medium text-muted-foreground">
               {columns.map((column) => (
                 <th key={column.key} scope="col" className={cn("px-2 py-1.5 font-medium", column.numeric ? "text-right" : "text-left")}>{t(`columns.${column.key}`)}</th>
               ))}
@@ -351,12 +351,12 @@ function RequestTimeline({
           {groupRequestsByTurn(records).map((group) => (
             <tbody key={group.turnId ?? ""} className="tabular-nums">
               <tr className="border-t border-border">
-                <th scope="rowgroup" colSpan={columns.length} className="bg-muted/40 px-2 py-1.5 text-left font-normal">
+                <th scope="rowgroup" colSpan={columns.length} className="bg-inset px-2 py-1.5 text-left font-normal">
                   <TurnHeader turnId={group.turnId} turn={turns.find((turn) => turn.turn_id === group.turnId)} onOpenTurn={onOpenTurn} />
                 </th>
               </tr>
               {group.records.map((record, index) => (
-                <tr key={record.request_id ?? index} className={cn("border-t border-border/60", record.request_id !== null && record.request_id === contextRequestId && "bg-sky-500/10")}>
+                <tr key={record.request_id ?? index} className={cn("border-t border-border/60", record.request_id !== null && record.request_id === contextRequestId && "bg-primary/10")}>
                   {columns.map((column) => (
                     <td key={column.key} className={cn("px-2 py-1.5", column.numeric && "text-right")}>{column.cell(record)}</td>
                   ))}
@@ -429,11 +429,11 @@ function CacheMeter({ record, maxInput }: { record: LlmRequestRecord; maxInput: 
   return (
     <span className="flex items-center gap-1.5" title={miss ? t("cacheMiss") : undefined}>
       <ScaledPill share={record.input_tokens / maxInput} className="w-10">
-        <span className={cn("block h-1.5 overflow-hidden rounded-full", miss ? "bg-amber-500/30" : "bg-muted")}>
+        <span className={cn("block h-1.5 overflow-hidden rounded-full", miss ? "bg-warning/30" : "bg-muted")}>
           <span className="block h-full bg-muted-foreground/45" style={{ width: `${rate * 100}%` }} />
         </span>
       </ScaledPill>
-      <span className={cn("w-9 text-right", miss ? "font-medium text-amber-700 dark:text-amber-300" : "text-muted-foreground")}>
+      <span className={cn("w-9 text-right", miss ? "font-medium text-warning" : "text-muted-foreground")}>
         {format.number(rate, { style: "percent", maximumFractionDigits: 0 })}
       </span>
     </span>
@@ -503,7 +503,7 @@ function StatusMark({ status }: { status: LlmContextStatus }) {
     case "completed":
       return null;
     case "running":
-      return <StatusIcon icon={Loader2} label={t(status)} className="animate-spin text-sky-600 dark:text-sky-400" />;
+      return <StatusIcon icon={Loader2} label={t(status)} className="animate-spin text-info" />;
     case "failed":
       return <StatusIcon icon={CircleX} label={t(status)} className="text-destructive" />;
     case "interrupted":
@@ -556,7 +556,7 @@ function InputShapeBar({ shape }: { shape: InputShape }) {
   const percent = (share: number) => format.number(share, { style: "percent", maximumFractionDigits: 0 });
   return (
     <div className="flex basis-full flex-col gap-2 border-t border-border/60 pt-3">
-      <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{t("inputShape")}</span>
+      <span className="text-xs font-medium text-muted-foreground">{t("inputShape")}</span>
       <div className="flex h-2 w-full overflow-hidden rounded-full" role="img" aria-label={kinds.map((kind) => `${t(`shape.${kind}`)} ${percent(shape[kind])}`).join(", ")}>
         {kinds.map((kind) => (
           <span key={kind} className={PART_TONE[SHAPE_TONE[kind]].bar} style={{ width: `${shape[kind] * 100}%` }} />
@@ -582,9 +582,9 @@ function MessageCard({ message, label, highlight = false }: { message: LlmMessag
   const Direction = message.kind === "request" ? ArrowUpRight : ArrowDownLeft;
 
   return (
-    <section className={cn("rounded-xl border bg-background p-3", highlight ? "border-[#236b86]/50 dark:border-sky-400/40" : "border-border")}>
+    <section className={cn("rounded-xl border bg-background p-3", highlight ? "border-primary/50" : "border-border")}>
       <div className="mb-2.5 flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
           <Direction aria-hidden className="h-3.5 w-3.5" />
           {label}
         </span>
@@ -681,7 +681,7 @@ function Verbatim({ children, clamp = false }: { children: string; clamp?: boole
   const long = clamp && preview !== children;
   return (
     <div className="flex flex-col items-start gap-1">
-      <pre className="w-full whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-2 font-mono text-xs">{long && !expanded ? `${preview}…` : children}</pre>
+      <pre className="w-full whitespace-pre-wrap break-words rounded-lg bg-inset p-2 font-mono text-xs">{long && !expanded ? `${preview}…` : children}</pre>
       {long ? (
         <button type="button" onClick={() => setExpanded(!expanded)} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
           {expanded ? t("showLess") : t("showAllLines", { count: children.split("\n").length })}
@@ -716,7 +716,7 @@ function Card({ label, badge, tone, muted = false, children }: { label: string; 
 
 function Collapsible({ title, open = false, children }: { title: string; open?: boolean; children: ReactNode }) {
   return (
-    <details open={open} className="group rounded-2xl border border-border bg-muted/20 p-3">
+    <details open={open} className="group rounded-2xl bg-surface p-3">
       <summary className="cursor-pointer text-sm font-medium">{title}</summary>
       <div className="mt-3 flex flex-col gap-3">{children}</div>
     </details>

@@ -53,7 +53,7 @@ export function SessionHeader({
 function SessionViewToggle({ sessionId, view }: { sessionId: string; view: SessionView }) {
   const t = useTranslations("sessionView");
   return (
-    <nav aria-label={t("label")} className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+    <nav aria-label={t("label")} className="inline-flex rounded-lg bg-muted p-0.5">
       {VIEWS.map(({ view: value, icon: Icon, query }) => (
         <Link
           key={value}
@@ -62,7 +62,7 @@ function SessionViewToggle({ sessionId, view }: { sessionId: string; view: Sessi
           title={t(value)}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
-            value === view ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            value === view ? "bg-primary font-medium text-primary-foreground" : "text-muted-foreground hover:text-foreground",
           )}
         >
           <Icon className="h-4 w-4" />

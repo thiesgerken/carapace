@@ -13,9 +13,9 @@ export const buttonClassName = "inline-flex items-center gap-2 rounded-lg border
 
 const TASK_STATUS_LOOKS: Record<MemoryTaskStatus, { icon: LucideIcon; className: string }> = {
   pending: { icon: Clock, className: "text-muted-foreground" },
-  queued: { icon: Hourglass, className: "text-sky-700 dark:text-sky-400" },
-  running: { icon: Loader2, className: "text-sky-700 dark:text-sky-400" },
-  done: { icon: CheckCircle2, className: "text-emerald-700 dark:text-emerald-400" },
+  queued: { icon: Hourglass, className: "text-info" },
+  running: { icon: Loader2, className: "text-info" },
+  done: { icon: CheckCircle2, className: "text-success" },
   failed: { icon: XCircle, className: "text-destructive" },
   cancelled: { icon: Ban, className: "text-muted-foreground line-through" },
 };
@@ -54,7 +54,7 @@ export function taskStatusTag(status: MemoryTaskStatus) {
 export function SelectionBar({ count, onClear, children }: { count: number; onClear: () => void; children: ReactNode }) {
   const t = useTranslations("memory.pick");
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-sm">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-inset px-3 py-1.5 text-sm">
       <span className="font-medium tabular-nums">{t("selected", { count })}</span>
       {children}
       <button type="button" onClick={onClear} className="ml-auto text-xs text-muted-foreground hover:text-foreground">{t("clear")}</button>
@@ -95,7 +95,7 @@ export function PickMatchingRow({ colSpan, total, matching, onPickMatching, onCl
   const t = useTranslations("memory.pick");
   return (
     <tr>
-      <td colSpan={colSpan} className="bg-muted/50 px-3 py-1.5 text-center text-xs">
+      <td colSpan={colSpan} className="bg-inset px-3 py-1.5 text-center text-xs">
         {matching ? (
           <>
             {t("pickedMatching", { count: total })}{" "}

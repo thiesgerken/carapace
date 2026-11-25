@@ -101,8 +101,8 @@ export function ConnectForm({ onConnect }: ConnectFormProps) {
           disabled={loading || !username || !password}
           className={cn(
             "w-full rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-            "bg-foreground text-background",
-            "hover:bg-foreground/90",
+            "bg-primary text-primary-foreground",
+            "hover:bg-primary/90",
             "disabled:opacity-50 disabled:cursor-not-allowed",
           )}
         >

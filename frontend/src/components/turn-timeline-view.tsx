@@ -83,9 +83,9 @@ type Fact = { text: string; tone: "muted" | "good" | "warn" | "bad" };
 
 const FACT_CLASS: Record<Fact["tone"], string> = {
   muted: "text-muted-foreground",
-  good: "rounded bg-emerald-500/15 px-1 text-emerald-700 dark:text-emerald-300",
-  warn: "rounded bg-amber-500/15 px-1 text-amber-700 dark:text-amber-300",
-  bad: "rounded bg-red-500/15 px-1 text-red-700 dark:text-red-300",
+  good: "rounded bg-success/15 px-1 text-success",
+  warn: "rounded bg-warning/15 px-1 text-warning",
+  bad: "rounded bg-destructive/15 px-1 text-destructive",
 };
 
 const VERDICT_TONE: Record<string, Fact["tone"]> = { allow: "good", escalate: "warn", deny: "bad" };
@@ -110,8 +110,8 @@ export const CATEGORY_CLASS: Record<TimeCategory, string> = {
 const HATCH: CSSProperties = { backgroundImage: "repeating-linear-gradient(135deg, transparent 0 3px, rgb(255 255 255 / 0.55) 3px 5px)" };
 
 const STATUS_BAR_CLASS: Partial<Record<SpanStatus, string>> = {
-  error: "bg-red-500 dark:bg-red-400",
-  interrupted: "bg-zinc-400 dark:bg-zinc-600",
+  error: "bg-destructive",
+  interrupted: "bg-muted-foreground/50",
 };
 
 function useFormatDuration(): (ms: number) => string {
@@ -201,7 +201,7 @@ function TurnList({ turns, value, onChange }: { turns: TurnSummary[]; value: str
     <ol
       ref={list}
       aria-label={t("turns")}
-      className="relative grid max-h-48 grid-cols-[auto_minmax(0,1fr)_3rem_4.5rem] content-start gap-x-2 overflow-y-auto rounded-2xl border border-border bg-muted/20 p-1 sm:grid-cols-[auto_minmax(0,1fr)_10rem_4.5rem] sm:gap-x-3"
+      className="relative grid max-h-48 grid-cols-[auto_minmax(0,1fr)_3rem_4.5rem] content-start gap-x-2 overflow-y-auto rounded-2xl bg-inset p-1 sm:grid-cols-[auto_minmax(0,1fr)_10rem_4.5rem] sm:gap-x-3"
     >
       {[...turns].reverse().map((turn) => {
         const ms = durations.get(turn.turn_id)!;
@@ -225,9 +225,9 @@ function TurnList({ turns, value, onChange }: { turns: TurnSummary[]; value: str
               <span className={cn("truncate", current && "font-medium")} title={turn.prompt_preview}>
                 {turn.prompt_preview}
               </span>
-              <span className="relative block h-2 rounded-sm bg-muted/50">
+              <span className="relative block h-2 rounded-sm bg-muted">
                 <span
-                  className={cn("absolute inset-y-0 left-0 min-w-[2px] rounded-sm", STATUS_BAR_CLASS[turn.status] ?? "bg-sky-500 dark:bg-sky-400", turn.status === "running" && "animate-pulse")}
+                  className={cn("absolute inset-y-0 left-0 min-w-[2px] rounded-sm", STATUS_BAR_CLASS[turn.status] ?? "bg-primary", turn.status === "running" && "animate-pulse")}
                   style={{ width: `${longest > 0 ? (ms / longest) * 100 : 0}%` }}
                 />
               </span>
@@ -262,7 +262,7 @@ function Timeline({ turn, spans, server, token, sessionId, onOpenRole }: { turn:
   return (
     <>
       <Summary summary={summarizeTurn(rows, turnStart, turnEnd)} />
-      <ol className="flex flex-col rounded-2xl border border-border bg-muted/20 p-2">
+      <ol className="flex flex-col rounded-2xl bg-inset p-2">
         {waterfallLines(rows, collapsed).map((line) => {
           const id = line.chain[0].span.span_id;
           const tailId = line.chain[line.chain.length - 1].span.span_id;
@@ -292,7 +292,7 @@ function Timeline({ turn, spans, server, token, sessionId, onOpenRole }: { turn:
                   className="grid min-w-0 flex-1 cursor-pointer grid-cols-1 gap-1 py-1 pl-1 sm:grid-cols-[minmax(0,calc(15rem_-_var(--indent)))_minmax(0,1fr)] sm:items-center sm:gap-3"
                 >
                   <LineLabel line={line} open={open === id} />
-                  <span className="relative block h-3 w-full rounded-sm bg-muted/50">
+                  <span className="relative block h-3 w-full rounded-sm bg-muted">
                     {line.chain.map((row) => (
                       <SpanBar key={row.span.span_id} row={row} left={scale(row.start - turnStart)} width={scale(row.end - row.start)} />
                     ))}
@@ -336,7 +336,7 @@ function Summary({ summary }: { summary: TimeBreakdown }) {
   const share = (ms: number) => (summary.wallMs > 0 ? ms / summary.wallMs : 0);
 
   return (
-    <section className="flex flex-col gap-3 rounded-2xl border border-border bg-background/88 p-4 shadow-sm">
+    <section className="flex flex-col gap-3 rounded-2xl bg-surface p-4">
       <div className="flex flex-wrap gap-x-8 gap-y-3">
         <Stat label={t("wall")} value={<span className="tabular-nums">{duration(summary.wallMs)}</span>} />
         <Stat label={t("system")} value={<span className="tabular-nums">{duration(summary.systemMs)}</span>} />

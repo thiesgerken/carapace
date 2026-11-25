@@ -87,7 +87,7 @@ const SEARCH_MODES: readonly SessionSearchMode[] = ["title", "fulltext"];
 function HighlightedText({ text, query }: { text: string; query: string }) {
   return splitOnMatches(text, query).map((part, index) => (
     part.match ? (
-      <mark key={index} className="rounded-sm bg-amber-200 px-0.5 text-foreground dark:bg-amber-500/40">
+      <mark key={index} className="rounded-sm bg-primary/20 px-0.5 text-foreground">
         {part.text}
       </mark>
     ) : (
@@ -394,7 +394,7 @@ export function Sidebar({
       ) : null,
       ...groupSessionsByAge(unpinnedSessions).map((group) => (
       <div key={group.key}>
-        <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="px-3 pb-1 text-xs font-medium text-muted-foreground">
           {group.label}
         </div>
         {renderSessionSection(group.sessions)}
@@ -457,12 +457,12 @@ export function Sidebar({
         className={cn(
           "group cursor-pointer rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           session.session_id === activeSessionId
-            ? "bg-accent text-accent-foreground"
+            ? "bg-primary/10 text-foreground"
             : "text-foreground/80 hover:bg-muted",
         )}
       >
         <div className="flex w-full min-w-0 items-start gap-2.5 px-3 pt-2 pb-1 text-left">
-          <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <MessageSquare className={cn("mt-0.5 h-4 w-4 shrink-0", session.session_id === activeSessionId ? "text-primary" : "text-muted-foreground")} />
           <div className="min-w-0 flex-1 truncate text-sm font-medium" title={session.title || session.session_id}>
               {session.title ? (
                 <EmojiText text={session.title} />
@@ -472,7 +472,7 @@ export function Sidebar({
           </div>
           {showUnattendedIcon ? (
             <span
-              className="mt-0.5 inline-flex shrink-0 items-center text-emerald-700"
+              className="mt-0.5 inline-flex shrink-0 items-center text-muted-foreground"
               title={tSidebar("unattendedSession")}
             >
               <Bot className="h-3.5 w-3.5" />
@@ -564,7 +564,7 @@ export function Sidebar({
               "session-row-action-button rounded-md p-1.5 transition-colors",
               session.attributes.pinned && "session-row-action-active",
               session.attributes.pinned
-                ? "text-sky-700 hover:bg-sky-100"
+                ? "text-primary hover:bg-muted"
                 : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
@@ -580,7 +580,7 @@ export function Sidebar({
               "session-row-action-button rounded-md p-1.5 transition-colors",
               session.attributes.favorite && "session-row-action-active",
               session.attributes.favorite
-                ? "text-amber-700 hover:bg-amber-100"
+                ? "text-primary hover:bg-muted"
                 : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
@@ -608,7 +608,7 @@ export function Sidebar({
                 "session-row-action-button rounded-md p-1.5 transition-colors",
                 session.attributes.archived && "session-row-action-active",
                 session.attributes.archived
-                  ? "text-violet-700 group-hover:text-emerald-900 hover:bg-emerald-100"
+                  ? "text-muted-foreground hover:bg-muted hover:text-foreground"
                   : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
@@ -864,7 +864,7 @@ export function Sidebar({
               {renderSessionGroups(activeSessions)}
               {archivedSessions.length > 0 ? (
                 <div className="space-y-4">
-                  <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                  <div className="px-3 pb-1 text-xs font-medium text-muted-foreground">
                     {tSidebar("sections.archived")}
                   </div>
                   {renderSessionGroups(archivedSessions)}

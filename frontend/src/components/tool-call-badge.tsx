@@ -442,7 +442,7 @@ function ApprovalBadge({
     if (verdict == null) {
       return (
         <span
-          className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-500/10 text-slate-600 dark:text-slate-400"
+          className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground"
           title={title}
         >
           <BrailleSpinner className="text-xs" />
@@ -465,8 +465,8 @@ function ApprovalBadge({
         className={cn(
           "inline-flex shrink-0 items-center",
           isDenied
-            ? "text-red-600 dark:text-red-400"
-            : "text-purple-600 dark:text-purple-400",
+            ? "text-destructive"
+            : "text-success",
         )}
         title={title}
       >
@@ -482,7 +482,7 @@ function ApprovalBadge({
   if (source === "skill") {
     return (
       <span
-        className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400"
+        className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-success/10 text-success"
         title={title}
       >
         <Puzzle className="h-2.5 w-2.5" />
@@ -494,7 +494,7 @@ function ApprovalBadge({
   if (source === "autonomy") {
     return (
       <span
-        className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400"
+        className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-destructive/10 text-destructive"
         title={title}
       >
         <Hourglass className="h-2.5 w-2.5" />
@@ -506,7 +506,7 @@ function ApprovalBadge({
   if (source === "bypass") {
     return (
       <span
-        className="inline-flex items-center gap-0.5 rounded border border-amber-300/60 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-400/30 dark:text-amber-300"
+        className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-warning/10 text-warning"
         title={title}
       >
         <Zap className="h-2.5 w-2.5" />
@@ -518,7 +518,7 @@ function ApprovalBadge({
   if (source === "policy") {
     return (
       <span
-        className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400"
+        className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-destructive/10 text-destructive"
         title={title}
       >
         <Ban className="h-2.5 w-2.5" />
@@ -529,7 +529,7 @@ function ApprovalBadge({
 
   return (
     <span
-      className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400"
+      className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-destructive/10 text-destructive"
       title={title}
     >
       <ShieldX className="h-2.5 w-2.5" />
@@ -539,9 +539,9 @@ function ApprovalBadge({
 }
 
 const SENTINEL_VERDICT_ICONS: Record<ApprovalVerdict, { Icon: LucideIcon; colorClass: string }> = {
-  allow: { Icon: ShieldCheck, colorClass: "text-green-600 dark:text-green-400" },
-  deny: { Icon: ShieldX, colorClass: "text-red-600 dark:text-red-400" },
-  escalate: { Icon: ShieldAlert, colorClass: "text-yellow-600 dark:text-yellow-400" },
+  allow: { Icon: ShieldCheck, colorClass: "text-success" },
+  deny: { Icon: ShieldX, colorClass: "text-destructive" },
+  escalate: { Icon: ShieldAlert, colorClass: "text-warning" },
 };
 
 /** What the card says while *step* runs; `read_skill` waits for a build and a profile sync. */
@@ -722,7 +722,7 @@ export function ToolCallBadge({
           <>
             {credCount > 0 && (
               <span
-                className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
+                className="inline-flex items-center gap-0.5 rounded bg-info/10 px-1.5 py-0.5 text-[10px] text-info"
                 title={credTooltip}
               >
                 <KeyRound className="h-2.5 w-2.5" />{credCount}
@@ -730,7 +730,7 @@ export function ToolCallBadge({
             )}
             {domainCount > 0 && (
               <span
-                className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
+                className="inline-flex items-center gap-0.5 rounded bg-info/10 px-1.5 py-0.5 text-[10px] text-info"
                 title={domainTooltip}
               >
                 <Globe className="h-2.5 w-2.5" />{domainCount}
@@ -741,14 +741,14 @@ export function ToolCallBadge({
       })()}
       {source && <ApprovalBadge source={source} verdict={verdict} explanation={finalDecisionMessage || sentinelExplanation || policyExplanation || undefined} />}
       {approvalComment && (
-        <span className="inline-flex shrink-0 items-center text-green-600 dark:text-green-400" title={approvalComment}>
+        <span className="inline-flex shrink-0 items-center text-success" title={approvalComment}>
           <MessageSquareText className="h-3 w-3" />
         </span>
       )}
       {/* A folded tool row is outside the model's context entirely; the fold rail tells that story. */}
       {compaction?.orig_tokens != null && compaction.folded_into == null && (
         <span
-          className="inline-flex items-center rounded bg-amber-500/15 p-0.5 text-amber-700 dark:text-amber-400"
+          className="inline-flex items-center rounded bg-info/10 p-0.5 text-info"
           title={tc("toolTitle", {
             orig: compaction.orig_tokens ?? 0,
             summary: compaction.summary_tokens ?? 0,
@@ -855,17 +855,17 @@ export function ToolCallBadge({
       {argsStreaming && !open && <StreamingArgs text={streamingPreview(tool, args, argsText ?? "")} />}
 
       {expanded && (
-        <div className="tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2 text-xs">
+        <div className="tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-inset p-3 space-y-2 text-xs">
           {compaction?.model_text && (
-            <details className="rounded-md border border-amber-500/30 bg-amber-500/5">
+            <details className="rounded-md border border-info/30 bg-info/5">
               <summary className="flex cursor-pointer list-none items-center gap-1 px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent/50">
-                <Archive className="h-3 w-3 text-amber-600/70" />
+                <Archive className="h-3 w-3 text-info" />
                 <span className="font-medium">{tc("modelSees")}</span>
                 <span className="opacity-70">
                   · {tc("tokenDelta", { from: compaction.orig_tokens ?? 0, to: compaction.summary_tokens ?? 0 })}
                 </span>
               </summary>
-              <div className="whitespace-pre-wrap break-words border-t border-amber-500/20 px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+              <div className="whitespace-pre-wrap break-words border-t border-info/20 px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
                 {compaction.model_text}
               </div>
             </details>
@@ -902,7 +902,7 @@ export function ToolCallBadge({
 
           {approvalComment && (
             <div className="text-[11px] text-muted-foreground leading-relaxed">
-              <span className="font-medium text-green-600 dark:text-green-400">
+              <span className="font-medium text-success">
                 <MessageSquareText className="inline h-3 w-3 -translate-y-px mr-1" />
                 {t("details.commentForAgent")}
               </span>{" "}
@@ -938,7 +938,7 @@ export function ToolCallBadge({
             <>
               <div
                 className={cn(
-                  "rounded-md border bg-muted/25 px-3 py-2",
+                  "rounded-md border bg-background px-3 py-2",
                   isError ? "border-destructive/30" : "border-border/40",
                 )}
               >
@@ -970,7 +970,7 @@ export function ToolCallBadge({
               {result != null && result.length > 0 && (
                 <div
                   className={cn(
-                    "rounded-md border bg-muted/25 px-3 py-2",
+                    "rounded-md border bg-background px-3 py-2",
                     isError ? "border-destructive/30" : "border-border/40",
                   )}
                 >
@@ -1023,7 +1023,7 @@ export function ToolCallBadge({
               {result != null && result.length > 0 && (
                 <div
                   className={cn(
-                    "rounded-md border bg-muted/25 px-3 py-2",
+                    "rounded-md border bg-background px-3 py-2",
                     isError ? "border-destructive/30" : "border-border/40",
                   )}
                 >
@@ -1145,7 +1145,7 @@ function StreamingArgs({ text }: { text: string }) {
   return (
     <pre
       ref={ref}
-      className="ml-5 mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border/60 bg-muted/30 p-2 font-mono text-[11px] leading-4 text-foreground/75"
+      className="ml-5 mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border/60 bg-inset p-2 font-mono text-[11px] leading-4 text-foreground/75"
     >
       {text}
     </pre>

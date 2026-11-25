@@ -100,7 +100,7 @@ export function MemoryFactsView({ server }: { server: string }) {
                 onClick={() => setCategory(value)}
                 className={cn(
                   "rounded-md px-3 text-sm font-medium transition-colors",
-                  category === value ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  category === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 {tFact(`factCategories.${value}`)}
@@ -143,7 +143,7 @@ export function MemoryFactsView({ server }: { server: string }) {
         {response === null && error === null ? (
           <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
         ) : groups.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-border bg-background/80 px-4 py-6 text-sm text-muted-foreground">{t("empty")}</p>
+          <p className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">{t("empty")}</p>
         ) : bySubject.map(([subject, subjectGroups]) => (
           <section key={subject} className="space-y-2">
             {subject ? <h3 className="pt-2 text-sm font-semibold">{subject}</h3> : null}

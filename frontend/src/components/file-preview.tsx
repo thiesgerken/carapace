@@ -58,7 +58,7 @@ export function FilePreview({
     : undefined;
 
   return (
-    <div className={cn("rounded-md border border-border/40 bg-muted/25 p-2", className)}>
+    <div className={cn("rounded-md border border-border/40 bg-background p-2", className)}>
       {mime === "text/html" && canFetch && (
         <ArtifactPreview
           key={fileId}
@@ -89,7 +89,7 @@ export function FilePreview({
           <a
             href={downloadHref}
             download={name}
-            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-teal-600 hover:bg-teal-500/10 dark:text-teal-400"
+            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10"
           >
             <Download className="h-3 w-3" />
             Download

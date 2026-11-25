@@ -231,7 +231,7 @@ function knowledgeStatusBadge(
   if (session?.attributes.private && !isInKnowledgeRepo) {
     return {
       label: t("knowledge.badges.excluded"),
-      className: "border-zinc-300 bg-zinc-100 text-zinc-700",
+      className: "bg-muted text-muted-foreground",
       icon: Lock,
     };
   }
@@ -239,7 +239,7 @@ function knowledgeStatusBadge(
   if (!isInKnowledgeRepo) {
     return {
       label: t("knowledge.badges.missing"),
-      className: "border-slate-300 bg-slate-100 text-slate-700",
+      className: "bg-muted text-muted-foreground",
       icon: Archive,
     };
   }
@@ -247,14 +247,14 @@ function knowledgeStatusBadge(
   if (hasKnowledgeChanges) {
     return {
       label: t("knowledge.badges.outdated"),
-      className: "border-amber-300 bg-amber-50 text-amber-700",
+      className: "bg-warning/10 text-warning",
       icon: RotateCcw,
     };
   }
 
   return {
     label: t("knowledge.badges.upToDate"),
-    className: "border-emerald-300 bg-emerald-50 text-emerald-700",
+    className: "bg-success/10 text-success",
     icon: Save,
   };
 }
@@ -2415,21 +2415,22 @@ export function ChatView({
   };
   const sessionDetailBadges = [
     sessionArchived
-      ? { label: t("badges.archived"), icon: Archive, className: "border-violet-200 bg-violet-50 text-violet-800" }
+      ? { label: t("badges.archived"), icon: Archive }
       : null,
     sessionPinned
-      ? { label: t("badges.pinned"), icon: Pin, className: "border-sky-200 bg-sky-50 text-sky-800" }
+      ? { label: t("badges.pinned"), icon: Pin }
       : null,
     sessionFavorite
-      ? { label: t("badges.favorite"), icon: Star, className: "border-amber-200 bg-amber-50 text-amber-800" }
+      ? { label: t("badges.favorite"), icon: Star }
       : null,
-  ].filter((value): value is { label: string; icon: typeof Archive; className: string } => value !== null);
-  const inspectorBadgeClass = "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium";
+  ].filter((value): value is { label: string; icon: typeof Archive } => value !== null);
+  const inspectorBadgeClass = "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium";
+  const inspectorActionClass = "rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50";
   const inspectorContent = (
-    <div className="space-y-3">
-      <section className="rounded-2xl border border-border/70 bg-muted/25 px-3 py-2 shadow-sm">
+    <div className="divide-y divide-border">
+      <section className="py-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+          <div className="text-xs font-medium text-muted-foreground">
             {t("inspector.actions")}
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1">
@@ -2437,24 +2438,26 @@ export function ChatView({
             onClick={() => void handleTogglePinned()}
             disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
             title={sessionPinned ? t("actions.unpin") : t("actions.pin")}
-            className="rounded-md p-1.5 text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-pressed={sessionPinned}
+            className={cn(inspectorActionClass, sessionPinned && "text-primary")}
           >
             {updatingSessionAttribute === "pinned" ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Pin className="h-3.5 w-3.5" />
+              <Pin className={cn("h-3.5 w-3.5", sessionPinned && "fill-current")} />
             )}
           </button>
           <button
             onClick={() => void handleToggleFavorite()}
             disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
             title={sessionFavorite ? t("actions.unfavorite") : t("actions.favorite")}
-            className="rounded-md p-1.5 text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-pressed={sessionFavorite}
+            className={cn(inspectorActionClass, sessionFavorite && "text-primary")}
           >
             {updatingSessionAttribute === "favorite" ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Star className="h-3.5 w-3.5" />
+              <Star className={cn("h-3.5 w-3.5", sessionFavorite && "fill-current")} />
             )}
           </button>
           {sessionArchived || sessionCanArchive ? (
@@ -2462,7 +2465,7 @@ export function ChatView({
               onClick={() => void handleToggleArchived()}
               disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
               title={sessionArchived ? t("actions.unarchive") : t("actions.archive")}
-              className="rounded-md p-1.5 text-violet-900 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className={inspectorActionClass}
             >
               {updatingSessionAttribute === "archived" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2477,7 +2480,7 @@ export function ChatView({
             onClick={() => void handleDeleteSession()}
             disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession}
             title={t("actions.delete")}
-            className="rounded-md p-1.5 text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
           >
             {deletingSession ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2489,8 +2492,8 @@ export function ChatView({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm">
-        <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+      <section className="py-4">
+        <div className="text-xs font-medium text-muted-foreground">
           {t("inspector.session")}
         </div>
 
@@ -2506,7 +2509,7 @@ export function ChatView({
             <button
               type="button"
               onClick={() => void handleCopySessionId()}
-              className="shrink-0 rounded-md border border-border/70 p-1 text-muted-foreground transition-colors hover:bg-muted"
+              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               aria-label={sessionIdCopied ? t("session.idCopied") : t("session.copyId")}
               title={sessionIdCopied ? t("session.idCopiedShort") : t("session.copyId")}
             >
@@ -2567,7 +2570,7 @@ export function ChatView({
 
         </dl>
 
-        <div className="mt-4 border-t border-border/60 pt-4">
+        <div className="mt-4">
           <SessionOptionTiles
             items={[
               {
@@ -2616,7 +2619,7 @@ export function ChatView({
           {sessionDetailBadges.map((badge) => (
             <span
               key={badge.label}
-              className={cn(inspectorBadgeClass, "gap-1", badge.className)}
+              className={cn(inspectorBadgeClass, "gap-1 bg-muted text-muted-foreground")}
             >
               <badge.icon className="h-3 w-3 shrink-0" />
               {badge.label}
@@ -2633,9 +2636,9 @@ export function ChatView({
         onSourceNavigate={() => setMobileInspectorOpen(false)}
       />
 
-      <section className="rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm">
+      <section className="py-4">
         <div className="flex items-center justify-between gap-2">
-          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+          <div className="text-xs font-medium text-muted-foreground">
             {tRoot("jobs.fields.models")}
           </div>
           <button
@@ -2644,10 +2647,7 @@ export function ChatView({
             aria-pressed={modelsUnlocked}
             aria-label={modelsUnlocked ? tRoot("jobs.fields.modelsUnlinked") : tRoot("jobs.fields.modelsLinked")}
             title={modelsUnlocked ? tRoot("jobs.fields.modelsUnlinkedHelp") : tRoot("jobs.fields.modelsLinkedHelp")}
-            className={cn(
-              "inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 text-muted-foreground transition-colors",
-              modelsUnlocked ? "hover:bg-muted" : "bg-accent/60 text-accent-foreground hover:bg-accent",
-            )}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             {modelsUnlocked ? <Link2Off className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
           </button>
@@ -2655,7 +2655,7 @@ export function ChatView({
 
         <div className="mt-3 space-y-3">
           <label className="space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{tRoot("jobs.fields.agentModel")}</span>
+            <span className="text-xs font-medium text-muted-foreground">{tRoot("jobs.fields.agentModel")}</span>
             <ModelPicker
               value={session?.agent_model_name}
               entries={agentModelOptions}
@@ -2666,7 +2666,7 @@ export function ChatView({
           </label>
 
           <label className="space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{tRoot("jobs.fields.sentinelModel")}</span>
+            <span className="text-xs font-medium text-muted-foreground">{tRoot("jobs.fields.sentinelModel")}</span>
             <ModelPicker
               value={session?.sentinel_model_name}
               entries={sentinelModelOptions}
@@ -2706,8 +2706,8 @@ export function ChatView({
       ) : null}
 
       {latestJobRun ? (
-        <section className="rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm">
-          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+        <section className="py-4">
+          <div className="text-xs font-medium text-muted-foreground">
             {t("jobRun.title")}
           </div>
 
@@ -2731,10 +2731,10 @@ export function ChatView({
 
           {latestJobData ? (
             <div className="mt-3 space-y-1.5">
-              <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              <div className="text-xs font-medium text-muted-foreground">
                 {t("jobRun.data")}
               </div>
-              <pre className="overflow-x-auto rounded-xl border border-border/70 bg-muted/35 px-3 py-2 font-mono text-xs leading-5 text-foreground whitespace-pre-wrap break-words">
+              <pre className="overflow-x-auto rounded-lg bg-inset px-3 py-2 font-mono text-xs leading-5 text-foreground whitespace-pre-wrap break-words">
                 {latestJobData.value}
               </pre>
             </div>
@@ -2742,9 +2742,9 @@ export function ChatView({
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm">
+      <section className="py-4">
         <div className="flex items-start justify-between gap-2">
-          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+          <div className="text-xs font-medium text-muted-foreground">
             {t("sandbox.title")}
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -2752,7 +2752,7 @@ export function ChatView({
               onClick={() => void handleSandboxPowerAction()}
               disabled={sandboxActionDisabled || sessionArchived}
               title={sandboxPowerButtonLabel}
-              className="rounded-md p-1.5 text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className={inspectorActionClass}
             >
               {sandboxPowerAction ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2766,7 +2766,7 @@ export function ChatView({
               onClick={() => void handleWipeSandbox()}
               disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || sessionArchived}
               title={t("sandbox.actions.reset")}
-              className="rounded-md p-1.5 text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className={inspectorActionClass}
             >
               {wipingSandbox ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2782,10 +2782,10 @@ export function ChatView({
               className={cn(
                 "h-2 w-2 shrink-0 rounded-full",
                 sandboxLoading
-                  ? "animate-pulse bg-amber-500"
+                  ? "animate-pulse bg-warning"
                   : sandbox
                     ? sandboxStatusIndicatorClass(sandbox.status)
-                    : "bg-slate-300",
+                    : "bg-muted-foreground/40",
               )}
             />
             <span className="truncate">
@@ -2804,7 +2804,7 @@ export function ChatView({
             </div>
           ) : null}
         </div>
-        <div className="mt-3 border-t border-border/60 pt-3">
+        <div className="mt-4">
           <SandboxGitControls
             server={server}
             token={token}
@@ -2815,16 +2815,16 @@ export function ChatView({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm">
+      <section className="py-4">
         <div className="flex items-start justify-between gap-2">
-          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+          <div className="text-xs font-medium text-muted-foreground">
             {t("knowledge.title")}
           </div>
           <button
             onClick={() => void handleCommitKnowledge()}
             disabled={archiveButtonDisabled}
             title={commitButtonTitle ?? t("knowledge.commit")}
-            className="rounded-md p-1.5 text-emerald-900 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className={inspectorActionClass}
           >
             {savingKnowledge ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2855,22 +2855,21 @@ export function ChatView({
             {session.knowledge_last_archive_path}
           </Link>
         ) : null}
+        {knowledgeNotice ? (
+          <div
+            className={cn(
+              "mt-2 text-xs",
+              knowledgeNotice.tone === "error"
+                ? "text-destructive"
+                : knowledgeNotice.tone === "success"
+                  ? "text-success"
+                  : "text-muted-foreground",
+            )}
+          >
+            {knowledgeNotice.message}
+          </div>
+        ) : null}
       </section>
-
-      {knowledgeNotice ? (
-        <div
-          className={cn(
-            "rounded-2xl border border-border/70 bg-background/90 px-3 py-2 text-xs shadow-sm",
-            knowledgeNotice.tone === "error"
-              ? "text-destructive"
-              : knowledgeNotice.tone === "success"
-                ? "text-emerald-700"
-                : "text-muted-foreground",
-          )}
-        >
-          {knowledgeNotice.message}
-        </div>
-      ) : null}
 
       <SessionArtifactsSection server={server} sessionId={sessionId} refreshKey={latestTerminalIndex} />
     </div>
@@ -3021,8 +3020,8 @@ export function ChatView({
           />
         </div>
 
-        <aside className="hidden min-h-0 border-l border-border bg-muted/20 lg:block">
-          <div className="h-full overflow-y-auto p-3">{inspectorContent}</div>
+        <aside className="hidden min-h-0 bg-surface lg:block">
+          <div className="h-full overflow-y-auto px-4">{inspectorContent}</div>
         </aside>
       </div>
 
@@ -3057,7 +3056,7 @@ export function ChatView({
                 </button>
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-3 pb-[max(1.5rem,calc(env(safe-area-inset-bottom)+0.75rem))]">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(1.5rem,calc(env(safe-area-inset-bottom)+0.75rem))]">
               {inspectorContent}
             </div>
           </div>
