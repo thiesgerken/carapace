@@ -541,7 +541,9 @@ export function ChatInput({
   }
 
   return (
-    <div className="border-t border-border bg-background px-4 py-3">
+    <div className="relative bg-background px-4 py-3">
+      {/* The messages fade out under the composer instead of ending at a rule. */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-full h-6 bg-gradient-to-t from-background to-transparent" />
       {queuedMessage && (
         <div className="mx-auto max-w-3xl mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Clock className="h-3 w-3" />

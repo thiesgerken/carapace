@@ -3,8 +3,8 @@ import test from "node:test";
 import { NextIntlClientProvider } from "next-intl";
 
 import english from "../../messages/en.json";
-import { click, dispatchDocumentEvent, installDom, renderReact } from "../../test/react-test-utils";
-import { SessionMenu } from "./session-menu";
+import { click, dispatchDocumentEvent, installDom, renderReact, runInAct } from "../../test/react-test-utils";
+import { SessionMenu, SessionRowMenu } from "./session-menu";
 
 function renderMenu(overrides: Partial<Parameters<typeof SessionMenu>[0]> = {}, calls: string[] = []) {
   return renderReact(
@@ -92,6 +92,49 @@ test("the session menu copies the session id", async () => {
     await click(copy!);
     assert.deepEqual(copied, ["s 1"]);
     assert.deepEqual(items(view.container), []);
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("a sidebar row's menu offers the attribute actions and delete, and its clicks never open the row", async () => {
+  const restore = installDom();
+  try {
+    const calls: string[] = [];
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={english} timeZone="UTC">
+        <div onClick={() => calls.push("row")}>
+          <SessionRowMenu
+            className=""
+            pinned={true}
+            favorite={false}
+            archived={false}
+            canArchive={true}
+            attributesDisabled={false}
+            onTogglePinned={() => calls.push("pin")}
+            onToggleFavorite={() => calls.push("favorite")}
+            onToggleArchived={() => calls.push("archive")}
+            onDelete={(event) => calls.push(event.shiftKey ? "delete+shift" : "delete")}
+          />
+        </div>
+      </NextIntlClientProvider>,
+    );
+    const trigger = view.container.querySelector('button[aria-haspopup="menu"]')!;
+    const menuItem = (label: string) => Array.from(view.container.querySelectorAll('[role="menuitem"]')).find((item) => item.textContent === label)!;
+
+    await click(trigger);
+    assert.deepEqual(items(view.container), ["Unpin session", "Favorite session", "Archive session", "Delete session"]);
+    assert.ok(view.container.querySelector("[data-open]"), "the open menu keeps its button revealed");
+
+    await click(menuItem("Archive session"));
+    assert.deepEqual(items(view.container), []);
+
+    await click(trigger);
+    await runInAct(() => {
+      menuItem("Delete session").dispatchEvent(new window.MouseEvent("click", { bubbles: true, shiftKey: true }));
+    });
+    assert.deepEqual(calls, ["archive", "delete+shift"]);
     await view.unmount();
   } finally {
     restore();
