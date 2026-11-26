@@ -177,9 +177,9 @@ An LLM-powered agent that evaluates actions against the natural-language `SECURI
 
 When the sentinel escalates a boundary request or a push, the session engine sends a structured approval request (domain access, credential or up-front request, git push) to all session subscribers (WebSocket clients, Matrix rooms) and waits for a response (approve/deny). The request includes the sentinel's explanation. The agent loop's own approval requests come only from the autonomy limit.
 
-### Skill Registry
+### Skill Catalog
 
-Loads skill metadata (name, description) from each skill's `SKILL.md` frontmatter at startup. The full `SKILL.md` is loaded only when the agent reads a skill with `read_skill`. See [skills.md](skills.md).
+Lists the skills of `skills/flake.lock` with the descriptions from their `SKILL.md`, which the builder reads from each skill's build (`builder/skill_builds.py`). The full `SKILL.md` comes from the build too, when the agent reads a skill with `read_skill`. See [skills.md](skills.md).
 
 ### Git Store
 
@@ -217,7 +217,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `llm.py`       | Pydantic AI model factory and model settings helpers.                                         |
 | `payloads.py`  | Defensive helpers for coercing untrusted payload shapes.                                      |
 | `prompt_prefix.py` | System prompt prefix shared by the agent, compaction and memory tasks (see [persistent context](persistent-context.md#system-prompt-loading)). |
-| `skills.py`    | The skill list from `skills/flake.lock`, skill registry, frontmatter parsing.                  |
+| `skills.py`    | The skill list from `skills/flake.lock` and frontmatter parsing.                               |
 | `usage.py`     | Usage tracking, cost estimation, budget gauges, and LLM request activity records.             |
 | `ws_models.py` | WebSocket protocol models and client-message parser.                                          |
 
