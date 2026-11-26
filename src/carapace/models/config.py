@@ -193,7 +193,7 @@ class AvailableModelEntry(ConfigModel):
 def _default_agent_available_models() -> list[AvailableModelEntry]:
     return [
         AvailableModelEntry.model_validate("anthropic:claude-sonnet-4-6"),
-        AvailableModelEntry.model_validate("anthropic:claude-haiku-4-5"),
+        AvailableModelEntry.model_validate("anthropic:claude-haiku-5-5"),
     ]
 
 
@@ -211,8 +211,8 @@ class CompactionConfig(ConfigModel):
 
 class AgentConfig(ConfigModel):
     model: str = "anthropic:claude-sonnet-4-6"
-    sentinel_model: str = "anthropic:claude-haiku-4-5"
-    title_model: str = "anthropic:claude-haiku-4-5"
+    sentinel_model: str = "anthropic:claude-haiku-5-5"
+    title_model: str = "anthropic:claude-haiku-5-5"
     # Model used for compaction summaries. None -> fall back to title_model.
     compaction_model: str | None = None
     # Session extraction. None -> sentinel model (the cheap tier).

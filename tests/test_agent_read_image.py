@@ -29,7 +29,7 @@ from carapace.security.context import SessionSecurity
 from carapace.usage import UsageTracker
 
 VISION_MODEL = "anthropic:claude-sonnet-4-6"
-TEXT_MODEL = "anthropic:claude-haiku-4-5"
+TEXT_MODEL = "anthropic:claude-haiku-5-5"
 
 
 def _config(*, vision_default: bool) -> Config:
@@ -39,7 +39,7 @@ def _config(*, vision_default: bool) -> Config:
                 "model": VISION_MODEL,
                 "available_models": [
                     {"provider": "anthropic", "name": "claude-sonnet-4-6", "vision": vision_default},
-                    {"provider": "anthropic", "name": "claude-haiku-4-5"},
+                    {"provider": "anthropic", "name": "claude-haiku-5-5"},
                 ],
             }
         }

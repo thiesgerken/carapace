@@ -577,7 +577,7 @@ def test_summaries_lead_with_the_agents_shared_prompt_prefix(tmp_path: Path) -> 
             "exec",
             "long output",
             prompt_prefix="# AGENTS.md",
-            model="anthropic:claude-haiku-4-5",
+            model="anthropic:claude-haiku-5-5",
             config=build_config(tmp_path),
             user="thies",
             usage_tracker=None,
