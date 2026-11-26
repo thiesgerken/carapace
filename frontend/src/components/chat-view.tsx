@@ -128,6 +128,32 @@ function sandboxIdentifier(snapshot: SessionSandboxSnapshot | null): string | nu
   return sandboxId ? sandboxId : null;
 }
 
+/** The sandbox's liveness after the id in the session header, with the inspector's details as tooltip. */
+export function SandboxHeaderStatus({
+  sandbox,
+  t,
+}: {
+  sandbox: SessionSandboxSnapshot | null;
+  t: (key: string, values?: Record<string, string | number | Date>) => string;
+}) {
+  if (!sandbox || (sandbox.status === "missing" && !sandbox.storage_present)) return null;
+  const status = t(`sandbox.status.${sandboxStatusKey(sandbox.status)}`);
+  const sandboxId = sandboxIdentifier(sandbox);
+  const details = [
+    status,
+    sandboxStorageLabel(sandbox, t),
+    sandboxId ? `${t("sandbox.fields.id")}: ${sandboxId}` : "",
+    sandbox.last_error ?? "",
+  ].filter(Boolean);
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5" title={details.join("\n")}>
+      <span aria-hidden="true">·</span>
+      <span className={cn("h-2 w-2 shrink-0 rounded-full", sandboxStatusIndicatorClass(sandbox.status))} />
+      {status}
+    </span>
+  );
+}
+
 function thinkingUsageMeta(usage?: TurnUsage | null): {
   reasoningDurationMs?: number;
   reasoningTokens?: number;
@@ -2847,6 +2873,7 @@ export function ChatView({
                 {t("memoryChip")}
               </button>
             ) : null}
+            idAccessory={<SandboxHeaderStatus sandbox={sandbox} t={t} />}
           >
             <SessionMenu
               sessionId={sessionId}
