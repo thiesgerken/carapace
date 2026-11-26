@@ -42,7 +42,12 @@ function copyPackage(name, parent, optional = false) {
 
 mkdirSync(destination, { recursive: true });
 cpSync(join(source, "package.json"), join(destination, "package.json"));
-cpSync(join(source, "build"), join(destination, "build"), { recursive: true });
+cpSync(join(source, "build"), join(destination, "build"), {
+  recursive: true,
+  // Without a filter, Node 24 copies natively and applies the read-only store mode to a
+  // directory before filling it (EACCES); the JS path sets directory modes afterwards.
+  filter: () => true,
+});
 for (const file of readdirSync(join(source, "build"), { recursive: true }).filter((file) => file.endsWith(".js"))) {
   const bundle = readFileSync(join(source, "build", file), "utf8");
   for (const [, specifier] of bundle.matchAll(/\brequire\s*\(\s*["']([^"']+)["']\s*\)/g)) {

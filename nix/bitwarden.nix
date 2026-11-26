@@ -1,6 +1,6 @@
 { pkgs }:
 let
-  fullNodejs = pkgs.bitwarden-cli.nodejs;
+  fullNodejs = pkgs.nodejs; # buildNpmPackage default, which bitwarden-cli builds with
   nodejs = pkgs."nodejs-slim_${pkgs.lib.versions.major fullNodejs.version}";
 in
 pkgs.stdenvNoCC.mkDerivation {
