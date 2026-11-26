@@ -255,6 +255,7 @@
               pkgs.jq
               pkgs.process-compose
               pkgs.redis
+              pkgs.socat
             ];
             UV_PYTHON = pkgs.python314.interpreter;
             UV_PYTHON_DOWNLOADS = "never";

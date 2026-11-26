@@ -205,7 +205,7 @@ process-compose up          # frontend on http://127.0.0.1:7300 for stack 0
 uv run carapace --server http://127.0.0.1:7301
 ```
 
-The dev shell supplies Python 3.14, uv, Node.js 24 (with npm), Helm, Skopeo, process-compose, and Redis. See [docs/development.md](docs/development.md) for the dev stack, demo data, sandboxed checks, image builds, and dependency refreshes.
+The dev shell supplies Python 3.14, uv, Node.js 24 (with npm), Helm, Skopeo, process-compose, Redis, and socat. See [docs/development.md](docs/development.md) for the dev stack, demo data, sandboxed checks, image builds, and dependency refreshes.
 
 ### Brand assets
 

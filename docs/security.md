@@ -216,7 +216,7 @@ Every domain check above assumes that sandbox traffic has to pass the session pr
 
 At start, once the session proxy listens, the server creates one throwaway sandbox (`carapace-sandbox-egress-check-<random>`, a fresh name per start) with the same image, network, labels and therefore NetworkPolicy as a session's sandbox, but without proxy settings. Inside it, it tries:
 
-- a TCP connection to the session proxy, which must succeed. This positive control proves that the probe can open connections at all (a `bash` without `/dev/tcp`, a broken pod network or a misbehaving `timeout` would otherwise make every attempt fail and read as "sealed"),
+- a request to the session proxy without credentials, which must get the proxy's own `407` answer. This positive control proves that the probe can open connections at all (a `bash` without `/dev/tcp`, a broken pod network or a misbehaving `timeout` would otherwise make every attempt fail and read as "sealed"), and that the address sandboxes are given really leads to the server. A TCP handshake alone would not: a relay in between (like the [dev stack's](development.md#how-sandboxes-reach-the-server)) accepts connections even when it can't reach the server,
 - direct TCP connections to `1.1.1.1:443`, `8.8.8.8:53` and `9.9.9.9:443`,
 - a TCP connection to port 53 of every non-loopback resolver in the server's own `/etc/resolv.conf`. On Kubernetes that is the cluster DNS: sandbox pods run with `dnsPolicy: None`, so a lookup by name fails there even when a namespace policy such as "allow DNS to kube-system" lets them reach kube-dns directly, which is a channel for data,
 - a DNS lookup of `example.com` by name, which tests Docker's embedded resolver.

@@ -69,22 +69,56 @@ processes:
       period_seconds: 2
       failure_threshold: 60
 
+  # Linux only: the server's loopback ports as unix sockets in ./data/relay, which the relay container mounts.
+  # That path needs no route from Docker to the host, so no host firewall rule. Docker Desktop can't connect to
+  # sockets in bind mounts, so on a Mac the relay goes through host.docker.internal and these exit right away.
+  relay-socket-proxy:
+    command: &relay-socket |
+      [ "$$(uname)" = Darwin ] && exit 0
+      mkdir -p data/relay
+      exec socat "UNIX-LISTEN:data/relay/$$SOCKET.sock,fork,mode=600,unlink-early" "TCP:127.0.0.1:$$PORT"
+    environment:
+      - SOCKET=proxy
+      - PORT=${CARAPACE_DEV_PROXY_PORT}
+
+  relay-socket-sandbox:
+    command: *relay-socket
+    environment:
+      - SOCKET=sandbox
+      - PORT=${CARAPACE_DEV_SANDBOX_PORT}
+
   # Sandboxes sit on an internal network and reach nothing but its containers. The relay is one of them and
-  # forwards the server's proxy and sandbox API to the host (Docker Desktop: the Mac's loopback; Linux: the
-  # docker0 gateway), so a server outside Docker works the same on both.
+  # forwards the server's proxy and sandbox API to the server on the host's loopback: on Linux through the
+  # sockets above, on a Mac through host.docker.internal, which Docker Desktop forwards to the Mac's loopback.
+  # That route leaves the internal network, so there the relay also joins the default bridge.
   relay:
     command: |
       docker rm -f "${CARAPACE_DEV_RELAY}" > /dev/null 2>&1 || true
-      docker create --rm --name "${CARAPACE_DEV_RELAY}" --add-host host.docker.internal:host-gateway \
-        --entrypoint sh alpine/socat@sha256:5aa280c6fc5bee94dbd2bbdf2a58d30f50396eaa110be84b03636945b157ae68 -c '
-          socat TCP-LISTEN:${CARAPACE_DEV_PROXY_PORT},fork,reuseaddr TCP:host.docker.internal:${CARAPACE_DEV_PROXY_PORT} &
-          exec socat TCP-LISTEN:${CARAPACE_DEV_SANDBOX_PORT},fork,reuseaddr TCP:host.docker.internal:${CARAPACE_DEV_SANDBOX_PORT}' \
-        > /dev/null
-      docker network connect "${CARAPACE_DEV_SANDBOX_NETWORK}" "${CARAPACE_DEV_RELAY}"
+      image=alpine/socat@sha256:5aa280c6fc5bee94dbd2bbdf2a58d30f50396eaa110be84b03636945b157ae68
+      if [ "$$(uname)" = Darwin ]; then
+        docker create --rm --name "${CARAPACE_DEV_RELAY}" --add-host host.docker.internal:host-gateway \
+          --entrypoint sh "$$image" -c '
+            socat TCP-LISTEN:${CARAPACE_DEV_PROXY_PORT},fork,reuseaddr TCP:host.docker.internal:${CARAPACE_DEV_PROXY_PORT} &
+            exec socat TCP-LISTEN:${CARAPACE_DEV_SANDBOX_PORT},fork,reuseaddr TCP:host.docker.internal:${CARAPACE_DEV_SANDBOX_PORT}' \
+          > /dev/null
+        docker network connect "${CARAPACE_DEV_SANDBOX_NETWORK}" "${CARAPACE_DEV_RELAY}"
+      else
+        # Before the mount: Docker would create a missing directory as root, where socat can't add its sockets.
+        mkdir -p data/relay
+        docker create --rm --name "${CARAPACE_DEV_RELAY}" --network "${CARAPACE_DEV_SANDBOX_NETWORK}" \
+          -v "$$PWD/data/relay:/relay" --entrypoint sh "$$image" -c '
+            socat TCP-LISTEN:${CARAPACE_DEV_PROXY_PORT},fork,reuseaddr UNIX-CONNECT:/relay/proxy.sock &
+            exec socat TCP-LISTEN:${CARAPACE_DEV_SANDBOX_PORT},fork,reuseaddr UNIX-CONNECT:/relay/sandbox.sock' \
+          > /dev/null
+      fi
       exec docker start --attach "${CARAPACE_DEV_RELAY}"
     depends_on:
       sandbox-network:
         condition: process_completed_successfully
+      relay-socket-proxy:
+        condition: process_started
+      relay-socket-sandbox:
+        condition: process_started
     readiness_probe:
       exec:
         # No docker inspect -f: process-compose renders {{ }} as its own template.
@@ -93,16 +127,6 @@ processes:
   # No hot reload: restart the process after a change.
   server:
     command: |
-      set -eu
-      # The relay reaches the server at host.docker.internal: the Mac's loopback on Docker Desktop, the docker0
-      # gateway on Linux. Looked up at every start, since a Docker restart can move the gateway. An empty host
-      # would bind to all interfaces, so a failed lookup stops here.
-      if [ "$$(uname)" = Darwin ]; then
-        CARAPACE_SERVER_SANDBOX_HOST=127.0.0.1
-      else
-        CARAPACE_SERVER_SANDBOX_HOST=$$(docker network inspect bridge | jq -er '.[0].IPAM.Config[0].Gateway')
-      fi
-      export CARAPACE_SERVER_SANDBOX_HOST
       export CARAPACE_DATA_DIR="$$PWD/data"
       # The server sets git config with --global, meant for its container's HOME: keep it off ~/.gitconfig.
       export GIT_CONFIG_GLOBAL="$$CARAPACE_DATA_DIR/gitconfig"
