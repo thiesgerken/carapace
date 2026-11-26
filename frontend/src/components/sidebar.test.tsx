@@ -47,6 +47,7 @@ test("a session row is a title and one meta line, with its actions behind a ⋯ 
                 return session;
               }}
               onSetArchived={async (id, archived) => void calls.push(`archived ${id} ${archived}`)}
+              archivingSessionIds={[]}
               onDelete={async () => {}}
               onDisconnect={() => {}}
               githubUrl="https://github.com/thiesgerken/carapace"

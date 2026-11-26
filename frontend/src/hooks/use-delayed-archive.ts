@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SessionInfo } from "@/lib/types";
 
 /** How long an archive waits for an undo before it reaches the server. */
 export const ARCHIVE_UNDO_DELAY_MS = 5_000;
@@ -6,6 +7,7 @@ export const ARCHIVE_UNDO_DELAY_MS = 5_000;
 type PendingArchive = {
   sessionId: string;
   timeout: ReturnType<typeof setTimeout>;
+  settled: Promise<void>;
   settle: () => void;
 };
 
@@ -20,7 +22,16 @@ export type DelayedArchive = {
   undo: () => void;
   /** Sends the waiting archive right away. */
   commitNow: () => void;
+  /** Settles once the archive request already sent for *sessionId*, if any, has finished. */
+  untilSent: (sessionId: string) => Promise<void>;
 };
+
+/** *session* as the UI shows it while its archive waits or runs. */
+export function overlayArchiving(session: SessionInfo, archivingSessionIds: readonly string[]): SessionInfo {
+  return archivingSessionIds.includes(session.session_id)
+    ? { ...session, attributes: { ...session.attributes, archived: true } }
+    : session;
+}
 
 /**
  * Archiving commits a session to knowledge and tears down its sandbox, which the server can't take back. So the
@@ -31,6 +42,7 @@ export function useDelayedArchive(archive: (sessionId: string) => Promise<unknow
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
   const [sendingSessionIds, setSendingSessionIds] = useState<readonly string[]>([]);
   const pendingRef = useRef<PendingArchive | null>(null);
+  const sendingRef = useRef(new Map<string, Promise<void>>());
   const archiveRef = useRef(archive);
 
   useEffect(() => {
@@ -51,12 +63,17 @@ export function useDelayedArchive(archive: (sessionId: string) => Promise<unknow
     if (!pending) return;
     const { sessionId } = pending;
     setSendingSessionIds((ids) => [...ids, sessionId]);
-    archiveRef.current(sessionId)
-      .catch((error: unknown) => console.error(`Failed to archive session ${sessionId}`, error))
+    const sent = archiveRef.current(sessionId)
+      .then(
+        () => {},
+        (error: unknown) => console.error(`Failed to archive session ${sessionId}`, error),
+      )
       .finally(() => {
+        sendingRef.current.delete(sessionId);
         setSendingSessionIds((ids) => ids.filter((id) => id !== sessionId));
         pending.settle();
       });
+    sendingRef.current.set(sessionId, sent);
   }, [takePending]);
 
   const undo = useCallback(() => {
@@ -64,16 +81,27 @@ export function useDelayedArchive(archive: (sessionId: string) => Promise<unknow
   }, [takePending]);
 
   const schedule = useCallback((sessionId: string) => {
+    const waiting = pendingRef.current;
+    if (waiting?.sessionId === sessionId) return waiting.settled;
     commitNow();
-    return new Promise<void>((resolve) => {
-      pendingRef.current = { sessionId, settle: resolve, timeout: setTimeout(commitNow, ARCHIVE_UNDO_DELAY_MS) };
-      setPendingSessionId(sessionId);
+    let settle = () => {};
+    const settled = new Promise<void>((resolve) => {
+      settle = resolve;
     });
+    pendingRef.current = { sessionId, settled, settle, timeout: setTimeout(commitNow, ARCHIVE_UNDO_DELAY_MS) };
+    setPendingSessionId(sessionId);
+    return settled;
   }, [commitNow]);
+
+  const untilSent = useCallback(async (sessionId: string) => {
+    await sendingRef.current.get(sessionId);
+  }, []);
 
   useEffect(() => () => {
     const pending = pendingRef.current;
-    if (pending) clearTimeout(pending.timeout);
+    if (!pending) return;
+    clearTimeout(pending.timeout);
+    pending.settle();
   }, []);
 
   const archivingSessionIds = useMemo(
@@ -81,5 +109,5 @@ export function useDelayedArchive(archive: (sessionId: string) => Promise<unknow
     [pendingSessionId, sendingSessionIds],
   );
 
-  return { pendingSessionId, archivingSessionIds, schedule, undo, commitNow };
+  return { pendingSessionId, archivingSessionIds, schedule, undo, commitNow, untilSent };
 }

@@ -85,6 +85,7 @@ function AppChrome({ children }: { children: ReactNode }) {
           onNavigate={() => setSidebarOpen(false)}
           onUpdateAttributes={shell.onUpdateSessionAttributes}
           onSetArchived={shell.onSetSessionArchived}
+          archivingSessionIds={shell.archivingSessionIds}
           onDelete={shell.onDeleteSession}
           onDisconnect={shell.onDisconnect}
           githubUrl={GITHUB_REPO_URL}
@@ -121,10 +122,11 @@ function AppChrome({ children }: { children: ReactNode }) {
       {shell.pendingArchive ? (
         <Toast
           message={t("toast.archived")}
-          actionLabel={t("toast.undo")}
-          onAction={shell.pendingArchive.undo}
+          action={{ label: t("toast.undo"), onClick: shell.pendingArchive.undo }}
           onClose={shell.pendingArchive.commitNow}
         />
+      ) : shell.archiveFailed ? (
+        <Toast message={t("toast.archiveFailed")} onClose={shell.onDismissArchiveFailure} />
       ) : null}
     </div>
   );

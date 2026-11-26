@@ -12,6 +12,7 @@ import { SandboxUsageBanner } from "@/components/sandbox-usage-banner";
 import { SessionRowMenu } from "@/components/session-menu";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { agentIcon } from "@/hooks/use-brand";
+import { overlayArchiving } from "@/hooks/use-delayed-archive";
 import { useSessionSearch, type SessionSearchMode } from "@/hooks/use-session-search";
 import type { AuthUserInfo } from "@/lib/api";
 import type { SandboxUsage, SessionAttributesPatch, SessionInfo, SessionSandboxSnapshot, SessionSearchHit } from "@/lib/types";
@@ -42,6 +43,8 @@ interface SidebarProps {
   onUpdateAttributes: (sessionId: string, attributes: SessionAttributesPatch) => Promise<SessionInfo>;
   /** Archiving waits for an undo first, see `AppShell.onSetSessionArchived`. */
   onSetArchived: (sessionId: string, archived: boolean) => Promise<void>;
+  /** Search hits come from the server, which doesn't know about these yet; `sessions` already shows them archived. */
+  archivingSessionIds: readonly string[];
   onDelete: (sessionId: string, options?: { skipUnpushedWarning?: boolean }) => Promise<void>;
   onDisconnect: () => void;
   githubUrl: string;
@@ -119,6 +122,7 @@ export function Sidebar({
   onNavigate,
   onUpdateAttributes,
   onSetArchived,
+  archivingSessionIds,
   onDelete,
   onDisconnect,
   githubUrl,
@@ -365,7 +369,7 @@ export function Sidebar({
     }
     return (
       <div className="space-y-0.5">
-        {hits.map((hit) => renderSessionRow(hit.session, hit.snippet))}
+        {hits.map((hit) => renderSessionRow(overlayArchiving(hit.session, archivingSessionIds), hit.snippet))}
       </div>
     );
   }
@@ -435,7 +439,7 @@ export function Sidebar({
           active ? "bg-primary/10 text-foreground" : "text-foreground/80 hover:bg-muted",
         )}
       >
-        <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex min-w-0 items-center gap-2.5 overflow-hidden">
           <MessageSquare className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
           <div className="min-w-0 flex-1 truncate text-sm font-medium" title={session.title || session.session_id}>
             {session.title ? (
@@ -459,7 +463,7 @@ export function Sidebar({
             <HighlightedText text={snippet} query={search.hitsQuery} />
           </div>
         ) : null}
-        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
           {sandbox ? (
             <span
               title={t(`chatView.sandbox.status.${sandboxStatusKey(sandbox.status)}`)}

@@ -1921,6 +1921,7 @@
     "toast": {
         "archived": "Archiviert",
         "undo": "Rückgängig",
+        "archiveFailed": "Archivieren fehlgeschlagen",
         "close": "Schließen"
     }
 }

@@ -17,7 +17,7 @@ import {
   type AuthUserInfo,
 } from "@/lib/api";
 import { type NewSessionOptions } from "@/components/new-session-button";
-import { useDelayedArchive, type DelayedArchive } from "@/hooks/use-delayed-archive";
+import { overlayArchiving, useDelayedArchive, type DelayedArchive } from "@/hooks/use-delayed-archive";
 import {
   clearChatDraft,
   clearConnection,
@@ -116,6 +116,11 @@ export interface AppShell {
   onSetSessionArchived: (id: string, archived: boolean) => Promise<void>;
   /** The archive waiting for an undo, if any. Its session already shows as archived. */
   pendingArchive: Pick<DelayedArchive, "undo" | "commitNow"> | null;
+  /** Sessions to show as archived although the server doesn't know yet; `sessions` already does. */
+  archivingSessionIds: readonly string[];
+  /** The last archive request failed, and the user hasn't dismissed that yet. */
+  archiveFailed: boolean;
+  onDismissArchiveFailure: () => void;
   onDeleteSession: (id: string, options?: { skipUnpushedWarning?: boolean }) => Promise<void>;
   onForkSession: (session: SessionInfo) => void;
   onLoadMore: () => void;
@@ -508,19 +513,21 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     return updated;
   }, [activeSessionId, refreshSandboxUsage, router, server, token]);
 
+  const [archiveFailed, setArchiveFailed] = useState(false);
+  const onDismissArchiveFailure = useCallback(() => setArchiveFailed(false), []);
   const {
     pendingSessionId: pendingArchiveId,
     archivingSessionIds,
     schedule: scheduleArchive,
     undo: undoArchive,
     commitNow: commitArchiveNow,
-  } = useDelayedArchive((id) => onUpdateSessionAttributes(id, { archived: true }));
+    untilSent: untilArchiveSent,
+  } = useDelayedArchive((id) => onUpdateSessionAttributes(id, { archived: true }).catch((error: unknown) => {
+    setArchiveFailed(true);
+    throw error;
+  }));
   const listedSessions = useMemo(
-    () => sessions.map((session) => (
-      archivingSessionIds.includes(session.session_id)
-        ? { ...session, attributes: { ...session.attributes, archived: true } }
-        : session
-    )),
+    () => sessions.map((session) => overlayArchiving(session, archivingSessionIds)),
     [archivingSessionIds, sessions],
   );
   const activeSession = listedSessions.find((session) => session.session_id === activeSessionId) ?? null;
@@ -530,10 +537,15 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
   );
 
   const onSetSessionArchived = useCallback(async (id: string, archived: boolean) => {
-    if (archived) return scheduleArchive(id);
+    if (archived) {
+      setArchiveFailed(false);
+      return scheduleArchive(id);
+    }
     if (id === pendingArchiveId) return undoArchive();
+    // Sent while the archive request still runs, the unarchive could reach the server first.
+    await untilArchiveSent(id);
     await onUpdateSessionAttributes(id, { archived: false });
-  }, [onUpdateSessionAttributes, pendingArchiveId, scheduleArchive, undoArchive]);
+  }, [onUpdateSessionAttributes, pendingArchiveId, scheduleArchive, undoArchive, untilArchiveSent]);
 
   const onSessionUpdate = useCallback((session: SessionInfo) => {
     setSessions((prev) => {
@@ -606,6 +618,9 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onUpdateSessionAttributes,
     onSetSessionArchived,
     pendingArchive,
+    archivingSessionIds,
+    archiveFailed,
+    onDismissArchiveFailure,
     onDeleteSession,
     onForkSession,
     onLoadMore,
@@ -638,6 +653,9 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onUpdateSessionAttributes,
     onSetSessionArchived,
     pendingArchive,
+    archivingSessionIds,
+    archiveFailed,
+    onDismissArchiveFailure,
     server,
     serverVersion,
     sandboxUsage,
