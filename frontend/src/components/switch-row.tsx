@@ -1,16 +1,48 @@
 "use client";
 
-import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+/**
+ * The switch's track and knob, for a `role="switch"` button that brings its own label. Off is a grey track
+ * with a light knob in both themes: a background-coloured knob on a muted track vanishes in dark mode.
+ */
+export function SwitchTrack({
+  checked,
+  warning = false,
+  small = false,
+  className,
+}: {
+  checked: boolean;
+  /** The checked state lowers a safeguard, so it warns instead of reading as a plain selection. */
+  warning?: boolean;
+  small?: boolean;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "relative inline-flex shrink-0 items-center rounded-full transition-colors",
+        small ? "h-5 w-9" : "h-7 w-12",
+        !checked ? "bg-muted-foreground/30" : warning ? "bg-warning" : "bg-primary",
+        className,
+      )}
+    >
+      <span
+        className={cn(
+          "inline-block rounded-full bg-background shadow-sm transition-transform dark:bg-foreground",
+          small ? "h-4 w-4" : "h-5 w-5",
+          small ? (checked ? "translate-x-[1.125rem]" : "translate-x-0.5") : checked ? "translate-x-6" : "translate-x-1",
+        )}
+      />
+    </span>
+  );
+}
 
 type SwitchRowProps = {
   checked: boolean;
   label: string;
   description?: string;
-  /** Shown before the label, tinted like the track: muted when off. */
-  icon?: LucideIcon;
-  /** The checked state lowers a safeguard (YOLO), so it warns instead of reading as a plain selection. */
-  warning?: boolean;
   disabled?: boolean;
   onCheckedChange: (checked: boolean) => void;
   className?: string;
@@ -20,8 +52,6 @@ export function SwitchRow({
   checked,
   label,
   description,
-  icon: Icon,
-  warning = false,
   disabled = false,
   onCheckedChange,
   className,
@@ -41,31 +71,9 @@ export function SwitchRow({
         className,
       )}
     >
-      <span
-        aria-hidden="true"
-        className={cn(
-          "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors",
-          hasDescription && "mt-0.5",
-          !checked ? "border-border bg-muted" : warning ? "border-warning bg-warning" : "border-primary bg-primary",
-        )}
-      >
-        <span
-          className={cn(
-            "inline-block h-5 w-5 rounded-full bg-background shadow-sm transition-transform",
-            checked ? "translate-x-6" : "translate-x-1",
-          )}
-        />
-      </span>
+      <SwitchTrack checked={checked} className={cn(hasDescription && "mt-0.5")} />
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-          {Icon ? (
-            <Icon
-              aria-hidden="true"
-              className={cn("h-4 w-4 shrink-0", !checked ? "text-muted-foreground" : warning ? "text-warning" : "text-primary")}
-            />
-          ) : null}
-          {label}
-        </span>
+        <span className="block text-sm font-medium text-foreground">{label}</span>
         {description ? (
           <span className="mt-0.5 block text-sm text-muted-foreground">{description}</span>
         ) : null}
