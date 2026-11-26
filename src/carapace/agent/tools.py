@@ -525,7 +525,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             return _emit_tool_result(
                 ctx,
                 "read_skill",
-                f"Error: {skill_name} is turned off in skills/config.json. Remove its `\"enable\": false` there, "
+                f'Error: {skill_name} is turned off in skills/config.json. Remove its `"enable": false` there, '
                 "commit and push to use it.",
                 exit_code=1,
             )

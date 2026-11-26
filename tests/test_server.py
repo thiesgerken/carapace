@@ -32,7 +32,7 @@ from carapace.api_keys import Access, ApiKeyGrant, ApiKeyStore, Scope
 from carapace.artifact_shares import ArtifactShareStore
 from carapace.auth import AuthStore
 from carapace.bootstrap import ensure_data_dir
-from carapace.builder.skill_builds import RetryRefusedError, SkillBuild, SkillBuilds
+from carapace.builder.skill_builds import RetryRefusedError, SkillBuild, SkillBuilds, SkillCommand, SkillNeeds
 from carapace.codex_auth import CodexAccounts, CodexCredentialStore
 from carapace.config import build_config, resolve_user_knowledge_dir
 from carapace.credentials import CredentialBackendError, CredentialRegistry
@@ -3891,6 +3891,77 @@ def test_gate_request_approves_everything_for_the_exec_in_one_review(client, aut
     resp = sb_client.post("/gate", json=body, headers=headers)
     assert resp.status_code == 200
     sentinel.evaluate_upfront_request.assert_awaited_once()
+
+
+def _skill_with(monkeypatch, commands: dict[str, SkillCommand]) -> None:
+    """A built skill whose package is _STORE_PATH, with a setting of this instance."""
+    build = SkillBuild(
+        skill="weather",
+        key="0" * 64,
+        state="succeeded",
+        store_paths=[_STORE_PATH],
+        commands=commands,
+        detail="",
+        settings={"CITY": "Berlin", "PORT": 443},
+    )
+    builds = MagicMock()
+    builds.installed = AsyncMock(side_effect=lambda _repo, path: build if path == _STORE_PATH else None)
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+
+
+def _command(**needs: object) -> SkillCommand:
+    empty: dict[str, object] = {"domains": [], "credentials": {}, "oauth": [], "tunnels": []}
+    return SkillCommand(description="", needs=SkillNeeds.model_validate(empty | needs), mcp=False)
+
+
+def test_gate_reviews_a_skill_commands_needs_and_answers_with_its_settings(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    _skill_with(monkeypatch, {"weather": _command(domains=["berlin.example.com"], credentials={"TOKEN": "demo/t"})})
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"store_path": _STORE_PATH, "command": "weather"}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"settings": {"CITY": "Berlin", "PORT": 443}, "credentials": {"TOKEN": "demo/t"}}
+    request = sentinel.evaluate_upfront_request.await_args.args[1]
+    assert (request.domains, [c.vault_path for c in request.credentials]) == (["berlin.example.com"], ["demo/t"])
+    assert request.store_path == _STORE_PATH
+    assert running.credentials == {("demo/t", "password")}
+
+
+def test_gate_answers_a_command_without_needs_without_a_review(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, _ = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="deny", explanation="never asked"))
+    _skill_with(monkeypatch, {"weather": _command()})
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"store_path": _STORE_PATH, "command": "weather"}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert resp.json() == {"settings": {"CITY": "Berlin", "PORT": 443}, "credentials": {}}
+    sentinel.evaluate_upfront_request.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("body", "status"),
+    [
+        ({"store_path": _STORE_PATH, "command": "other"}, 403),
+        ({"store_path": "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-elsewhere", "command": "weather"}, 403),
+        ({"command": "weather"}, 400),
+        ({"store_path": _STORE_PATH, "command": "weather", "domains": ["evil.example.com"]}, 400),
+    ],
+)
+def test_gate_refuses_a_command_that_is_not_the_built_skills(client, auth_headers, monkeypatch, body, status):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, _ = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    _skill_with(monkeypatch, {"weather": _command(domains=["berlin.example.com"])})
+
+    resp = TestClient(sandbox_app).post("/gate", json=body, headers=_sandbox_basic_auth(sid))
+
+    assert resp.status_code == status
+    sentinel.evaluate_upfront_request.assert_not_awaited()
 
 
 def test_gate_request_denial_carries_the_explanation(client, auth_headers, monkeypatch):

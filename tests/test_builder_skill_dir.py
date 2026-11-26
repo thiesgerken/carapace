@@ -90,7 +90,11 @@ def _nix(directory: str, *, build_code: int = 0):
 
     async def run(*args: str) -> tuple[int, str, str]:
         if args[1] == "eval":
-            return 0, json.dumps({"enable": True, "name": "demo", "skillDir": directory, "settings": {}, "commands": {}}), ""
+            return (
+                0,
+                json.dumps({"enable": True, "name": "demo", "skillDir": directory, "settings": {}, "commands": {}}),
+                "",
+            )
         if build_code:
             return build_code, "", "error: builder ran out of disk"
         return 0, json.dumps([{"outputs": {"out": "/nix/store/x-skill-demo"}}]), "built"
@@ -156,3 +160,31 @@ async def test_the_client_refuses_a_path_out_of_the_skill_before_asking() -> Non
 
     with pytest.raises(SkillFileError):
         await client.skill_file(KEY, "../../builds/other")
+
+
+async def test_a_skill_turned_off_is_not_built(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    async def run(*args: str) -> tuple[int, str, str]:
+        calls.append(args[1])
+        return 0, json.dumps({"enable": False}), ""
+
+    monkeypatch.setattr(nix, "_run", run)
+
+    result = await _build(tmp_path)
+
+    assert (result.state, result.metadata, result.store_paths, calls) == ("succeeded", {"enable": False}, [], ["eval"])
+
+
+async def test_a_skills_flake_without_manifests_says_how_to_write_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def run(*_args: str) -> tuple[int, str, str]:
+        return 1, "", "error: flake 'path:/x' does not provide attribute 'manifests.x86_64-linux.demo'"
+
+    monkeypatch.setattr(nix, "_run", run)
+
+    result = await _build(tmp_path)
+
+    assert result.state == "failed"
+    assert result.log_tail.startswith("skills/flake.nix has no manifests for its skills: write its outputs with")
