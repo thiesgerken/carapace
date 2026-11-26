@@ -199,7 +199,7 @@ class SandboxExecCoordinator:
         """
         async with self.get_exec_lock(session_id):
             sc = await ensure_session(session_id)
-            return await self._profile_sync.sync(session_id, sc.container_id)
+            return await self._profile_sync.sync(sc)
 
     async def kill_leftover_processes(self, sc: SessionContainer) -> int:
         """Kill every process in *sc* except PID 1 and return how many the agent left behind.
@@ -221,7 +221,7 @@ class SandboxExecCoordinator:
         """Start the profile sync the killer interrupted."""
         marker = self._profile_markers.pop(sc.session_id, None)
         if marker is not None:
-            self._profile_sync.start(sc.session_id, sc.container_id, marker=marker)
+            self._profile_sync.start(sc, marker=marker)
 
     def _grant_exec_scope(self, session_id: str, command: str) -> None:
         self._state.session_current_command[session_id] = command

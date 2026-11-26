@@ -21,7 +21,7 @@ from carapace.sandbox.exec_flow import (
     SandboxExecState,
 )
 from carapace.sandbox.manager import SandboxManager
-from carapace.sandbox.runtime import ExecResult
+from carapace.sandbox.runtime import ExecResult, PoolSandbox
 from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.sandbox.skill_profile import KILLER_MARKER, SYNC_PID_FILE, SkillProfileSync
 from carapace.session.manager import SessionManager, SessionMeta
@@ -29,6 +29,7 @@ from carapace.skills import SkillRegistry
 from tests.runtime_mocks import make_runtime_mock
 
 _NEEDS = SkillNeeds(domains=[], credentials={}, tunnels=[])
+_IMAGE = "carapace-sandbox:latest"
 
 
 def _path(name: str) -> str:
@@ -83,16 +84,19 @@ class SandboxStub:
         self.syncs = 0
         self.interrupt_next = False
         self.fail_with = ""
+        # The env the last `nix-env` ran with.
+        self.sync_env: dict[str, str] | None = None
         # Set: `nix-env` runs until the test releases it.
         self.hold: asyncio.Event | None = None
 
-    async def exec(self, _container_id: str, command: Any, *_args: object, **_kwargs: object) -> ExecResult:
+    async def exec(self, _container_id: str, command: Any, *_args: object, **kwargs: Any) -> ExecResult:
         if command == KILL_LEFTOVER_PROCESSES_COMMAND:
             return ExecResult(stdout=f"0\n{self.marker}", exit_code=0, output="")
         if command == ["/bin/sh", "-c", KILLER_MARKER]:
             return ExecResult(stdout=self.marker, exit_code=0, output=self.marker)
         if command[:2] == ["/bin/bash", "-c"] and "nix-env" in command[2]:
             self.syncs += 1
+            self.sync_env = kwargs.get("env")
             # What this run installs: the script carries the plan it was made from.
             plan = self.plan
             if self.hold is not None:
@@ -146,7 +150,7 @@ async def test_a_sync_interrupted_by_an_exec_converges_on_restart() -> None:
     stub.interrupt_next = True
     coordinator, sync = _coordinator(stub)
 
-    sync.start("s1", "container-1", marker=None)
+    sync.start(_SC, marker=None)
     await _idle_tasks(sync)
     assert (stub.profile, stub.marker) == ((), "")
 
@@ -160,7 +164,7 @@ async def test_a_sync_interrupted_by_an_exec_converges_on_restart() -> None:
 async def test_an_up_to_date_profile_is_left_alone_and_a_new_build_is_synced() -> None:
     stub = SandboxStub(ProfilePlan(store_paths=(_path("a-skill"),), excluded={}))
     coordinator, sync = _coordinator(stub)
-    sync.start("s1", "container-1", marker=None)
+    sync.start(_SC, marker=None)
     await _idle_tasks(sync)
 
     await _after_exec_killer(coordinator)
@@ -188,14 +192,10 @@ async def test_command_not_found_during_a_sync_gets_a_hint() -> None:
     assert sync.with_hint("s1", ok) == ok
 
 
-@pytest.mark.anyio
-async def test_a_fresh_sandbox_syncs_without_anyone_asking(tmp_path: Path, db_factory: Any) -> None:
+def _sandbox_manager(tmp_path: Path, db_factory: Any, runtime: Any, **kwargs: Any) -> SandboxManager:
     SessionManager(db_factory, tmp_path).save_meta("s1", SessionMeta(user="thies"))
-    stub = SandboxStub(ProfilePlan(store_paths=(_path("a-skill"),), excluded={}))
-    runtime = make_runtime_mock()
     runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-    runtime.exec = AsyncMock(side_effect=stub.exec)
-    manager = SandboxManager(
+    return SandboxManager(
         runtime=runtime,
         server_host="172.18.0.1",
         network_name="carapace-sandbox-default",
@@ -207,7 +207,16 @@ async def test_a_fresh_sandbox_syncs_without_anyone_asking(tmp_path: Path, db_fa
             skill_registry=SkillRegistry(tmp_path / "skills"),
         ),
         session_factory=db_factory,
+        **kwargs,
     )
+
+
+@pytest.mark.anyio
+async def test_a_fresh_sandbox_syncs_without_anyone_asking(tmp_path: Path, db_factory: Any) -> None:
+    stub = SandboxStub(ProfilePlan(store_paths=(_path("a-skill"),), excluded={}))
+    runtime = make_runtime_mock()
+    runtime.exec = AsyncMock(side_effect=stub.exec)
+    manager = _sandbox_manager(tmp_path, db_factory, runtime)
     plan_ready = asyncio.Event()
 
     async def plan_for(_session_id: str) -> ProfilePlan:
@@ -223,6 +232,44 @@ async def test_a_fresh_sandbox_syncs_without_anyone_asking(tmp_path: Path, db_fa
     plan_ready.set()
     await _idle_tasks(manager._profile_sync)
     assert stub.profile == (_path("a-skill"),)
+
+
+@pytest.mark.anyio
+async def test_the_sync_in_a_claimed_warm_sandbox_runs_with_the_session_env(tmp_path: Path, db_factory: Any) -> None:
+    stub = SandboxStub(ProfilePlan(store_paths=(_path("a-skill"),), excluded={}))
+    runtime = make_runtime_mock()
+    runtime.runtime_kind = "kubernetes"
+    # A pool member's pod spec has no env: the session's NIX_CONFIG and proxy exist only in session_env.
+    runtime.list_pool_sandboxes = AsyncMock(
+        return_value={"warm-1": PoolSandbox(container_id="warm-pod-1", image=_IMAGE)}
+    )
+    runtime.claim_warm_sandbox = AsyncMock(return_value=True)
+    runtime.exec = AsyncMock(side_effect=stub.exec)
+    nix_config = "substituters = http://cache.carapace.internal"
+    manager = _sandbox_manager(
+        tmp_path,
+        db_factory,
+        runtime,
+        base_image=_IMAGE,
+        warm_pool_size=1,
+        nix_config=AsyncMock(return_value=nix_config),
+    )
+    manager._session_lifecycle.ensure_warm_pool = AsyncMock(return_value=1)
+
+    async def plan_for(_session_id: str) -> ProfilePlan:
+        return stub.plan
+
+    manager.set_skill_profile_plan_callback(plan_for)
+
+    sc = await manager.ensure_session("s1")
+    await _idle_tasks(manager._profile_sync)
+
+    runtime.create_sandbox.assert_not_awaited()
+    assert sc.container_id == "warm-pod-1"
+    assert stub.profile == (_path("a-skill"),)
+    assert stub.sync_env is not None
+    assert stub.sync_env["NIX_CONFIG"] == nix_config
+    assert stub.sync_env["HTTP_PROXY"].startswith("http://s1:")
 
 
 def test_a_removed_or_disabled_skill_drops_out_of_the_plan() -> None:
@@ -255,7 +302,7 @@ async def test_the_killer_cancels_a_sync_that_has_not_started_nix_env_yet() -> N
         return stub.plan
 
     sync.set_plan_callback(slow_plan)
-    sync.start("s1", "container-1", marker=None)
+    sync.start(_SC, marker=None)
     await asyncio.sleep(0)
     sync.stop("s1")
     planning.set()
@@ -319,7 +366,7 @@ async def test_a_waited_sync_lets_a_running_one_finish_and_then_syncs_a_newer_pl
     stub = SandboxStub(ProfilePlan(store_paths=(_path("a-skill"),), excluded={}))
     coordinator, sync = _coordinator(stub)
     stub.hold = asyncio.Event()
-    sync.start("s1", "container-1", marker=None)
+    sync.start(_SC, marker=None)
     while not stub.syncs:
         await asyncio.sleep(0)
     stub.plan = ProfilePlan(store_paths=(_path("a-skill"), _path("b-skill")), excluded={})
