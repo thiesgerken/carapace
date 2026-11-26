@@ -72,6 +72,7 @@ from carapace.session import SessionEngine, SessionManager, sent_files
 from carapace.session.archive import SessionArchiveResult, SessionArchiveService
 from carapace.spans import TurnTrace
 from carapace.usage import CostSplit, LlmRequestLog, LlmRequestRecord, LlmRequestState
+from tests.skills_flake import write_skills_flake
 
 _TEST_TOKEN = "test-bearer-token-for-server-tests"
 
@@ -5413,6 +5414,7 @@ def _make_skill(name: str, *, under_skills: bool = True) -> Path:
     directory = root / ("skills" if under_skills else "notes") / name
     directory.mkdir(parents=True)
     (directory / "SKILL.md").write_text(f"---\nname: {name}\ndescription: demo\n---\nBody\n")
+    write_skills_flake(root / "skills", [name])
     return directory
 
 
@@ -5422,7 +5424,7 @@ def _builds_reporting(state: str) -> MagicMock:
         return_value=[
             SkillBuild(
                 skill="weather",
-                tree="4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                key="9f2b6c1e4d8a3f7b" * 4,
                 state=state,  # type: ignore[arg-type]
                 store_paths=[],
                 commands={},
@@ -5446,11 +5448,11 @@ def test_a_skill_listing_shows_its_build(
 
     assert build == {
         "state": "failed",
-        "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "key": "9f2b6c1e4d8a3f7b" * 4,
         "commands": {},
         "log_tail": "error: flake.lock is missing nixpkgs",
     }
-    # Only skills directly under skills/ are built.
+    # Only skills skills/flake.nix lists are built.
     assert elsewhere is None
 
 

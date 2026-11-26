@@ -22,7 +22,7 @@ from ..models.git import FileCommit
 from ..models.skills import SkillCarapaceConfig
 from ..session.manager import SessionManager
 from ..session.sent_files import INLINE_MIME_TYPES, guess_mime
-from ..skills import SkillDocumentError, parse_skill_document
+from ..skills import SkillDocumentError, SkillsFlakeError, parse_skill_document, read_skills_flake
 from .artifact_rendering import artifact_headers
 from .auth import require
 from .state import server_module
@@ -118,10 +118,10 @@ class KnowledgeSkill(BaseModel):
 
 
 class KnowledgeSkillBuild(BaseModel):
-    """How the skill's flake at HEAD is built; uncommitted edits are not built."""
+    """How the skill is built at HEAD; uncommitted edits are not built."""
 
     state: BuildState
-    tree: str
+    key: str
     commands: dict[str, SkillCommand]
     # Why it failed or is unavailable: the end of the build log, or what went wrong before it.
     log_tail: str
@@ -149,9 +149,10 @@ class KnowledgeDirListing(BaseModel):
     doc_name: str | None = None
     doc: str | None = None
     skill: KnowledgeSkill | None = None
-    # Only for a flake skill directly under skills/ at HEAD: those are the ones that get built.
     build: KnowledgeSkillBuild | None = None
     artifact: KnowledgeArtifact | None = None
+    # On the root and skills/: why the repo has no skills (skills/flake.nix or its lock unusable), with the fix.
+    skills_error: str | None = None
 
 
 class KnowledgeFileInfo(BaseModel):
@@ -200,7 +201,18 @@ def artifact_info(target: Path, root: Path) -> KnowledgeArtifact | None:
     return KnowledgeArtifact(slug=slug, title=artifact_title(index) or slug)
 
 
-def build_entry(child: Path, root: Path) -> KnowledgeEntry:
+def listed_skill_dirs(root: Path) -> tuple[dict[Path, str], str | None]:
+    """Directory -> name of each local skill skills/flake.nix lists, or why the repo has no skills."""
+    try:
+        listed = read_skills_flake(root / "skills")
+    except SkillsFlakeError as exc:
+        return {}, str(exc)
+    # Resolved, as the entries they are matched against are.
+    skills = root / "skills"
+    return {(skills / skill.directory).resolve(): skill.name for skill in listed if skill.directory is not None}, None
+
+
+def build_entry(child: Path, root: Path, skill_dirs: dict[Path, str]) -> KnowledgeEntry:
     resolved = contained_target(child, root)
     if resolved is None:
         # Dangling or escaping symlink: name it, but never read through it.
@@ -222,7 +234,7 @@ def build_entry(child: Path, root: Path) -> KnowledgeEntry:
     if archive is not None:
         title, session_id = archive
         return KnowledgeEntry(name=child.name, type="dir", kind="session", label=title, session_id=session_id)
-    if contained_target(resolved / SKILL_DOC, root) is not None:
+    if resolved in skill_dirs:
         return KnowledgeEntry(name=child.name, type="dir", kind="skill")
     return KnowledgeEntry(name=child.name, type="dir")
 
@@ -235,27 +247,31 @@ def find_readme(target: Path, entries: list[KnowledgeEntry], root: Path) -> Path
     return None
 
 
-def inline_doc(target: Path, entries: list[KnowledgeEntry], listing: KnowledgeDirListing, root: Path) -> None:
+def inline_doc(
+    target: Path, entries: list[KnowledgeEntry], listing: KnowledgeDirListing, root: Path, skill: str | None
+) -> None:
     """Attach the directory's defining document, so the browser needs no second request.
 
-    A SKILL.md marks a skill dir (the marker SkillRegistry scans for) and gets its
-    frontmatter split out; any other directory falls back to its README.
+    A listed skill's SKILL.md gets its frontmatter split out; any other directory falls back to its README.
     """
-    skill_doc = contained_target(target / SKILL_DOC, root)
-    if skill_doc is not None and skill_doc.is_file():
-        raw = read_text_content(skill_doc, skill_doc.stat().st_size)
-        if raw is None:
-            return
+    if skill is not None:
         listing.kind = "skill"
+        # Named by its attribute in skills/flake.nix, whatever the frontmatter says.
+        listing.skill = KnowledgeSkill(name=skill)
+        skill_doc = contained_target(target / SKILL_DOC, root)
+        raw = read_text_content(skill_doc, skill_doc.stat().st_size) if skill_doc and skill_doc.is_file() else None
+        if raw is None:
+            listing.skill.error = f"{SKILL_DOC} is missing or not text"
+            return
         listing.doc_name = SKILL_DOC
         try:
-            document = parse_skill_document(raw, fallback_name=target.name)
+            document = parse_skill_document(raw, fallback_name=skill)
         except SkillDocumentError as exc:
             listing.doc = raw
-            listing.skill = KnowledgeSkill(name=target.name, error=str(exc))
+            listing.skill.error = str(exc)
             return
         listing.doc = document.body
-        listing.skill = KnowledgeSkill(name=document.name, description=document.description)
+        listing.skill.description = document.description
         try:
             listing.skill.carapace = document.carapace_config()
         except SkillDocumentError as exc:
@@ -274,7 +290,8 @@ def inline_doc(target: Path, entries: list[KnowledgeEntry], listing: KnowledgeDi
 def list_dir(root: Path, target: Path) -> KnowledgeDirListing:
     # `.git` is filtered by name here rather than left to contained_target, which would
     # report it as an unreadable entry instead of hiding it.
-    entries = [build_entry(child, root) for child in target.iterdir() if child.name != ".git"]
+    skill_dirs, skills_error = listed_skill_dirs(root)
+    entries = [build_entry(child, root, skill_dirs) for child in target.iterdir() if child.name != ".git"]
     entries.sort(key=lambda e: (e.type != "dir", e.name.casefold()))
     rel = target.relative_to(root)
     artifact = artifact_info(target, root)
@@ -285,7 +302,9 @@ def list_dir(root: Path, target: Path) -> KnowledgeDirListing:
         kind="artifact" if artifact else None,
     )
     if artifact is None:
-        inline_doc(target, entries, listing, root)
+        inline_doc(target, entries, listing, root, skill_dirs.get(target))
+    if rel in (Path(), Path("skills")):
+        listing.skills_error = skills_error
     return listing
 
 
@@ -327,7 +346,7 @@ async def skill_build(builds: SkillBuilds, repo_dir: Path, name: str) -> Knowled
     build = next((build for build in await builds.ensure_built(repo_dir) if build.skill == name), None)
     if build is None:
         return None
-    return KnowledgeSkillBuild(state=build.state, tree=build.tree, commands=build.commands, log_tail=build.detail)
+    return KnowledgeSkillBuild(state=build.state, key=build.key, commands=build.commands, log_tail=build.detail)
 
 
 @router.post("/knowledge/skills/{name}/build/retry")
@@ -370,8 +389,8 @@ async def browse_knowledge(
             shared = server._artifact_share_store.shared_slugs(user.username)
             for entry in listing.entries:
                 entry.shared = entry.kind == "artifact" and entry.name in shared
-        if listing.kind == "skill" and target.parent == root / "skills":
-            listing.build = await skill_build(server._skill_builds, root, target.name)
+        if listing.skill is not None:
+            listing.build = await skill_build(server._skill_builds, root, listing.skill.name)
         return listing
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Not found")

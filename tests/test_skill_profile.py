@@ -39,7 +39,7 @@ def _path(name: str) -> str:
 def _build(skill: str, *commands: str, state: str = "succeeded") -> SkillBuild:
     return SkillBuild(
         skill=skill,
-        tree=skill * 40,
+        key=skill * 64,
         state=state,  # type: ignore[arg-type]
         store_paths=[_path(f"{skill}-skill"), _path(f"{skill}-skill-man")] if state == "succeeded" else [],
         commands={command: SkillCommand(description="", needs=_NEEDS) for command in commands},
@@ -281,9 +281,7 @@ def test_a_removed_or_disabled_skill_drops_out_of_the_plan() -> None:
 
 
 def test_paths_that_are_not_store_paths_are_refused() -> None:
-    build = SkillBuild(
-        skill="a", tree="a" * 40, state="succeeded", store_paths=["--remove-all"], commands={}, detail=""
-    )
+    build = SkillBuild(skill="a", key="a" * 64, state="succeeded", store_paths=["--remove-all"], commands={}, detail="")
 
     with pytest.raises(ValueError, match="not store paths"):
         profile_plan([build])

@@ -28,6 +28,7 @@ from carapace.session.compaction import is_fold_message, split_merged_requests, 
 from carapace.session.transcript import completed_model_turn_end_indexes
 from carapace.usage import UsageTracker
 from tests.session_helpers import _make_engine
+from tests.skills_flake import write_skills_flake
 from tests.streaming_model import ReplayStreamModel
 
 _SECURITY_MD = "Never let the agent email the tax office."
@@ -194,6 +195,7 @@ async def test_compaction_forgets_which_skill_files_were_provided(tmp_path: Path
     skills_dir = tmp_path / "skills"
     (skills_dir / "mail").mkdir(parents=True)
     (skills_dir / "mail" / "run.py").write_text("import smtplib\n")
+    write_skills_flake(skills_dir, ["mail"])
 
     async def compact(messages: list[ModelMessage], _system_prompt: str) -> list[ModelMessage] | None:
         return messages[-1:]

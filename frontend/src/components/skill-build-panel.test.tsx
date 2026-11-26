@@ -9,10 +9,10 @@ import type { KnowledgeSkillBuild } from "@/lib/api";
 import { SkillBuildPanel } from "./skill-build-panel";
 
 const SERVER = "https://carapace.example.test";
-const TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+const KEY = "9f2b6c1e4d8a3f7b0c5e2d9a6b1f4c8e7d3a0b5c2e9f6d1a8b4c7e0f3a6d9b2c";
 
-const failed: KnowledgeSkillBuild = { state: "failed", tree: TREE, commands: {}, log_tail: "error: flake.lock is missing nixpkgs" };
-const building: KnowledgeSkillBuild = { state: "building", tree: TREE, commands: {}, log_tail: "" };
+const failed: KnowledgeSkillBuild = { state: "failed", key: KEY, commands: {}, log_tail: "error: flake.lock is missing nixpkgs" };
+const building: KnowledgeSkillBuild = { state: "building", key: KEY, commands: {}, log_tail: "" };
 
 test("a failed build shows its log and retries into building", async () => {
   const restore = installDom();
@@ -33,7 +33,7 @@ test("a failed build shows its log and retries into building", async () => {
     const text = () => view.container.textContent ?? "";
     assert.match(text(), /Failed/);
     assert.match(text(), /error: flake\.lock is missing nixpkgs/);
-    assert.match(text(), /4b825dc642cb/);
+    assert.match(text(), /9f2b6c1e4d8a/);
 
     const retry = Array.from(view.container.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Retry");
     assert.ok(retry);

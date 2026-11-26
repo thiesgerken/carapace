@@ -47,6 +47,13 @@ jobs:
           for flake in src/carapace/assets/skills/*/flake.nix; do
             time nix build --no-link --no-update-lock-file --print-build-logs "path:$(dirname "$flake")#packages.x86_64-linux.default"
           done
+      # What a new knowledge repo gets: the skills its skills/flake.nix lists, through that flake's lock.
+      - name: Build the skills a new knowledge repo lists
+        run: |
+          skills=path:src/carapace/assets/skills
+          for name in $(nix eval --json "$skills#packages.x86_64-linux" --apply builtins.attrNames | jq -r '.[]'); do
+            time nix build --no-link --no-update-lock-file --print-build-logs "$skills#packages.x86_64-linux.$name"
+          done
       # --skip-cached links only what it built; the tools and images are still needed here.
       - name: Fetch cached outputs used below
         run: |

@@ -24,6 +24,7 @@ from tests.session_helpers import (
     _sandbox_refresh_snapshot_mock,
     _without_timestamp,
 )
+from tests.skills_flake import write_skills_flake
 
 
 def test_handle_slash_command_session(tmp_path: Path, db_factory):
@@ -320,6 +321,8 @@ def test_handle_slash_command_skills_stays_owner_scoped_for_two_users(tmp_path: 
             "---\nname: beta\ndescription: Other skill\n---\n",
             encoding="utf-8",
         )
+        write_skills_flake(thies_skill.parent, ["alpha"])
+        write_skills_flake(ada_skill.parent, ["beta"])
 
         engine = None
 

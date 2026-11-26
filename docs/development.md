@@ -251,16 +251,16 @@ The only Python source-build override supplies setuptools to `http-ece`, whose r
 
 ### Bundled skill pins
 
-The bundled skills with commands (`src/carapace/assets/skills/*/flake.nix`) pin a Carapace commit for their helpers and, in the `carapace` skill, the CLI. When a release changed the helpers (`nix/skills`) or the CLI, point them at that release commit in a regular commit, which then ships with the next release:
+The bundled skills with commands (`src/carapace/assets/skills/*/flake.nix`) pin a Carapace commit for their helpers and, in the `carapace` skill, the CLI. So does `src/carapace/assets/skills/flake.lock`, the lock of the `skills/flake.nix` a new knowledge repo gets; through it, every skill it lists follows that one commit. When a release changed the helpers (`nix/skills`) or the CLI, point them all at that release commit in a regular commit, which then ships with the next release:
 
 ```sh
 rev=$(git rev-parse vX.Y.Z^{commit})
-for flake in src/carapace/assets/skills/*/flake.nix; do
+for flake in src/carapace/assets/skills/flake.nix src/carapace/assets/skills/*/flake.nix; do
   nix flake lock "path:$(dirname "$flake")" --override-input carapace "github:thiesgerken/carapace/$rev?dir=nix/skills"
 done
 ```
 
-A release commit cannot pin itself, so this cannot be part of the release commit, and releases happen on every push to `main`, so bumping after each one would only churn. CI builds every bundled skill against its pin and against the current helpers, so a pin that falls behind still has to build.
+A release commit cannot pin itself, so this cannot be part of the release commit, and releases happen on every push to `main`, so bumping after each one would only churn. CI builds every bundled skill against its pin and against the current helpers, and every skill the seeded `skills/flake.nix` lists through its lock, so a pin that falls behind still has to build.
 
 ## CI and publishing
 

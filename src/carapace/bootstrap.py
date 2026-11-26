@@ -76,7 +76,10 @@ def _copy_asset(asset_path: str, target: Path) -> None:
     source = _ASSETS.joinpath(*asset_path.split("/"))
     with as_file(source) as src:
         logger.debug(f"Copying asset {asset_path} to {target}")
-        shutil.copy2(src, target)
+        # Content only: from the Nix store, a copied mode would make the file read-only, and a reset could
+        # not overwrite it. Earlier versions copied it, so a read-only copy is replaced rather than opened.
+        target.unlink(missing_ok=True)
+        shutil.copyfile(src, target)
 
 
 def _skill_file_relpaths(skill_root: Traversable) -> list[str]:
@@ -98,12 +101,18 @@ def _sync_bundled_skills(knowledge_dir: Path, reset: bool, created: list[str]) -
     """Copy each ``carapace.assets/skills/<name>/`` tree into *knowledge_dir* when missing.
 
     When *reset* is true, overwrite files for every bundled skill (same as critical
-    knowledge files).
+    knowledge files). A new repo also gets the bundled ``skills/flake.nix`` and its lock, which list
+    the skills; an existing repo keeps its own list, even on reset.
     """
     skills_assets = _ASSETS.joinpath("skills")
     if not skills_assets.is_dir():
         return
     skills_out = knowledge_dir / "skills"
+    if not skills_out.exists():
+        skills_out.mkdir(parents=True)
+        for name in ("flake.nix", "flake.lock"):
+            _copy_asset(f"skills/{name}", skills_out / name)
+            created.append(f"skills/{name}")
     for skill_root in sorted(skills_assets.iterdir(), key=lambda p: p.name):
         if not skill_root.is_dir():
             continue

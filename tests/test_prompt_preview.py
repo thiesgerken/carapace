@@ -16,6 +16,7 @@ from carapace.models.user import UserConfig
 from carapace.prompt_preview import PreviewInputs, PromptDriftError, PromptPreview, PromptRole, preview_prompt
 from carapace.sandbox.manager import SandboxManager
 from carapace.skills import SkillRegistry
+from tests.skills_flake import write_skills_flake
 
 MEMORY = MemoryBlock(
     text="# Memory\n\n<memory>\n## Session s1 (week 2026-W41)\nAbstract: Upgraded.\n</memory>", tokens=42
@@ -78,19 +79,15 @@ def test_agent_previews_a_fresh_session_with_its_memory_block(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize("role", [PromptRole.agent, PromptRole.compaction, PromptRole.session_extract])
-def test_disabled_skill_is_excluded_from_prompt_preview(role: PromptRole, tmp_path: Path) -> None:
+def test_only_listed_skills_are_in_the_prompt_preview(role: PromptRole, tmp_path: Path) -> None:
     directory = tmp_path / "skills" / "private-search"
     directory.mkdir(parents=True)
-    skill_md = directory / "SKILL.md"
-    text = (
-        "---\nname: private-search\ndescription: Unique private coverage\n"
-        "metadata:\n  carapace:\n    disabled: true\n---\nInstructions.\n"
-    )
-    skill_md.write_text(text)
+    (directory / "SKILL.md").write_text("---\nname: private-search\ndescription: Unique private coverage\n---\n")
+    write_skills_flake(tmp_path / "skills", [])
 
     assert "Unique private coverage" not in "\n".join(section.text for section in preview(role, tmp_path).sections)
 
-    skill_md.write_text(text.replace("disabled: true", "disabled: false"))
+    write_skills_flake(tmp_path / "skills", ["private-search"])
 
     assert "Unique private coverage" in "\n".join(section.text for section in preview(role, tmp_path).sections)
 

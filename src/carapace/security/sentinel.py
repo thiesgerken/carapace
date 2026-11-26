@@ -23,6 +23,7 @@ from ..llm import (
     SlotLimitedModel,
     with_prompt_cache,
 )
+from ..skills import SkillRegistry
 from ..spans import ToolSpanCapability, span
 from ..usage import (
     LlmRequestLogCapability,
@@ -360,7 +361,9 @@ class Sentinel:
         )
 
     def _read_skill_file_cached(self, skills_dir: Path, skill_name: str, path: str) -> str:
-        skill_dir = skills_dir / skill_name
+        skill_dir = SkillRegistry(skills_dir).skill_dir(skill_name)
+        if skill_dir is None:
+            return f"Skill '{skill_name}' not found."
         full_path = (skill_dir / path).resolve()
         if not str(full_path).startswith(str(skill_dir.resolve())):
             return "Error: path escapes skill directory"
@@ -614,8 +617,8 @@ class Sentinel:
             """List files in a skill's master directory. Skills are trusted user-authored content."""
             tool_seq = self._log_tool_call("list_skill_files", skill_name=skill_name)
             try:
-                skill_dir = ctx.deps.skills_dir / skill_name
-                if not skill_dir.exists() or not skill_dir.is_dir():
+                skill_dir = SkillRegistry(ctx.deps.skills_dir).skill_dir(skill_name)
+                if skill_dir is None or not skill_dir.is_dir():
                     result = f"Skill '{skill_name}' not found."
                 else:
                     entries = sorted(skill_dir.rglob("*"))

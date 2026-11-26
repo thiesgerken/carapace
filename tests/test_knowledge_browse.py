@@ -12,12 +12,15 @@ from fastapi import HTTPException
 
 from carapace.server.knowledge import (
     MAX_INLINE_TEXT_BYTES,
+    KnowledgeEntry,
     build_entry,
     list_dir,
+    listed_skill_dirs,
     read_text_content,
     resolve_target,
     session_archive_entry,
 )
+from tests.skills_flake import write_skills_flake
 
 
 def _make_repo(tmp_path: Path) -> Path:
@@ -26,8 +29,13 @@ def _make_repo(tmp_path: Path) -> Path:
     (root / ".git" / "config").write_text("secret")
     (root / "skills" / "weather").mkdir(parents=True)
     (root / "skills" / "weather" / "SKILL.md").write_text("---\nname: weather\n---\n")
+    write_skills_flake(root / "skills", ["weather"])
     (root / "SOUL.md").write_text("# soul")
     return root
+
+
+def _entry(path: Path, root: Path) -> KnowledgeEntry:
+    return build_entry(path, root.resolve(), listed_skill_dirs(root)[0])
 
 
 def test_resolve_target_root(tmp_path: Path) -> None:
@@ -157,11 +165,11 @@ def test_build_entry_tags_session_dirs(tmp_path: Path) -> None:
         {"session": {"session_id": "2026-06-03-08-30-11223344", "title": "Groceries"}},
     )
 
-    entry = build_entry(directory, root.resolve())
+    entry = _entry(directory, root)
 
     assert (entry.kind, entry.label, entry.session_id) == ("session", "Groceries", "2026-06-03-08-30-11223344")
-    assert build_entry(root / "skills", root.resolve()).kind is None
-    assert build_entry(root / "SOUL.md", root.resolve()).kind is None
+    assert _entry(root / "skills", root).kind is None
+    assert _entry(root / "SOUL.md", root).kind is None
 
 
 def test_list_dir_inlines_skill_doc(tmp_path: Path) -> None:
@@ -198,9 +206,12 @@ Body prose.
 
 
 def _skill(root: Path, name: str, text: str) -> Path:
+    """A skill directory, listed in skills/flake.nix with every other one."""
     directory = root / "skills" / name
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "SKILL.md").write_text(text)
+    skills = root / "skills"
+    write_skills_flake(skills, sorted(path.name for path in skills.iterdir() if path.is_dir()))
     return directory
 
 
@@ -219,21 +230,64 @@ def test_list_dir_strips_frontmatter_into_skill(tmp_path: Path) -> None:
     assert carapace.hints == {"weather": "Prefer metric units."}
 
 
-def test_disabled_skill_remains_browsable_and_readable(tmp_path: Path) -> None:
+def test_an_unlisted_skill_directory_is_a_plain_directory(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
-    text = (
-        "---\nname: private-search\ndescription: Private search\n"
-        "metadata:\n  carapace:\n    disabled: true\n---\nEditable instructions.\n"
-    )
-    directory = _skill(root, "private-search", text)
+    directory = root / "skills" / "private-search"
+    directory.mkdir()
+    (directory / "SKILL.md").write_text("---\nname: private-search\n---\nEditable instructions.\n")
 
-    assert "private-search" in [entry.name for entry in list_dir(root, root / "skills").entries]
     listing = list_dir(root, directory.resolve())
-    assert listing.doc == "Editable instructions.\n"
-    assert listing.skill is not None
-    assert listing.skill.carapace is not None and listing.skill.carapace.disabled
-    skill_md = resolve_target(root, "skills/private-search/SKILL.md")
-    assert read_text_content(skill_md, skill_md.stat().st_size) == text
+
+    assert _entry(directory, root).kind is None
+    assert (listing.kind, listing.skill, listing.doc) == (None, None, None)
+
+
+def test_a_listed_skill_is_named_by_its_attribute(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path)
+    write_skills_flake(root / "skills", {"forecast": "weather"})
+
+    listing = list_dir(root, (root / "skills" / "weather").resolve())
+
+    assert listing.skill is not None and listing.skill.name == "forecast"
+
+
+def test_a_listed_skill_without_skill_md_still_shows_as_a_skill(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path)
+    (root / "skills" / "weather" / "SKILL.md").unlink()
+
+    listing = list_dir(root, (root / "skills" / "weather").resolve())
+
+    assert listing.kind == "skill"
+    assert listing.skill is not None and listing.skill.error == "SKILL.md is missing or not text"
+
+
+def test_disabled_in_the_frontmatter_shows_as_an_error(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path)
+    text = "---\nname: parked\nmetadata:\n  carapace:\n    disabled: true\n---\nInstructions.\n"
+    directory = _skill(root, "parked", text)
+
+    listing = list_dir(root, directory.resolve())
+
+    assert listing.skill is not None and listing.skill.carapace is None
+    assert listing.skill.error is not None and "disabled is gone" in listing.skill.error
+    assert listing.doc == "Instructions.\n"
+
+
+@pytest.mark.parametrize("missing", ["flake.nix", "flake.lock"])
+def test_without_a_usable_skills_flake_the_root_and_skills_say_why(tmp_path: Path, missing: str) -> None:
+    root = _make_repo(tmp_path)
+    (root / "skills" / missing).unlink()
+
+    for directory in (root, root / "skills"):
+        listing = list_dir(root, directory.resolve())
+        assert listing.skills_error is not None and "nix flake lock ./skills" in listing.skills_error
+    assert list_dir(root, (root / "skills" / "weather").resolve()).skills_error is None
+    assert _entry(root / "skills" / "weather", root).kind is None
+
+
+def test_with_a_usable_skills_flake_there_is_no_skills_error(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path)
+    assert list_dir(root, root.resolve()).skills_error is None
 
 
 def test_list_dir_skill_without_carapace_metadata(tmp_path: Path) -> None:
@@ -330,8 +384,8 @@ def test_list_dir_readme_frontmatter_is_not_stripped(tmp_path: Path) -> None:
 def test_build_entry_tags_skill_dirs(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
 
-    assert build_entry(root / "skills" / "weather", root.resolve()).kind == "skill"
-    assert build_entry(root / "skills", root.resolve()).kind is None
+    assert _entry(root / "skills" / "weather", root).kind == "skill"
+    assert _entry(root / "skills", root).kind is None
 
 
 def test_build_entry_session_wins_over_skill(tmp_path: Path) -> None:
@@ -339,7 +393,7 @@ def test_build_entry_session_wins_over_skill(tmp_path: Path) -> None:
     directory = _archive(root, "2026-06-04-09-00-deadbeef", {"session": {"title": "Odd one"}})
     (directory / "SKILL.md").write_text("---\nname: odd\n---\n")
 
-    assert build_entry(directory, root.resolve()).kind == "session"
+    assert _entry(directory, root).kind == "session"
 
 
 def test_build_entry_reports_file_mtime(tmp_path: Path) -> None:
@@ -347,11 +401,11 @@ def test_build_entry_reports_file_mtime(tmp_path: Path) -> None:
     target = root / "SOUL.md"
     os.utime(target, (1_780_000_000, 1_780_000_000))
 
-    entry = build_entry(target, root.resolve())
+    entry = _entry(target, root)
 
     assert entry.modified == datetime.fromtimestamp(1_780_000_000, tz=UTC)
     # Directories carry no mtime: the client shows a title or nothing for them.
-    assert build_entry(root / "skills", root.resolve()).modified is None
+    assert _entry(root / "skills", root).modified is None
 
 
 def test_list_dir_does_not_read_through_escaping_skill_doc(tmp_path: Path) -> None:
@@ -360,10 +414,12 @@ def test_list_dir_does_not_read_through_escaping_skill_doc(tmp_path: Path) -> No
     escaping = root / "skills" / "escaping"
     escaping.mkdir()
     (escaping / "SKILL.md").symlink_to(tmp_path / "secret.txt")
+    write_skills_flake(root / "skills", ["weather", "escaping"])
 
     listing = list_dir(root, escaping.resolve())
 
-    assert (listing.doc, listing.skill, listing.kind) == (None, None, None)
+    assert (listing.doc, listing.kind) == (None, "skill")
+    assert listing.skill is not None and listing.skill.error == "SKILL.md is missing or not text"
 
 
 def test_list_dir_does_not_read_through_escaping_readme(tmp_path: Path) -> None:
@@ -384,14 +440,14 @@ def test_session_archive_entry_ignores_escaping_conversation(tmp_path: Path) -> 
     (directory / "conversation.json").symlink_to(tmp_path / "secret.json")
 
     assert session_archive_entry(directory, root.resolve()) is None
-    assert build_entry(directory, root.resolve()).kind is None
+    assert _entry(directory, root).kind is None
 
 
 def test_build_entry_tolerates_broken_symlink(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     (root / "dangling.md").symlink_to(tmp_path / "does-not-exist")
 
-    entry = build_entry(root / "dangling.md", root.resolve())
+    entry = _entry(root / "dangling.md", root)
 
     assert (entry.name, entry.type, entry.size, entry.modified) == ("dangling.md", "file", None, None)
     # The whole listing must still render around it.
@@ -402,7 +458,7 @@ def test_build_entry_reports_symlink_inside_the_repo(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     (root / "alias.md").symlink_to(root / "SOUL.md")
 
-    entry = build_entry(root / "alias.md", root.resolve())
+    entry = _entry(root / "alias.md", root)
 
     assert (entry.type, entry.size) == ("file", len("# soul"))
 
@@ -464,7 +520,7 @@ def test_artifact_directory_label_uses_its_html_title(tmp_path: Path) -> None:
         "<head><title> Quarterly &amp;\n report </title></head><svg><title>Chart label</title></svg>"
         + "x" * (MAX_INLINE_TEXT_BYTES + 1)
     )
-    entry = build_entry(directory, root.resolve())
+    entry = _entry(directory, root)
     assert entry.kind == "artifact"
     assert entry.label == "Quarterly & report"
 
@@ -473,11 +529,11 @@ def test_only_artifact_directories_with_contained_entry_points_get_the_kind(tmp_
     root = _make_repo(tmp_path)
     directory = root / "artifacts" / "report"
     directory.mkdir(parents=True)
-    assert build_entry(directory, root.resolve()).kind is None
+    assert _entry(directory, root).kind is None
     (root / "private.html").write_text("<title>Private</title>")
     (directory / "index.html").symlink_to(root / "private.html")
-    assert build_entry(directory, root.resolve()).kind is None
+    assert _entry(directory, root).kind is None
     ordinary = root / "notes"
     ordinary.mkdir()
     (ordinary / "index.html").write_text("<title>Not an artifact</title>")
-    assert build_entry(ordinary, root.resolve()).kind is None
+    assert _entry(ordinary, root).kind is None
