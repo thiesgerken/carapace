@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.199.0 (2026-11-26)
+
+### ✨ Introduce new features
+
+- feat: session row menu, two-line rows and archive with undo
+
+### 🐛 Fix a bug
+
+- fix: harden the archive undo flow from review
+
+### 💬 Add or update text and literals
+
+- copy: "Session" in the German UI, a shorter new-session button and sandbox warning
+
 ## v0.198.0 (2026-11-26)
 
 ### ✨ Introduce new features
