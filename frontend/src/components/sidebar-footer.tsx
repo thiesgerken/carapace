@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { BookOpen, Brain, LogOut, Settings2, type LucideIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { GlobalGitIndicator, useGlobalGit } from "@/components/git-sync";
 import { VersionBadge, versionMismatch } from "@/components/version-badge";
+import { useDismiss } from "@/hooks/use-dismiss";
 import type { AuthUserInfo } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -65,32 +66,10 @@ export function SidebarFooter({
   const globalGit = useGlobalGit(server, token);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
+  const closeMenu = useCallback(() => setOpen(false), []);
   const accountName = currentUser?.display_name?.trim() || currentUser?.username || t("account.unknown");
 
-  useEffect(() => {
-    if (!open) return;
-
-    function handlePointerDown(event: MouseEvent): void {
-      const target = event.target;
-      if (!(target instanceof Node) || menuRef.current?.contains(target)) {
-        return;
-      }
-      setOpen(false);
-    }
-
-    function handleKeyDown(event: KeyboardEvent): void {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
+  useDismiss(menuRef, open, closeMenu);
 
   return (
     // Below md the drawer is fixed to the viewport, so the body's safe-area padding does not reach it.

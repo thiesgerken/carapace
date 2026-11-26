@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Archive, Brain, Bug, Check, ChevronRight, Copy, GitBranch, Info, Paperclip, Play, RotateCcw, Undo2 } from "lucide-react";
+import { AlertTriangle, Archive, Brain, Check, ChevronRight, Copy, GitBranch, Info, Paperclip, Play, RotateCcw, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
@@ -75,6 +75,7 @@ function TurnMeta({
   outputTokens,
   ttftMs,
   generationMs,
+  href,
   className,
 }: {
   timestamp?: string;
@@ -88,10 +89,13 @@ function TurnMeta({
   outputTokens?: number;
   ttftMs?: number;
   generationMs?: number;
+  /** The turn's timeline in the debug view; the meta text links there. */
+  href?: string;
   className?: string;
 }) {
   const { locale } = useAppLocale();
   const t = useTranslations("turnMeta");
+  const tMessage = useTranslations("message");
   if (!timestamp && turnIndex == null) return null;
   const rel = timestamp ? formatRelativeTime(timestamp, locale) : "";
   // Date and time formatted separately and joined with a space, so there's no comma between them.
@@ -127,16 +131,23 @@ function TurnMeta({
   const tip = tipParts.filter(Boolean).join(" · ");
 
   const visible = [rel || turnLabel, tps != null ? t("tps", { n: tps }) : ""].filter(Boolean).join(" · ");
+  const metaClassName = cn("select-none whitespace-nowrap text-[10px] tabular-nums text-muted-foreground/50", className);
+  if (!href) {
+    return (
+      <span title={tip} className={metaClassName}>
+        {visible}
+      </span>
+    );
+  }
   return (
-    <span
+    <Link
+      href={href}
       title={tip}
-      className={cn(
-        "select-none whitespace-nowrap text-[10px] tabular-nums text-muted-foreground/50",
-        className,
-      )}
+      className={cn(metaClassName, "rounded-sm underline-offset-2 transition-colors hover:text-muted-foreground hover:underline focus-visible:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")}
     >
       {visible}
-    </span>
+      <span className="sr-only"> · {tMessage("actions.timeline")}</span>
+    </Link>
   );
 }
 
@@ -380,7 +391,7 @@ function MessageActions({
   const t = useTranslations("message");
   const hasCopy = typeof copyText === "string" && copyText.length > 0;
   const hasMeta = Boolean(timestamp) || turnIndex != null;
-  if (!hasCopy && !canFork && !canRetry && !canContinue && !canReset && !hasMeta && !debugHref) return null;
+  if (!hasCopy && !canFork && !canRetry && !canContinue && !canReset && !hasMeta) return null;
 
   // Controls first, then the meta pushed to the far end of the row (spacer between spans the width).
   return (
@@ -413,16 +424,6 @@ function MessageActions({
         disabled={disabled}
         onClick={canReset ? onReset : undefined}
       />
-      {debugHref ? (
-        <Link
-          href={debugHref}
-          aria-label={t("actions.timeline")}
-          title={t("actions.timeline")}
-          className="inline-flex items-center rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          <Bug className="size-3.5" />
-        </Link>
-      ) : null}
       <TurnMeta
         timestamp={timestamp}
         turnIndex={turnIndex}
@@ -435,6 +436,7 @@ function MessageActions({
         outputTokens={outputTokens}
         ttftMs={ttftMs}
         generationMs={generationMs}
+        href={debugHref}
         className="ml-auto"
       />
     </div>

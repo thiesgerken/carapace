@@ -124,7 +124,8 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     assert.deepEqual(Array.from(view.container.querySelectorAll('th[scope="rowgroup"]'), (header) => header.textContent), ["Outside a turn"]);
     // A record from before cache counts and costs were kept: its empty count columns go, the cost is unknown.
     assert.deepEqual(rows(), [["11/9, 11:59:00 AM", "3 s", "8k", "300", "–"]]);
-    assert.equal(view.container.querySelector('a[aria-current="page"]')?.getAttribute("href"), "/?session=s1&view=debug");
+    const backToChat = Array.from(view.container.querySelectorAll("a")).find((link) => link.textContent === "Back to chat");
+    assert.equal(backToChat?.getAttribute("href"), "/?session=s1");
 
     contexts.agent = context({
       status: "completed",

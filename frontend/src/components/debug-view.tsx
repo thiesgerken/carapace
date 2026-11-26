@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useState, type ReactNode } from "react";
+import Link from "next/link";
 import {
   ArrowDownLeft,
+  ArrowLeft,
   ArrowUpRight,
   Bot,
   Box,
@@ -110,7 +112,17 @@ export function DebugView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SessionHeader sessionId={sessionId} title={title} view="debug" />
+      <SessionHeader sessionId={sessionId} title={title}>
+        <Link
+          href={`/?session=${encodeURIComponent(sessionId)}`}
+          title={t("backToChat")}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-2 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {/* Icon only on phones, where the title needs the room. */}
+          <span className="sr-only sm:not-sr-only">{t("backToChat")}</span>
+        </Link>
+      </SessionHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
         <p className="text-sm text-muted-foreground">{t(tab === "timeline" ? "turns.hint" : "hint")}</p>
