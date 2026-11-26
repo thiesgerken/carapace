@@ -13,7 +13,7 @@ There is no compatibility mode. Skills that declare `network`, `credentials`, `c
 - Pick a long random builder token, e.g. `openssl rand -hex 20`.
 - Kubernetes: check that the nodes support user namespaces for pods ([below](#kubernetes)).
 - Docker on Ubuntu 23.10 or later: check the AppArmor setting for user namespaces ([below](#docker-compose)).
-- List the skills in your knowledge repos that have a `metadata.carapace` block with `network`, `credentials`, `commands` or `mcp`. Those with `commands` or `mcp` need a flake ([below](#converting-a-skill)); those with only `network` or `credentials` just lose those fields. Skills that only carry instructions keep working.
+- List the skills in your knowledge repos that have a `metadata.carapace` block with `network`, `credentials`, `commands` or `mcp`. Those with `commands` or `mcp` need a flake ([below](#converting-a-skill)); those with only `network` or `credentials` just lose those fields. Every skill also needs a `flake.nix` and an entry in `skills/flake.nix`, which [a script](#the-skills-flake) writes for skills that only carry instructions.
 - Running sessions lose their activated skills during the upgrade (see [Sessions](#sessions)). Let long tasks finish first.
 
 ## Deploy the builder
@@ -83,38 +83,45 @@ Each user's knowledge repo needs the same four checks. Make the changes in a clo
 
 ### Bundled skills
 
-Bootstrap only seeds bundled skills that are missing, so an existing repo keeps its old copies:
+Bootstrap only seeds bundled skills that are missing, so an existing repo keeps its old copies. Most of them no longer need a copy: `artifacts`, `create-skill`, `credentials`, `mermaid` and `wikipedia` now come from Carapace's `main` branch as inputs of `skills/flake.nix`. The script in [the next section](#the-skills-flake) replaces each of these copies with its input, unless you changed it: a copy that something other than bootstrap committed to, or with uncommitted changes, stays a local skill.
 
-- `carapace`, `web` and `wikipedia` declare commands in their frontmatter, so they show up as broken. Their new versions are flakes.
-- `ferret` declares `mcp`, so it breaks too.
-- `create-skill` and `credentials` stay valid but are stale: they still teach frontmatter declarations and `use_skill`.
-- `example` is no longer bundled. The helper examples in [`nix/skills/examples`](../nix/skills/examples) replace it.
-
-To get the new versions, delete the old copies and restart the server. On start, bootstrap seeds every missing bundled skill and commits it:
+`carapace`, `web` and `ferret` stay copies, because their flake carries this instance's settings. Copies from before skill flakes declare commands or `mcp` in their frontmatter, so they show up as broken. Delete them before running the script and restart the server; on start, bootstrap seeds their new versions and commits them:
 
 ```sh
-git rm -r skills/carapace skills/web skills/wikipedia skills/ferret skills/create-skill skills/credentials skills/example
+git rm -r skills/carapace skills/web skills/ferret skills/example
 git commit -m "Remove pre-flake bundled skills"
 git push
 # then restart the server
 ```
 
-Re-seeded skills come with their shipped defaults. A vault path you had changed in the old frontmatter now goes into the skill's `flake.nix` (`web`: `credentials.BRAVE_API_KEY`; `carapace`: the `server` and `apiKey` bindings at the top of its `flake.nix`). Copies you had changed beyond that need converting like your own skills (below).
+`example` is no longer bundled; the helper examples in [`nix/skills/examples`](../nix/skills/examples) replace it. Re-seeded skills come with their shipped defaults. A vault path you had changed in the old frontmatter now goes into the skill's `flake.nix` (`web`: `credentials.BRAVE_API_KEY`; `carapace`: the `server` and `apiKey` bindings at the top of its `flake.nix`). Copies you had changed beyond that need converting like your own skills (below).
 
-`CARAPACE_RESET_ASSETS=true` overwrites the bundled skills and `SECURITY.md` in place, but leaves files that the new versions no longer have (`setup.sh`, the old `pyproject.toml` of `carapace`). Prefer deleting the copies.
+`CARAPACE_RESET_ASSETS=true` overwrites the copies of `carapace`, `web` and `ferret` and `SECURITY.md` in place, but leaves files that the new versions no longer have (`setup.sh`, the old `pyproject.toml` of `carapace`). Prefer deleting the copies.
 
 ### The skills flake
 
-`skills/flake.nix` is now the only list of skills ([skill-flakes.md](skill-flakes.md#the-skills-flake)). Bootstrap seeds it only into a new repo, so an existing one has no skills until it gets one: the catalog is empty, and the Knowledge view says so on the repo root and on `skills/`. Write it like the example there, with one `path:./<dir>` input per skill you want active (the bundled `carapace` skill is listed as `carapace-cli`; `web` and `ferret` only once they are set up), then lock, commit and push:
+`skills/flake.nix` is now the only list of skills ([skill-flakes.md](skill-flakes.md#the-skills-flake)). Bootstrap seeds it only into a new repo, so an existing one has no skills until it gets one: the catalog is empty, and the Knowledge view says so on the repo root and on `skills/`.
+
+[`scripts/upgrade-skills-flake.sh`](../scripts/upgrade-skills-flake.sh) writes it from the skill directories in the repo:
+
+- An unchanged copy of a bundled skill that Carapace ships from `main` becomes an input on Carapace, and the copy is removed (see [Bundled skills](#bundled-skills)).
+- Every other directory with a `SKILL.md` becomes a `path:./<dir>` input. The bundled `carapace` skill is listed as `carapace-cli`, because `carapace` names the helpers.
+- A skill without a `flake.nix` gets a flake of a few lines ([Skills with only instructions](skill-flakes.md#skills-with-only-instructions)).
+- `mkSkill` now takes the skill directory as `src`. The script adds `src = ./.;` to each local flake that lacks it, right after `mkSkill`'s `name`, and names any flake where it could not.
+- `web` and `ferret` as bootstrap seeded them are written as commented-out inputs, since they need setting up first. So is a skill whose `SKILL.md` still sets `metadata.carapace.disabled`. `disabled` is gone: a skill is off when it is not listed, and one that still sets the field shows up as broken once listed, so delete the field before you uncomment it.
+- Every input follows the repo's `nixpkgs` and `carapace`. The script then runs `nix flake lock ./skills` and stages everything, but commits nothing.
+
+It needs Git and Nix and runs anywhere in a clone of the repo. The agent can run it in its sandbox too; fetching the script is a domain request like any other:
 
 ```sh
-nix flake lock ./skills
-git add skills/flake.nix skills/flake.lock
+curl -fsSLO https://raw.githubusercontent.com/thiesgerken/carapace/main/scripts/upgrade-skills-flake.sh
+sh upgrade-skills-flake.sh
+git diff --cached
 git commit -m "List the skills in skills/flake.nix"
 git push
 ```
 
-`metadata.carapace.disabled` is gone: a skill is off when it is not listed. A `SKILL.md` that still sets it shows up as broken; delete the field.
+It refuses to run when `skills/flake.nix` exists already or `skills/` has uncommitted changes, and when a skill directory's name can't be a flake attribute (`nixpkgs`, `self`, or one with dots), which you rename first. It checks all of that before it changes anything.
 
 ### `SECURITY.md`
 
@@ -200,5 +207,5 @@ Old turns keep their recorded `gate` spans in the [debug view](debug-view.md). N
 ## Checking the upgrade
 
 1. The server log shows no builder warning at start, and the egress self-test passes.
-2. In the Knowledge view, every enabled skill with a flake shows a successful build. Disabled skills (`web` and `ferret` after re-seeding) are not built.
+2. In the Knowledge view, every skill that `skills/flake.nix` lists shows a successful build. `web` and `ferret` are not listed until you set them up, so they are not built.
 3. Ask the agent to use a skill with commands, e.g. `wikipedia`. It calls `read_skill`, which waits for the build and the profile sync, then runs the command. Its wrapper first sends an up-front `cgate request` for the Wikipedia domains, which the sentinel decides, or you if the sentinel escalates.
