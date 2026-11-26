@@ -32,7 +32,7 @@ export function ArtifactToolbar({ artifact, title, src, fullScreen, showSource, 
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border bg-muted/25 px-3 py-2 text-xs">
+    <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border bg-inset px-3 py-2 text-xs">
       {fullScreen && <button type="button" onClick={back} className={actionClass}><ArrowLeft className="h-4 w-4" />{t("back")}</button>}
       {artifact && (
         <div className="mr-auto min-w-0">

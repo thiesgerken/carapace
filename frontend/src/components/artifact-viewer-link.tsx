@@ -11,7 +11,7 @@ export function ArtifactViewerLink({ slug }: { slug: string }) {
   return (
     <Link
       href={artifactViewerHref(slug)}
-      className="inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium text-teal-600 hover:bg-teal-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-teal-400"
+      className="inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <Maximize2 className="h-3.5 w-3.5 shrink-0" />
       {t("fullScreen")}

@@ -621,10 +621,10 @@ export function JobsView({
 
   return (
     <>
-        <aside className="border-b border-border/80 bg-background/65 lg:border-r lg:border-b-0">
+        <aside className="bg-surface">
           <div className="flex h-full min-h-0 flex-col">
             <div className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-3">
-              <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              <div className="text-xs font-medium text-muted-foreground">
                 {t("savedJobs")}
               </div>
               <div className="flex items-center gap-1">
@@ -659,7 +659,7 @@ export function JobsView({
                   {t("loading")}
                 </div>
               ) : jobs.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border bg-background/80 px-4 py-6 text-sm text-muted-foreground">
+                <div className="rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
                   {t("empty.noJobs")}
                 </div>
               ) : (
@@ -678,34 +678,28 @@ export function JobsView({
                         className={cn(
                           "w-full rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                           selected
-                            ? "bg-accent text-accent-foreground"
+                            ? "bg-primary/10 text-foreground"
                             : "text-foreground/80 hover:bg-muted",
                         )}
                       >
                         <div className="flex items-start justify-between gap-3 px-3 pt-2 pb-1 text-left">
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold">{job.name}</div>
-                            <div className={cn(
-                              "mt-0.5 truncate font-mono text-xs",
-                              selected ? "text-accent-foreground/70" : "text-foreground/70",
-                            )}>
+                            <div className="mt-0.5 truncate font-mono text-xs text-foreground/70">
                               {job.id}
                             </div>
                           </div>
                           {!job.enabled && (
                             <span className={cn(
                               "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium flex items-center gap-1",
-                              "bg-amber-100 text-amber-700",
+                              "bg-warning/10 text-warning",
                             )}>
                               <Pause className="h-3 w-3" />
                               {t("paused")}
                             </span>
                           )}
                         </div>
-                        <div className={cn(
-                          "px-3 pb-2 text-xs flex items-center justify-between gap-3",
-                          selected ? "text-accent-foreground/70" : "text-foreground/70",
-                        )}>
+                        <div className="flex items-center justify-between gap-3 px-3 pb-2 text-xs text-foreground/70">
                           <span>{summarizeJob(job)}</span>
                           {job.unattended && (
                             <span
@@ -714,7 +708,7 @@ export function JobsView({
                                 "rounded-full p-1 inline-flex items-center",
                               )}
                             >
-                              <Bot className={cn("h-4 w-4", selected ? "text-accent-foreground" : "text-emerald-700")} />
+                              <Bot className="h-4 w-4 text-muted-foreground" />
                             </span>
                           )}
                         </div>
@@ -729,14 +723,14 @@ export function JobsView({
 
         <section className="min-h-0 px-3 py-5 sm:px-6 lg:overflow-y-auto">
           <div className="mx-auto flex max-w-4xl flex-col gap-4">
-            <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-border bg-background/88 px-3 py-4 shadow-sm backdrop-blur sm:px-5">
+            <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-surface px-3 py-4 backdrop-blur sm:px-5">
               <p className="text-sm text-muted-foreground">
                 {selectedJobId === "new"
                   ? t("editor.newJob")
                   : t("editor.editing", { name: draft.id || draft.name || t("editor.jobFallback") })}
               </p>
               <div className="flex flex-wrap items-center gap-2">
-                {notice && !isDraftDirty ? <p className="text-sm text-emerald-700">{notice}</p> : null}
+                {notice && !isDraftDirty ? <p className="text-sm text-success">{notice}</p> : null}
                 <button
                   type="button"
                   onClick={() => void handleDelete()}
@@ -749,7 +743,7 @@ export function JobsView({
                 <button
                   type="button"
                   onClick={() => void handleSave()}
-                  className="inline-flex items-center gap-2 rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background hover:bg-foreground/90 disabled:opacity-60 disabled:hover:bg-foreground"
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60 disabled:hover:bg-primary"
                   disabled={saving || running || loading || draftValidationError !== null || !isDraftDirty}
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -758,10 +752,10 @@ export function JobsView({
               </div>
             </div>
 
-            <div className="rounded-3xl border border-border bg-background/88 p-3 shadow-sm sm:p-5">
+            <div className="rounded-3xl bg-surface p-3 sm:p-5">
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="space-y-1.5">
-                  <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{t("fields.name")}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t("fields.name")}</span>
                   <input
                     value={draft.name}
                     onChange={(event) => {
@@ -780,7 +774,7 @@ export function JobsView({
                   />
                 </label>
                 <label className="space-y-1.5">
-                  <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{t("fields.jobId")}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t("fields.jobId")}</span>
                   <input
                     value={draft.id}
                     onChange={(event) => {
@@ -796,14 +790,13 @@ export function JobsView({
               </div>
 
               <div className="mt-4 space-y-3">
-                <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/35 px-4 py-3">
+                <div className="space-y-3 rounded-2xl bg-inset px-4 py-3">
                   <SwitchRow
                     checked={draft.enabled}
                     label={t("fields.enabled")}
                     description={t("fields.enabledHelp")}
                     disabled={saving || running}
                     onCheckedChange={(enabled) => updateDraft({ enabled })}
-                    className="rounded-xl border border-border/70 bg-background px-3 py-3"
                   />
 
                   <SwitchRow
@@ -812,7 +805,6 @@ export function JobsView({
                     description={t("fields.memoryEnabledHelp")}
                     disabled={saving || running}
                     onCheckedChange={(memory_enabled) => updateDraft({ memory_enabled })}
-                    className="rounded-xl border border-border/70 bg-background px-3 py-3"
                   />
 
                   <SwitchRow
@@ -821,7 +813,6 @@ export function JobsView({
                     description={t("fields.memoryContextHelp")}
                     disabled={saving || running}
                     onCheckedChange={(memory_context) => updateDraft({ memory_context })}
-                    className="rounded-xl border border-border/70 bg-background px-3 py-3"
                   />
 
                   <SwitchRow
@@ -834,13 +825,12 @@ export function JobsView({
                         persistent_session_id: enabled ? "" : null,
                         archive_previous_sessions: enabled ? false : draft.archive_previous_sessions,
                       })}
-                    className="rounded-xl border border-border/70 bg-background px-3 py-3"
                   />
                 </div>
 
                 {!usePersistentSession ? (
-                  <div className="space-y-3 rounded-2xl border border-border bg-muted/35 p-4">
-                    <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{t("fields.newSession")}</div>
+                  <div className="space-y-3 rounded-2xl bg-inset p-4">
+                    <div className="text-xs font-medium text-muted-foreground">{t("fields.newSession")}</div>
 
                     <SessionOptionTiles
                       items={SESSION_OPTION_ORDER.map((key) => ({
@@ -857,14 +847,13 @@ export function JobsView({
                       description={t("fields.archivePreviousSessionsHelp")}
                       disabled={saving || running}
                       onCheckedChange={(archive_previous_sessions) => updateDraft({ archive_previous_sessions })}
-                      className="rounded-xl border border-border/70 bg-background px-3 py-3"
                     />
                   </div>
                 ) : null}
 
                 {usePersistentSession ? (
-                  <div className="space-y-1.5 rounded-2xl border border-border bg-muted/35 p-4">
-                    <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{t("fields.persistentSession")}</span>
+                  <div className="space-y-1.5 rounded-2xl bg-inset p-4">
+                    <span className="text-xs font-medium text-muted-foreground">{t("fields.persistentSession")}</span>
                     <div className="relative">
                       <input
                         list="jobs-session-options"
@@ -917,14 +906,14 @@ export function JobsView({
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-3 rounded-2xl border border-border bg-muted/35 p-4">
+                  <div className="space-y-3 rounded-2xl bg-inset p-4">
                     <div>
-                      <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{t("fields.models")}</span>
+                      <span className="text-xs font-medium text-muted-foreground">{t("fields.models")}</span>
                       <p className="mt-1 text-xs text-muted-foreground">{t("fields.modelsHelp")}</p>
                     </div>
                     <div className="grid gap-3 xl:grid-cols-2">
                       <label className="space-y-1.5">
-                        <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{t("fields.agentModel")}</span>
+                        <span className="text-xs font-medium text-muted-foreground">{t("fields.agentModel")}</span>
                         <ModelPicker
                           value={draft.agent_model_name}
                           entries={agentModelOptions}
@@ -934,7 +923,7 @@ export function JobsView({
                         />
                       </label>
                       <label className="space-y-1.5">
-                        <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{t("fields.sentinelModel")}</span>
+                        <span className="text-xs font-medium text-muted-foreground">{t("fields.sentinelModel")}</span>
                         <ModelPicker
                           value={draft.sentinel_model_name}
                           entries={sentinelModelOptions}
@@ -950,7 +939,7 @@ export function JobsView({
 
               <div className="mt-4">
                 <label className="space-y-1.5">
-                  <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{t("fields.prompt")}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t("fields.prompt")}</span>
                   <textarea
                     value={draft.prompt}
                     onChange={(event) => updateDraft({ prompt: event.target.value })}
@@ -963,7 +952,7 @@ export function JobsView({
               </div>
             </div>
 
-            <div className="rounded-3xl border border-border bg-background/88 p-3 shadow-sm sm:p-5">
+            <div className="rounded-3xl bg-surface p-3 sm:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold">{t("sections.cronTriggers")}</h2>
@@ -997,11 +986,11 @@ export function JobsView({
                       return (
                     <div
                       key={`${index}-${selectedJobId}`}
-                      className="grid gap-3 rounded-2xl border border-border bg-muted/35 p-4 md:grid-cols-[minmax(0,1fr)_14rem_auto]"
+                      className="grid gap-3 rounded-2xl bg-inset p-4 md:grid-cols-[minmax(0,1fr)_14rem_auto]"
                     >
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{t("fields.expression")}</span>
+                          <span className="text-xs font-medium text-muted-foreground">{t("fields.expression")}</span>
                         </div>
                         <div
                           ref={openTriggerExamples === index ? openTriggerExamplesRef : null}
@@ -1054,7 +1043,7 @@ export function JobsView({
                         </div>
                       </div>
                       <label className="space-y-1.5">
-                        <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{t("fields.timeZone")}</span>
+                        <span className="text-xs font-medium text-muted-foreground">{t("fields.timeZone")}</span>
                         <select
                           value={trigger.timezone ?? detectedTimeZone}
                           onChange={(event) => updateTrigger(index, { timezone: event.target.value || null })}
@@ -1107,7 +1096,7 @@ export function JobsView({
               )}
             </div>
 
-            <div className="rounded-3xl border border-border bg-background/88 p-3 shadow-sm sm:p-5">
+            <div className="rounded-3xl bg-surface p-3 sm:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold">{t("sections.runJob")}</h2>
@@ -1123,7 +1112,7 @@ export function JobsView({
                 </button>
               </div>
               <label className="mt-4 block space-y-1.5">
-                <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{t("fields.inputOptional")}</span>
+                <span className="text-xs font-medium text-muted-foreground">{t("fields.inputOptional")}</span>
                 <textarea
                   value={runData}
                   onChange={(event) => setRunData(event.target.value)}
@@ -1134,7 +1123,7 @@ export function JobsView({
               </label>
             </div>
 
-            <div className="rounded-3xl border border-border bg-background/88 p-3 shadow-sm sm:p-5">
+            <div className="rounded-3xl bg-surface p-3 sm:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold">{t("sections.previousInvocations")}</h2>
@@ -1163,7 +1152,7 @@ export function JobsView({
                         key={session.session_id}
                         type="button"
                         onClick={() => onSessionActivated(session)}
-                        className="w-full rounded-2xl border border-border bg-background/90 px-4 py-3 text-left transition-colors hover:bg-muted"
+                        className="w-full rounded-2xl border border-border bg-background px-4 py-3 text-left transition-colors hover:bg-muted"
                         disabled={saving || running}
                       >
                         <div className="flex items-center justify-between gap-3">
@@ -1188,7 +1177,7 @@ export function JobsView({
             </div>
 
             {visibleError ? (
-              <div className="rounded-2xl border border-border bg-background/88 px-4 py-3 text-sm shadow-sm">
+              <div className="rounded-2xl bg-surface px-4 py-3 text-sm">
                 <p className="text-destructive">{visibleError}</p>
               </div>
             ) : null}

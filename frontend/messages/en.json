@@ -1307,7 +1307,7 @@
             "cli": "CLI"
         },
         "jobRun": {
-            "title": "Latest Job Run",
+            "title": "Latest job run",
             "job": "Job",
             "ranAt": "Ran at",
             "schedule": "Schedule",

@@ -98,8 +98,8 @@ export function SessionBudgetSection({ budget, gauges, disabled, onSave }: Sessi
   }
 
   return (
-    <section className="rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm">
-      <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+    <section className="py-4">
+      <div className="text-xs font-medium text-muted-foreground">
         {t("title")}
       </div>
 

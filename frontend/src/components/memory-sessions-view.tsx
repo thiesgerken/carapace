@@ -142,7 +142,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
     const state = extraction === null ? "missing" : extraction.outdated.length > 0 ? "outdated" : "current";
     return (
       <>
-        <div className={cn(state === "current" && "text-[#236b86]", state === "outdated" && "text-amber-700 dark:text-amber-400")}>
+        <div className={cn(state === "current" && "text-primary", state === "outdated" && "text-warning")}>
           {t(`states.${state}`)}
         </div>
         {extraction && extraction.outdated.length > 0 ? (
@@ -283,7 +283,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
                       onClick={(event) => {
                         if (togglesRow(event.target)) toggleExpanded(row.session_id);
                       }}
-                      className={cn("cursor-pointer border-b border-border/60 align-top last:border-b-0 hover:bg-muted/30", isExpanded && "bg-muted/40")}
+                      className={cn("cursor-pointer border-b border-border/60 align-top last:border-b-0 hover:bg-muted", isExpanded && "bg-inset")}
                     >
                       <td className="px-3 py-2">
                         <input
@@ -328,7 +328,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
                       </td>
                     </tr>
                     {isExpanded ? (
-                      <tr id={sessionDetailId(row.session_id)} className="border-b border-border/60 bg-muted/40 last:border-b-0">
+                      <tr id={sessionDetailId(row.session_id)} className="border-b border-border/60 bg-inset last:border-b-0">
                         <td colSpan={COLUMNS} className="px-5 pb-5 pt-2">
                           <MemoryExtractionDetail sessionId={row.session_id} state={expanded} />
                         </td>

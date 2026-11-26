@@ -40,7 +40,7 @@ export function SwitchRow({
           "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors",
           hasDescription && "mt-0.5",
           checked
-            ? "border-[#236b86] bg-[#236b86]"
+            ? "border-primary bg-primary"
             : "border-border bg-muted",
         )}
       >

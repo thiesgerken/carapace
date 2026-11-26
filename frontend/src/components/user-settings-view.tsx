@@ -749,7 +749,7 @@ export function UserSettingsView({ server, token }: { server: string; token: str
           <button
             type="submit"
             disabled={saving || !settingsChanged}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? t("actions.saving") : t("actions.save")}
@@ -1014,7 +1014,7 @@ export function MatrixChannelStatusNotice({
       <span
         className={cn(
           "inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium",
-          failed ? "bg-destructive/10 text-destructive" : "bg-emerald-100 text-emerald-700",
+          failed ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success",
         )}
       >
         {failed ? t("matrixStatus.failed") : t("matrixStatus.running")}
@@ -1026,8 +1026,8 @@ export function MatrixChannelStatusNotice({
 
 function Section({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-4 rounded-2xl border border-border bg-background/88 p-4 shadow-sm sm:p-5">
-      <h2 className="mb-4 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h2>
+    <section id={id} className="scroll-mt-4 rounded-2xl bg-surface p-4 sm:p-5">
+      <h2 className="mb-4 text-sm font-semibold text-foreground">{title}</h2>
       {children}
     </section>
   );
@@ -1247,7 +1247,7 @@ function BudgetInput({ label, placeholder, value, onBlur, onChange, title }: { l
   );
 }
 
-const secondaryButtonClassName = "inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50";
+const secondaryButtonClassName = "inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50";
 
 function SecondaryButton({
   children,
@@ -1287,7 +1287,7 @@ function CredentialBackendEditor({
   const typeDescription = backend.type === "file" ? t("credentials.types.file.description") : t("credentials.types.bitwarden.description");
   const TypeIcon = backend.type === "file" ? FileText : KeyRound;
   return (
-    <div className="rounded-lg border border-border bg-muted/20 p-4">
+    <div className="rounded-lg border border-border bg-background p-4">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground">

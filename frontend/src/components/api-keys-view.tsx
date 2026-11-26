@@ -163,22 +163,22 @@ export function ApiKeysView({ server: serverProp, token, isAdmin }: ApiKeysViewP
         </div>
 
         {error ? (
-          <div className="rounded-2xl border border-border bg-background/88 px-4 py-3 text-sm text-destructive shadow-sm">
+          <div className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
           </div>
         ) : null}
 
         {createdSecret ? (
-          <div className="space-y-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 shadow-sm">
+          <div className="space-y-3 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 text-foreground">
             <p className="text-sm font-medium">{t("secret.warning")}</p>
             <div className="flex items-center gap-2">
-              <code className="min-w-0 flex-1 break-all rounded-md border border-amber-300 bg-background px-3 py-2 font-mono text-xs text-foreground">
+              <code className="min-w-0 flex-1 break-all rounded-md border border-warning/40 bg-background px-3 py-2 font-mono text-xs text-foreground">
                 {createdSecret}
               </code>
               <button
                 type="button"
                 onClick={() => void handleCopy()}
-                className={cn(iconButtonClassName, "shrink-0 border border-amber-300")}
+                className={cn(iconButtonClassName, "shrink-0")}
                 aria-label={t("secret.copy")}
                 title={t("secret.copy")}
               >
@@ -195,7 +195,7 @@ export function ApiKeysView({ server: serverProp, token, isAdmin }: ApiKeysViewP
           </div>
         ) : null}
 
-        <form onSubmit={(event) => void handleCreate(event)} className="space-y-4 rounded-2xl border border-border bg-background/70 p-4">
+        <form onSubmit={(event) => void handleCreate(event)} className="space-y-4 rounded-2xl bg-surface p-4">
           <label className="space-y-1.5">
             <span className="text-xs font-medium text-muted-foreground">{t("create.nameLabel")}</span>
             <input
@@ -223,7 +223,7 @@ export function ApiKeysView({ server: serverProp, token, isAdmin }: ApiKeysViewP
                           className={cn(
                             "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
                             value === access
-                              ? "bg-foreground text-background"
+                              ? "bg-primary text-primary-foreground"
                               : "text-muted-foreground hover:bg-muted hover:text-foreground",
                           )}
                         >
@@ -252,7 +252,7 @@ export function ApiKeysView({ server: serverProp, token, isAdmin }: ApiKeysViewP
           <button
             type="submit"
             disabled={creating || !server.trim()}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             {creating ? t("create.creating") : t("create.submit")}
@@ -260,14 +260,14 @@ export function ApiKeysView({ server: serverProp, token, isAdmin }: ApiKeysViewP
         </form>
 
         <div className="space-y-2">
-          <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{t("list.title")}</div>
+          <div className="text-xs font-medium text-muted-foreground">{t("list.title")}</div>
           {loading ? (
             <div className="flex items-center gap-2 rounded-lg border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               {t("list.loading")}
             </div>
           ) : keys.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border bg-background/80 px-4 py-6 text-sm text-muted-foreground">
+            <div className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
               {t("list.empty")}
             </div>
           ) : (

@@ -78,7 +78,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
 
             {isAdmin ? (
               <div className="flex items-end gap-1 border-l border-border/80 pl-4">
-                <span className="pb-2 pr-1 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                <span className="pb-2 pr-1 text-xs font-medium text-muted-foreground">
                   {t("navigation.platform")}
                 </span>
                 {tab("platform-models", t("navigation.models"))}

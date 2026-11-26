@@ -121,7 +121,7 @@ export function CommandResultView({
                       r.status === "disabled"
                         ? "text-destructive"
                         : r.status === "always-on"
-                          ? "text-green-600 dark:text-green-400"
+                          ? "text-success"
                           : r.status === "activated"
                             ? "text-warning"
                             : "text-muted-foreground"
@@ -339,8 +339,8 @@ function CompactView({ data }: { data: unknown }) {
   if (tools) lines.push(t("tools", { count: tools }));
   if (thinking) lines.push(t("thinking", { count: thinking }));
   return (
-    <div className="my-2 rounded-lg border border-border/60 bg-muted/30 p-3 text-sm">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <div className="my-2 rounded-lg border border-border/60 bg-inset p-3 text-sm">
+      <div className="text-xs font-medium text-muted-foreground">
         {t("title")}
       </div>
       {nothing ? (
@@ -534,9 +534,9 @@ function fmt(n: number): string {
 }
 
 function costColor(val: number): string {
-  if (val >= 0.25) return "text-red-600 dark:text-red-400";
-  if (val >= 0.1) return "text-yellow-600 dark:text-yellow-400";
-  if (val > 0) return "text-green-600 dark:text-green-400";
+  if (val >= 0.25) return "text-destructive";
+  if (val >= 0.1) return "text-warning";
+  if (val > 0) return "text-success";
   return ""; // zero cost ("-") stays normal text color
 }
 

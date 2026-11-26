@@ -3,46 +3,67 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Petrol accent from the logo and the artifacts skill palette. Neutrals carry the same hue at very low
+   chroma so the greys sit with the accent instead of against it. Status colors are tuned to read as
+   text on every surface level; tint them (e.g. bg-success/10) for badges and fills. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0.014 285.82);
-  --muted: oklch(0.967 0.003 264.54);
-  --muted-foreground: oklch(0.553 0.013 264.36);
-  --border: oklch(0.922 0.004 264.54);
-  --ring: oklch(0.708 0.013 264.54);
-  --accent: oklch(0.967 0.003 264.54);
-  --accent-foreground: oklch(0.21 0.012 264.54);
-  --destructive: oklch(0.577 0.245 27.33);
-  --warning: oklch(0.769 0.189 70.08);
-  --warning-foreground: oklch(0.21 0.012 264.54);
+  --background: oklch(0.995 0.002 220);
+  --foreground: oklch(0.21 0.018 225);
+  --surface: oklch(0.975 0.005 220);
+  --inset: oklch(0.958 0.007 220);
+  --muted: oklch(0.948 0.009 220);
+  --muted-foreground: oklch(0.51 0.02 220);
+  --border: oklch(0.905 0.009 220);
+  --ring: oklch(0.625 0.097 216);
+  --accent: oklch(0.945 0.012 220);
+  --accent-foreground: oklch(0.25 0.03 225);
+  --primary: oklch(0.496 0.081 227.2);
+  --primary-foreground: oklch(1 0 0);
+  --success: oklch(0.52 0.11 160);
+  --info: oklch(0.53 0.14 250);
+  --warning: oklch(0.535 0.145 61);
+  --destructive: oklch(0.55 0.23 27.33);
+  --destructive-foreground: oklch(0.985 0 0);
 }
 
 .dark {
-  --background: oklch(0.141 0.005 285.82);
-  --foreground: oklch(0.985 0.002 264.54);
-  --muted: oklch(0.21 0.012 264.54);
-  --muted-foreground: oklch(0.553 0.013 264.36);
-  --border: oklch(0.274 0.011 264.54);
-  --ring: oklch(0.442 0.011 264.54);
-  --accent: oklch(0.274 0.011 264.54);
-  --accent-foreground: oklch(0.985 0.002 264.54);
-  --destructive: oklch(0.577 0.245 27.33);
-  --warning: oklch(0.769 0.189 70.08);
-  --warning-foreground: oklch(0.985 0.002 264.54);
+  --background: oklch(0.2 0.013 222);
+  --foreground: oklch(0.96 0.006 210);
+  --surface: oklch(0.232 0.015 222);
+  --inset: oklch(0.262 0.016 222);
+  --muted: oklch(0.285 0.017 222);
+  --muted-foreground: oklch(0.7 0.02 215);
+  --border: oklch(0.32 0.017 222);
+  --ring: oklch(0.729 0.096 209.3);
+  --accent: oklch(0.3 0.02 222);
+  --accent-foreground: oklch(0.96 0.006 210);
+  --primary: oklch(0.791 0.082 200.6);
+  --primary-foreground: oklch(0.24 0.025 191.3);
+  --success: oklch(0.77 0.13 160);
+  --info: oklch(0.75 0.11 248);
+  --warning: oklch(0.8 0.14 78);
+  --destructive: oklch(0.69 0.18 24);
+  --destructive-foreground: oklch(0.2 0.013 222);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-inset: var(--inset);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
   --color-ring: var(--ring);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-success: var(--success);
+  --color-info: var(--info);
   --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -122,7 +143,7 @@ body {
   margin: 0 0.05em 0 0.1em;
 }
 .prose pre {
-  background: var(--muted);
+  background: var(--inset);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
@@ -149,7 +170,7 @@ body {
   gap: 0.35rem;
   padding: 0.2rem 0.4rem 0.2rem 0.5rem;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in oklch, var(--muted) 65%, transparent);
+  background: var(--inset);
   min-height: 1.75rem;
 }
 .prose .md-code-block-lang {
@@ -317,7 +338,7 @@ body {
   font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
 }
 .prose :not(pre) > code {
-  background: var(--muted);
+  background: var(--inset);
   border-radius: 0.25rem;
   padding: 0.15em 0.35em;
 }
@@ -358,6 +379,7 @@ body {
   margin: 0.5em 0;
 }
 .prose a {
+  color: var(--primary);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -372,7 +394,7 @@ body {
   text-align: left;
 }
 .prose th {
-  background: var(--muted);
+  background: var(--inset);
   font-weight: 600;
 }
 
@@ -381,7 +403,7 @@ body {
   display: flex;
   justify-content: center;
   padding: 0.75rem 1rem;
-  background: var(--muted);
+  background: var(--inset);
   overflow-x: auto;
 }
 .prose .mermaid-diagram svg {

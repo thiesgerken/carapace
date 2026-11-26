@@ -114,7 +114,7 @@ export function HomeView({ server, agentName, onStart }: {
             )}
           />
         </div>
-        <aside className="hidden min-h-0 border-l border-border bg-muted/20 lg:block">
+        <aside className="hidden min-h-0 bg-surface lg:block">
           <div className="h-full overflow-y-auto p-3">{thisWeek}</div>
         </aside>
       </div>
@@ -133,9 +133,9 @@ function ThisWeekBlock({ week }: { week: HomeThisWeek | null }) {
 
 function Block({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-2xl border border-border bg-background/88 p-4 shadow-sm sm:p-5">
+    <section className="rounded-2xl bg-surface p-4 sm:p-5">
       <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h2>
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
         {action}
       </div>
       {children}
@@ -229,7 +229,7 @@ function OpenLoopList({ server, loops }: { server: string; loops: HomeOpenLoop[]
             <li key={loop.id} className="group/loop py-3 first:pt-0 last:pb-0">
               {phases.get(loop.id) === "undo" ? (
                 <div role="status" className="flex items-center gap-3 text-sm text-muted-foreground">
-                  <span aria-hidden="true" className={cn(checkCircleClassName, "border-[#236b86] bg-[#236b86] text-white dark:border-sky-400 dark:bg-sky-400 dark:text-background")}>
+                  <span aria-hidden="true" className={cn(checkCircleClassName, "border-primary bg-primary text-primary-foreground")}>
                     <Check className="h-3 w-3" strokeWidth={3} />
                   </span>
                   <span className="min-w-0 flex-1 truncate">{t("dismissed", { text: loop.text })}</span>
@@ -238,7 +238,7 @@ function OpenLoopList({ server, loops }: { server: string; loops: HomeOpenLoop[]
                     data-undo-id={loop.id}
                     autoFocus
                     onClick={() => undo(loop)}
-                    className="shrink-0 rounded-md px-1.5 py-0.5 font-medium text-[#236b86] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-sky-400"
+                    className="shrink-0 rounded-md px-1.5 py-0.5 font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {t("undo")}
                   </button>
@@ -272,10 +272,10 @@ function OpenLoopItem({ loop, focusDismiss, onDismiss }: { loop: HomeOpenLoop; f
         title={t("openLoops.dismiss")}
         className={cn(
           checkCircleClassName,
-          "group/check border-muted-foreground/40 text-[#236b86] dark:text-sky-400",
+          "group/check border-muted-foreground/40 text-primary",
           // A 20px circle, but a 44px tap target (the inset counts from inside the 2px border).
           "relative after:absolute after:-inset-3.5 after:content-['']",
-          "hover:border-[#236b86] focus-visible:border-[#236b86] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:border-sky-400 dark:focus-visible:border-sky-400",
+          "hover:border-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         )}
       >
         {/* The check previews on hover and focus; touch screens have neither and tap straight to done. */}
@@ -294,7 +294,7 @@ function OpenLoopItem({ loop, focusDismiss, onDismiss }: { loop: HomeOpenLoop; f
         </div>
         <Link
           href={sessionHref(loop.session_id)}
-          className="inline-flex shrink-0 items-center gap-1 self-start text-sm font-medium text-[#236b86] hover:underline dark:text-sky-400"
+          className="inline-flex shrink-0 items-center gap-1 self-start text-sm font-medium text-primary hover:underline"
         >
           {t("openLoops.continue")}
           <ArrowRight className="h-3.5 w-3.5" />
@@ -399,7 +399,7 @@ function NoticeChips({ notices }: { notices: HomeNotices }) {
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
               urgent
-                ? "border-amber-500/40 bg-amber-500/10 text-amber-800 hover:bg-amber-500/15 dark:text-amber-300"
+                ? "border-warning/40 bg-warning/10 text-warning hover:bg-warning/15"
                 : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >

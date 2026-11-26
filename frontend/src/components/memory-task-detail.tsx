@@ -113,7 +113,7 @@ function SubjectHeader({ href, label, children }: { href: string; label: string;
 function ResultNote({ produced, isCurrent }: { produced: unknown; isCurrent: boolean }) {
   const t = useTranslations("memory.tasks.detail");
   if (produced === null) return <p className="text-xs text-muted-foreground">{t("resultGone")}</p>;
-  if (produced !== undefined && !isCurrent) return <p className="text-xs text-amber-700 dark:text-amber-400">{t("superseded")}</p>;
+  if (produced !== undefined && !isCurrent) return <p className="text-xs text-warning">{t("superseded")}</p>;
   return null;
 }
 
@@ -214,7 +214,7 @@ function DependencyCounts({ task }: { task: MemoryTaskView }) {
     missing > 0 ? t(week ? "missingExtractions" : "missingSources", { count: missing }) : null,
   ].filter(Boolean);
   if (parts.length === 0) return null;
-  return <span className="text-xs text-amber-700 dark:text-amber-400">{parts.join(" · ")}</span>;
+  return <span className="text-xs text-warning">{parts.join(" · ")}</span>;
 }
 
 type PeriodOutcome = { key: string } & ({ detail: MemoryPeriodDetail | null } | { error: string });

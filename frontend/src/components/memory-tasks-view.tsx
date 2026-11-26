@@ -287,7 +287,7 @@ export function MemoryTasksView({ server, token, initialStatus = null }: {
                       onClick={(event) => {
                         if (togglesRow(event.target)) setExpandedId(expanded ? null : task.id);
                       }}
-                      className={cn("cursor-pointer border-b border-border/60 align-top last:border-b-0 hover:bg-muted/30", expanded && "bg-muted/40")}
+                      className={cn("cursor-pointer border-b border-border/60 align-top last:border-b-0 hover:bg-muted", expanded && "bg-inset")}
                     >
                       <td className="px-3 py-2">
                         <input
@@ -308,7 +308,7 @@ export function MemoryTasksView({ server, token, initialStatus = null }: {
                       </td>
                       <td className="px-3 py-2">
                         <TaskStatusBadge status={task.status} />
-                        {task.blocked_reason === "budget" ? <div className="text-xs text-amber-700 dark:text-amber-400">{t("blockedBudget")}</div> : null}
+                        {task.blocked_reason === "budget" ? <div className="text-xs text-warning">{t("blockedBudget")}</div> : null}
                         <DependencyHint task={task} onShowSources={() => updateForm(sourceTasksForm(task))} />
                       </td>
                       <td className="px-3 py-2 font-mono text-xs">{taskRunModel(task, models) ?? "—"}</td>
@@ -341,7 +341,7 @@ export function MemoryTasksView({ server, token, initialStatus = null }: {
                       </td>
                     </tr>
                     {expanded ? (
-                      <tr id={taskDetailId(task.id)} className="border-b border-border/60 bg-muted/40">
+                      <tr id={taskDetailId(task.id)} className="border-b border-border/60 bg-inset">
                         <td colSpan={COLUMN_COUNT} className="px-3 pb-3">
                           <MemoryTaskDetail server={server} task={task} models={models} />
                         </td>
@@ -400,7 +400,7 @@ function DependencyHint({ task, onShowSources }: { task: MemoryTaskView; onShowS
       type="button"
       title={t("showSources")}
       onClick={onShowSources}
-      className="block text-left text-xs text-amber-700 underline-offset-2 hover:underline dark:text-amber-400"
+      className="block text-left text-xs text-warning underline-offset-2 hover:underline"
     >
       {text}
     </button>

@@ -10,9 +10,9 @@ const POLL_MS = 3000;
 
 const STATE_STYLE: Record<SkillBuildState, { icon: ReactNode; cls: string }> = {
   building: { icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, cls: "text-muted-foreground" },
-  succeeded: { icon: <CircleCheck className="h-3.5 w-3.5" />, cls: "text-emerald-600 dark:text-emerald-400" },
+  succeeded: { icon: <CircleCheck className="h-3.5 w-3.5" />, cls: "text-success" },
   failed: { icon: <CircleAlert className="h-3.5 w-3.5" />, cls: "text-destructive" },
-  unavailable: { icon: <CircleDashed className="h-3.5 w-3.5" />, cls: "text-amber-600 dark:text-amber-400" },
+  unavailable: { icon: <CircleDashed className="h-3.5 w-3.5" />, cls: "text-warning" },
 };
 
 /**
@@ -54,9 +54,9 @@ export function SkillBuildPanel({ server, skill, initial }: { server: string; sk
   const style = STATE_STYLE[build.state];
   const commands = Object.entries(build.commands);
   return (
-    <section className="rounded-lg border border-border bg-muted/30 p-4 text-sm">
+    <section className="rounded-lg bg-surface p-4 text-sm">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <h2 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        <h2 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
           <Hammer className="h-3.5 w-3.5" />
           {t("title")}
         </h2>

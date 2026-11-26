@@ -286,7 +286,7 @@ function ThinkingBadge({
       </button>
 
       {open && (
-        <div className="thinking-details tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
+        <div className="thinking-details tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-inset p-3 text-xs text-muted-foreground">
           <MarkdownContent content={content} />
         </div>
       )}
@@ -315,7 +315,7 @@ function MessageActionButton({
       aria-label={label}
       title={label}
       className={cn(
-        "inline-flex items-center rounded-md border border-border/70 p-1.5 text-muted-foreground transition-colors",
+        "inline-flex items-center rounded-md p-1.5 text-muted-foreground transition-colors",
         "hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50",
       )}
     >
@@ -385,7 +385,7 @@ function MessageActions({
   // Controls first, then the meta pushed to the far end of the row (spacer between spans the width).
   return (
     <div className={cn("mt-2 flex items-center gap-2", className)}>
-      <MessageCopyButton text={copyText ?? ""} className="border border-border/70 p-1.5" />
+      <MessageCopyButton text={copyText ?? ""} className="p-1.5" />
       <MessageActionButton
         label={t("actions.fork")}
         icon={<GitBranch className="size-3.5" />}
@@ -418,7 +418,7 @@ function MessageActions({
           href={debugHref}
           aria-label={t("actions.timeline")}
           title={t("actions.timeline")}
-          className="inline-flex items-center rounded-md border border-border/70 p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="inline-flex items-center rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <Bug className="size-3.5" />
         </Link>
@@ -451,17 +451,15 @@ function FinalStatusNotice({ status }: { status: "success" | "warning" }) {
   return (
     <div
       className={cn(
-        "mt-3 rounded-xl border px-3 py-2.5 text-sm",
-        isWarning
-          ? "border-amber-200 bg-amber-50 text-amber-900"
-          : "border-sky-200 bg-sky-50 text-sky-900",
+        "mt-3 rounded-xl border px-3 py-2.5 text-sm text-foreground",
+        isWarning ? "border-warning/30 bg-warning/10" : "border-info/30 bg-info/10",
       )}
     >
       <div className="flex items-start gap-2">
         {isWarning ? (
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
         ) : (
-          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" />
         )}
         <p>
           {t("finalStatus.notice", { status: statusLabel })}
@@ -493,7 +491,7 @@ function ProviderCompactionMarker({
         title={message.rejected ? t("providerRejectedTitle") : message.failed ? t("providerFailedTitle") : t("providerTitle")}
         aria-expanded={open}
       >
-        <Archive className={cn("h-3 w-3 shrink-0", message.failed ? "text-destructive" : "text-amber-600/70")} />
+        <Archive className={cn("h-3 w-3 shrink-0", message.failed ? "text-destructive" : "text-info")} />
         <span className="font-medium">
           {message.rejected
             ? t("providerRejected", { provider })
@@ -507,14 +505,14 @@ function ProviderCompactionMarker({
         <div
           className={cn(
             "mb-1.5 ml-5 mt-1 rounded-md border p-2 text-[11px] text-muted-foreground",
-            message.failed ? "border-destructive/30 bg-destructive/5" : "border-amber-500/30 bg-amber-500/5",
+            message.failed ? "border-destructive/30 bg-destructive/5" : "border-info/30 bg-info/5",
           )}
         >
           {message.failed ? (
             <p className="whitespace-pre-wrap break-words text-destructive">{message.failed}</p>
           ) : message.summary ? (
             <>
-              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-70">{t("modelSummaryLabel")}</p>
+              <p className="mb-1 font-medium">{t("modelSummaryLabel")}</p>
               <div className="whitespace-pre-wrap break-words">{message.summary}</div>
             </>
           ) : (
@@ -548,7 +546,7 @@ function CompactionSummaryBlock({
       {/* Rail lives in the gutter (negative offset) so the originals are not shifted. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -left-3 bottom-1 top-1 w-0.5 rounded bg-amber-500/40"
+        className="pointer-events-none absolute -left-3 bottom-1 top-1 w-0.5 rounded bg-info/40"
       />
       <button
         type="button"
@@ -560,7 +558,7 @@ function CompactionSummaryBlock({
         title={t("foldTitle")}
         aria-expanded={open}
       >
-        <Archive className="h-3 w-3 shrink-0 text-amber-600/70" />
+        <Archive className="h-3 w-3 shrink-0 text-info" />
         <span className="font-medium">
           {t("railHeader", { count: message.turnCount })}
         </span>
@@ -573,8 +571,8 @@ function CompactionSummaryBlock({
         </span>
       </button>
       {open && message.summary ? (
-        <div className="mb-1.5 ml-5 mt-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-[11px] text-muted-foreground">
-          <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-70">
+        <div className="mb-1.5 ml-5 mt-1 rounded-md border border-info/30 bg-info/5 p-2 text-[11px] text-muted-foreground">
+          <p className="mb-1 font-medium">
             {t("modelSummaryLabel")}
           </p>
           <div className="whitespace-pre-wrap break-words">{message.summary}</div>
@@ -675,7 +673,7 @@ export function Message({
           <div className="flex w-fit max-w-full flex-col items-end md:max-w-[85%]">
           <div
             className={cn(
-              "chat-copy-serif max-w-full rounded-2xl rounded-br-md border border-border/60 bg-muted/30 px-3.5 py-2 text-sm text-foreground",
+              "chat-copy-serif max-w-full rounded-2xl rounded-br-md bg-inset px-3.5 py-2 text-sm text-foreground",
             )}
           >
             {message.content ? <MarkdownContent content={message.content} /> : null}
@@ -703,7 +701,7 @@ export function Message({
                     <span
                       key={att.path}
                       title={att.path}
-                      className="flex items-center gap-1.5 rounded-lg border border-border bg-background/50 px-2 py-1 text-xs"
+                      className="flex items-center gap-1.5 rounded-lg bg-background px-2 py-1 text-xs"
                     >
                       <Paperclip className="h-3 w-3 shrink-0" />
                       <span className="max-w-40 truncate">{att.name}</span>

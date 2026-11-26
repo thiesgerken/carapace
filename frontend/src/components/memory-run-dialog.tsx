@@ -128,13 +128,13 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
 
         {estimate && estimate.unestimated > 0 ? <p className="text-sm text-muted-foreground">{t("unestimated", { count: estimate.unestimated })}</p> : null}
 
-        {overBudget ? <p className="text-sm text-amber-700 dark:text-amber-400">{t("overBudget")}</p> : null}
+        {overBudget ? <p className="text-sm text-warning">{t("overBudget")}</p> : null}
 
         {estimate && estimate.missing_dependencies > 0 ? (
           includeDependencies ? (
             <p className="text-sm text-muted-foreground">{t("dependenciesAdded", { count: estimate.missing_dependencies })}</p>
           ) : (
-            <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-amber-700 dark:text-amber-400">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-warning">
               <span>{t("missingDependencies", { count: estimate.missing_dependencies })}</span>
               <button
                 type="button"
@@ -176,7 +176,7 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
             type="button"
             onClick={() => void handleRun()}
             disabled={running || !runCount}
-            className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             {t("confirm")}

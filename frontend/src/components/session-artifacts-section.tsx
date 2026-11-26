@@ -24,8 +24,8 @@ export function SessionArtifactsSection({ server, sessionId, refreshKey }: { ser
   if (current === null || ("value" in current && current.value.length === 0)) return null;
 
   return (
-    <section className="rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm">
-      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground"><ArtifactIcon className="h-3.5 w-3.5" />{t("title")}</div>
+    <section className="py-4">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><ArtifactIcon className="h-3.5 w-3.5" />{t("title")}</div>
       {"error" in current ? (
         <p role="alert" className="mt-2 text-xs text-destructive">{t("loadError")}</p>
       ) : (

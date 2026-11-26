@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 const controlClassName = "h-9 rounded-lg border bg-background text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30";
 /** A filter changed from its tab's default stands out, so a narrowed list never passes for the default one. */
 function stateClassName(active: boolean): string {
-  return active ? "border-[#236b86]/60 bg-[#236b86]/10 dark:border-sky-400/50 dark:bg-sky-400/10" : "border-border";
+  return active ? "border-primary/60 bg-primary/10" : "border-border";
 }
 const iconClassName = "pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground";
 

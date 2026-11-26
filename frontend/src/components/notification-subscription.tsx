@@ -410,7 +410,7 @@ function NotificationSubscriptionContent({
       : t("description");
 
   return (
-    <div className="rounded-2xl border border-border bg-muted/25 p-4">
+    <div className="rounded-2xl bg-surface p-4">
       <SwitchRow
         checked={notificationsEnabled}
         label={t("title")}
@@ -428,7 +428,7 @@ function NotificationSubscriptionContent({
       {notificationsEnabled ? (
         <div className="mt-4 space-y-4">
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+          <label className="block text-xs font-medium text-muted-foreground">
             {t("deviceName.label")}
           </label>
           <input
@@ -446,7 +446,7 @@ function NotificationSubscriptionContent({
           </p>
         </div>
 
-        <div className="space-y-3 rounded-2xl border border-border bg-background/80 px-4 py-3 shadow-sm">
+        <div className="space-y-3 rounded-2xl bg-inset px-4 py-3">
           {notificationsDiagnosticLabel ? (
             <p className="text-xs text-muted-foreground">
               {notificationsDiagnosticLabel}
@@ -472,7 +472,7 @@ function NotificationSubscriptionContent({
             </p>
           ) : null}
           {notice ? (
-            <p className="text-sm text-emerald-700">
+            <p className="text-sm text-success">
               {notice}
             </p>
           ) : null}
@@ -491,8 +491,8 @@ function NotificationSubscriptionContent({
         </div>
 
         {activeSubscription ? (
-          <fieldset className="space-y-3 rounded-2xl border border-border bg-background/80 p-4 shadow-sm">
-            <legend className="px-1 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+          <fieldset className="space-y-3 rounded-2xl bg-inset p-4">
+            <legend className="px-1 text-xs font-medium text-muted-foreground">
               {t("preferences.label")}
             </legend>
             {PREFERENCE_KEYS.map((key) => (

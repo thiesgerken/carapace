@@ -63,7 +63,7 @@ function AppChrome({ children }: { children: ReactNode }) {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 w-72 border-r border-border bg-background transition-transform duration-200 md:static md:w-84 md:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 w-72 bg-surface transition-transform duration-200 md:static md:w-84 md:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
