@@ -82,7 +82,7 @@ These mistakes make skills harder to discover or use:
 
 ## Standard Skill Layout
 
-Skills live under `skills/` in the knowledge repo. A skill without commands is a directory with a `SKILL.md`. A skill with commands is also a Nix flake: `flake.nix` and `flake.lock` next to `SKILL.md`, plus the code and its lock files.
+Skills live under `skills/` in the knowledge repo. Every skill is a Nix flake: `flake.nix` and `flake.lock` next to `SKILL.md`, plus the code and its lock files if it has commands. A skill with only instructions needs just the flake of a few lines from docs/skill-flakes.md ("Skills with only instructions"): `mkSkill { name = "my-skill"; src = ./.; }`.
 
 ```text
 skills/
@@ -190,6 +190,7 @@ The Carapace builder builds the flake whenever the skill changes on the server, 
         {
           default = skill.mkSkill {
             name = "my-skill";
+            src = ./.;
             needs = {
               domains = [ "api.example.com" ];
               credentials.EXAMPLE_TOKEN = "personal/example-token";

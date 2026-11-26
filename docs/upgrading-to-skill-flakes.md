@@ -150,6 +150,7 @@ After, in `flake.nix` (inputs as in [skill-flakes.md](skill-flakes.md#the-flake)
 ```nix
 default = skill.mkSkill {
   name = "web";
+  src = ./.;
   commands.web_search = {
     exec = "${env}/bin/web_search";
     description = "Search the web with Brave Search";

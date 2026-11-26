@@ -2,11 +2,13 @@
 # cgate and ccred that log their calls, so it needs no Carapace.
 { pkgs, skillLib }:
 let
+  fixture = ./examples/nix;
   # A mistake in `needs` fails the metadata the builder evaluates, not only the build.
   rejects =
     needs:
     let
       bad = skillLib.mkSkill {
+        src = fixture;
         name = "bad";
         commands.cmd = {
           exec = "true";
@@ -29,6 +31,7 @@ let
   ];
   # MCP servers: the bridge's arguments and what each command declares follow from the server.
   mcp = skillLib.mkSkill {
+    src = fixture;
     name = "mcp-contract";
     needs.credentials.UNRELATED = "demo/unrelated";
     commands = skillLib.mcpCommands {
@@ -48,6 +51,11 @@ let
       };
     };
   };
+  # Instructions only: no commands, just the skill directory.
+  notes = skillLib.mkSkill {
+    name = "notes";
+    src = fixture;
+  };
   mcpNeeds = pkgs.lib.mapAttrs (_: command: command.needs) mcp.passthru.carapace.commands;
   # Only MCP commands are marked, so `read_skill` lists tools for them and nothing else.
   marks = package: pkgs.lib.mapAttrs (_: command: command.mcp) package.passthru.carapace.commands;
@@ -56,6 +64,7 @@ let
     !(builtins.tryEval (
       builtins.toJSON
         (skillLib.mkSkill {
+          src = fixture;
           name = "bad-mcp";
           commands = skillLib.mcpCommands {
             bad = {
@@ -81,6 +90,7 @@ let
     }
   ];
   skill = skillLib.mkSkill {
+    src = fixture;
     name = "contract";
     needs = {
       domains = [ "api.example.com" ];
@@ -206,7 +216,11 @@ pkgs.runCommand "skill-wrapper-contract" { } ''
     "mcp --name notes --url https://notes.example.com:8443/mcp --bearer-env MCP_BEARER_TOKEN search --query a b MCP_BEARER_TOKEN=s3cret" \
     "mcp --name local --stdio local-mcp --stdio --list-tools MCP_BEARER_TOKEN=" | diff - calls
 
-  # The package holds the wrappers and nothing else.
-  [ "$(ls -A ${skill})" = bin ]
+  # The package holds the wrappers and the skill directory, which the metadata names.
+  [ "$(ls -A ${skill} | tr '\n' ' ')" = "bin skill " ]
+  [ "$(readlink ${skill}/skill)" = ${skill.passthru.carapace.skillDir} ]
+  cmp ${skill}/skill/SKILL.md ${fixture}/SKILL.md
+  [ -z "$(ls -A ${notes}/bin)" ]
+  cmp ${notes}/skill/SKILL.md ${fixture}/SKILL.md
   touch $out
 ''

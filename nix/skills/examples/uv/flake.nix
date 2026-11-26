@@ -29,6 +29,7 @@
         {
           default = skill.mkSkill {
             name = "demo-uv";
+            src = ./.;
             needs = {
               domains = [ "api.example.com" ];
               credentials.DEMO_API_TOKEN = "demo/api-token";

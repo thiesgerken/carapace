@@ -21,6 +21,7 @@
         {
           default = skill.mkSkill {
             name = "web";
+            src = ./.;
             commands = {
               web_search = {
                 exec = "${env}/bin/web_search";

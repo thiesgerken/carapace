@@ -34,6 +34,7 @@
         {
           default = skill.mkSkill {
             name = "demo-nix";
+            src = ./.;
             commands = {
               demo-nix-pages = {
                 exec = "${pages}/bin/demo-nix-pages";
