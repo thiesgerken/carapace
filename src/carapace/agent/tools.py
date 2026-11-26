@@ -18,6 +18,8 @@ from .. import security as security
 from ..artifacts import artifact_index, artifact_title
 from ..builder.profile import profile_plan
 from ..builder.skill_builds import SkillBuild, SkillCommand
+from ..builder.skill_updates import describe_source
+from ..builder.skills_head import skills_flake_at_head
 from ..llm import (
     ProviderCompactionRejectionCapability,
     model_settings_for_config,
@@ -248,6 +250,21 @@ def _command_docs(commands: dict[str, SkillCommand]) -> str:
     return "\n".join(lines)
 
 
+async def _skill_sources(ctx: RunContext[Deps]) -> dict[str, str]:
+    """Per skill at HEAD: where it comes from and the last update check's verdict.
+
+    Only in tool results, never in the catalog: the catalog is part of the cached prompt prefix, and the
+    update check changes every day.
+    """
+    head = await skills_flake_at_head(ctx.deps.knowledge_dir)
+    if head is None:
+        return {}
+    check = ctx.deps.skill_builds.updates.latest(ctx.deps.knowledge_dir)
+    return {
+        skill.name: describe_source(skill, check.skills.get(skill.name) if check else None) for skill in head.skills
+    }
+
+
 async def _skill_commands(ctx: RunContext[Deps], build: SkillBuild, builds: list[SkillBuild]) -> str:
     """The skill's commands and files, and whether they are in the sandbox, once the profile sync is done."""
     skill_name = build.skill
@@ -476,7 +493,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         catalog = ctx.deps.skill_catalog
         if not catalog:
             return "No skills available."
-        lines = [f"- {s.name}: {s.description.strip()}" for s in catalog]
+        sources = await _skill_sources(ctx)
+        lines = [f"- {s.name}: {s.description.strip()} [{sources.get(s.name, 'not at HEAD')}]" for s in catalog]
         result = "Available skills:\n" + "\n".join(lines)
         return _emit_tool_result(ctx, "list_skills", result)
 
@@ -517,7 +535,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                 exit_code=1,
             )
         commands = await _skill_commands(ctx, build, builds)
-        return _emit_tool_result(ctx, "read_skill", f"{instructions.rstrip()}\n\n{commands}")
+        source = (await _skill_sources(ctx)).get(skill_name, "")
+        text = "\n\n".join(part for part in (instructions.rstrip(), source, commands) if part)
+        return _emit_tool_result(ctx, "read_skill", text)
 
     # --- Filesystem (sandboxed — runs inside the sandbox container) ---
 

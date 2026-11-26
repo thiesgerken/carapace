@@ -3,6 +3,8 @@ they are on PATH."""
 
 from __future__ import annotations
 
+import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
@@ -16,6 +18,7 @@ from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps
 from carapace.agent.tools import create_agent
 from carapace.builder.skill_builds import BuildState, SkillBuild, SkillBuilds, SkillCommand, SkillNeeds
+from carapace.builder.skill_updates import SkillUpdate, UpdateCheck
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models.config import Config
@@ -24,6 +27,7 @@ from carapace.sandbox.manager import SandboxLimitError, SandboxManager
 from carapace.sandbox.runtime import ExecResult
 from carapace.security.context import SessionSecurity, ToolCallEntry
 from carapace.usage import UsageTracker
+from tests.skills_flake import write_skills_flake
 
 _WEATHER = SkillCommand(
     description="Current weather.",
@@ -294,3 +298,23 @@ async def test_a_broken_skill_md_is_reported_with_its_text(tmp_path: Path, moved
     assert result.startswith("Error: the SKILL.md of ideas is invalid: ")
     assert "moved out of the frontmatter into the skill's flake" in result
     assert result.endswith("Use it well.\n")
+
+
+@pytest.mark.anyio
+async def test_the_agent_reads_where_a_skill_comes_from_and_whether_it_has_an_update(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    write_skills_flake(tmp_path / "skills", [], external=["weather"])
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    commit = ["git", "-C", str(tmp_path), "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "x"]
+    subprocess.run(commit, check=True)
+    deps = _deps(tmp_path, [_build("weather", "succeeded", weather=_PLAIN)])
+    update = SkillUpdate(state="available", available_rev="c" * 40, available_at=datetime(2026, 11, 20, tzinfo=UTC))
+    check = UpdateCheck(skills_tree="t", checked_at=datetime(2026, 11, 21, tzinfo=UTC), skills={"weather": update})
+    cast(Any, deps.skill_builds).updates = MagicMock(latest=MagicMock(return_value=check))
+
+    result = await _read_skill(deps, "weather")
+
+    assert (
+        "Use it well.\n\nFrom github:someone/weather, locked at 2222222. An update is available: ccccccc (2026-11-20); "
+        "`nix flake update weather --flake ./skills` takes it.\n\n# Commands\n- `weather`: Offline forecast." in result
+    )

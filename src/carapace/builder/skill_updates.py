@@ -19,6 +19,7 @@ from typing import Any, Literal
 import httpx
 from loguru import logger
 
+from ..skills import ListedSkill
 from .client import BuilderClient, BuilderSystemMismatchError
 from .skills_head import archive_skills, skills_flake_at_head
 
@@ -80,6 +81,32 @@ def _resolved(lock: dict[str, Any], name: str) -> dict[str, Any]:
         return {"locked": entry["locked"], "original": entry.get("original"), "inputs": inputs}
 
     return node(nodes[lock["root"]]["inputs"][name])
+
+
+def describe_source(skill: ListedSkill, update: SkillUpdate | None) -> str:
+    """Where *skill* comes from and whether something newer is there, as the agent reads it."""
+    if skill.directory is not None:
+        text = f"From {skill.origin} (local)."
+    else:
+        text = f"From {skill.origin}, locked at {_rev(skill.locked_rev, skill.locked_at)}."
+    match update.state if update else None:
+        case "available":
+            assert update is not None
+            text += (
+                f" An update is available: {_rev(update.available_rev, update.available_at)}; "
+                f"`nix flake update {skill.name} --flake ./skills` takes it."
+            )
+        case "outdated":
+            assert update is not None
+            text += f" Outdated: {update.detail}"
+        case "failed":
+            text += " The last update check failed for it."
+    return text
+
+
+def _rev(rev: str | None, at: datetime | None) -> str:
+    when = f" ({at:%Y-%m-%d})" if at is not None else ""
+    return f"{rev[:7] if rev else 'an unknown rev'}{when}"
 
 
 class SkillUpdates:

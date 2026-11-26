@@ -292,8 +292,9 @@ async def test_a_repository_without_commits_has_no_skills(tmp_path: Path) -> Non
 
 
 @pytest.mark.anyio
-async def test_a_push_syncs_the_builder_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_a_push_syncs_the_builder_roots_and_checks_for_updates(monkeypatch: pytest.MonkeyPatch) -> None:
     builds = AsyncMock()
+    builds.updates = MagicMock()
     registry = MagicMock()
     registry.existing.return_value = [MagicMock(knowledge_dir=Path("/repos/thies"))]
     monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
@@ -304,6 +305,7 @@ async def test_a_push_syncs_the_builder_roots(monkeypatch: pytest.MonkeyPatch) -
 
     builds.sync_roots.assert_awaited_once()
     assert list(builds.sync_roots.await_args.args[0]) == [Path("/repos/thies")]
+    builds.updates.start.assert_called_once_with(registry.get_for_user.return_value.knowledge_dir)
 
 
 @pytest.mark.anyio
