@@ -1,6 +1,13 @@
 # CHANGELOG
 
 
+## v0.193.4 (2026-11-26)
+
+### 💄 Add or update the UI and style files
+
+- style: menu busy spinner, compact back link on phones, focus contrast
+- style: session ⋯ menu instead of the Chat/Debug toggle
+
 ## v0.193.3 (2026-11-26)
 
 ### 💄 Add or update the UI and style files
