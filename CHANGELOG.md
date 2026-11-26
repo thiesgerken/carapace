@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.196.0 (2026-11-26)
+
+### ✨ Introduce new features
+
+- feat: replay running spans on connect and time exec lock waits
+
+### 🐛 Fix a bug
+
+- fix: revive a stopped card only from a replayed span
+- fix: forget running spans when the turn ends
+
 ## v0.195.0 (2026-11-26)
 
 ### ✨ Introduce new features
