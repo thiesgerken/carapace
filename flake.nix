@@ -284,14 +284,6 @@
                 export CARAPACE_DEV_BUILDER="carapace-builder-$CARAPACE_DEV_INSTANCE"
                 export CARAPACE_DEV_BUILDER_VOLUME="carapace-builder-nix-$CARAPACE_DEV_INSTANCE"
                 export CARAPACE_DEV_LINUX_SYSTEM=${linux}
-                # Where the server binds its proxy and sandbox API for the relay: Docker Desktop forwards
-                # host.docker.internal to the Mac's loopback; on Linux it is the docker0 gateway.
-                ${
-                  if pkgs.stdenv.isDarwin then
-                    "export CARAPACE_DEV_SANDBOX_BIND=127.0.0.1"
-                  else
-                    "export CARAPACE_DEV_SANDBOX_BIND=$(docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null)"
-                }
               else
                 printf '\033[31mCARAPACE_DEV_STACK=%s in .env is not a digit 0-9; the dev stack is not configured.\033[0m\n' "$carapace_stack" >&2
               fi

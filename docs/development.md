@@ -56,7 +56,7 @@ Stopping the stack stops and removes the builder and relay containers. The netwo
 
 ### How sandboxes reach the server
 
-Sandboxes sit on an internal network, so they reach nothing but its containers. The relay (`alpine/socat`) is one of them. It is also on Docker's default bridge, because the internal network has no route out of Docker, not even to the host. It forwards the stack's proxy and sandbox API ports to `host.docker.internal`, and the server gives sandboxes the relay's name as its address (`CARAPACE_SANDBOX_SERVER_HOST`, see [server address](sandbox.md#server-address)). On a Mac, Docker Desktop forwards `host.docker.internal` to the host's loopback, where the server listens. On Linux, `host.docker.internal` is the docker0 gateway, so the shell hook binds the server's sandbox listeners there (`CARAPACE_SERVER_SANDBOX_HOST`), while the main API stays on loopback. It is the same path on both, so the start-up egress self-test passes and real turns work: the knowledge clone, domains through the proxy and git pushes.
+Sandboxes sit on an internal network, so they reach nothing but its containers. The relay (`alpine/socat`) is one of them. It is also on Docker's default bridge, because the internal network has no route out of Docker, not even to the host. It forwards the stack's proxy and sandbox API ports to `host.docker.internal`, and the server gives sandboxes the relay's name as its address (`CARAPACE_SANDBOX_SERVER_HOST`, see [server address](sandbox.md#server-address)). On a Mac, Docker Desktop forwards `host.docker.internal` to the host's loopback, where the server listens. On Linux, `host.docker.internal` is the docker0 gateway, so the `server` process looks it up at every start and binds the server's sandbox listeners there (`CARAPACE_SERVER_SANDBOX_HOST`), while the main API stays on loopback. If the lookup fails, the server doesn't start. It is the same path on both, so the start-up egress self-test passes and real turns work: the knowledge clone, domains through the proxy and git pushes.
 
 The builder stays a container on purpose: skill flakes are agent-authored, `nix eval` runs unsandboxed, harmonia serves the whole store, and Darwin's build sandbox is weak. Its ports are published on loopback, see [builder.md](builder.md#dev-stack).
 
@@ -75,13 +75,15 @@ Then open `http://127.0.0.1:7310` and log in as `demo` with password `carapace-d
 
 ### Testing images locally
 
-The dev stack runs the server and frontend from source. To try locally built images of all services, run them in Compose under the names it expects: load the images, tag each `:local` image as `ghcr.io/thiesgerken/<name>:<tag>` (`carapace`, `carapace-frontend`, `carapace-bitwarden-cli`, `carapace-sandbox`, `carapace-builder`) and start Compose with `CARAPACE_IMAGE_TAG=<tag>`. Compose uses an image that is present locally instead of pulling it. That is the Compose deployment of that checkout, on its `./data`.
+The dev stack runs the server and frontend from source. To try locally built images of all services, run them in Compose under the names it expects: copy the image archives into Docker as `ghcr.io/thiesgerken/<name>:<tag>` and start Compose with `CARAPACE_IMAGE_TAG=<tag>`. `skopeo copy` loads an archive straight under that name, whereas `docker load` would move the shared `:local` tags that other setups may use. Compose uses an image that is present locally instead of pulling it. That is the Compose deployment of that checkout, on its `./data`.
 
 ```sh
-for image in result-{server,frontend,bitwarden,sandbox,builder}-image; do docker load -i "$image"; done
-for name in carapace carapace-frontend carapace-bitwarden-cli carapace-sandbox carapace-builder; do
-  docker tag "$name:local" "ghcr.io/thiesgerken/$name:dev"
-done
+copy() { skopeo --insecure-policy copy "docker-archive:result-$1-image" "docker-daemon:ghcr.io/thiesgerken/$2:dev"; }
+copy server carapace
+copy frontend carapace-frontend
+copy bitwarden carapace-bitwarden-cli
+copy sandbox carapace-sandbox
+copy builder carapace-builder
 CARAPACE_IMAGE_TAG=dev docker compose up -d
 ```
 

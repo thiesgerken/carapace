@@ -18,11 +18,10 @@ processes:
       : "$${CARAPACE_DEV_LINUX_SYSTEM:?run process-compose inside the dev shell (nix develop)}"
       out=$$(nix build ".#packages.$$CARAPACE_DEV_LINUX_SYSTEM.$$ATTR" --print-out-paths --out-link "result-dev-$$ATTR")
       tag="$$IMAGE:$$(basename "$$out" | cut -d- -f1)"
-      if ! docker image inspect "$$tag" > /dev/null 2>&1; then
-        docker load -i "$$out"
-        # ponytail: two stacks loading different images at the same moment could swap :local before the tag
-        docker tag "$$IMAGE:local" "$$tag"
-      fi
+      # Straight under the hash tag: `docker load` would move the shared :local tag that other setups use.
+      # The policy only governs signatures of registry images, and this archive is our own build.
+      docker image inspect "$$tag" > /dev/null 2>&1 ||
+        skopeo --insecure-policy copy --quiet "docker-archive:$$out" "docker-daemon:$$tag"
       echo "$$tag is loaded"
     environment:
       - ATTR=sandbox-image-lite
@@ -94,6 +93,16 @@ processes:
   # No hot reload: restart the process after a change.
   server:
     command: |
+      set -eu
+      # The relay reaches the server at host.docker.internal: the Mac's loopback on Docker Desktop, the docker0
+      # gateway on Linux. Looked up at every start, since a Docker restart can move the gateway. An empty host
+      # would bind to all interfaces, so a failed lookup stops here.
+      if [ "$$(uname)" = Darwin ]; then
+        CARAPACE_SERVER_SANDBOX_HOST=127.0.0.1
+      else
+        CARAPACE_SERVER_SANDBOX_HOST=$$(docker network inspect bridge | jq -er '.[0].IPAM.Config[0].Gateway')
+      fi
+      export CARAPACE_SERVER_SANDBOX_HOST
       export CARAPACE_DATA_DIR="$$PWD/data"
       export CARAPACE_SANDBOX_BASE_IMAGE="carapace-sandbox:$$(basename "$$(readlink result-dev-sandbox-image-lite)" | cut -d- -f1)"
       exec uv run carapace-server
@@ -101,7 +110,6 @@ processes:
       - CARAPACE_SERVER_PORT=${CARAPACE_DEV_SERVER_PORT}
       - CARAPACE_SERVER_SANDBOX_PORT=${CARAPACE_DEV_SANDBOX_PORT}
       - CARAPACE_SERVER_INTERNAL_PORT=${CARAPACE_DEV_INTERNAL_PORT}
-      - CARAPACE_SERVER_SANDBOX_HOST=${CARAPACE_DEV_SANDBOX_BIND}
       - CARAPACE_SANDBOX_PROXY_PORT=${CARAPACE_DEV_PROXY_PORT}
       - CARAPACE_SANDBOX_INSTANCE=${CARAPACE_DEV_INSTANCE}
       - CARAPACE_SANDBOX_SERVER_HOST=${CARAPACE_DEV_RELAY}
