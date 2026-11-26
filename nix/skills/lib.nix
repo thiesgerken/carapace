@@ -104,8 +104,8 @@ let
 in
 {
   # The skill's package: one wrapper per command in bin/, so skills never collide on interpreters or
-  # libraries in the session profile, and the skill directory (SKILL.md, scripts, references) as skill/,
-  # which brings it into every sandbox that installs the commands. The declarations travel as
+  # libraries in the session profile, and a reference to the skill directory (SKILL.md, scripts,
+  # references), which brings it into every sandbox that installs the commands. The declarations travel as
   # `passthru.carapace`, which the builder evaluates without building anything; its `skillDir` is
   # already in the store after that evaluation, so SKILL.md can be read before the commands are built.
   #
@@ -149,8 +149,10 @@ in
       }
       (
         ''
-          mkdir -p $out/bin
-          ln -s ${skillDir} $out/skill
+          mkdir -p $out/bin $out/share/carapace
+          # A file named after the package, not a link: the session profile merges linked directories
+          # and refuses two skills with a SKILL.md, even the same one.
+          echo ${skillDir} > "$out/share/carapace/skill-dir-$(basename $out)"
         ''
         + lib.concatStrings (
           lib.mapAttrsToList (cmd: command: ''

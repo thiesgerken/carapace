@@ -1,6 +1,6 @@
 # Skill flakes
 
-Every skill is a Nix flake: `flake.nix` and `flake.lock` live in the skill directory next to its `SKILL.md`. The flake's package holds the skill directory and one wrapper per command. The Carapace builder builds it whenever the skill changes; the server reads `SKILL.md` from the build, and every session gets the commands on its `PATH` and the skill directory in its store. A skill that only carries instructions is a [flake of a few lines](#skills-with-only-instructions).
+Every skill is a Nix flake: `flake.nix` and `flake.lock` live in the skill directory next to its `SKILL.md`. The flake's package holds one wrapper per command and a reference to the skill directory. The Carapace builder builds it whenever the skill changes; the server reads `SKILL.md` from the build, and every session gets the commands on its `PATH` and the skill directory in its store. A skill that only carries instructions is a [flake of a few lines](#skills-with-only-instructions).
 
 The functions below come from the skills subflake of the Carapace repo, `github:thiesgerken/carapace?dir=nix/skills` ([`nix/skills/flake.nix`](../nix/skills/flake.nix)). It has only `nixpkgs` and the uv2nix stack as inputs, so a skill's `flake.lock` stays small. Three working examples live in [`nix/skills/examples`](../nix/skills/examples): uv, npm and plain nixpkgs. CI builds them against the helpers of the current checkout. The bundled skills with commands (`src/carapace/assets/skills`) are flakes too; CI builds them both against the commit their `flake.lock` pins and against the current helpers.
 
@@ -63,7 +63,7 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 
 ## Commands and what they need
 
-`mkSkill { name, src, commands ? { }, needs ? { } }` builds the package. `src` is the skill directory, normally `./.`: it becomes a store path of its own, linked as `skill/` in the package, so the sandbox gets `SKILL.md`, scripts and references together with the commands. Each command has:
+`mkSkill { name, src, commands ? { }, needs ? { } }` builds the package. `src` is the skill directory, normally `./.`: it becomes a store path of its own, referenced by the package, so the sandbox gets `SKILL.md`, scripts and references together with the commands. Each command has:
 
 - `exec`: what the wrapper runs, with the wrapper's arguments appended. It is shell words, not quoted for you: it gets word-split and expanded, which is what lets a store path carry fixed arguments (`"${pkgs.nodejs}/bin/node ${app}/src/main.mjs"`). A path with spaces needs its own quoting.
 - `description`: one short line, shown to the agent.
@@ -154,7 +154,7 @@ A skill without commands still needs a flake, so that it is built and listed lik
 }
 ```
 
-Its package has an empty `bin/` and the skill directory. The bundled `artifacts`, `mermaid`, `create-skill` and `credentials` skills are built this way.
+Its package has an empty `bin/` and the reference to the skill directory. The bundled `artifacts`, `mermaid`, `create-skill` and `credentials` skills are built this way.
 
 ## MCP servers
 

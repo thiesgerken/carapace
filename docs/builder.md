@@ -37,7 +37,7 @@ A result:
 
 For a skill directory with `flake.nix` and `flake.lock`, on system `<system>`:
 
-- **Outputs:** `nix build --no-update-lock-file path:<dir>#packages.<system>.default`. `store_paths` lists every output of that package. `mkSkill` puts the command wrappers and the skill directory (`skill/`, a store path of its own) into it.
+- **Outputs:** `nix build --no-update-lock-file path:<dir>#packages.<system>.default`. `store_paths` lists every output of that package. `mkSkill` puts the command wrappers into it, and a reference to the skill directory (a store path of its own) that brings it along.
 - **Metadata:** `nix eval --json --no-update-lock-file path:<dir>#packages.<system>.default --apply 'p: p.passthru.carapace or null'`. The builder passes this JSON through without reading it. `mkSkill` defines its schema (command names, descriptions, declarations), and the server reads it. It is `null` when the package has no `passthru.carapace`.
 - **Locks:** a missing `flake.lock` is a failed build, and so is one that lacks an input (`--no-update-lock-file`). The builder never writes lock files.
 - **Evaluation:** import-from-derivation is off, and a flake's `nixConfig` is ignored.

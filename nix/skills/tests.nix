@@ -216,11 +216,11 @@ pkgs.runCommand "skill-wrapper-contract" { } ''
     "mcp --name notes --url https://notes.example.com:8443/mcp --bearer-env MCP_BEARER_TOKEN search --query a b MCP_BEARER_TOKEN=s3cret" \
     "mcp --name local --stdio local-mcp --stdio --list-tools MCP_BEARER_TOKEN=" | diff - calls
 
-  # The package holds the wrappers and the skill directory, which the metadata names.
-  [ "$(ls -A ${skill} | tr '\n' ' ')" = "bin skill " ]
-  [ "$(readlink ${skill}/skill)" = ${skill.passthru.carapace.skillDir} ]
-  cmp ${skill}/skill/SKILL.md ${fixture}/SKILL.md
+  # The package holds the wrappers and a reference to the skill directory the metadata names.
+  [ "$(ls -A ${skill} | tr '\n' ' ')" = "bin share " ]
+  [ "$(cat ${skill}/share/carapace/skill-dir-*)" = ${skill.passthru.carapace.skillDir} ]
+  cmp ${skill.passthru.carapace.skillDir}/SKILL.md ${fixture}/SKILL.md
   [ -z "$(ls -A ${notes}/bin)" ]
-  cmp ${notes}/skill/SKILL.md ${fixture}/SKILL.md
+  cmp ${notes.passthru.carapace.skillDir}/SKILL.md ${fixture}/SKILL.md
   touch $out
 ''
