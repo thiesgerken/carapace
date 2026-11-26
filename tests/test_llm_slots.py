@@ -81,6 +81,11 @@ def test_turns_waiting_outside_model_requests_do_not_block_other_sessions(tmp_pa
                 await asyncio.sleep(0.05)
 
         try:
+            # A turn start looks at the skills at head first (a few git calls), so give it time under load.
+            for _ in range(100):
+                if subscribers["answer me"].done_messages:
+                    break
+                await asyncio.sleep(0.05)
             assert [content for content, _usage in subscribers["answer me"].done_messages] == ["ok"]
         finally:
             parked.set()
