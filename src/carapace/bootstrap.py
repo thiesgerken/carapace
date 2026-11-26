@@ -98,12 +98,18 @@ def _sync_bundled_skills(knowledge_dir: Path, reset: bool, created: list[str]) -
     """Copy each ``carapace.assets/skills/<name>/`` tree into *knowledge_dir* when missing.
 
     When *reset* is true, overwrite files for every bundled skill (same as critical
-    knowledge files).
+    knowledge files). A new repo also gets the bundled ``skills/flake.nix`` and its lock, which list
+    the skills; an existing repo keeps its own list, even on reset.
     """
     skills_assets = _ASSETS.joinpath("skills")
     if not skills_assets.is_dir():
         return
     skills_out = knowledge_dir / "skills"
+    if not skills_out.exists():
+        skills_out.mkdir(parents=True)
+        for name in ("flake.nix", "flake.lock"):
+            _copy_asset(f"skills/{name}", skills_out / name)
+            created.append(f"skills/{name}")
     for skill_root in sorted(skills_assets.iterdir(), key=lambda p: p.name):
         if not skill_root.is_dir():
             continue

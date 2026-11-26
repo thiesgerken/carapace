@@ -217,7 +217,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `llm.py`       | Pydantic AI model factory and model settings helpers.                                         |
 | `payloads.py`  | Defensive helpers for coercing untrusted payload shapes.                                      |
 | `prompt_prefix.py` | System prompt prefix shared by the agent, compaction and memory tasks (see [persistent context](persistent-context.md#system-prompt-loading)). |
-| `skills.py`    | Skill registry, frontmatter parsing, and carapace skill metadata loading.                     |
+| `skills.py`    | The skill list from `skills/flake.lock`, skill registry, frontmatter parsing.                  |
 | `usage.py`     | Usage tracking, cost estimation, budget gauges, and LLM request activity records.             |
 | `ws_models.py` | WebSocket protocol models and client-message parser.                                          |
 
@@ -336,7 +336,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `builder/store.py`        | Build results and GC roots on the builder's store volume, and garbage collection.      |
 | `builder/models.py`       | Wire format between the server and the builder.                                        |
 | `builder/client.py`       | The server's side of the builder API.                                                  |
-| `builder/skill_builds.py` | Server side: which skill trees are built, building or failed, and their commands.      |
+| `builder/skill_builds.py` | Server side: which skills are built, building or failed (per build key), and their commands. |
 | `builder/profile.py`      | What a sandbox's skill profile should hold: built skills minus colliding command names. |
 
 ### Security package

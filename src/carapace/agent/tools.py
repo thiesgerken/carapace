@@ -252,7 +252,8 @@ async def _skill_commands(ctx: RunContext[Deps], skill_name: str) -> str:
     """The skill's commands and whether they are on PATH, once its build and the profile sync are done."""
     build, builds = await ctx.deps.skill_builds.wait_built(ctx.deps.knowledge_dir, skill_name)
     if build is None:
-        return "The skill has no flake.nix, so it has no commands."
+        # The catalog reads the server's checkout, builds read HEAD: they differ only while a push lands.
+        return "The skill is not listed in skills/flake.nix at HEAD, so it has no build yet."
     match build.state:
         case "failed":
             return f"The skill's build failed, so its commands are not available. Build log tail:\n\n{build.detail}"
@@ -488,21 +489,18 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             return _emit_tool_result(
                 ctx,
                 "read_skill",
-                f"Error: there is no skill {skill_name!r}. read_skill sees only pushed skills: if skills/{skill_name} "
-                "exists in /workspace, commit and push it, and the builder builds it after the push.",
+                f"Error: there is no skill {skill_name!r}. read_skill sees only skills that skills/flake.nix lists "
+                "in the pushed repo: add its input there, run `nix flake lock ./skills`, commit and push, and the "
+                "builder builds it after the push.",
                 exit_code=1,
             )
         try:
-            if registry.is_disabled(skill_name):
-                return _emit_tool_result(
-                    ctx, "read_skill", f"Skill {skill_name!r} is disabled (metadata.carapace.disabled).", exit_code=1
-                )
             registry.get_carapace_config(skill_name)
         except SkillDocumentError as exc:
             return _emit_tool_result(
                 ctx,
                 "read_skill",
-                f"Error: skills/{skill_name}/SKILL.md is invalid: {exc}. Fix it, commit and push.\n\n{instructions}",
+                f"Error: the SKILL.md of {skill_name} is invalid: {exc}. Fix it, commit and push.\n\n{instructions}",
                 exit_code=1,
             )
         commands = await _skill_commands(ctx, skill_name)

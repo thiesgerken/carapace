@@ -439,6 +439,11 @@ export function KnowledgeView() {
           />
         ) : result?.type === "dir" ? (
           <>
+            {result.skills_error ? (
+              <p role="alert" className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {result.skills_error}
+              </p>
+            ) : null}
             {result.entries.length === 0 ? (
               <p className="py-8 text-sm text-muted-foreground">{t("empty")}</p>
             ) : (
@@ -459,12 +464,12 @@ export function KnowledgeView() {
               </div>
             )}
             {result.skill ? <div className="mt-6"><SkillCard skill={result.skill} /></div> : null}
-            {result.build ? (
+            {result.build && result.skill ? (
               <div className="mt-4">
                 <SkillBuildPanel
-                  key={`${result.path}:${result.build.tree}`}
+                  key={`${result.path}:${result.build.key}`}
                   server={server}
-                  skill={result.path.split("/").pop() ?? ""}
+                  skill={result.skill.name}
                   initial={result.build}
                 />
               </div>

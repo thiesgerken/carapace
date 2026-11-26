@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, model_validator
 
 # What a skill needs from outside the sandbox, and its MCP servers, are declared in its flake now
 # (docs/skill-flakes.md).
@@ -13,7 +13,6 @@ _MOVED_TO_FLAKE = ("network", "credentials", "commands", "mcp")
 class SkillCarapaceConfig(BaseModel):
     """Parsed carapace config declared inline in SKILL.md frontmatter."""
 
-    disabled: Annotated[bool, Field(strict=True)] = False
     hints: dict[str, str] = {}
 
     @model_validator(mode="before")
@@ -25,6 +24,9 @@ class SkillCarapaceConfig(BaseModel):
                 f"{', '.join(moved)} moved out of the frontmatter into the skill's flake "
                 "(mkSkill needs and mcpCommands, see docs/skill-flakes.md)"
             )
+        # Ignoring it would leave a skill active that its author turned off.
+        if isinstance(data, dict) and "disabled" in data:
+            raise ValueError("disabled is gone: a skill is active when skills/flake.nix lists it, so unlist it there")
         return data
 
 

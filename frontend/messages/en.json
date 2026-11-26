@@ -63,7 +63,7 @@
             "invalid": "Invalid frontmatter: {error}",
             "build": {
                 "title": "Build",
-                "tree": "Git tree of the skill at HEAD",
+                "key": "Build key of the skill at HEAD",
                 "retry": "Retry",
                 "log": "Build log",
                 "needsDomains": "reaches {domains}",

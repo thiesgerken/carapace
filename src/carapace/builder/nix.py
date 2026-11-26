@@ -80,34 +80,39 @@ async def collect_garbage() -> str:
     return _tail(stdout + stderr)
 
 
-def _failed(tree: str, log: str) -> BuildResult:
-    return BuildResult(tree=tree, state="failed", log_tail=_tail(log))
+def _failed(key: str, skill: str, log: str) -> BuildResult:
+    return BuildResult(key=key, skill=skill, state="failed", log_tail=_tail(log))
 
 
-async def build_skill(source: Path, tree: str, system: str, roots: Path) -> BuildResult:
-    """Build `packages.<system>.default` of the skill flake in `source` and read its metadata."""
+async def build_skill(source: Path, key: str, skill: str, system: str, roots: Path) -> BuildResult:
+    """Build `packages.<system>.<skill>` of the skills flake in `source` and read its metadata.
+
+    Only that attribute is evaluated, so a broken skill does not stop the others' builds.
+    """
     if not (source / "flake.lock").is_file():
-        return _failed(tree, "flake.lock is missing. The builder never writes lock files; commit one with the skill.")
-    package = f"path:{source}#packages.{system}.default"
+        return _failed(key, skill, "skills/flake.lock is missing. The builder never writes lock files; commit one.")
+    package = f"path:{source}#packages.{system}.{skill}"
+    # The metadata first: it fails fast on a mistake in the declarations, before any build runs.
+    code, stdout, eval_log = await _run(
+        "nix", "eval", "--json", "--no-update-lock-file", package, "--apply", "p: p.passthru.carapace or null"
+    )
+    if code != 0:
+        return _failed(key, skill, eval_log)
+    metadata = json.loads(stdout)
     code, stdout, build_log = await _run(
         "nix",
         "build",
         "--no-update-lock-file",
         "--print-build-logs",
         "--json",
-        # A GC root per tree, under the builder's state, keeps the outputs until GC drops it.
+        # A GC root per key, under the builder's state, keeps the outputs until GC drops it.
         "--out-link",
-        str(roots / tree),
+        str(roots / key),
         package,
     )
     if code != 0:
-        return _failed(tree, build_log)
+        return _failed(key, skill, build_log)
     store_paths = [path for built in json.loads(stdout) for path in built["outputs"].values()]
-    code, stdout, eval_log = await _run(
-        "nix", "eval", "--json", "--no-update-lock-file", package, "--apply", "p: p.passthru.carapace or null"
-    )
-    if code != 0:
-        return _failed(tree, build_log + eval_log)
     return BuildResult(
-        tree=tree, state="succeeded", store_paths=store_paths, metadata=json.loads(stdout), log_tail=_tail(build_log)
+        key=key, skill=skill, state="succeeded", store_paths=store_paths, metadata=metadata, log_tail=_tail(build_log)
     )

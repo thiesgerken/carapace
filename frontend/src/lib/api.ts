@@ -1839,7 +1839,6 @@ export interface KnowledgeEntry {
 }
 
 export interface SkillCarapaceConfig {
-  disabled: boolean;
   hints: Record<string, string>;
 }
 
@@ -1861,10 +1860,10 @@ export interface SkillCommandNeeds {
   oauth: string[];
 }
 
-/** How the skill's flake at HEAD is built; uncommitted edits are not built. */
+/** How the skill is built at HEAD; uncommitted edits are not built. */
 export interface KnowledgeSkillBuild {
   state: SkillBuildState;
-  tree: string;
+  key: string;
   commands: Record<string, { description: string; needs: SkillCommandNeeds }>;
   /** Why it failed or is unavailable: the end of the build log. */
   log_tail: string;
@@ -1890,9 +1889,11 @@ export interface KnowledgeDirListing {
   doc_name: string | null;
   doc: string | null;
   skill: KnowledgeSkill | null;
-  /** Only for a flake skill directly under skills/. */
+  /** Only for a skill skills/flake.nix lists. */
   build: KnowledgeSkillBuild | null;
   artifact: KnowledgeArtifact | null;
+  /** On the root and skills/: why the repo has no skills, with the fix. */
+  skills_error: string | null;
   path: string;
   entries: KnowledgeEntry[];
 }

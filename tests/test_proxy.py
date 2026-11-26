@@ -33,6 +33,7 @@ from carapace.security.context import BoundaryEvaluation
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillDocumentError, SkillRegistry
 from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, fake_dns, make_runtime_mock
+from tests.skills_flake import write_skills_flake
 
 
 def _seed_session_row(session_factory, data_dir: Path, *session_ids: str) -> None:
@@ -440,6 +441,7 @@ class TestSkillMetadataParsing:
     def _write_skill_md(self, skill_dir: Path, body: str) -> None:
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(body)
+        write_skills_flake(skill_dir.parent, [skill_dir.name])
 
     def test_no_carapace_metadata(self, tmp_path: Path):
         skill_dir = tmp_path / "plain"

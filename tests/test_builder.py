@@ -18,8 +18,8 @@ from carapace.builder.models import BuilderInfo, BuildResult
 from carapace.builder.store import SkillStore
 
 TOKEN = "builder-test-token"
-TREE = "0123456789abcdef0123456789abcdef01234567"
-OTHER_TREE = "89abcdef0123456789abcdef0123456789abcdef"
+KEY = "0123456789abcdef" * 4
+OTHER_KEY = "89abcdef01234567" * 4
 GRACE = timedelta(hours=24)
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -39,10 +39,12 @@ def builds(monkeypatch: pytest.MonkeyPatch) -> list[set[str]]:
     """Replace the Nix build: record the files each build saw and succeed."""
     seen: list[set[str]] = []
 
-    async def fake_build(source: Path, tree: str, system: str, roots: Path) -> BuildResult:
+    async def fake_build(source: Path, key: str, skill: str, system: str, roots: Path) -> BuildResult:
         seen.append({path.name for path in source.iterdir()})
-        (roots / tree).symlink_to(f"/nix/store/{tree}-skill")
-        return BuildResult(tree=tree, state="succeeded", store_paths=[f"/nix/store/{tree}-skill"], metadata={"a": 1})
+        (roots / key).symlink_to(f"/nix/store/{key}-skill")
+        return BuildResult(
+            key=key, skill=skill, state="succeeded", store_paths=[f"/nix/store/{key}-skill"], metadata={"a": 1}
+        )
 
     monkeypatch.setattr(nix, "build_skill", fake_build)
     return seen
@@ -64,44 +66,52 @@ def test_requires_the_token(api: TestClient) -> None:
     assert api.get("/healthz").status_code == 200
 
 
-def test_a_tree_is_built_once_and_then_answered_from_the_stored_result(api: TestClient, builds: list[set[str]]) -> None:
-    assert api.get(f"/builds/{TREE}", headers=AUTH).status_code == 404
-    body = archive({"flake.nix": b"{}", "flake.lock": b"{}"})
+def test_a_key_is_built_once_and_then_answered_from_the_stored_result(api: TestClient, builds: list[set[str]]) -> None:
+    assert api.get(f"/builds/{KEY}", headers=AUTH).status_code == 404
+    body = archive({"flake.nix": b"{}", "flake.lock": b"{}", "weather/flake.nix": b"{}"})
 
-    first = api.put(f"/builds/{TREE}", headers=AUTH, content=body)
-    second = api.put(f"/builds/{TREE}", headers=AUTH, content=b"not even an archive")
+    first = api.put(f"/builds/{KEY}?skill=weather", headers=AUTH, content=body)
+    second = api.put(f"/builds/{KEY}?skill=weather", headers=AUTH, content=b"not even an archive")
 
     assert first.status_code == second.status_code == 200
-    assert first.json() == second.json() == api.get(f"/builds/{TREE}", headers=AUTH).json()
-    assert first.json()["store_paths"] == [f"/nix/store/{TREE}-skill"]
-    assert builds == [{"flake.nix", "flake.lock"}]
+    assert first.json() == second.json() == api.get(f"/builds/{KEY}", headers=AUTH).json()
+    assert (first.json()["skill"], first.json()["store_paths"]) == ("weather", [f"/nix/store/{KEY}-skill"])
+    assert builds == [{"flake.nix", "flake.lock", "weather"}]
 
 
-def test_rejects_bad_trees_and_archives(api: TestClient, builds: list[set[str]]) -> None:
-    assert api.put("/builds/not-a-tree", headers=AUTH, content=b"").status_code == 422
-    assert api.put(f"/builds/{TREE}", headers=AUTH, content=b"garbage").status_code == 400
+@pytest.mark.parametrize("skill", ["", "weather.default", 'a"b', "-flag"])
+def test_rejects_names_that_are_no_flake_attribute(api: TestClient, builds: list[set[str]], skill: str) -> None:
+    body = archive({"flake.nix": b"{}"})
+    assert api.put(f"/builds/{KEY}", headers=AUTH, params={"skill": skill}, content=body).status_code == 422
+    assert builds == []
+
+
+def test_rejects_bad_keys_and_archives(api: TestClient, builds: list[set[str]]) -> None:
+    assert api.put("/builds/not-a-key?skill=weather", headers=AUTH, content=b"").status_code == 422
+    assert api.put(f"/builds/{KEY}", headers=AUTH, content=archive({"flake.nix": b"{}"})).status_code == 422
+    assert api.put(f"/builds/{KEY}?skill=weather", headers=AUTH, content=b"garbage").status_code == 400
     escaping = archive({"../outside": b"x"})
-    assert api.put(f"/builds/{TREE}", headers=AUTH, content=escaping).status_code == 400
+    assert api.put(f"/builds/{KEY}?skill=weather", headers=AUTH, content=escaping).status_code == 400
     assert builds == []
 
 
 async def test_a_missing_lock_file_fails_without_running_nix(tmp_path: Path) -> None:
     (tmp_path / "flake.nix").write_text("{}")
 
-    result = await nix.build_skill(tmp_path, TREE, "x86_64-linux", tmp_path / "roots")
+    result = await nix.build_skill(tmp_path, KEY, "weather", "x86_64-linux", tmp_path / "roots")
 
     assert result.state == "failed"
     assert "flake.lock is missing" in result.log_tail
 
 
 def test_failed_builds_are_stored(api: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    async def failing_build(source: Path, tree: str, system: str, roots: Path) -> BuildResult:
-        return BuildResult(tree=tree, state="failed", log_tail="error: boom")
+    async def failing_build(source: Path, key: str, skill: str, system: str, roots: Path) -> BuildResult:
+        return BuildResult(key=key, skill=skill, state="failed", log_tail="error: boom")
 
     monkeypatch.setattr(nix, "build_skill", failing_build)
-    api.put(f"/builds/{TREE}", headers=AUTH, content=archive({"flake.nix": b"{}"}))
+    api.put(f"/builds/{KEY}?skill=weather", headers=AUTH, content=archive({"flake.nix": b"{}"}))
 
-    stored = api.get(f"/builds/{TREE}", headers=AUTH).json()
+    stored = api.get(f"/builds/{KEY}", headers=AUTH).json()
     assert stored["state"] == "failed"
     assert stored["log_tail"] == "error: boom"
 
@@ -126,7 +136,7 @@ async def test_the_client_refuses_a_builder_for_another_system(monkeypatch: pyte
     client._client = httpx.AsyncClient(base_url="http://builder", transport=httpx.MockTransport(handler))
 
     with pytest.raises(BuilderSystemMismatchError, match="aarch64-linux"):
-        await client.get(TREE)
+        await client.get(KEY)
     assert requests == ["/info"]
 
 
@@ -164,22 +174,22 @@ def test_a_failed_build_is_retried_on_request(api: TestClient, monkeypatch: pyte
     states = iter(["failed", "succeeded"])
     attempts: list[str] = []
 
-    async def flaky_build(source: Path, tree: str, system: str, roots: Path) -> BuildResult:
-        attempts.append(tree)
-        return BuildResult(tree=tree, state=next(states))
+    async def flaky_build(source: Path, key: str, skill: str, system: str, roots: Path) -> BuildResult:
+        attempts.append(key)
+        return BuildResult(key=key, skill=skill, state=next(states))
 
     monkeypatch.setattr(nix, "build_skill", flaky_build)
     body = archive({"flake.nix": b"{}"})
 
-    assert api.put(f"/builds/{TREE}", headers=AUTH, content=body).json()["state"] == "failed"
-    assert api.put(f"/builds/{TREE}", headers=AUTH, content=body).json()["state"] == "failed"
-    assert api.put(f"/builds/{TREE}?retry=true", headers=AUTH, content=body).json()["state"] == "succeeded"
+    assert api.put(f"/builds/{KEY}?skill=weather", headers=AUTH, content=body).json()["state"] == "failed"
+    assert api.put(f"/builds/{KEY}?skill=weather", headers=AUTH, content=body).json()["state"] == "failed"
+    assert api.put(f"/builds/{KEY}?skill=weather&retry=true", headers=AUTH, content=body).json()["state"] == "succeeded"
     # A success is never rebuilt, retry or not.
-    assert api.put(f"/builds/{TREE}?retry=true", headers=AUTH, content=body).json()["state"] == "succeeded"
-    assert attempts == [TREE, TREE]
+    assert api.put(f"/builds/{KEY}?skill=weather&retry=true", headers=AUTH, content=body).json()["state"] == "succeeded"
+    assert attempts == [KEY, KEY]
 
 
-def test_gc_drops_a_tree_only_after_no_head_referenced_it_for_the_grace_period(
+def test_gc_drops_a_key_only_after_no_head_referenced_it_for_the_grace_period(
     api: TestClient, builds: list[set[str]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     clock = [datetime(2026, 11, 1, tzinfo=UTC)]
@@ -192,28 +202,28 @@ def test_gc_drops_a_tree_only_after_no_head_referenced_it_for_the_grace_period(
 
     monkeypatch.setattr(nix, "collect_garbage", collect_garbage)
     body = archive({"flake.nix": b"{}"})
-    for tree in (TREE, OTHER_TREE):
-        api.put(f"/builds/{tree}", headers=AUTH, content=body)
-    assert api.put("/roots", headers=AUTH, json={"trees": [TREE]}).status_code == 204
+    for key in (KEY, OTHER_KEY):
+        api.put(f"/builds/{key}?skill=weather", headers=AUTH, content=body)
+    assert api.put("/roots", headers=AUTH, json={"keys": [KEY]}).status_code == 204
 
-    # OTHER_TREE was never referenced, but its grace period only starts now.
+    # OTHER_KEY was never referenced, but its grace period only starts now.
     assert api.post("/gc", headers=AUTH).json()["dropped"] == []
 
     clock[0] += GRACE - timedelta(minutes=1)
-    api.put("/roots", headers=AUTH, json={"trees": [TREE]})
+    api.put("/roots", headers=AUTH, json={"keys": [KEY]})
     assert api.post("/gc", headers=AUTH).json()["dropped"] == []
 
     clock[0] += timedelta(minutes=2)
-    assert api.post("/gc", headers=AUTH).json()["dropped"] == [OTHER_TREE]
+    assert api.post("/gc", headers=AUTH).json()["dropped"] == [OTHER_KEY]
 
-    assert api.get(f"/builds/{OTHER_TREE}", headers=AUTH).status_code == 404
-    assert not (tmp_path / "roots" / OTHER_TREE).is_symlink()
-    assert api.get(f"/builds/{TREE}", headers=AUTH).status_code == 200
-    assert (tmp_path / "roots" / TREE).is_symlink()
+    assert api.get(f"/builds/{OTHER_KEY}", headers=AUTH).status_code == 404
+    assert not (tmp_path / "roots" / OTHER_KEY).is_symlink()
+    assert api.get(f"/builds/{KEY}", headers=AUTH).status_code == 200
+    assert (tmp_path / "roots" / KEY).is_symlink()
     assert len(collections) == 3
 
 
 def test_roots_and_gc_require_the_token(api: TestClient) -> None:
-    assert api.put("/roots", json={"trees": []}).status_code == 401
+    assert api.put("/roots", json={"keys": []}).status_code == 401
     assert api.post("/gc").status_code == 401
-    assert api.put("/roots", headers=AUTH, json={"trees": ["not-a-tree"]}).status_code == 422
+    assert api.put("/roots", headers=AUTH, json={"keys": ["not-a-key"]}).status_code == 422
