@@ -68,7 +68,7 @@ class SandboxManager:
         base_image: str = "carapace-sandbox:latest",
         *,
         server_host: str,
-        network_name: str = "carapace-sandbox",
+        network_name: str,
         idle_timeout_minutes: int = 15,
         proxy_port: int = 3128,
         sandbox_port: int = 8322,

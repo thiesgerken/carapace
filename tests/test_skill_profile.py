@@ -198,6 +198,7 @@ async def test_a_fresh_sandbox_syncs_without_anyone_asking(tmp_path: Path, db_fa
     manager = SandboxManager(
         runtime=runtime,
         server_host="172.18.0.1",
+        network_name="carapace-sandbox-default",
         data_dir=tmp_path,
         knowledge_repo_for_session=lambda _session_id: KnowledgeRepoHandle(
             owner="thies",

@@ -104,6 +104,7 @@ def _manager(tmp_path: Path, db_factory: Any, runtime: MagicMock) -> SandboxMana
     return SandboxManager(
         runtime=runtime,
         server_host="172.18.0.1",
+        network_name="carapace-sandbox-default",
         data_dir=tmp_path,
         knowledge_repo_for_session=MagicMock(),
         session_factory=db_factory,
