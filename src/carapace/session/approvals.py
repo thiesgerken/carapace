@@ -98,6 +98,7 @@ class SessionApprovalMixin:
         approval_comment: str | None = None,
         parent_tool_id: str | None = None,
         match_args: dict[str, Any] | None = None,
+        model_tool_call_id: str | None = None,
     ) -> str:
         normalized_args = normalize_tool_call_args(tool, args)
         matching_args = normalize_tool_call_args(tool, match_args) if match_args is not None else normalized_args
@@ -114,6 +115,9 @@ class SessionApprovalMixin:
             event["parent_tool_id"] = parent_tool_id
         if approval_comment is not None:
             event["approval_comment"] = approval_comment
+        if model_tool_call_id is not None:
+            # What the turn's span notices name the call by: a reloaded chat finds the call's card with it.
+            event["model_tool_call_id"] = model_tool_call_id
 
         is_pending_sentinel_update = approval_source == "sentinel" and approval_verdict is None
         should_update_existing = approval_source in {"sentinel", "user"} and (

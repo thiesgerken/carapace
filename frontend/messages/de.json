@@ -994,7 +994,8 @@
             "skillProfile": "Installiere die Befehle des Skills…",
             "credential": "Lade Zugangsdaten…",
             "domain": "Domain-Check {domain}…",
-            "wait": "Warte auf Freigabe…"
+            "wait": "Warte auf Freigabe…",
+            "execLock": "Warte auf den vorherigen Befehl…"
         },
         "notRun": "nicht ausgeführt",
         "notRunTitle": "Das Modell hat diesen Aufruf geschrieben, er lief aber nie: Der Turn wurde abgebrochen, das Modell ist gescheitert oder der Aufruf wurde abgelehnt.",

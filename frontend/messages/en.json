@@ -994,7 +994,8 @@
             "skillProfile": "Installing the skill's commands…",
             "credential": "Fetching credential…",
             "domain": "Checking domain {domain}…",
-            "wait": "Waiting for approval…"
+            "wait": "Waiting for approval…",
+            "execLock": "Waiting for the previous command…"
         },
         "notRun": "not run",
         "notRunTitle": "The model wrote this call, but it never ran: the turn was cancelled, the model failed, or the call was rejected.",

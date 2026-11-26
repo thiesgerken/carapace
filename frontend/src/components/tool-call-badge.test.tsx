@@ -240,6 +240,9 @@ test("read_skill names the skill, says what it waits for, and shows the skill on
     await view.rerender(card({ loading: true, runningSpans: [tool, { spanId: "p", kind: "skill", name: "profile sync" }] }));
     assert.match(text(), /Installing the skill's commands…/);
 
+    await view.rerender(card({ loading: true, runningSpans: [tool, { spanId: "l", kind: "wait", name: "exec lock" }] }));
+    assert.match(text(), /Waiting for the previous command…/);
+
     await view.rerender(card({ result: "# weather\n\n# Commands\n- `weather`: Current weather\n\nThe commands are on PATH." }));
     assert.doesNotMatch(text(), /Installing|Waiting/);
     (view.container.querySelector("button") as HTMLButtonElement).click();

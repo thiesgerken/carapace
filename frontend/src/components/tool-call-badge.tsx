@@ -43,7 +43,7 @@ import {
 } from "@/lib/sandbox-read";
 import { splitHeredocs, splitLastLines, type CommandFragment } from "@/lib/shell-heredoc";
 import type { ApprovalSource, ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, SentFile } from "@/lib/types";
-import { toolCallStatus } from "@/lib/tool-call-status";
+import { EXEC_LOCK_SPAN, toolCallStatus } from "@/lib/tool-call-status";
 import { cn } from "@/lib/utils";
 import { getArtifact, knowledgeArtifactUrl, knowledgeRawUrl } from "@/lib/api";
 import { ArtifactIcon, artifactViewerHref, type ArtifactReference } from "@/lib/artifacts";
@@ -555,6 +555,7 @@ function stepLabel(step: RunningSpan, t: TranslateFn): string {
   if (step.kind === "domain") return t("status.domain", { domain: step.name });
   if (step.kind === "skill" && step.name === "build wait") return t("status.skillBuild");
   if (step.kind === "skill" && step.name === "profile sync") return t("status.skillProfile");
+  if (step.kind === "wait" && step.name === EXEC_LOCK_SPAN) return t("status.execLock");
   return t(`status.${step.kind}`);
 }
 
