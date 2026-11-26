@@ -234,8 +234,12 @@ def test_an_update_check_answers_per_input_and_stores_nothing(
 ) -> None:
     seen: list[tuple[str, set[str]]] = []
 
-    async def fake_update(source: Path, name: str, out: Path) -> InputUpdate:
+    async def fake_update(source: Path, name: str, out: Path, store: Path) -> InputUpdate:
         seen.append((name, {path.name for path in source.iterdir()}))
+        # A throwaway store next to the source, read-only as Nix leaves its paths, and removed after.
+        assert store.parent == source.parent
+        (store / "nix" / "store" / f"{name}-source").mkdir(parents=True)
+        (store / "nix" / "store" / f"{name}-source").chmod(0o555)
         if name == "broken":
             return InputUpdate(log_tail="error: cannot fetch")
         return InputUpdate(lock=f'{{"updated": "{name}"}}')
