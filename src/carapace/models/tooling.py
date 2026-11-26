@@ -25,6 +25,8 @@ class ToolResult:
     tool: str
     output: str
     exit_code: int = 0
+    # The carapace id of the call's card. Only the session layer knows it: it looks it up by
+    # ``model_tool_call_id``, since parallel calls finish in any order.
     tool_id: str | None = None
     # Provider tool-call id from the model history (``ctx.tool_call_id``). Distinct from ``tool_id``
     # (a carapace UUID), it is the only reliable link back to the model's ToolReturnPart — used to

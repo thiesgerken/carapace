@@ -113,6 +113,7 @@ class SandboxExecCoordinator:
         recreate_session: RecreateSessionCallback,
         log_container_tail: LogContainerTailCallback,
         exec_in_container: ExecInContainerCallback,
+        tool_call_id: str | None,
         workdir: str | None = None,
         stdin: bytes | None = None,
     ) -> ExecResult:
@@ -125,7 +126,7 @@ class SandboxExecCoordinator:
         async def run_in(container: SessionContainer) -> ExecResult:
             leftover_processes_killed = await self.kill_leftover_processes(container)
             self._resume_profile_sync(container)
-            self._grant_exec_scope(session_id, command)
+            self._grant_exec_scope(session_id, command, tool_call_id=tool_call_id)
             result = await exec_in_container(container, command, timeout, workdir=workdir, stdin=stdin)
             result = self._profile_sync.with_hint(session_id, result)
             return result.model_copy(update={"leftover_processes_killed": leftover_processes_killed})
@@ -223,7 +224,7 @@ class SandboxExecCoordinator:
         if marker is not None:
             self._profile_sync.start(sc.session_id, sc.container_id, marker=marker)
 
-    def _grant_exec_scope(self, session_id: str, command: str) -> None:
+    def _grant_exec_scope(self, session_id: str, command: str, *, tool_call_id: str | None) -> None:
         self._state.session_current_command[session_id] = command
         self._state.exec_temp_domains[session_id] = set()
         self._state.exec_notified_domains[session_id] = set()
@@ -233,6 +234,7 @@ class SandboxExecCoordinator:
             command=command,
             domains=self._state.exec_temp_domains[session_id],
             credentials=set(),
+            tool_call_id=tool_call_id,
         )
 
     def _revoke_exec_scope(self, session_id: str) -> None:

@@ -157,6 +157,10 @@ class ActiveSession:
     pending_approval_requests: list[dict[str, Any]] = field(default_factory=list)
     pending_escalations: list[dict[str, Any]] = field(default_factory=list)
     pending_notifications: dict[str, set[str]] = field(default_factory=dict)
+    # Carapace tool id of each agent tool call of the running turn that has not returned yet, by the
+    # model's tool_call_id. Parallel calls run at once, so a result or an exec's boundary decision
+    # finds its own call's card only through this.
+    tool_ids: dict[str, str] = field(default_factory=dict)
     _pending_sends: set[asyncio.Task[Any]] = field(default_factory=set)
 
 

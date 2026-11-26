@@ -424,7 +424,7 @@ async def test_exec_container_gone_recovery_restores_git_identity(tmp_path: Path
         last_used=1.0,
     )
 
-    result = await mgr.exec_command("sess-1", "check-mail")
+    result = await mgr.exec_command("sess-1", "check-mail", tool_call_id=None)
 
     assert result.output == "ok"
     # The runtime already restarted the container, so the lifecycle re-attaches
@@ -542,6 +542,7 @@ async def test_credential_approval_lasts_until_the_exec_ends():
         recreate_session=AsyncMock(),
         log_container_tail=AsyncMock(),
         exec_in_container=exec_in_container,
+        tool_call_id=None,
     )
 
     assert coordinator.running_exec("sess-1") is None
@@ -549,7 +550,7 @@ async def test_credential_approval_lasts_until_the_exec_ends():
 
 
 def _grant(coordinator: SandboxExecCoordinator, command: str) -> None:
-    coordinator._grant_exec_scope("sess-1", command)
+    coordinator._grant_exec_scope("sess-1", command, tool_call_id=None)
 
 
 @pytest.mark.anyio

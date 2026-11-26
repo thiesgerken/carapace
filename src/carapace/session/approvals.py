@@ -15,6 +15,7 @@ from .. import security as security_mod
 from ..models.tooling import normalize_tool_call_args
 from ..notifications.router import NotificationRouter, build_escalation_notification_id
 from ..sandbox.exec_scope import RunningExec
+from ..sandbox.manager import SandboxManager
 from ..security.context import (
     ApprovalSource,
     ApprovalVerdict,
@@ -76,6 +77,7 @@ def _escalation_response_event(
 class SessionApprovalMixin:
     _notification_router: NotificationRouter | None
     _session_mgr: SessionManager
+    _sandbox_mgr: SandboxManager
 
     if TYPE_CHECKING:
 
@@ -300,6 +302,13 @@ class SessionApprovalMixin:
             if delivered.delivered_subscription_ids:
                 active.pending_notifications[notif_id] = delivered.delivered_subscription_ids
 
+    def _running_tool_id(self, active: ActiveSession) -> str | None:
+        """Tool id of the agent call that runs the session's exec: the sandbox asks on that exec's behalf."""
+        running = self._sandbox_mgr.running_exec(active.state.session_id)
+        if running is None or running.tool_call_id is None:
+            return None
+        return active.tool_ids.get(running.tool_call_id)
+
     def _make_domain_info_cb(
         self,
         active: ActiveSession,
@@ -323,7 +332,7 @@ class SessionApprovalMixin:
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
-            parent_id = active.security.current_parent_tool_id if active.security else None
+            parent_id = self._running_tool_id(active)
             tool_id = self._record_tool_call_event(
                 session_id,
                 tool="proxy_domain",
@@ -379,7 +388,7 @@ class SessionApprovalMixin:
             approval_explanation: str | None = None,
             approval_comment: str | None = None,
         ) -> None:
-            parent_id = active.security.current_parent_tool_id if active.security else None
+            parent_id = self._running_tool_id(active)
             tool_id = self._record_tool_call_event(
                 session_id,
                 tool="git_push",
@@ -433,7 +442,7 @@ class SessionApprovalMixin:
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
-            parent_id = active.security.current_parent_tool_id if active.security else None
+            parent_id = self._running_tool_id(active)
             tool_id = self._record_tool_call_event(
                 session_id,
                 tool="credential_access",

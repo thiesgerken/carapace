@@ -14,6 +14,7 @@ import sys
 import traceback
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager
+from dataclasses import replace
 from datetime import UTC, datetime
 from functools import partial
 from typing import Any, Protocol, cast
@@ -295,8 +296,10 @@ class SessionTurnMixin(SessionTurnHost):
                 approval_explanation=approval_explanation,
                 approval_comment=approval_comment,
             )
-            if active.security:
-                active.security.current_parent_tool_id = tool_id
+            # A denied call never returns: its entry would outlive it and catch the result of a later
+            # unrecorded call under a reused id such as `call_0`.
+            if tool_call_id is not None and approval_verdict != "deny":
+                active.tool_ids[tool_call_id] = tool_id
             logger.info(
                 f"Tool call session={session_id} tool={tool} "
                 + f"approval={approval_source or '-'}:{approval_verdict or '-'} "
@@ -321,6 +324,9 @@ class SessionTurnMixin(SessionTurnHost):
             task.add_done_callback(active._pending_sends.discard)
 
         def _tool_result_cb(tr: ToolResult) -> None:
+            # Calls the model makes without a recorded tool call (list_skills) have no tool id.
+            tool_id = active.tool_ids.pop(tr.model_tool_call_id, None) if tr.model_tool_call_id else None
+            tr = replace(tr, tool_id=tool_id)
             self._session_mgr.append_events(
                 session_id,
                 [
@@ -335,8 +341,6 @@ class SessionTurnMixin(SessionTurnHost):
                     }
                 ],
             )
-            if active.security and active.security.current_parent_tool_id == tr.tool_id:
-                active.security.clear_current_parent_tool()
             logger.info(
                 f"Tool result session={session_id} tool={tr.tool} exit_code={tr.exit_code} "
                 + f"summary={_summarize_tool_result_for_log(tr)}"
@@ -367,8 +371,7 @@ class SessionTurnMixin(SessionTurnHost):
 
         try:
             async with active.lock:
-                if active.security:
-                    active.security.clear_current_parent_tool()
+                active.tool_ids.clear()
                 with span("turn.prepare", "prepare"):
                     deps, message_history = await self._prepare_turn_execution(
                         active,
@@ -508,8 +511,7 @@ class SessionTurnMixin(SessionTurnHost):
             await self._broadcast(active, "on_error", terminal_message, turn_id=turn_id, traceback=error_traceback)
             return "error"
         finally:
-            if active.security:
-                active.security.clear_current_parent_tool()
+            active.tool_ids.clear()
             active.agent_task = None
 
     def _save_turn_progress(self, session_id: str, active: ActiveSession) -> None:

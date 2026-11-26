@@ -3656,7 +3656,9 @@ def _running_exec(
     running = (
         None
         if command is None
-        else RunningExec(session_id="-", command=command, domains=set(), credentials=set(approved or ()))
+        else RunningExec(
+            session_id="-", command=command, domains=set(), credentials=set(approved or ()), tool_call_id=None
+        )
     )
     srv._engine.sandbox_mgr.running_exec.side_effect = lambda _sid: running
     srv._engine.sandbox_mgr.is_running.side_effect = lambda _running: not ends_during_review
