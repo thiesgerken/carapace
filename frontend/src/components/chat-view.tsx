@@ -2439,12 +2439,11 @@ export function ChatView({
           {session ? (
             <p
               title={`${t("session.created")}: ${formatSessionTimestamp(session.created_at, locale, t)}\n${t("session.lastActive")}: ${formatSessionTimestamp(session.last_active, locale, t)}`}
-              className="text-xs leading-5 text-muted-foreground"
+              className="truncate text-xs leading-5 text-muted-foreground"
             >
               <source.icon className="mr-1 inline h-3.5 w-3.5 align-[-0.2em]" />
               {source.label} · {t("session.meta", {
                 created: formatRelativeTime(session.created_at, locale, now, tRoot("sidebar.time.justNow")),
-                lastActive: formatRelativeTime(session.last_active, locale, now, tRoot("sidebar.time.justNow")),
                 count: session.message_count,
               })}
             </p>

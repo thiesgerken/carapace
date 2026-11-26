@@ -1283,7 +1283,7 @@
             "yoloModeHelp": "Bypass sentinel approval and allow actions immediately.",
             "savingPrivate": "Saving…",
             "updatingMode": "Updating mode…",
-            "meta": "Created {created} · active {lastActive} · {count, plural, one {# message} other {# messages}}"
+            "meta": "Created {created} · {count, plural, one {# message} other {# messages}}"
         },
         "budget": {
             "title": "Budget",

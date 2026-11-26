@@ -1283,7 +1283,7 @@
             "yoloModeHelp": "Sentinel-Freigaben umgehen und Aktionen sofort erlauben.",
             "savingPrivate": "Wird gespeichert…",
             "updatingMode": "Modus wird aktualisiert…",
-            "meta": "Erstellt {created} · aktiv {lastActive} · {count, plural, one {# Nachricht} other {# Nachrichten}}"
+            "meta": "Erstellt {created} · {count, plural, one {# Nachricht} other {# Nachrichten}}"
         },
         "budget": {
             "title": "Budget",
