@@ -1,11 +1,14 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type SwitchRowProps = {
   checked: boolean;
   label: string;
   description?: string;
+  /** Shown before the label, tinted like the track: muted when off. */
+  icon?: LucideIcon;
   /** The checked state lowers a safeguard (YOLO), so it warns instead of reading as a plain selection. */
   warning?: boolean;
   disabled?: boolean;
@@ -17,6 +20,7 @@ export function SwitchRow({
   checked,
   label,
   description,
+  icon: Icon,
   warning = false,
   disabled = false,
   onCheckedChange,
@@ -53,7 +57,15 @@ export function SwitchRow({
         />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium text-foreground">{label}</span>
+        <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          {Icon ? (
+            <Icon
+              aria-hidden="true"
+              className={cn("h-4 w-4 shrink-0", !checked ? "text-muted-foreground" : warning ? "text-warning" : "text-primary")}
+            />
+          ) : null}
+          {label}
+        </span>
         {description ? (
           <span className="mt-0.5 block text-sm text-muted-foreground">{description}</span>
         ) : null}

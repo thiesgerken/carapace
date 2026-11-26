@@ -168,6 +168,7 @@ export function SessionOptionSwitches({ items }: { items: SessionOptionTileItem[
           checked={item.active}
           label={getOptionCopy(t, item.key, true).title}
           description={getOptionCopy(t, item.key, item.active).description}
+          icon={getOptionIcon(item.key, item.active)}
           warning={lowersSafeguard(item.key)}
           disabled={item.disabled}
           onCheckedChange={() => item.onClick?.()}
