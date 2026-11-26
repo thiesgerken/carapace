@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v0.195.0 (2026-11-26)
+
+### ✨ Introduce new features
+
+- feat: show what a tool call waits for while it runs
+
+### ♻️ Refactor code
+
+- refactor: keep the step's phrase and counter steady during sentinel reviews
+
 ## v0.194.0 (2026-11-26)
 
 ### ✨ Introduce new features
