@@ -103,8 +103,8 @@ def test_a_listed_skill_says_where_it_comes_from_and_what_is_locked() -> None:
         ({"type": "github", "owner": "o", "repo": "r", "ref": "v1.2"}, "github:o/r/v1.2"),
         ({"type": "gitlab", "owner": "o", "repo": "r", "rev": "abc"}, "gitlab:o/r/abc"),
         (
-            {"type": "git", "url": "https://example.com/r.git", "ref": "main", "dir": "s"},
-            "git+https://example.com/r.git?ref=main&dir=s",
+            {"type": "git", "url": "https://example.com/r.git", "ref": "main", "dir": "a/b"},
+            "git+https://example.com/r.git?ref=main&dir=a/b",
         ),
         ({"type": "path", "path": "/srv/skills/x"}, "path:/srv/skills/x"),
         ({"type": "indirect", "id": "flake-utils"}, "flake-utils"),

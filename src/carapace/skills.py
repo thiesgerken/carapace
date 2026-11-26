@@ -89,7 +89,7 @@ def flake_ref(attributes: dict[str, Any]) -> str:
         case _:
             # tarball, file, mercurial: their URL says it.
             base = attributes.get("url", kind)
-    return f"{base}?{urlencode(query)}" if query else base
+    return f"{base}?{urlencode(query, safe='/')}" if query else base
 
 
 def _local_directory(name: str, node: dict[str, Any]) -> PurePosixPath | None:

@@ -118,20 +118,18 @@ export function SkillSourcesPanel({ server }: { server: string }) {
       </div>
       {sources.check_error ? <p className="mt-2 text-xs text-destructive">{sources.check_error}</p> : null}
       {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
-      <div className="mt-3 overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead className="text-muted-foreground">
-            <tr className="border-b border-border">
-              <th className="py-1.5 pr-3 font-medium">{t("columns.skill")}</th>
-              <th className="py-1.5 pr-3 font-medium">{t("columns.origin")}</th>
-              <th className="py-1.5 pr-3 font-medium">{t("columns.locked")}</th>
-              <th className="py-1.5 font-medium">{t("columns.update")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sources.skills.map((skill) => (
-              <tr key={skill.name} className="border-b border-border/60 align-top last:border-0">
-                <td className="py-2 pr-3 font-medium">
+      <table className="mt-3 w-full text-left text-xs">
+        <thead className="text-muted-foreground">
+          <tr className="border-b border-border">
+            <th className="py-1.5 pr-3 font-medium">{t("columns.skill")}</th>
+            <th className="w-2/5 py-1.5 font-medium">{t("columns.update")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sources.skills.map((skill) => (
+            <tr key={skill.name} className="border-b border-border/60 align-top last:border-0">
+              <td className="py-2 pr-3">
+                <div className="font-medium">
                   {skill.path ? (
                     <Link href={knowledgeBrowseHref(skill.path)} className="underline-offset-2 hover:underline">
                       {skill.name}
@@ -139,21 +137,22 @@ export function SkillSourcesPanel({ server }: { server: string }) {
                   ) : (
                     skill.name
                   )}
-                </td>
-                <td className="py-2 pr-3">
-                  <code className="break-all font-mono text-muted-foreground">{skill.origin}</code>
-                </td>
-                <td className="py-2 pr-3 text-muted-foreground">
+                </div>
+                {/* Origin and what is locked under the name, so the verdict keeps its column on a phone. */}
+                <code className="mt-0.5 block break-all font-mono text-muted-foreground" title={t("columns.origin")}>
+                  {skill.origin}
+                </code>
+                <div className="mt-0.5 text-muted-foreground" title={t("columns.locked")}>
                   {skill.locked_rev ? <Rev rev={skill.locked_rev} at={skill.locked_at} locale={locale} /> : t("local")}
-                </td>
-                <td className="py-2">
-                  <UpdateCell skill={skill} locale={locale} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                </div>
+              </td>
+              <td className="py-2">
+                <UpdateCell skill={skill} locale={locale} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   );
 }
