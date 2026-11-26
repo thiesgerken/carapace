@@ -6,6 +6,7 @@ import asyncio
 import io
 import subprocess
 import tarfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
@@ -14,10 +15,11 @@ import httpx
 import pytest
 
 import carapace.server as srv
-from carapace.builder import skill_builds
+from carapace.builder import skill_builds, skills_head
 from carapace.builder.client import BuilderClient
-from carapace.builder.models import BuildResult
+from carapace.builder.models import BuildResult, UpdatedLocks
 from carapace.builder.skill_builds import SkillBuilds
+from carapace.builder.skill_updates import UpdateCheck
 from carapace.spans import TurnTrace, attach
 from tests.skills_flake import write_skills_flake
 
@@ -53,6 +55,10 @@ class FakeBuilder:
             skill_files=sorted(self.files),
         )
         self.file_reads: list[tuple[str, str]] = []
+
+    async def check_updates(self, archive: bytes, inputs: list[str]) -> UpdatedLocks:
+        """ensure_built starts an update check for a new skills/ tree; these tests are about builds."""
+        return UpdatedLocks(inputs={})
 
     async def get(self, key: str) -> BuildResult | None:
         if self.unreachable:
@@ -325,14 +331,14 @@ async def test_a_push_is_mirrored_even_when_its_builds_cannot_start(monkeypatch:
 
 @pytest.mark.anyio
 async def test_a_skill_that_cannot_be_archived_fails(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    real_git = skill_builds._git
+    real_git = skills_head._git
 
     async def git(repo_dir: Path, *args: str) -> bytes:
         if args[0] == "archive":
             raise RuntimeError("git archive failed: fatal: not a tree object")
         return await real_git(repo_dir, *args)
 
-    monkeypatch.setattr(skill_builds, "_git", git)
+    monkeypatch.setattr(skills_head, "_git", git)
     builder = FakeBuilder()
     builds = SkillBuilds(cast(BuilderClient, builder))
     await builds.ensure_built(repo)
@@ -705,3 +711,23 @@ async def test_the_profile_keeps_the_last_succeeded_build_while_skills_rebuild_o
     after = {build.skill: build for build in await builds.installable(repo)}
     assert after["weather"] == before["weather"]
     assert after["tracker"].state == "failed"
+
+
+@pytest.mark.anyio
+async def test_a_new_skills_tree_at_head_gets_an_update_check(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
+    started: list[Path] = []
+    monkeypatch.setattr(builds.updates, "start", started.append)
+
+    await builds.ensure_built(repo)
+    tree = _git(repo, "rev-parse", "HEAD:skills")
+    builds.updates._checks[repo] = UpdateCheck(skills_tree=tree, checked_at=datetime.now(UTC), skills={})
+    await builds.ensure_built(repo)
+    (repo / "notes.md").write_text("a commit that leaves skills/ alone\n")
+    _commit(repo, "notes")
+    await builds.ensure_built(repo)
+    (repo / "skills" / "weather" / "SKILL.md").write_text("---\nname: weather\ndescription: changed\n---\n")
+    _commit(repo, "change weather")
+    await builds.ensure_built(repo)
+
+    assert started == [repo, repo]

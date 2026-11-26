@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 import httpx
 
-from .models import CACHE_HOST, BuilderInfo, BuildResult, Roots
+from .models import CACHE_HOST, BuilderInfo, BuildResult, Roots, UpdatedLocks
 from .skill_dir import relative_parts
 
 
@@ -94,6 +94,16 @@ class BuilderClient:
         response = await self._client.put(f"/builds/{key}", content=archive, params={"skill": skill, "retry": retry})
         response.raise_for_status()
         return BuildResult.model_validate(response.json())
+
+    async def check_updates(self, archive: bytes, inputs: list[str]) -> UpdatedLocks:
+        """The lock each input of a skills directory archive would get from `nix flake update <input>`.
+
+        Fetches from every upstream, so it takes as long as they do; callers run it in the background.
+        """
+        await self._ensure_system()
+        response = await self._client.post("/updates", content=archive, params={"input": inputs})
+        response.raise_for_status()
+        return UpdatedLocks.model_validate(response.json())
 
     async def skill_file(self, key: str, path: str) -> bytes | None:
         """A file of the skill directory of *key*'s build; None when it has no such file.

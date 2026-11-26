@@ -1935,6 +1935,49 @@ export async function retrySkillBuild(server: string, skill: string): Promise<Kn
   return (await res.json()) as KnowledgeSkillBuild;
 }
 
+export type SkillUpdateState = "current" | "available" | "outdated" | "failed";
+
+export interface KnowledgeSkillUpdate {
+  state: SkillUpdateState;
+  available_rev: string | null;
+  available_at: string | null;
+  /** How to fix an outdated skill, or why the check failed for it. */
+  detail: string;
+}
+
+/** A skill skills/flake.nix lists at HEAD: where it comes from, and the last update check's verdict. */
+export interface KnowledgeSkillSource {
+  name: string;
+  /** The skill's directory in the repo; null for a skill from another flake. */
+  path: string | null;
+  origin: string;
+  locked_rev: string | null;
+  locked_at: string | null;
+  /** Null until a check covered it. */
+  update: KnowledgeSkillUpdate | null;
+}
+
+export interface KnowledgeSkillSources {
+  skills: KnowledgeSkillSource[];
+  checked_at: string | null;
+  checking: boolean;
+  /** Why the last check could not run at all. */
+  check_error: string | null;
+}
+
+export async function fetchSkillSources(server: string): Promise<KnowledgeSkillSources> {
+  const res = await fetch(`${server}/api/knowledge/skills`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the skills"));
+  return (await res.json()) as KnowledgeSkillSources;
+}
+
+/** Start an update check; poll fetchSkillSources until `checking` is false. */
+export async function checkSkillUpdates(server: string): Promise<KnowledgeSkillSources> {
+  const res = await fetch(`${server}/api/knowledge/skills/updates/check`, { method: "POST" });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to start the update check"));
+  return (await res.json()) as KnowledgeSkillSources;
+}
+
 /** The artifact's current metadata, or null once it no longer exists (deleted or renamed). */
 export async function getArtifact(server: string, slug: string): Promise<KnowledgeArtifact | null> {
   const res = await fetch(`${server}${knowledgeBrowsePath(`artifacts/${slug}`)}`);

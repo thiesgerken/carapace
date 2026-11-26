@@ -106,6 +106,18 @@ Every skill `skills/flake.nix` lists is built by the [builder](builder.md), each
 - **Where users see it.** The Knowledge view of a listed skill's directory shows its build: state, the short build key, the built commands with the domains they declare, and for a failed or unavailable build the end of the log. Opening the view starts the build of a key that has none yet, and the view follows a running build. A failed build has a Retry button (`POST /api/knowledge/skills/<name>/build/retry`), which builds the same key again; anything but a failed build answers 409. Without a usable `skills/flake.nix` (missing, or its lock missing or unreadable) the Knowledge view says so on the repo root and on `skills/`, with the command that fixes it. Waiting for a build and syncing the session profile show up in the turn timeline as `skill` spans (`build wait`, `profile sync`).
 - **The catalog.** It never waits for a build, and it shows build state only for a skill that was never built, because it is part of the cached prompt prefix ([persistent-context.md](persistent-context.md#known-breaks)). A re-keyed skill keeps the description of its last succeeded build until the new one is done, and the session profile keeps its commands ([sandbox.md](sandbox.md#skill-commands-on-path)).
 
+## Updates
+
+Every listed skill has an origin (`./<dir>` for a local skill, its flake reference otherwise) and, for a skill from elsewhere, the rev and date `skills/flake.lock` pins. An update check tells whether something newer is there, with one mechanism for both kinds:
+
+- The builder runs `nix flake update <skill> --output-lock-file <tmp>` on a copy of `skills/` at `HEAD`, once per skill, and the server compares that skill's part of the resulting lock with the repo's (its node and the inputs nested under it).
+- **Update available:** a skill from elsewhere whose upstream moved, with the rev and date an update would lock. `nix flake update <name> --flake ./skills` takes it.
+- **Outdated:** a local skill whose own inputs or `flake.lock` changed without `nix flake update <name> --flake ./skills`. The top-level lock copies a local skill's inputs once, so it goes stale silently otherwise.
+- An input pinned to a rev or a tag never moves, so it never reports an update.
+- `nixpkgs` and `carapace` are not checked: they are not skills.
+
+The check runs whenever the `skills/` tree at `HEAD` differs from the one the last check covered (a push, a pull or a new lock; session and memory commits leave it alone), once a day, and on demand: the Knowledge view of `skills/` lists every skill with its origin, locked rev and the last check's verdict, and has a "Check for updates" button (`POST /api/knowledge/skills/updates/check`, then `GET /api/knowledge/skills`). Results live in the server's memory; a restart checks again. The agent sees the same in `read_skill` and `list_skills`, never in the skill catalog: the catalog is part of the cached prompt prefix, and a daily check must not change it.
+
 ## Reading a skill as a security event
 
 A `read_skill` call is not reviewed and lands in the action log like any other tool call, so the sentinel knows which skill the agent has in mind when the next boundary request arrives. Reading grants nothing.

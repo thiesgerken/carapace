@@ -5483,3 +5483,42 @@ def test_a_skill_build_that_did_not_fail_is_not_retried(
         409,
         "Only a failed build can be retried; weather is succeeded",
     )
+
+
+def test_the_skill_list_shows_origins_and_an_update_check_on_request(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = srv._knowledge_repo_registry.get_for_user("thies").knowledge_dir
+    _make_skill("weather")
+    write_skills_flake(root / "skills", ["weather"], external=["tracker"])
+    git = ["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@example.com"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", "skills"], check=True)
+    # No builder: the check runs and says why it could not ask anyone.
+    builds = SkillBuilds(None)
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+    started: list[Path] = []
+    real_start = builds.updates.start
+    monkeypatch.setattr(builds.updates, "start", started.append)
+
+    listed = client.get("/api/knowledge/skills", headers=auth_headers).json()
+    response = client.post("/api/knowledge/skills/updates/check", headers=auth_headers)
+
+    # The test client ends its event loop after each request, so the check runs on one of its own.
+    async def check() -> None:
+        real_start(root.resolve())
+        await builds.updates.wait(root.resolve())
+
+    asyncio.run(check())
+    checked = client.get("/api/knowledge/skills", headers=auth_headers).json()
+
+    assert [(skill["name"], skill["path"], skill["origin"]) for skill in listed["skills"]] == [
+        ("tracker", None, "github:someone/tracker"),
+        ("weather", "skills/weather", "./weather"),
+    ]
+    assert listed["skills"][0]["locked_rev"] == "2" * 40
+    assert (listed["checked_at"], listed["checking"]) == (None, False)
+    assert (response.status_code, started) == (200, [root.resolve()])
+    assert checked["checked_at"] is not None
+    assert "CARAPACE_BUILDER_URL" in checked["check_error"]

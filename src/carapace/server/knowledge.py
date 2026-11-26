@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -16,6 +17,8 @@ from ..api_keys import Access, Scope
 from ..artifacts import artifact_index, artifact_title, is_artifact_slug
 from ..auth import UserIdentity
 from ..builder.skill_builds import BuildState, RetryRefusedError, SkillBuilds, SkillCommand
+from ..builder.skill_updates import SkillUpdates, UpdateState
+from ..builder.skills_head import skills_flake_at_head
 from ..git.store import GitStore
 from ..knowledge import contained_target
 from ..models.git import FileCommit
@@ -125,6 +128,34 @@ class KnowledgeSkillBuild(BaseModel):
     commands: dict[str, SkillCommand]
     # Why it failed or is unavailable: the end of the build log, or what went wrong before it.
     log_tail: str
+
+
+class KnowledgeSkillUpdate(BaseModel):
+    state: UpdateState
+    available_rev: str | None
+    available_at: datetime | None
+    detail: str
+
+
+class KnowledgeSkillSource(BaseModel):
+    """A skill skills/flake.nix lists at HEAD: where it comes from, and the last update check's verdict."""
+
+    name: str
+    # The skill's directory in the repo, for a local skill.
+    path: str | None
+    origin: str
+    locked_rev: str | None
+    locked_at: datetime | None
+    # None until a check covered it.
+    update: KnowledgeSkillUpdate | None
+
+
+class KnowledgeSkillSources(BaseModel):
+    skills: list[KnowledgeSkillSource]
+    checked_at: datetime | None
+    checking: bool
+    # Why the last check could not run at all (no builder, builder unreachable).
+    check_error: str | None
 
 
 class ArtifactSession(BaseModel):
@@ -362,6 +393,47 @@ async def retry_skill_build(
     build = await skill_build(server._skill_builds, root, name)
     assert build is not None, "retry() accepted a skill that ensure_built() does not list"
     return build
+
+
+async def skill_sources(updates: SkillUpdates, repo_dir: Path) -> KnowledgeSkillSources:
+    head = await skills_flake_at_head(repo_dir)
+    check = updates.latest(repo_dir)
+    results = check.skills if check is not None else {}
+    skills = [
+        KnowledgeSkillSource(
+            name=skill.name,
+            path=f"skills/{skill.directory}" if skill.directory is not None else None,
+            origin=skill.origin,
+            locked_rev=skill.locked_rev,
+            locked_at=skill.locked_at,
+            update=KnowledgeSkillUpdate(**asdict(results[skill.name])) if skill.name in results else None,
+        )
+        for skill in (head.skills if head is not None else [])
+    ]
+    return KnowledgeSkillSources(
+        skills=skills,
+        checked_at=check.checked_at if check is not None else None,
+        checking=updates.running(repo_dir),
+        check_error=(check.error or None) if check is not None else None,
+    )
+
+
+@router.get("/knowledge/skills")
+async def list_skill_sources(
+    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.read))],
+) -> KnowledgeSkillSources:
+    root = server._knowledge_repo_registry.get_for_user(user.username).knowledge_dir.resolve()
+    return await skill_sources(server._skill_builds.updates, root)
+
+
+@router.post("/knowledge/skills/updates/check")
+async def check_skill_updates(
+    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.write))],
+) -> KnowledgeSkillSources:
+    """Start an update check of the user's skills; poll `GET /knowledge/skills` until `checking` is false."""
+    root = server._knowledge_repo_registry.get_for_user(user.username).knowledge_dir.resolve()
+    server._skill_builds.updates.start(root)
+    return await skill_sources(server._skill_builds.updates, root)
 
 
 @router.get("/knowledge/browse", response_model=None)

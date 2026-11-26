@@ -80,6 +80,27 @@
                     "unavailable": "The skill builder cannot be reached; the build starts once it is back."
                 }
             }
+        },
+        "skillSources": {
+            "title": "Skills",
+            "check": "Check for updates",
+            "checking": "Checking…",
+            "checkedAt": "Checked {date}",
+            "neverChecked": "Not checked yet",
+            "local": "local",
+            "columns": {
+                "skill": "Skill",
+                "origin": "Origin",
+                "locked": "Locked",
+                "update": "Update"
+            },
+            "update": {
+                "unchecked": "Not checked",
+                "current": "Up to date",
+                "available": "Update available",
+                "outdated": "Lock outdated",
+                "failed": "Check failed"
+            }
         }
     },
     "memory": {
