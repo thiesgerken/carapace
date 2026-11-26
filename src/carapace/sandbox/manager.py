@@ -275,7 +275,7 @@ class SandboxManager:
 
         if needs_startup or recreated:
             # A sandbox that just started or came back has no profile, or an old one; nothing waits for it.
-            self._profile_sync.start(session_id, ensured_sc.container_id, marker=None)
+            self._profile_sync.start(ensured_sc, marker=None)
         if needs_startup:
             try:
                 await self.refresh_sandbox_snapshot(session_id, container_id=ensured_sc.container_id)
@@ -384,6 +384,7 @@ class SandboxManager:
         command: str,
         timeout: int = 30,
         *,
+        tool_call_id: str | None,
         workdir: str | None = None,
         stdin: bytes | None = None,
     ) -> ExecResult:
@@ -395,15 +396,20 @@ class SandboxManager:
             recreate_session=self.recreate_session,
             log_container_tail=self._log_container_tail,
             exec_in_container=self._exec_in_container,
+            tool_call_id=tool_call_id,
             workdir=workdir,
             stdin=stdin,
         )
 
     _KNOWLEDGE_WORKDIR = "/workspace"
 
-    async def exec_command(self, session_id: str, command: str, timeout: int = 3600) -> ExecResult:
-        """Run a command in the sandbox and return the result."""
-        result = await self._exec(session_id, command, timeout=timeout, workdir=self._KNOWLEDGE_WORKDIR)
+    async def exec_command(
+        self, session_id: str, command: str, timeout: int = 3600, *, tool_call_id: str | None
+    ) -> ExecResult:
+        """Run a command in the sandbox for the agent tool call *tool_call_id* (None for no call)."""
+        result = await self._exec(
+            session_id, command, timeout=timeout, tool_call_id=tool_call_id, workdir=self._KNOWLEDGE_WORKDIR
+        )
         output = result.output
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
             logger.debug(f"Command failed in session {session_id} (exit {result.exit_code}): {command}")
@@ -580,12 +586,18 @@ class SandboxManager:
                 raise UploadTooLargeError(f"File exceeds {max_bytes} bytes")
 
         target = f"/tmp/{stem}{suffix}"
-        probe = await self.exec_command(session_id, f"test -e {shlex.quote(target)} && echo EXISTS || true", timeout=10)
+        probe = await self.exec_command(
+            session_id, f"test -e {shlex.quote(target)} && echo EXISTS || true", timeout=10, tool_call_id=None
+        )
         if "EXISTS" in probe.output:
             target = f"/tmp/{stem}-{secrets.token_hex(4)}{suffix}"
         qpath = shlex.quote(target)
         result = await self._exec(
-            session_id, f"cat > {qpath} || {{ rm -f {qpath}; exit 1; }}", timeout=120, stdin=bytes(data)
+            session_id,
+            f"cat > {qpath} || {{ rm -f {qpath}; exit 1; }}",
+            timeout=120,
+            tool_call_id=None,
+            stdin=bytes(data),
         )
         if result.exit_code != 0:
             raise UploadError(f"Failed to write upload to sandbox: {result.output}")
@@ -601,7 +613,7 @@ class SandboxManager:
         """
         qpath = shlex.quote(path)
         probe = await self.exec_command(
-            session_id, f"test -f {qpath} && stat -c %s {qpath} || echo MISSING", timeout=10
+            session_id, f"test -f {qpath} && stat -c %s {qpath} || echo MISSING", timeout=10, tool_call_id=None
         )
         out = probe.output.strip()
         if probe.exit_code != 0 or not out.isdigit():
@@ -615,7 +627,7 @@ class SandboxManager:
         with open(dest, "wb") as fh:
             while offset < size:
                 cmd = f"tail -c +{offset + 1} {qpath} | head -c {chunk} | base64"
-                result = await self.exec_command(session_id, cmd, timeout=120)
+                result = await self.exec_command(session_id, cmd, timeout=120, tool_call_id=None)
                 if result.exit_code != 0 or "[stderr]" in result.output:
                     # The output can hold megabytes of base64 ahead of the stderr that explains the failure.
                     raise UploadError(f"Failed to read file from sandbox: {result.output[-_READ_ERROR_TAIL_CHARS:]}")

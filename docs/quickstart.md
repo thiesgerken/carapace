@@ -97,7 +97,7 @@ On first start, carapace seeds runtime files under `data/` and bootstraps one Gi
 ```yaml
 agent:
   model: anthropic:claude-sonnet-4-6
-  sentinel_model: anthropic:claude-haiku-4-5
+  sentinel_model: anthropic:claude-haiku-5-5
   # Optional defaults for every new session.
   # Omit a field, or set it to 0, to keep that budget unlimited.
   # default_session_budget:

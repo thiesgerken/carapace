@@ -198,6 +198,7 @@ async def _exec_that(coordinator: SandboxExecCoordinator, during: Any) -> None:
         recreate_session=AsyncMock(),
         log_container_tail=AsyncMock(),
         exec_in_container=exec_in_container,
+        tool_call_id=None,
     )
 
 

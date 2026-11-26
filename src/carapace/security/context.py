@@ -299,7 +299,6 @@ class SessionSecurity:
             Callable[[str, str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None
         ) = None
         self._credential_notify_suppress: Callable[[str], bool] | None = None
-        self.current_parent_tool_id: str | None = None
         # Sentinel comments on allowed operations, until the agent's next model request carries them.
         self._comments_for_agent: list[str] = []
         self._domain_scope_lock = asyncio.Lock()
@@ -357,9 +356,6 @@ class SessionSecurity:
         if exec_id != self._domain_scope_exec_id:
             self._domain_scope_exec_id = exec_id
             self._reset_domain_scope()
-
-    def clear_current_parent_tool(self) -> None:
-        self.current_parent_tool_id = None
 
     async def get_or_enqueue_domain_approval(
         self,

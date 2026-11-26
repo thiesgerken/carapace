@@ -43,8 +43,8 @@ users:
       git: {}
       default_models:
         agent: anthropic:claude-sonnet-4-6
-        sentinel: anthropic:claude-haiku-4-5
-        title: anthropic:claude-haiku-4-5
+        sentinel: anthropic:claude-haiku-5-5
+        title: anthropic:claude-haiku-5-5
       budgets: {}
 ```
 

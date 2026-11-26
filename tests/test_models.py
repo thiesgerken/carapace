@@ -47,7 +47,7 @@ def test_config_defaults():
     assert cfg.sandbox.server_host is None
     assert (cfg.server.host, cfg.server.sandbox_host) == ("127.0.0.1", "127.0.0.1")
     ids = {e.model_id for e in cfg.agent.available_models}
-    assert ids == {"anthropic:claude-sonnet-4-6", "anthropic:claude-haiku-4-5"}
+    assert ids == {"anthropic:claude-sonnet-4-6", "anthropic:claude-haiku-5-5"}
 
 
 @pytest.mark.parametrize("instance", ["", "-dev", "dev-", "dev wt", "dev/wt", "x" * 64])
