@@ -14,7 +14,7 @@ from carapace.builder import client as builder_client
 from carapace.builder import nix
 from carapace.builder import store as builder_store
 from carapace.builder.client import BuilderClient, BuilderSystemMismatchError, BuilderUnavailableError
-from carapace.builder.models import BuilderInfo, BuildResult
+from carapace.builder.models import BuilderInfo, BuildResult, InputUpdate
 from carapace.builder.store import SkillStore
 
 TOKEN = "builder-test-token"
@@ -227,3 +227,39 @@ def test_roots_and_gc_require_the_token(api: TestClient) -> None:
     assert api.put("/roots", json={"keys": []}).status_code == 401
     assert api.post("/gc").status_code == 401
     assert api.put("/roots", headers=AUTH, json={"keys": ["not-a-key"]}).status_code == 422
+
+
+def test_an_update_check_answers_per_input_and_stores_nothing(
+    api: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    seen: list[tuple[str, set[str]]] = []
+
+    async def fake_update(source: Path, name: str, out: Path) -> InputUpdate:
+        seen.append((name, {path.name for path in source.iterdir()}))
+        if name == "broken":
+            return InputUpdate(log_tail="error: cannot fetch")
+        return InputUpdate(lock=f'{{"updated": "{name}"}}')
+
+    monkeypatch.setattr(nix, "update_input", fake_update)
+    body = archive({"flake.nix": b"{}", "flake.lock": b"{}", "weather/flake.nix": b"{}"})
+
+    response = api.post("/updates?input=weather&input=broken", headers=AUTH, content=body)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "inputs": {
+            "weather": {"lock": '{"updated": "weather"}', "log_tail": ""},
+            "broken": {"lock": None, "log_tail": "error: cannot fetch"},
+        }
+    }
+    assert seen == [
+        ("weather", {"flake.nix", "flake.lock", "weather"}),
+        ("broken", {"flake.nix", "flake.lock", "weather"}),
+    ]
+    assert not list((tmp_path / "work").iterdir())
+
+
+def test_an_update_check_takes_only_flake_attributes(api: TestClient) -> None:
+    body = archive({"flake.nix": b"{}"})
+    assert api.post("/updates?input=a.b", headers=AUTH, content=body).status_code == 422
+    assert api.post("/updates", content=body).status_code in (401, 403)

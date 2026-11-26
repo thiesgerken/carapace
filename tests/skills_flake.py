@@ -16,7 +16,11 @@ def write_skills_flake(skills_dir: Path, local: list[str] | dict[str, str], exte
     }
     nodes |= {name: {"locked": {"type": "path", "path": f"./{directory}"}} for name, directory in directories.items()}
     nodes |= {
-        name: {"locked": {"type": "github", "owner": "someone", "repo": name, "rev": "2" * 40}} for name in external
+        name: {
+            "locked": {"type": "github", "owner": "someone", "repo": name, "rev": "2" * 40},
+            "original": {"type": "github", "owner": "someone", "repo": name},
+        }
+        for name in external
     }
     nodes["root"] = {"inputs": {name: name for name in nodes}}
     skills_dir.mkdir(parents=True, exist_ok=True)

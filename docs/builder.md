@@ -13,6 +13,7 @@ The build API listens on port 8330. Every route except `/healthz` requires `Auth
 | `GET /builds/{key}` | The stored result for a build key, or 404 |
 | `GET /builds/{key}/files/{path}` | A file of that build's skill directory, as raw bytes. 404 for a missing file or a result without a skill directory, 400 for a path out of the directory, a symlink, a directory or a file over 1 MiB |
 | `PUT /builds/{key}?skill=<name>` | Body: the `skills/` directory as a tar archive (gzip or plain), e.g. `git archive HEAD:skills`. Builds skill `<name>`, stores and returns the result. `&retry=true` builds a key again whose stored result failed |
+| `POST /updates?input=<name>&input=…` | Body: the `skills/` directory as a tar archive. Runs `nix flake update <name> --output-lock-file <tmp>` for each input on its own and returns `{"inputs": {"<name>": {"lock": "…", "log_tail": "…"}}}`: the lock that update would write, or `null` with the log when it failed. Stores nothing ([update checks](skills.md#updates)) |
 | `PUT /roots` | Body: `{"keys": [...]}`, the build keys of the skills at the current heads (see [garbage collection](#garbage-collection)). 204 |
 | `POST /gc` | Runs garbage collection now and returns `{"dropped": [keys], "log_tail": "…"}` |
 
@@ -44,6 +45,8 @@ For skill `<name>` of a `skills/` directory with `flake.nix` and `flake.lock`, o
 - **Skill directory:** right after the evaluation, the builder takes `skillDir` from the metadata (it must be a top-level store path) and reads `SKILL.md` and the list of regular files from it, never following a symlink. The result carries them as `skill_dir`, `skill_md` and `skill_files`, also when the build then fails. Metadata without `skillDir` (helpers whose `mkSkill` takes no `src`) leaves them empty.
 - **Locks:** a missing `flake.lock` is a failed build, and so is one that lacks an input (`--no-update-lock-file`). The builder never writes lock files.
 - **Evaluation:** import-from-derivation is off, and a flake's `nixConfig` is ignored.
+
+An update check (`POST /updates`) fetches each input's upstream with `nix flake update <name>`, which evaluates the inputs' `flake.nix` but builds nothing. Only that input moves, so `nixpkgs` and `carapace` stay as locked, and one input that cannot be fetched does not hide the others.
 
 ### Architecture
 

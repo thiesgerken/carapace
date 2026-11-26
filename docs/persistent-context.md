@@ -49,7 +49,7 @@ Every role that acts as the user's agent starts its system prompt with the same 
 1. `AGENTS.md`: behavioral guide
 2. `SOUL.md`: personality
 3. `USER.md`: context about the human
-4. Skill catalog: names and descriptions only, from the builds, frozen per session ([skills.md](skills.md#discovery-progressive-disclosure))
+4. Skill catalog: names and descriptions only, from the builds, frozen per session ([skills.md](skills.md#discovery-progressive-disclosure)). Origins and update checks stay out of it ([skills.md](skills.md#updates)): they reach the agent in `read_skill` and `list_skills` results
 
 Each file sits under a `# <file name>` heading (`# SOUL.md`), so role instructions can refer to the files by name whatever headings they contain. Missing or empty files are left out.
 

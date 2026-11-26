@@ -23,6 +23,7 @@ import { useAppLocale } from "@/components/locale-provider";
 import { GlobalGitPanel, KNOWLEDGE_GIT_CHANGED_EVENT, useGlobalGit } from "@/components/git-sync";
 import { MarkdownContent } from "@/components/markdown-content";
 import { SkillBuildPanel } from "@/components/skill-build-panel";
+import { SkillSourcesPanel } from "@/components/skill-sources-panel";
 import {
   browseKnowledge,
   knowledgeArtifactUrl,
@@ -463,6 +464,11 @@ export function KnowledgeView() {
                 ))}
               </div>
             )}
+            {result.path === "skills" && !result.skills_error ? (
+              <div className="mt-6">
+                <SkillSourcesPanel server={server} />
+              </div>
+            ) : null}
             {result.skill ? <div className="mt-6"><SkillCard skill={result.skill} /></div> : null}
             {result.build && result.skill ? (
               <div className="mt-4">
