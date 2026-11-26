@@ -134,7 +134,9 @@ class SessionApprovalMixin:
                         continue
                     if existing.get("tool") != tool:
                         continue
-                    if existing.get("parent_tool_id") != parent_tool_id:
+                    # A verdict that lands after its exec ended knows no parent: the pending card it
+                    # finishes still has its exec's, and keeps it.
+                    if parent_tool_id is not None and existing.get("parent_tool_id") != parent_tool_id:
                         continue
                     if existing.get("approval_source") != "sentinel":
                         continue
