@@ -36,11 +36,12 @@ function GitHubIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+
 function isActiveRoute(pathname: string | null, href: string): boolean {
   return pathname === href || (pathname?.startsWith(`${href}/`) ?? false);
 }
 
-/** The bottom of the sidebar: labelled app navigation, then the account row with its menu. */
+/** The bottom of the sidebar: the account row, whose menu holds the app navigation, the GitHub link and logout. */
 export function SidebarFooter({
   server,
   token,
@@ -63,56 +64,6 @@ export function SidebarFooter({
   const t = useTranslations();
   const pathname = usePathname();
   const globalGit = useGlobalGit(server, token);
-
-  return (
-    // Below md the drawer is fixed to the viewport, so the body's safe-area padding does not reach it.
-    <div className="border-t border-border px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:pb-2">
-      <nav aria-label={t("navigation.label")} className="space-y-0.5">
-        {NAV_ITEMS.map(({ href, labelKey, icon: Icon }) => {
-          const active = isActiveRoute(pathname, href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              onClick={onNavigate}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                active ? "bg-primary/10 text-foreground" : "text-foreground/80 hover:bg-muted",
-              )}
-            >
-              <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
-              <span className="flex-1">{t(`navigation.${labelKey}`)}</span>
-              {href === "/knowledge" ? <GlobalGitIndicator git={globalGit} /> : null}
-            </Link>
-          );
-        })}
-      </nav>
-      <AccountMenu
-        currentUser={currentUser}
-        frontendVersion={frontendVersion}
-        backendVersion={backendVersion}
-        githubUrl={githubUrl}
-        onDisconnect={onDisconnect}
-      />
-    </div>
-  );
-}
-
-function AccountMenu({
-  currentUser,
-  frontendVersion,
-  backendVersion,
-  githubUrl,
-  onDisconnect,
-}: {
-  currentUser: AuthUserInfo | null;
-  frontendVersion: string | null;
-  backendVersion: string | null;
-  githubUrl: string;
-  onDisconnect: () => void;
-}) {
-  const t = useTranslations();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const closeMenu = useCallback(() => setOpen(false), []);
@@ -121,7 +72,8 @@ function AccountMenu({
   useDismiss(menuRef, open, closeMenu);
 
   return (
-    <div ref={menuRef} className="relative mt-2 border-t border-border pt-2">
+    // Below md the drawer is fixed to the viewport, so the body's safe-area padding does not reach it.
+    <div ref={menuRef} className="relative px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:pb-2">
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
@@ -134,7 +86,8 @@ function AccountMenu({
           {accountInitial(currentUser)}
         </span>
         <span className="min-w-0 flex-1 truncate font-medium">{accountName}</span>
-        {/* A stale frontend must stay visible without opening the menu. */}
+        {/* What the closed menu hides but should not wait for it: an out-of-sync knowledge remote and a stale frontend. */}
+        <GlobalGitIndicator git={globalGit} />
         {versionMismatch(frontendVersion, backendVersion) ? (
           <VersionBadge frontendVersion={frontendVersion} backendVersion={backendVersion} textClassName="sr-only" />
         ) : null}
@@ -144,8 +97,29 @@ function AccountMenu({
         <div
           role="menu"
           aria-label={t("account.menu")}
-          className="absolute inset-x-0 bottom-full z-50 mb-1 rounded-lg border border-border bg-background p-1 text-foreground shadow-lg"
+          className="absolute inset-x-3 bottom-full z-50 mb-1 rounded-lg border border-border bg-background p-1 text-foreground shadow-lg"
         >
+          {NAV_ITEMS.map(({ href, labelKey, icon: Icon }) => {
+            const active = isActiveRoute(pathname, href);
+            return (
+              <Link
+                key={href}
+                role="menuitem"
+                href={href}
+                onClick={() => {
+                  setOpen(false);
+                  onNavigate();
+                }}
+                aria-current={active ? "page" : undefined}
+                className={cn(menuItemClassName, active && "bg-primary/10 hover:bg-primary/10")}
+              >
+                <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+                <span className="flex-1">{t(`navigation.${labelKey}`)}</span>
+                {href === "/knowledge" ? <GlobalGitIndicator git={globalGit} /> : null}
+              </Link>
+            );
+          })}
+          <div role="separator" className="my-1 h-px bg-border" />
           <a
             role="menuitem"
             href={githubUrl}
