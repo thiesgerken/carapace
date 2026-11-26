@@ -37,6 +37,7 @@ from .memory.prompt_block import MemoryBlock
 from .memory.prompts import MONTH_DIGEST, SESSION_EXTRACT, WEEK_DIGEST, PromptTemplate, system_prompt
 from .models.config import Config
 from .models.session import MemorySnapshot, SessionState
+from .models.skills import SkillInfo
 from .models.user import UserConfig
 from .prompt_prefix import shared_prompt_prefix
 from .sandbox.manager import SandboxManager
@@ -91,6 +92,7 @@ class PreviewInputs:
     user_config: UserConfig
     data_dir: Path
     repo: KnowledgeRepoHandle
+    skill_catalog: list[SkillInfo]
     sandbox: SandboxManager
     # (user, session id) -> the memory block a session starting now gets.
     memory_block: Callable[[str, str], MemoryBlock]
@@ -127,7 +129,7 @@ async def _agent(inputs: PreviewInputs) -> PromptPreview:
         sandbox=inputs.sandbox,
         security=SessionSecurity(state.session_id),
         git_store=inputs.repo.git_store,
-        skill_catalog=inputs.repo.skill_registry.scan(),
+        skill_catalog=inputs.skill_catalog,
         # The preview records the first request and runs no tool.
         skill_builds=SkillBuilds(None),
         agent_model=_recording_model(),
@@ -161,7 +163,7 @@ async def _sentinel(inputs: PreviewInputs) -> PromptPreview:
     state = _fresh_session(inputs)
     sentinel = _sentinel_for(inputs, state)
     model = state.sentinel_model_name or inputs.config.agent.sentinel_model
-    request = await _record(sentinel.agent, deps=SentinelDeps(sentinel.skills_dir, agent_reads_verdict=True))
+    request = await _record(sentinel.agent, deps=SentinelDeps(agent_reads_verdict=True))
     sections = [
         *_tool_sections(request, model),
         _section("role_instructions", "Sentinel instructions", SENTINEL_INSTRUCTIONS, model),
@@ -270,7 +272,8 @@ def _sentinel_for(inputs: PreviewInputs, state: SessionState) -> Sentinel:
         model=state.sentinel_model_name or inputs.config.agent.sentinel_model,
         user=inputs.user,
         knowledge_dir=inputs.repo.knowledge_dir,
-        skills_dir=inputs.repo.knowledge_dir / "skills",
+        # The preview records the first request and runs no tool.
+        skill_builds=SkillBuilds(None),
         # Previews record the request locally instead of sending it, so they take no LLM slot.
         llm_slots=None,
         model_factory=lambda model_name, *, user: _recording_model(),
@@ -278,7 +281,7 @@ def _sentinel_for(inputs: PreviewInputs, state: SessionState) -> Sentinel:
 
 
 def _prompt_prefix(inputs: PreviewInputs) -> str:
-    return shared_prompt_prefix(inputs.repo.knowledge_dir, inputs.repo.skill_registry.scan())
+    return shared_prompt_prefix(inputs.repo.knowledge_dir, inputs.skill_catalog)
 
 
 @dataclass(frozen=True)

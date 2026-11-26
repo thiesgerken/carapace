@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, model_validator
@@ -33,4 +32,3 @@ class SkillCarapaceConfig(BaseModel):
 class SkillInfo(BaseModel):
     name: str
     description: str = ""
-    path: Path

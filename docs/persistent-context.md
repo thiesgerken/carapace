@@ -49,7 +49,7 @@ Every role that acts as the user's agent starts its system prompt with the same 
 1. `AGENTS.md`: behavioral guide
 2. `SOUL.md`: personality
 3. `USER.md`: context about the human
-4. Skill catalog: names and descriptions only
+4. Skill catalog: names and descriptions only, from the builds ([skills.md](skills.md#discovery-progressive-disclosure))
 
 Each file sits under a `# <file name>` heading (`# SOUL.md`), so role instructions can refer to the files by name whatever headings they contain. Missing or empty files are left out.
 
@@ -95,6 +95,7 @@ Each of these changes the agent's tools or instructions mid-session, so the next
 
 - **Mode changes**: the unattended and read-only (ask) blocks follow the session attributes. Toggling a mode re-writes the system prompt from the memory block on. Acceptable because it is rare and user-driven.
 - **Releases**: a release that changes a tool definition (its parameters, their order, a docstring, its strict flag) or the instructions makes each existing session's first request after the deploy miss on everything and write it anew. Acceptable because it happens once per session and release, never between two requests of the same server version.
+- **Skill catalog**: a skill's entry changes when its `SKILL.md` changes, when the skill is added or removed, and once when a new build has read its `SKILL.md` (from "being built" to its description). Before the build gets there, the entry says the skill is being built. The catalog is refreshed before each turn, so this happens after a skill push or a server restart, on the first turn whose refresh sees the new state. Acceptable because skill changes are rare and the builder reads `SKILL.md` within seconds of a push, before the commands build.
 - **Date rollover**: the date sits in the dynamic instruction, behind the instructions breakpoint but still ahead of the messages. The first request after midnight re-writes the conversation. Acceptable because it happens at most once a day.
 
 - **Compaction**: a fold or a summarized tool output rewrites the conversation from that point on, so the next request writes it anew. `/compact` takes this miss on the next turn, which also refreshes the memory block. Automatic compaction takes it inside the run, right before the request that would otherwise cross the threshold, and leaves the memory block alone so the next turn does not miss a second time. Acceptable because it only happens once the conversation is large, and the shorter history is cheaper on every later request.

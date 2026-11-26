@@ -17,7 +17,7 @@ from pydantic_ai.messages import BinaryContent, ToolReturn
 from .. import security as security
 from ..artifacts import artifact_index, artifact_title
 from ..builder.profile import profile_plan
-from ..builder.skill_builds import SkillCommand
+from ..builder.skill_builds import SkillBuild, SkillCommand
 from ..llm import (
     ProviderCompactionRejectionCapability,
     model_settings_for_config,
@@ -28,7 +28,7 @@ from ..models.tooling import SentFileInfo, ToolResult, normalize_tool_call_args
 from ..prompt_prefix import join_prompt_sections, shared_prompt_prefix
 from ..sandbox.manager import READ_TOOL_MAX_LINE_WINDOW, SandboxLimitError, UploadError, UploadTooLargeError
 from ..security.context import ToolResultEntry
-from ..skills import SkillDocumentError, SkillRegistry
+from ..skills import SkillDocumentError, parse_skill_document
 from ..spans import ToolSpanCapability, span
 from ..usage import LlmRequestLogCapability
 from .autonomy import AutonomyLimitCapability
@@ -248,12 +248,9 @@ def _command_docs(commands: dict[str, SkillCommand]) -> str:
     return "\n".join(lines)
 
 
-async def _skill_commands(ctx: RunContext[Deps], skill_name: str) -> str:
-    """The skill's commands and whether they are on PATH, once its build and the profile sync are done."""
-    build, builds = await ctx.deps.skill_builds.wait_built(ctx.deps.knowledge_dir, skill_name)
-    if build is None:
-        # The catalog reads the server's checkout, builds read HEAD: they differ only while a push lands.
-        return "The skill is not listed in skills/flake.nix at HEAD, so it has no build yet."
+async def _skill_commands(ctx: RunContext[Deps], build: SkillBuild, builds: list[SkillBuild]) -> str:
+    """The skill's commands and files, and whether they are in the sandbox, once the profile sync is done."""
+    skill_name = build.skill
     match build.state:
         case "failed":
             return f"The skill's build failed, so its commands are not available. Build log tail:\n\n{build.detail}"
@@ -269,7 +266,18 @@ async def _skill_commands(ctx: RunContext[Deps], skill_name: str) -> str:
     if failure:
         return f"{docs}\n\nThe commands could not be put on PATH: {failure}"
     servers = sorted(name for name, command in build.commands.items() if command.mcp)
-    return "\n\n".join([docs, "The commands are on PATH.", *[await _mcp_tools(ctx, server) for server in servers]])
+    on_path = "The commands are on PATH." if build.commands else ""
+    return "\n\n".join(
+        part
+        for part in [docs, on_path, _skill_files(build), *[await _mcp_tools(ctx, server) for server in servers]]
+        if part
+    )
+
+
+def _skill_files(build: SkillBuild) -> str:
+    """Where the skill directory is in the sandbox, for the scripts and references its SKILL.md mentions."""
+    files = "\n".join(f"- {path}" for path in build.skill_files if path != "SKILL.md")
+    return f"# Files\n\nThe skill's files are read-only at {build.skill_dir}:\n{files}" if files else ""
 
 
 async def _mcp_tools(ctx: RunContext[Deps], server: str) -> str:
@@ -474,7 +482,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
 
     @agent.tool
     async def read_skill(ctx: RunContext[Deps], skill_name: str) -> str:
-        """Read a skill: its SKILL.md, its commands and whether they are on PATH. Call before using a skill.
+        """Read a skill: its SKILL.md, commands and files, and whether they are in the sandbox. Call before using it.
 
         Waits while the skill builds and its commands are being installed in the sandbox.
         """
@@ -482,10 +490,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             return _emit_tool_result(ctx, "read_skill", f"Error: {skill_name!r} is not a skill name.", exit_code=1)
         # Reading grants nothing, but the sentinel learns what later requests are about.
         _record(ctx, "read_skill", {"skill_name": skill_name})
-        registry = SkillRegistry(ctx.deps.knowledge_dir / "skills")
-        instructions = registry.get_full_instructions(skill_name)
-        if instructions is None:
-            # The registry is the server's copy: a skill only in /workspace is not there until it is pushed.
+        build, builds = await ctx.deps.skill_builds.wait_built(ctx.deps.knowledge_dir, skill_name)
+        if build is None:
+            # Builds read the pushed HEAD: a skill only in /workspace is not there until it is pushed.
             return _emit_tool_result(
                 ctx,
                 "read_skill",
@@ -494,8 +501,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                 "builder builds it after the push.",
                 exit_code=1,
             )
+        instructions = build.skill_md
+        if instructions is None:
+            reason = build.detail or "its skill directory has no SKILL.md"
+            return _emit_tool_result(
+                ctx, "read_skill", f"Error: {skill_name} has no SKILL.md to read: {reason}", exit_code=1
+            )
         try:
-            registry.get_carapace_config(skill_name)
+            parse_skill_document(instructions, fallback_name=skill_name).carapace_config()
         except SkillDocumentError as exc:
             return _emit_tool_result(
                 ctx,
@@ -503,7 +516,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                 f"Error: the SKILL.md of {skill_name} is invalid: {exc}. Fix it, commit and push.\n\n{instructions}",
                 exit_code=1,
             )
-        commands = await _skill_commands(ctx, skill_name)
+        commands = await _skill_commands(ctx, build, builds)
         return _emit_tool_result(ctx, "read_skill", f"{instructions.rstrip()}\n\n{commands}")
 
     # --- Filesystem (sandboxed — runs inside the sandbox container) ---

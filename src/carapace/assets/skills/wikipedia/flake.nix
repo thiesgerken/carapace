@@ -21,6 +21,7 @@
         {
           default = skill.mkSkill {
             name = "wikipedia";
+            src = ./.;
             needs.domains = [
               "de.wikipedia.org"
               "en.wikipedia.org"

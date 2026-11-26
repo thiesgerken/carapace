@@ -25,7 +25,6 @@ from carapace.sandbox.runtime import ExecResult, PoolSandbox
 from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.sandbox.skill_profile import KILLER_MARKER, SYNC_PID_FILE, SkillProfileSync
 from carapace.session.manager import SessionManager, SessionMeta
-from carapace.skills import SkillRegistry
 from tests.runtime_mocks import make_runtime_mock
 
 _NEEDS = SkillNeeds(domains=[], credentials={}, tunnels=[])
@@ -204,7 +203,6 @@ def _sandbox_manager(tmp_path: Path, db_factory: Any, runtime: Any, **kwargs: An
             owner="thies",
             knowledge_dir=tmp_path,
             git_store=GitStore(tmp_path),
-            skill_registry=SkillRegistry(tmp_path / "skills"),
         ),
         session_factory=db_factory,
         **kwargs,

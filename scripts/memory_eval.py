@@ -45,7 +45,6 @@ from carapace.memory.llm import LlmCallError, prompt_tokens, run_structured
 from carapace.memory.models import SessionExtractionOutput
 from carapace.memory.prompts import SESSION_EXTRACT, system_prompt
 from carapace.prompt_prefix import shared_prompt_prefix
-from carapace.skills import SkillRegistry
 
 DEFAULT_MODEL = "anthropic:claude-haiku-5-5"
 
@@ -186,9 +185,8 @@ def main() -> None:
     if args.limit is not None:
         sessions = sessions[-args.limit :]
     prefix = (
-        shared_prompt_prefix(args.knowledge_dir, SkillRegistry(args.knowledge_dir / "skills").scan())
-        if args.knowledge_dir
-        else ""
+        # ponytail: no skill builder offline, so no skill catalog; its few hundred tokens are left out.
+        shared_prompt_prefix(args.knowledge_dir, []) if args.knowledge_dir else ""
     )
     system = system_prompt(SESSION_EXTRACT, prefix)
     prepared = [prepare(session, args.model, system) for session in sessions]

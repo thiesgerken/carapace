@@ -2,7 +2,7 @@
 
 One instance per installation: a result belongs to a build key, so users with the same skill share it. The
 builder keeps every result, so this only remembers what it has seen; after a restart a lookup is enough.
-The skill catalog never reads from here: it is part of the cached prompt prefix (#548).
+The skill catalog comes from here too: the names and the descriptions of the SKILL.md files the builds read.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ import httpx
 from loguru import logger
 from pydantic import BaseModel, ValidationError
 
+from ..models.skills import SkillInfo
+from ..skills import SkillDocumentError, parse_skill_document
 from ..spans import span
 from .client import BuilderClient, BuilderSystemMismatchError
 from .models import BuildResult
@@ -59,6 +61,10 @@ class _Outcome:
     commands: dict[str, SkillCommand] = field(default_factory=dict)
     # Why a build failed or is unavailable: the builder's log tail, or what went wrong before it.
     detail: str = ""
+    # The skill directory in the store and what the builder read from it; also kept for a failed build.
+    skill_dir: str | None = None
+    skill_md: str | None = None
+    skill_files: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +75,10 @@ class SkillBuild:
     store_paths: list[str]
     commands: dict[str, SkillCommand]
     detail: str
+    # None and empty while building, unavailable, or failed before the builder could read them.
+    skill_dir: str | None = None
+    skill_md: str | None = None
+    skill_files: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +92,7 @@ class _HeadSkill:
 
 
 _BUILDING = _Outcome(state="building")
+_NO_BUILDER = _Outcome(state="unavailable", detail="No skill builder is configured (CARAPACE_BUILDER_URL).")
 
 
 class RetryRefusedError(Exception):
@@ -95,6 +106,8 @@ class SkillBuilds:
         self.updates = SkillUpdates(builder)
         self._results: dict[str, _Outcome] = {}
         self._running: dict[str, asyncio.Task[None]] = {}
+        # The skills each repo listed at its head when last asked, for the catalog.
+        self._heads: dict[Path, list[_HeadSkill]] = {}
 
     async def ensure_built(self, repo_dir: Path) -> list[SkillBuild]:
         """The build state of every skill skills/flake.nix lists at the head of *repo_dir*.
@@ -102,20 +115,23 @@ class SkillBuilds:
         A key without a result starts building in the background; this never waits for a build. A skill
         whose key did not change since its last build already has a result, so a push builds only what it touched.
         """
-        builds: list[SkillBuild] = []
-        for skill in await _skills_at_head(repo_dir):
-            outcome = self._outcome(repo_dir, skill)
-            builds.append(
-                SkillBuild(
-                    skill=skill.name,
-                    key=skill.key,
-                    state=outcome.state,
-                    store_paths=outcome.store_paths,
-                    commands=outcome.commands,
-                    detail=outcome.detail,
-                )
-            )
-        return builds
+        heads = await _skills_at_head(repo_dir)
+        self._heads[repo_dir] = heads
+        return [_build(skill, self._outcome(repo_dir, skill)) for skill in heads]
+
+    def catalog(self, repo_dir: Path) -> list[SkillInfo]:
+        """Name and description of every skill *repo_dir* listed when `ensure_built` last looked, as known now.
+
+        It starts nothing and does not wait: the catalog is part of the shared prompt prefix, which sentinel,
+        memory and compaction build outside a turn. A turn refreshes it by calling `ensure_built` first.
+        """
+        return [_catalog_entry(skill.name, self._known(skill)) for skill in self._heads.get(repo_dir, [])]
+
+    async def skill_file(self, build: SkillBuild, path: str) -> bytes | None:
+        """A file of *build*'s skill directory; None when it has no such file or no skill directory."""
+        if self._builder is None or build.skill_dir is None:
+            return None
+        return await self._builder.skill_file(build.key, path)
 
     async def wait_built(self, repo_dir: Path, skill: str) -> tuple[SkillBuild | None, list[SkillBuild]]:
         """*skill*'s build once it no longer runs (None for a skill skills/flake.nix does not list), and every build.
@@ -171,15 +187,16 @@ class SkillBuilds:
         self._running[skill.key] = task
 
     def _outcome(self, repo_dir: Path, skill: _HeadSkill) -> _Outcome:
-        if self._builder is None:
-            return _Outcome(state="unavailable", detail="No skill builder is configured (CARAPACE_BUILDER_URL).")
-        result = self._results.get(skill.key)
-        if result is not None and result.state != "unavailable":
-            return result
+        result = self._known(skill)
         # Unavailable is the builder's state, not the skill's: every request tries again.
-        if skill.key not in self._running:
+        if self._builder is not None and result.state in ("building", "unavailable") and skill.key not in self._running:
             self._start(self._builder, repo_dir, skill)
-        return result or _BUILDING
+        return result
+
+    def _known(self, skill: _HeadSkill) -> _Outcome:
+        if self._builder is None:
+            return _NO_BUILDER
+        return self._results.get(skill.key) or _BUILDING
 
     async def _build(self, builder: BuilderClient, repo_dir: Path, skill: _HeadSkill, *, retry: bool) -> None:
         try:
@@ -222,7 +239,13 @@ def _log_crash(task: asyncio.Task[None], skill: _HeadSkill) -> None:
 
 def _read_result(result: BuildResult) -> _Outcome:
     if result.state == "failed":
-        return _Outcome(state="failed", detail=result.log_tail)
+        return _Outcome(
+            state="failed",
+            detail=result.log_tail,
+            skill_dir=result.skill_dir,
+            skill_md=result.skill_md,
+            skill_files=result.skill_files,
+        )
     try:
         metadata = SkillMetadata.model_validate(result.metadata)
     except ValidationError as exc:
@@ -230,7 +253,54 @@ def _read_result(result: BuildResult) -> _Outcome:
             state="failed",
             detail=f"The skill package has no valid passthru.carapace; build it with mkSkill. {exc}",
         )
-    return _Outcome(state="succeeded", store_paths=result.store_paths, commands=metadata.commands)
+    if result.skill_dir is None:
+        return _Outcome(state="failed", detail=_NO_SKILL_DIR)
+    return _Outcome(
+        state="succeeded",
+        store_paths=result.store_paths,
+        commands=metadata.commands,
+        skill_dir=result.skill_dir,
+        skill_md=result.skill_md,
+        skill_files=result.skill_files,
+    )
+
+
+_NO_SKILL_DIR = (
+    "The skill package names no skill directory: its Carapace helpers are older than mkSkill's src. "
+    "Pass src = ./. to mkSkill and update the carapace input: nix flake update carapace --flake ./skills"
+)
+
+
+def _build(skill: _HeadSkill, outcome: _Outcome) -> SkillBuild:
+    return SkillBuild(
+        skill=skill.name,
+        key=skill.key,
+        state=outcome.state,
+        store_paths=outcome.store_paths,
+        commands=outcome.commands,
+        detail=outcome.detail,
+        skill_dir=outcome.skill_dir,
+        skill_md=outcome.skill_md,
+        skill_files=outcome.skill_files,
+    )
+
+
+def _catalog_entry(name: str, outcome: _Outcome) -> SkillInfo:
+    """The skill under its attribute name, with the description of its SKILL.md or why there is none yet."""
+    if outcome.skill_md is None:
+        description = {
+            "building": "Being built; its description follows once it is. read_skill waits for the build.",
+            # Fixed text, not the error: the catalog is part of the cached prompt prefix.
+            "unavailable": "Not available: the skill builder cannot be reached. read_skill shows why.",
+        }.get(outcome.state, "BROKEN, its build has no SKILL.md; read_skill shows why.")
+        return SkillInfo(name=name, description=description)
+    try:
+        document = parse_skill_document(outcome.skill_md, fallback_name=name)
+        document.carapace_config()
+    except SkillDocumentError as exc:
+        # Listed rather than dropped: the agent has to see the skill is broken to fix it.
+        return SkillInfo(name=name, description=f"BROKEN, cannot be used until its SKILL.md is fixed: {exc}")
+    return SkillInfo(name=name, description=document.description)
 
 
 async def _skills_at_head(repo_dir: Path) -> list[_HeadSkill]:

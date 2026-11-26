@@ -29,6 +29,7 @@
         {
           default = skill.mkSkill {
             name = "carapace";
+            src = ./.;
             needs = {
               domains = [ server ];
               credentials.CARAPACE_API_KEY = apiKey;

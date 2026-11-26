@@ -53,13 +53,14 @@ Good filenames are `REFERENCE.md`, `CONFIG.md`, or `references/*.md`.
 2. Inspect nearby skills for tone, structure, and command style before inventing a new pattern.
 3. Create or edit `skills/<name>/SKILL.md`.
 4. Write tight frontmatter:
-   - `name` matches the folder name exactly.
+   - `name` matches the folder name and the skill's attribute name in `skills/flake.nix` (step 7), which is the name Carapace uses.
    - `description` says what the skill does and when to use it.
 5. Write the body for the agent who will use the skill, including the operational facts needed for safe normal use.
-6. If the skill has commands, it is a flake: write `flake.nix` with the commands and what they need, lock it, and commit `flake.lock` (see `REFERENCE.md`). Add an `Exposed Commands` section near the top of `SKILL.md` with the real command names.
-7. Build and run every command from the workspace before pushing: `nix shell path:./skills/<name> -c <command> …`.
-8. If implementation or reference material is not needed for normal use, add a sidecar markdown file and link it from `SKILL.md`.
-9. Commit and push. `read_skill` sees only pushed skills. After the push, `read_skill(<name>)` waits for the build and puts the commands on `PATH`, in this session too. Tell the user the builder builds the skill after the push and the Knowledge view shows its build state.
+6. Every skill is a flake: write `flake.nix`, lock it, and commit `flake.lock` (see `REFERENCE.md`). A skill with only instructions needs the few lines of `mkSkill { name = "<name>"; src = ./.; }`. A skill with commands declares them and what they need; add an `Exposed Commands` section near the top of `SKILL.md` with the real command names.
+7. List the skill in `skills/flake.nix`: an input `<name>` with `url = "path:./<name>"` that follows `nixpkgs` and `carapace` like the others. `git add skills/<name>`, then `nix flake lock ./skills`. After changing the skill's own inputs or its `flake.lock` later, run `nix flake update <name> --flake ./skills`. Commit `skills/flake.lock` with the skill. A directory that is not listed is not a skill.
+8. Build and run every command from the workspace before pushing: `nix shell path:./skills/<name> -c <command> …`.
+9. If implementation or reference material is not needed for normal use, add a sidecar markdown file and link it from `SKILL.md`.
+10. Commit and push. `read_skill` sees only pushed skills. After the push, `read_skill(<name>)` waits for the build and puts the commands on `PATH`, in this session too. Tell the user the builder builds the skill after the push and the Knowledge view shows its build state.
 
 ## Setup Guidance
 

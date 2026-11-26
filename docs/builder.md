@@ -11,6 +11,7 @@ The build API listens on port 8330. Every route except `/healthz` requires `Auth
 | `GET /healthz` | Liveness, unauthenticated |
 | `GET /info` | `{"system": "x86_64-linux", "cache_public_keys": ["carapace-builder-1:…", "cache.nixos.org-1:…"]}`: the Nix system the builder builds for, and the keys sandboxes trust for its [cache](#binary-cache) |
 | `GET /builds/{key}` | The stored result for a build key, or 404 |
+| `GET /builds/{key}/files/{path}` | A file of that build's skill directory, as raw bytes. 404 for a missing file or a result without a skill directory, 400 for a path out of the directory, a symlink, a directory or a file over 1 MiB |
 | `PUT /builds/{key}?skill=<name>` | Body: the `skills/` directory as a tar archive (gzip or plain), e.g. `git archive HEAD:skills`. Builds skill `<name>`, stores and returns the result. `&retry=true` builds a key again whose stored result failed |
 | `PUT /roots` | Body: `{"keys": [...]}`, the build keys of the skills at the current heads (see [garbage collection](#garbage-collection)). 204 |
 | `POST /gc` | Runs garbage collection now and returns `{"dropped": [keys], "log_tail": "…"}` |
@@ -39,7 +40,8 @@ A result:
 For skill `<name>` of a `skills/` directory with `flake.nix` and `flake.lock`, on system `<system>`:
 
 - **Metadata:** `nix eval --json --no-update-lock-file path:<dir>#packages.<system>.<name> --apply 'p: p.passthru.carapace or null'`, first, so a mistake in the declarations fails before anything builds. The builder passes this JSON through without reading it. `mkSkill` defines its schema (command names, descriptions, declarations), and the server reads it. It is `null` when the package has no `passthru.carapace`.
-- **Outputs:** `nix build --no-update-lock-file path:<dir>#packages.<system>.<name>`. `store_paths` lists every output of that package. `mkSkill` puts only the command wrappers into it. Only that attribute is evaluated, so another skill's mistakes do not fail it.
+- **Outputs:** `nix build --no-update-lock-file path:<dir>#packages.<system>.<name>`. `store_paths` lists every output of that package. `mkSkill` puts the command wrappers into it, and a reference to the skill directory (a store path of its own) that brings it along. Only that attribute is evaluated, so another skill's mistakes do not fail it.
+- **Skill directory:** right after the evaluation, the builder takes `skillDir` from the metadata (it must be a top-level store path) and reads `SKILL.md` and the list of regular files from it, never following a symlink. The result carries them as `skill_dir`, `skill_md` and `skill_files`, also when the build then fails. Metadata without `skillDir` (helpers whose `mkSkill` takes no `src`) leaves them empty.
 - **Locks:** a missing `flake.lock` is a failed build, and so is one that lacks an input (`--no-update-lock-file`). The builder never writes lock files.
 - **Evaluation:** import-from-derivation is off, and a flake's `nixConfig` is ignored.
 

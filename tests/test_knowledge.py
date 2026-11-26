@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from carapace.knowledge import KnowledgeRepoRegistry
-from carapace.skills import SkillRegistry
 
 
 def test_knowledge_repo_registry_returns_handle_for_normalized_owner(tmp_path: Path) -> None:
@@ -16,8 +15,6 @@ def test_knowledge_repo_registry_returns_handle_for_normalized_owner(tmp_path: P
     assert handle.owner == "thies"
     assert handle.knowledge_dir == (tmp_path / "knowledges" / "thies").resolve()
     assert handle.git_store.repo_dir == handle.knowledge_dir
-    assert isinstance(handle.skill_registry, SkillRegistry)
-    assert handle.skill_registry.skills_dir == handle.knowledge_dir / "skills"
 
 
 def test_knowledge_repo_registry_caches_handles_per_owner(tmp_path: Path) -> None:

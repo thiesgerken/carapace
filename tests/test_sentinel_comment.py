@@ -126,7 +126,7 @@ async def test_sentinel_comments_only_on_allows_the_agent_reads(
         model="test:model",
         user="thies",
         knowledge_dir=tmp_path,
-        skills_dir=tmp_path / "skills",
+        skill_builds=SkillBuilds(None),
         llm_slots=None,
         model_factory=lambda _name, *, user: ReplayStreamModel(respond),
     )

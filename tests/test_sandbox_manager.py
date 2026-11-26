@@ -20,7 +20,6 @@ from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.sandbox.state import load_sandbox_snapshot
 from carapace.security.context import ApprovalSource, CredentialAccessEntry, SessionSecurity
 from carapace.session.manager import SessionManager, SessionMeta
-from carapace.skills import SkillRegistry
 from tests.runtime_mocks import make_runtime_mock
 
 
@@ -40,7 +39,6 @@ def _sandbox_manager(
             owner="thies",
             knowledge_dir=knowledge_dir,
             git_store=GitStore(knowledge_dir),
-            skill_registry=SkillRegistry(knowledge_dir / "skills"),
         )
 
         def knowledge_repo_for_session(_session_id: str) -> KnowledgeRepoHandle:

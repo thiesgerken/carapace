@@ -23,6 +23,7 @@
         {
           default = skill.mkSkill {
             name = "demo-npm";
+            src = ./.;
             commands = {
               demo-npm-hello = {
                 exec = "${node} ${app}/src/hello.mjs";

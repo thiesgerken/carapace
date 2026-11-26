@@ -19,6 +19,7 @@ from pydantic_ai.models.openai_codex import OpenAICodexModel
 from pydantic_ai.providers.openai_codex import OpenAICodexCredentials, OpenAICodexProvider
 from pydantic_ai.usage import RequestUsage
 
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.llm import ProviderCompactionRejectionCapability, provider_compaction
 from carapace.models.config import AvailableModelEntry
 from carapace.security.context import SessionSecurity
@@ -333,7 +334,7 @@ async def test_a_sentinel_whose_provider_rejects_compaction_evaluates_without_it
         model=_ENTRY.model_id,
         user="thies",
         knowledge_dir=tmp_path,
-        skills_dir=tmp_path / "skills",
+        skill_builds=SkillBuilds(None),
         llm_slots=None,
         model_factory=lambda _name, *, user: ReplayStreamModel(judge),
         provider_compaction=lambda model: None if model in rejected else provider_compaction(_ENTRY, instructions=""),

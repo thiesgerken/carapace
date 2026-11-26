@@ -55,7 +55,7 @@ src/carapace/          # main package
   spans.py             # timing spans of a running turn (TurnTrace, span(), attach_sandbox_call)
   prompt_prefix.py     # shared system prompt prefix (AGENTS/SOUL/USER.md, skill catalog)
   prompt_preview.py    # what every LLM role sends, split into sections (GET /api/prompts/preview)
-  skills.py            # skill registry
+  skills.py            # skill list from skills/flake.lock, SKILL.md frontmatter
   credentials.py       # password-manager-backed credentials
   agent/
     __init__.py        # re-exports (create_agent, build_system_prompt, run_agent_turn)

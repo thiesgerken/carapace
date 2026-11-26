@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Annotated
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 from pydantic import TypeAdapter
@@ -21,6 +21,7 @@ from pydantic import TypeAdapter
 from . import nix
 from .cache import create_cache_app
 from .models import BuilderInfo, BuildKey, BuildResult, GcResult, Roots, SkillName, UpdateCheck, UpstreamCache
+from .skill_dir import SkillFileError, read_file
 from .store import SkillStore
 
 PORT = 8330
@@ -66,6 +67,20 @@ def create_app(token: str, store: SkillStore, system: str, cache_public_keys: li
         if result is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"No build for key {key}")
         return result
+
+    @app.get("/builds/{key}/files/{path:path}", dependencies=authorized)
+    async def get_skill_file(key: BuildKey, path: str) -> Response:
+        """A file of the skill directory of *key*'s build, as raw bytes."""
+        result = store.result(key)
+        if result is None or result.skill_dir is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"No skill directory for key {key}")
+        try:
+            content = read_file(result.skill_dir, path)
+        except FileNotFoundError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"{path} is not in the skill directory") from exc
+        except SkillFileError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        return Response(content, media_type="application/octet-stream")
 
     @app.put("/builds/{key}", dependencies=authorized)
     async def build(key: BuildKey, skill: SkillName, request: Request, retry: bool = False) -> BuildResult:

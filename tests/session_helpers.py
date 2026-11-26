@@ -24,7 +24,6 @@ from carapace.security.context import ApprovalSource, ApprovalVerdict
 from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
 from carapace.session.types import ActiveSession, SessionSubscriber
-from carapace.skills import SkillRegistry
 from carapace.spans import SpanNotice
 from carapace.usage import LlmContextStatus, LlmRequestState, LlmSource
 from carapace.ws_models import ApprovalRequest, FinalStatus, ToolCallStream, TurnUsage
@@ -224,12 +223,12 @@ def _make_engine(
     credential_registry: CredentialRegistryProtocol | None = None,
     knowledge_repo_for_session: Callable[[str], KnowledgeRepoHandle] | None = None,
     memory_block_for: Callable[[str, SessionState], str] = lambda _user, _state: "",
+    skill_builds: SkillBuilds | None = None,
 ) -> SessionEngine:
     ensure_data_dir(tmp_path)
     if config is None:
         config = build_config(tmp_path)
     session_mgr = SessionManager(session_factory, tmp_path)
-    registry = SkillRegistry(tmp_path / "skills")
     sandbox_mgr = MagicMock(spec=SandboxManager)
     sandbox_mgr.refresh_sandbox_snapshot = AsyncMock()
     sandbox_mgr.reset_session = AsyncMock()
@@ -245,7 +244,6 @@ def _make_engine(
             owner="thies",
             knowledge_dir=tmp_path,
             git_store=git_store,
-            skill_registry=registry,
         )
 
         def knowledge_repo_for_session(_session_id: str) -> KnowledgeRepoHandle:
@@ -256,7 +254,7 @@ def _make_engine(
         data_dir=tmp_path,
         session_mgr=session_mgr,
         sandbox_mgr=sandbox_mgr,
-        skill_builds=SkillBuilds(None),
+        skill_builds=skill_builds or SkillBuilds(None),
         credential_registry_for_session=credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
         memory_block_for=memory_block_for,

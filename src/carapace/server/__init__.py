@@ -563,7 +563,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     def prompt_prefix_for_user(user: str) -> str:
         handle = _knowledge_repo_registry.get_for_user(user)
-        return shared_prompt_prefix(handle.knowledge_dir, handle.skill_registry.scan())
+        return shared_prompt_prefix(handle.knowledge_dir, _skill_builds.catalog(handle.knowledge_dir))
 
     _sandbox_mgr = SandboxManager(
         runtime=runtime,

@@ -41,7 +41,6 @@ from ..notifications.router import NotificationRouter
 from ..sandbox.manager import SandboxManager
 from ..security.context import RewindEntry, SessionSecurity, copy_sentinel_state
 from ..security.sentinel import Sentinel
-from ..skills import SkillRegistry
 from ..spans import attach_sandbox_call
 from ..usage import (
     LlmRequestLog,
@@ -214,11 +213,12 @@ class SessionEngine(
     def _git_store_for_session(self, session_id: str) -> GitStore:
         return self._repo_handle_for_session(session_id).git_store
 
-    def _skill_registry_for_session(self, session_id: str) -> SkillRegistry:
-        return self._repo_handle_for_session(session_id).skill_registry
-
     def _skill_catalog_for_session(self, session_id: str) -> list[SkillInfo]:
-        return self._repo_handle_for_session(session_id).skill_registry.scan()
+        return self._skill_builds.catalog(self._knowledge_dir_for_session(session_id))
+
+    async def _refresh_skill_catalog(self, session_id: str) -> None:
+        """Look at the skills at head before a turn, so its catalog has the builds the last push started."""
+        await self._skill_builds.ensure_built(self._knowledge_dir_for_session(session_id))
 
     @property
     def sandbox_mgr(self) -> SandboxManager:
@@ -262,7 +262,7 @@ class SessionEngine(
             model=self._config.agent.sentinel_model,
             user=owner,
             knowledge_dir=knowledge_dir,
-            skills_dir=knowledge_dir / "skills",
+            skill_builds=self._skill_builds,
             llm_slots=self._llm_semaphore,
             unattended=state.attributes.unattended,
             ask_mode=state.attributes.ask_mode,

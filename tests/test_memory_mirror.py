@@ -18,7 +18,6 @@ from carapace.memory.models import (
     TaskStatus,
 )
 from carapace.memory.render import render_mirror
-from carapace.skills import SkillRegistry
 from tests.memory_fixtures import EXTRACTION, MONTH, WEEK
 
 TASK = MemoryTask(
@@ -43,7 +42,6 @@ class _Mirror:
             owner="alice",
             knowledge_dir=knowledge_dir,
             git_store=self.git_store,
-            skill_registry=SkillRegistry(knowledge_dir / "skills"),
         )
         self.handler = MirrorHandler(
             current_extractions=lambda user: self.extractions,

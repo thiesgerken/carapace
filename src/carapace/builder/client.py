@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import platform
+from urllib.parse import quote
 
 import httpx
 
 from .models import CACHE_HOST, BuilderInfo, BuildResult, Roots, UpdateCheck
+from .skill_dir import relative_parts
 
 
 class BuilderSystemMismatchError(RuntimeError):
@@ -102,6 +104,19 @@ class BuilderClient:
         response = await self._client.post("/updates", content=archive, params={"input": inputs})
         response.raise_for_status()
         return UpdateCheck.model_validate(response.json())
+
+    async def skill_file(self, key: str, path: str) -> bytes | None:
+        """A file of the skill directory of *key*'s build; None when it has no such file.
+
+        Raises ``SkillFileError`` for a path outside the directory: the URL would resolve its `..` away.
+        """
+        quoted = "/".join(quote(part, safe="") for part in relative_parts(path))
+        await self._ensure_system()
+        response = await self._client.get(f"/builds/{key}/files/{quoted}")
+        if response.status_code == httpx.codes.NOT_FOUND:
+            return None
+        response.raise_for_status()
+        return response.content
 
     async def put_roots(self, keys: list[str]) -> None:
         """Tell the builder which build keys the current heads reference; the rest may be collected."""
