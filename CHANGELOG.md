@@ -1,6 +1,13 @@
 # CHANGELOG
 
 
+## v0.193.2 (2026-11-26)
+
+### 💄 Add or update the UI and style files
+
+- style: address review: contrast, models toggle state, tab hover
+- style: petrol design tokens, semantic status colors, fewer borders
+
 ## v0.193.1 (2026-11-26)
 
 ### 🐛 Fix a bug
