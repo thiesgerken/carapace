@@ -62,10 +62,11 @@ def _build(
 def _deps(tmp_path: Path, builds: list[SkillBuild]) -> Deps:
     skill_builds = MagicMock(spec=SkillBuilds)
 
-    async def wait_built(_repo_dir: Path, skill: str) -> tuple[SkillBuild | None, list[SkillBuild]]:
-        return next((build for build in builds if build.skill == skill), None), builds
+    async def wait_built(_repo_dir: Path, skill: str) -> SkillBuild | None:
+        return next((build for build in builds if build.skill == skill), None)
 
     skill_builds.wait_built = AsyncMock(side_effect=wait_built)
+    skill_builds.installable = AsyncMock(return_value=builds)
     sandbox = MagicMock(spec=SandboxManager)
     sandbox.sync_skill_profile = AsyncMock(return_value=None)
     sandbox.exec_command = AsyncMock(return_value=ExecResult(stdout=_TOOLS, exit_code=0, output=_TOOLS))

@@ -16,6 +16,7 @@ from pydantic_ai.messages import BinaryContent, ToolReturn
 
 from .. import security as security
 from ..artifacts import artifact_index, artifact_title
+from ..builder.models import SKILL_NAME_PATTERN
 from ..builder.profile import profile_plan
 from ..builder.skill_builds import SkillBuild, SkillCommand
 from ..llm import (
@@ -43,8 +44,8 @@ _ARTIFACTS_ROOT = "artifacts"
 _EXEC_OUTPUT_SPILL_ROOT = PurePosixPath("/tmp/carapace-tool-output")
 # Covers a review the user decides on: the listing asks for the server's domain and credentials first.
 _LIST_TOOLS_TIMEOUT_SECONDS = 600
-# A directory under skills/, never a path out of it.
-_SKILL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# An attribute of skills/flake.nix, as the builder accepts it.
+_SKILL_NAME = re.compile(SKILL_NAME_PATTERN)
 
 # Raster image suffixes the model can ingest directly. SVG is intentionally excluded
 # (text/XML source; the Anthropic API rejects image/svg+xml) so it falls through to a text read.
@@ -248,7 +249,7 @@ def _command_docs(commands: dict[str, SkillCommand]) -> str:
     return "\n".join(lines)
 
 
-async def _skill_commands(ctx: RunContext[Deps], build: SkillBuild, builds: list[SkillBuild]) -> str:
+async def _skill_commands(ctx: RunContext[Deps], build: SkillBuild) -> str:
     """The skill's commands and files, and whether they are in the sandbox, once the profile sync is done."""
     skill_name = build.skill
     match build.state:
@@ -257,7 +258,7 @@ async def _skill_commands(ctx: RunContext[Deps], build: SkillBuild, builds: list
         case "unavailable":
             return f"The skill's commands are not available: {build.detail}"
     docs = _command_docs(build.commands)
-    if reason := profile_plan(builds).excluded.get(skill_name):
+    if reason := profile_plan(await ctx.deps.skill_builds.installable(ctx.deps.knowledge_dir)).excluded.get(skill_name):
         return f"{docs}\n\nThese commands are not on PATH: {reason}. Rename one of them in its flake."
     try:
         failure = await ctx.deps.sandbox.sync_skill_profile(ctx.deps.session_state.session_id)
@@ -323,9 +324,10 @@ _SANDBOX_INSTRUCTIONS = (
     "(`README.md`, `sessions/`, `weeks/`, `months/`, `facts/`); read-only, the mirror reverts edits pushed there\n"
     "Use `rg` to search archived conversations by session ID, message text, "
     "tool names, or JSON fields when you need prior context.\n"
-    "Call `read_skill(skill_name)` before using a skill. A skill with a flake puts its commands on PATH; "
+    "Call `read_skill(skill_name)` before using a skill. A skill's commands are on PATH once it is built; "
     "`read_skill` waits until they are there and says what each command asks for when it starts.\n"
-    "A skill is `skills/<name>/SKILL.md`, optionally with a `flake.nix` that declares its commands. "
+    "A skill is an input of `skills/flake.nix`, named by its attribute: a local one is `skills/<name>/` with "
+    "`SKILL.md` and a `flake.nix`, listed as `path:./<name>`; another comes from a flake elsewhere. "
     "The skill list and `read_skill` see only the pushed knowledge repo, so a new or changed skill takes effect "
     "after commit and push: the sentinel reviews the push, the builder builds it, and `read_skill` then puts its "
     "commands on PATH in this session too. Before writing or changing a skill, read the `create-skill` skill.\n\n"
@@ -490,7 +492,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             return _emit_tool_result(ctx, "read_skill", f"Error: {skill_name!r} is not a skill name.", exit_code=1)
         # Reading grants nothing, but the sentinel learns what later requests are about.
         _record(ctx, "read_skill", {"skill_name": skill_name})
-        build, builds = await ctx.deps.skill_builds.wait_built(ctx.deps.knowledge_dir, skill_name)
+        build = await ctx.deps.skill_builds.wait_built(ctx.deps.knowledge_dir, skill_name)
         if build is None:
             # Builds read the pushed HEAD: a skill only in /workspace is not there until it is pushed.
             return _emit_tool_result(
@@ -516,7 +518,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                 f"Error: the SKILL.md of {skill_name} is invalid: {exc}. Fix it, commit and push.\n\n{instructions}",
                 exit_code=1,
             )
-        commands = await _skill_commands(ctx, build, builds)
+        commands = await _skill_commands(ctx, build)
         return _emit_tool_result(ctx, "read_skill", f"{instructions.rstrip()}\n\n{commands}")
 
     # --- Filesystem (sandboxed — runs inside the sandbox container) ---

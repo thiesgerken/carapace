@@ -21,19 +21,23 @@ class FakeSkillBuilds:
         self._version += 1
 
     async def ensure_built(self, _repo_dir: Path) -> list[SkillBuild]:
-        return [
-            SkillBuild(
-                skill=self.name,
-                key=f"{self._version:064x}",
-                state="succeeded",
-                store_paths=[],
-                commands={},
-                detail="",
-                skill_dir=f"/nix/store/{'c' * 32}-skill-{self.name}-src",
-                skill_md=self.files.get("SKILL.md"),
-                skill_files=sorted(self.files),
-            )
-        ]
+        return [self._build()]
+
+    def readable(self, _repo_dir: Path, name: str) -> SkillBuild | None:
+        return self._build() if name == self.name else None
+
+    def _build(self) -> SkillBuild:
+        return SkillBuild(
+            skill=self.name,
+            key=f"{self._version:064x}",
+            state="succeeded",
+            store_paths=[],
+            commands={},
+            detail="",
+            skill_dir=f"/nix/store/{'c' * 32}-skill-{self.name}-src",
+            skill_md=self.files.get("SKILL.md"),
+            skill_files=sorted(self.files),
+        )
 
     async def skill_file(self, _build: SkillBuild, path: str) -> bytes | None:
         content = self.files.get(path)

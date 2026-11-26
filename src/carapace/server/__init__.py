@@ -580,7 +580,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     async def skill_profile_plan(session_id: str) -> ProfilePlan:
         # Also what starts building a tree nobody asked for yet: content that arrived without a push.
-        return profile_plan(await _skill_builds.ensure_built(knowledge_repo_for_session(session_id).knowledge_dir))
+        return profile_plan(await _skill_builds.installable(knowledge_repo_for_session(session_id).knowledge_dir))
 
     _sandbox_mgr.set_skill_profile_plan_callback(skill_profile_plan)
     logger.info(f"Sandbox enabled (image={base_image}, network={sandbox_network})")
