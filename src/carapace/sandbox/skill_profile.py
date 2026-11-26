@@ -16,6 +16,7 @@ from loguru import logger
 from ..builder.profile import SKILLS_PROFILE, SKILLS_PROFILE_MARKER, ProfilePlan, sync_script
 from ..spans import span
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult
+from .session_lifecycle import SessionContainer
 
 # The running sync's shell, so the killer can leave it out of the count it reports to the agent.
 SYNC_PID_FILE = f"{SKILLS_PROFILE}.sync-pid"
@@ -43,28 +44,28 @@ class SkillProfileSync:
     def set_plan_callback(self, plan_for_session: ProfilePlanCallback) -> None:
         self._plan_for_session = plan_for_session
 
-    def start(self, session_id: str, container_id: str, *, marker: str | None) -> None:
+    def start(self, sc: SessionContainer, *, marker: str | None) -> None:
         """Bring the profile to the session's plan in the background, unless *marker* says it is there.
 
         *marker* is what the sandbox last finished syncing to; None for a sandbox that just started, which
         always syncs (`nix-env` is a no-op when nothing changed).
         """
-        self.stop(session_id)
-        task = asyncio.create_task(self._sync(session_id, container_id, marker))
-        task.add_done_callback(lambda done: _log_crash(done, session_id))
-        self._tasks[session_id] = task
+        self.stop(sc.session_id)
+        task = asyncio.create_task(self._sync(sc, marker))
+        task.add_done_callback(lambda done: _log_crash(done, sc.session_id))
+        self._tasks[sc.session_id] = task
 
-    async def sync(self, session_id: str, container_id: str) -> str | None:
+    async def sync(self, sc: SessionContainer) -> str | None:
         """Bring the profile to the session's plan and wait for it: why it failed, or None.
 
         The caller holds the session's exec lock, so no killer ends this sync halfway.
         """
-        if (running := self._tasks.get(session_id)) is not None:
+        if (running := self._tasks.get(sc.session_id)) is not None:
             # Its plan may predate a build that just finished: let it end, then compare again.
             await asyncio.wait({running})
-        marker = await self._runtime.exec(container_id, ["/bin/sh", "-c", KILLER_MARKER], timeout=30)
-        self.start(session_id, container_id, marker=marker.stdout.strip())
-        task = self._tasks[session_id]
+        marker = await self._runtime.exec(sc.container_id, ["/bin/sh", "-c", KILLER_MARKER], timeout=30)
+        self.start(sc, marker=marker.stdout.strip())
+        task = self._tasks[sc.session_id]
         await asyncio.wait({task})
         if task.cancelled():
             return "The skill profile sync was cancelled."
@@ -89,8 +90,9 @@ class SkillProfileSync:
             return result
         return result.model_copy(update={"output": f"{result.output}\n{_HINT}"})
 
-    async def _sync(self, session_id: str, container_id: str, marker: str | None) -> str | None:
+    async def _sync(self, sc: SessionContainer, marker: str | None) -> str | None:
         """Why the sync failed, or None when the profile holds the plan."""
+        session_id = sc.session_id
         if self._plan_for_session is None:
             return None
         plan = await self._plan_for_session(session_id)
@@ -102,8 +104,13 @@ class SkillProfileSync:
             with span("skill", "profile sync", paths=len(plan.store_paths)):
                 self._installing.add(session_id)
                 try:
+                    # The session env carries NIX_CONFIG (the builder cache as substituter) and the proxy.
+                    # A sandbox claimed from the warm pool has neither in its pod spec, only here.
                     result = await self._runtime.exec(
-                        container_id, ["/bin/bash", "-c", script], timeout=_SYNC_TIMEOUT_SECONDS
+                        sc.container_id,
+                        ["/bin/bash", "-c", script],
+                        timeout=_SYNC_TIMEOUT_SECONDS,
+                        env=sc.session_env or None,
                     )
                 finally:
                     self._installing.discard(session_id)

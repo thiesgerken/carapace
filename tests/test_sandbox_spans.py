@@ -20,9 +20,11 @@ from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
 from carapace.models.config import Config
 from carapace.models.session import SessionState
+from carapace.sandbox.exec_flow import EXEC_LOCK_WAIT_SPAN, SandboxExecCoordinator, SandboxExecState
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ExecResult
+from carapace.sandbox.skill_profile import SkillProfileSync
 from carapace.security.context import BoundaryEvaluation, SessionSecurity
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillRegistry
@@ -230,3 +232,44 @@ async def test_a_sandbox_controlled_domain_is_capped() -> None:
 
     (check,) = [s for s in trace.spans.values() if s.kind == "domain"]
     assert check.name == check.attrs["domain"] == "a" * 200
+
+
+def _exec_coordinator() -> SandboxExecCoordinator:
+    runtime = make_runtime_mock()
+    state = SandboxExecState(
+        sessions={},
+        exec_temp_domains={},
+        session_current_command={},
+        domain_approval_cbs={},
+        domain_notify_cbs={},
+        exec_locks={},
+        exec_notified_domains={},
+        exec_notified_credentials={},
+        running_execs={},
+    )
+    return SandboxExecCoordinator(runtime=runtime, state=state, profile_sync=SkillProfileSync(runtime))
+
+
+@pytest.mark.anyio
+async def test_waiting_for_the_exec_lock_is_a_wait_span_only_when_it_is_held() -> None:
+    coordinator = _exec_coordinator()
+    trace, root = _trace()
+
+    with attach(trace, root.span_id):
+        async with coordinator.hold_exec_lock("s1"):
+            pass
+    assert list(trace.spans) == [root.span_id]
+
+    async def queued() -> None:
+        with attach(trace, root.span_id):
+            async with coordinator.hold_exec_lock("s1"):
+                pass
+
+    async with coordinator.hold_exec_lock("s1"):
+        waiter = asyncio.create_task(queued())
+        await asyncio.sleep(0)
+        wait = _by_name(trace)[EXEC_LOCK_WAIT_SPAN]
+        assert (wait.kind, wait.parent_id, wait.status) == ("wait", root.span_id, "running")
+    await waiter
+
+    assert wait.status == "ok"

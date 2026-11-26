@@ -45,6 +45,8 @@ class SpanNotice(BaseModel):
     kind: str
     name: str
     status: SpanStatus
+    # Server clock: a client that joins mid-span counts its duration from here, not from when it heard of it.
+    started_at: datetime
     # The call whose tool span this span is or nests under: the chat shows it on that call's card.
     tool_call_id: str | None = None
 
@@ -97,8 +99,19 @@ class TurnTrace:
             kind=span.kind,
             name=span.name,
             status=span.status,
+            started_at=span.started_at,
             tool_call_id=self.tool_call_id(span.span_id),
         )
+
+    def running_notices(self) -> Iterator[SpanNotice]:
+        """Start notices of the spans still open, oldest first, for a subscriber that joins mid-turn.
+
+        Lazy, so a span that ends while the caller sends the earlier notices is skipped instead of being
+        announced as running after its end notice went out.
+        """
+        for span in list(self.spans.values()):
+            if span.status == "running":
+                yield self._notice(span)
 
     def tool_call_id(self, span_id: str | None) -> str | None:
         """The id of the outermost tool call *span_id* is or nests under; ``None`` outside a tool call.

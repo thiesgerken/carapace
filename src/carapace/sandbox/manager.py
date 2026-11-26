@@ -275,7 +275,7 @@ class SandboxManager:
 
         if needs_startup or recreated:
             # A sandbox that just started or came back has no profile, or an old one; nothing waits for it.
-            self._profile_sync.start(session_id, ensured_sc.container_id, marker=None)
+            self._profile_sync.start(ensured_sc, marker=None)
         if needs_startup:
             try:
                 await self.refresh_sandbox_snapshot(session_id, container_id=ensured_sc.container_id)
@@ -494,7 +494,7 @@ class SandboxManager:
 
     async def sandbox_git_pull(self, session_id: str) -> GitActionResult:
         """Pull the sandbox clone from the backend repo (fast-forward only)."""
-        async with self._get_exec_lock(session_id):
+        async with self._exec_coordinator.hold_exec_lock(session_id):
             sc = await self.ensure_session(session_id)
             res = await self._git_in_workspace(sc, "pull --ff-only", timeout=120)
         ok = res.exit_code == 0
@@ -502,7 +502,7 @@ class SandboxManager:
 
     async def sandbox_git_push(self, session_id: str) -> GitActionResult:
         """Push the sandbox clone to the backend repo (sentinel-gated via pre-receive)."""
-        async with self._get_exec_lock(session_id):
+        async with self._exec_coordinator.hold_exec_lock(session_id):
             sc = await self.ensure_session(session_id)
             res = await self._git_in_workspace(sc, "push origin HEAD", timeout=600)
         ok = res.exit_code == 0

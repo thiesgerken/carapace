@@ -426,6 +426,7 @@ class SessionUsageBudgetMixin:
                 """An LLM request's bar in the turn timeline, nested where the request started."""
                 if request.turn_id is None or request.request_id is None:
                     return
+                assert request.started_at is not None, f"LLM request {request.request_id} of a turn has no start"
                 trace = active.turn_trace
                 in_trace = trace is not None and trace.turn_id == request.turn_id
                 notice = SpanNotice(
@@ -434,6 +435,7 @@ class SessionUsageBudgetMixin:
                     kind="llm",
                     name=request.source,
                     status=status,
+                    started_at=request.started_at,
                     tool_call_id=trace.tool_call_id(request.span_id) if trace is not None and in_trace else None,
                 )
                 await engine._broadcast(active, "on_span", notice)

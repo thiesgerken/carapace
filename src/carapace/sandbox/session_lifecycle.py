@@ -329,6 +329,10 @@ class SandboxSessionLifecycle:
                     sandbox_name = self.sandbox_name_for_live_resource(session_id, owned)
                     sandbox_id = self.sandbox_id_for_live_resource(session_id, owned)
             if isinstance(existing_id, str) and existing_id:
+                # A sandbox claimed from the warm pool has no env in its pod spec, so exec and the skill profile
+                # sync get it from session_env only. Built before the re-attach's recreate fallback: a sandbox
+                # without its env must not start, and recreating it would fail on the same cause.
+                session_env = await self.build_session_proxy_env(session_id)
                 try:
                     if await self._runtime.is_running(existing_id):
                         logger.info(f"Re-attached to running sandbox {sandbox_name} for session {session_id}")
@@ -347,15 +351,8 @@ class SandboxSessionLifecycle:
                         ip_address=ip,
                         created_at=time.time(),
                         last_used=time.time(),
+                        session_env=session_env,
                     )
-                    # Claimed warm sandboxes carry no proxy env in their pod spec, so
-                    # rebuild it here; exec relies on session_env to reach the proxy.
-                    try:
-                        sc.session_env = await self.build_session_proxy_env(session_id)
-                    except Exception:
-                        logger.opt(exception=True).warning(
-                            f"Failed to rebuild proxy env on reattach for session {session_id}"
-                        )
                     stashed_env = self._state.stashed_session_env.pop(session_id, None)
                     if stashed_env:
                         sc.session_env.update(stashed_env)

@@ -1,6 +1,52 @@
 # CHANGELOG
 
 
+## v0.196.0 (2026-11-26)
+
+### ✨ Introduce new features
+
+- feat: replay running spans on connect and time exec lock waits
+
+### 🐛 Fix a bug
+
+- fix: revive a stopped card only from a replayed span
+- fix: forget running spans when the turn ends
+
+## v0.195.0 (2026-11-26)
+
+### ✨ Introduce new features
+
+- feat: show what a tool call waits for while it runs
+
+### ♻️ Refactor code
+
+- refactor: keep the step's phrase and counter steady during sentinel reviews
+
+## v0.194.0 (2026-11-26)
+
+### ✨ Introduce new features
+
+- feat: native process-compose dev stack with isolated sandbox instances
+
+### 🐛 Fix a bug
+
+- fix: reach the dev server over unix sockets on Linux and check the proxy's own answer
+- fix: keep the dev stack server's git config out of ~/.gitconfig
+- fix: load dev images under their hash tag and fail on an unknown sandbox bind host
+
+### 📝 Add or update documentation
+
+- docs: list what the dev stack needs before nix develop
+- docs: say why the dev stack's relay sits on two networks
+
+## v0.193.10 (2026-11-26)
+
+### 🐛 Fix a bug
+
+- fix: fail a re-attach whose session env cannot be built
+- fix: run the skill profile sync with the session env
+- fix: stop long chats from making the whole page scroll
+
 ## v0.193.9 (2026-11-26)
 
 ### 🐛 Fix a bug

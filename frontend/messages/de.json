@@ -994,7 +994,8 @@
             "skillProfile": "Installiere die Befehle des Skills…",
             "credential": "Lade Zugangsdaten…",
             "domain": "Domain-Check {domain}…",
-            "wait": "Warte auf Freigabe…"
+            "wait": "Warte auf Freigabe…",
+            "execLock": "Warte auf den vorigen Befehl…"
         },
         "notRun": "nicht ausgeführt",
         "notRunTitle": "Das Modell hat diesen Aufruf geschrieben, er lief aber nie: Der Turn wurde abgebrochen, das Modell ist gescheitert oder der Aufruf wurde abgelehnt.",
@@ -1208,7 +1209,17 @@
                 "wordByWord": "Setzt ein Wort vors andere…",
                 "writes": "Schreibt…",
                 "keepsShort": "Hält sich kurz. Versucht es…",
-                "tinker": "Schraubt an der Antwort…"
+                "tinker": "Schraubt an der Antwort…",
+                "rummagesForKey": "Kramt nach dem Schlüssel…",
+                "buildsHouse": "Baut sich ein Häuschen…",
+                "movesIn": "Zieht in die Sandbox ein…",
+                "studiesSkill": "Nimmt den Skill unter die Lupe…",
+                "tinkersTools": "Bastelt an seinem Werkzeug…",
+                "awaitsBuild": "Wartet auf den Build. Geduldig…",
+                "learnsCommands": "Lernt die neuen Befehle auswendig…",
+                "stowsCommands": "Stopft die Befehle in den Panzer…",
+                "awaitsYourGo": "Wartet auf dein Okay…",
+                "waitsItsTurn": "Wartet, bis es dran ist…"
             },
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",

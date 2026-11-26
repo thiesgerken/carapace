@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { EXEC_LOCK_SPAN } from "./tool-call-status";
 import type { LlmPhases, LlmRequestRecord, Span } from "./types";
 import { groupRequestsByTurn, llmSegments, outputRate, summarizeTurn, timelineRows, waterfallLines } from "./turn-timeline";
 
@@ -84,6 +85,18 @@ test("overlapping siblings: the earliest started owns the overlap, and a wait wi
   assert.equal(byCategory.sandbox, 2000);
   assert.equal(byCategory.skill, 500);
   assert.equal(byCategory.userWait, 500);
+});
+
+test("waiting for the exec lock is not waiting for the user: the command it queues behind owns that time", () => {
+  const spans = [
+    span("turn", null, "turn", 0, 3000),
+    span("exec", "turn", "exec", 0, 3000),
+    span("read", "turn", "file", 1000, 3000),
+    span("lock", "read", "wait", 1000, 2000, { name: EXEC_LOCK_SPAN }),
+  ];
+  const { byCategory } = summarizeTurn(timelineRows(spans, T0 + 3000), T0, T0 + 3000);
+  assert.equal(byCategory.userWait, 0);
+  assert.equal(byCategory.execFile, 3000);
 });
 
 test("parallel branches: the main path follows the earliest started branch, however deep the other one is", () => {

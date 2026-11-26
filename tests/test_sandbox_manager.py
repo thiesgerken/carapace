@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy import select
 
+from carapace.builder.client import BuilderUnavailableError
 from carapace.database.models import SessionAuditRow
 from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
@@ -465,8 +466,14 @@ class TestSandboxManagerLifecycle:
         runtime.is_running = AsyncMock(return_value=True)
         runtime.get_ip = AsyncMock(return_value="10.1.1.4")
         mgr = _sandbox_manager(
-            runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, warm_pool_size=1, session_factory=db_factory
+            runtime=runtime,
+            data_dir=tmp_path,
+            knowledge_dir=tmp_path,
+            warm_pool_size=1,
+            session_factory=db_factory,
+            nix_config=AsyncMock(return_value="substituters = http://cache.carapace.internal"),
         )
+        _seed_session_row(db_factory, tmp_path, "sess-1")
 
         sc = await mgr.ensure_session("sess-1")
 
@@ -474,6 +481,30 @@ class TestSandboxManagerLifecycle:
         assert sc.sandbox_id == "warm-1"
         runtime.claim_warm_sandbox.assert_not_awaited()
         runtime.create_sandbox.assert_not_awaited()
+        # The pod spec of a claimed warm sandbox has no env: exec and the profile sync use this one.
+        assert sc.session_env["NIX_CONFIG"] == "substituters = http://cache.carapace.internal"
+        assert sc.session_env["HTTP_PROXY"].startswith("http://sess-1:")
+
+    @pytest.mark.anyio
+    async def test_reattach_fails_when_the_session_env_cannot_be_built(self, tmp_path: Path, db_factory):
+        runtime = make_runtime_mock()
+        runtime.runtime_kind = "kubernetes"
+        runtime.list_sandboxes = AsyncMock(return_value={"sess-1": ["carapace-sandbox-warm-1-0"]})
+        mgr = _sandbox_manager(
+            runtime=runtime,
+            data_dir=tmp_path,
+            knowledge_dir=tmp_path,
+            warm_pool_size=1,
+            session_factory=db_factory,
+            nix_config=AsyncMock(side_effect=BuilderUnavailableError("builder unreachable")),
+        )
+        _seed_session_row(db_factory, tmp_path, "sess-1")
+
+        with pytest.raises(BuilderUnavailableError):
+            await mgr.ensure_session("sess-1")
+
+        runtime.create_sandbox.assert_not_awaited()
+        runtime.destroy_sandbox.assert_not_awaited()
 
     @pytest.mark.anyio
     async def test_concurrent_ensure_session_for_one_session_claims_once(self, tmp_path: Path, db_factory):
