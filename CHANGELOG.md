@@ -1,6 +1,12 @@
 # CHANGELOG
 
 
+## v0.193.1 (2026-11-26)
+
+### 🐛 Fix a bug
+
+- fix: let sandboxes reach the proxy while the server pod starts
+
 ## v0.193.0 (2026-11-25)
 
 ### ✨ Introduce new features
