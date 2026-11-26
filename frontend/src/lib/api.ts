@@ -1978,6 +1978,13 @@ export async function checkSkillUpdates(server: string): Promise<KnowledgeSkillS
   return (await res.json()) as KnowledgeSkillSources;
 }
 
+/** Commit and push the update the last check found for skill *name*; it then builds like any push. */
+export async function applySkillUpdate(server: string, name: string): Promise<KnowledgeSkillSources> {
+  const res = await fetch(`${server}/api/knowledge/skills/${encodeURIComponent(name)}/update`, { method: "POST" });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to update the skill"));
+  return (await res.json()) as KnowledgeSkillSources;
+}
+
 /** The artifact's current metadata, or null once it no longer exists (deleted or renamed). */
 export async function getArtifact(server: string, slug: string): Promise<KnowledgeArtifact | null> {
   const res = await fetch(`${server}${knowledgeBrowsePath(`artifacts/${slug}`)}`);
