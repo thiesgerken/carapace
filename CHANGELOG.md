@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.193.10 (2026-11-26)
+
+### 🐛 Fix a bug
+
+- fix: fail a re-attach whose session env cannot be built
+- fix: run the skill profile sync with the session env
+- fix: stop long chats from making the whole page scroll
+
 ## v0.193.9 (2026-11-26)
 
 ### 🐛 Fix a bug
