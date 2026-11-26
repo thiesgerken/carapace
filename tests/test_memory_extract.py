@@ -34,7 +34,7 @@ from carapace.usage import count_text_tokens
 
 from .streaming_model import ReplayStreamModel
 
-MODEL = "anthropic:claude-haiku-4-5"
+MODEL = "anthropic:claude-haiku-5-5"
 
 # Sunday 22:30 UTC is already Monday in Berlin: the session belongs to the next ISO week.
 EVENTS: list[dict[str, Any]] = [
@@ -257,7 +257,7 @@ async def test_session_without_user_message_fails_loudly() -> None:
 
 
 def test_capped_settings_raise_the_cap_for_thinking_and_cache_the_system_prompt() -> None:
-    entry = AvailableModelEntry(provider="anthropic", name="claude-haiku-4-5", thinking="high")
+    entry = AvailableModelEntry(provider="anthropic", name="claude-haiku-5-5", thinking="high")
     config = Config(agent=AgentConfig(model=MODEL, sentinel_model=MODEL, title_model=MODEL, available_models=[entry]))
 
     settings = capped_model_settings(config, MODEL, SESSION_EXTRACT_OUTPUT_CAP)
@@ -268,7 +268,7 @@ def test_capped_settings_raise_the_cap_for_thinking_and_cache_the_system_prompt(
 
 
 async def test_run_fails_before_calling_the_model_when_input_exceeds_context() -> None:
-    entry = AvailableModelEntry(provider="anthropic", name="claude-haiku-4-5", max_input_tokens=100)
+    entry = AvailableModelEntry(provider="anthropic", name="claude-haiku-5-5", max_input_tokens=100)
     config = Config(agent=AgentConfig(model=MODEL, sentinel_model=MODEL, title_model=MODEL, available_models=[entry]))
     recorder = _Recorder()
 
