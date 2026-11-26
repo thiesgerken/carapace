@@ -27,7 +27,7 @@ process-compose down
 
 Run it in the dev shell: the shell hook exports the stack's ports and Docker names (`CARAPACE_DEV_*`). `.env` needs `CARAPACE_TOKEN` (the password of the bootstrapped `admin`) and `CARAPACE_BUILDER_TOKEN`, plus model keys for real turns (see `.env.example`); process-compose passes it to every process. The first start builds `sandbox-image-lite` and `builder-image` for Linux (on a Mac through the [native Linux builder](#native-linux-images-on-apple-silicon)), loads them into Docker and tags them with their store path's hash, so worktrees with different sandbox or builder code use different images. Later starts load nothing unless an image changed. The `result-dev-*` links keep the images from being garbage-collected.
 
-The server keeps its data in `./data` (SQLite) and doesn't reload code: restart the `server` process (in the TUI, or `process-compose process restart server`) after a change. The frontend reloads on its own.
+The server keeps its data in `./data` (SQLite), and its global git config in `./data/gitconfig` (`GIT_CONFIG_GLOBAL`) rather than your `~/.gitconfig`. It doesn't reload code: restart the `server` process (in the TUI, or `process-compose process restart server`) after a change. The frontend reloads on its own.
 
 ### Stack numbers and ports
 
