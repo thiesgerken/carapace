@@ -15,6 +15,13 @@ function normalizeVersion(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+/** True when both versions are known and differ: the browser runs a stale (or newer) frontend. */
+export function versionMismatch(frontendVersion: string | null | undefined, backendVersion: string | null | undefined): boolean {
+  const frontend = normalizeVersion(frontendVersion);
+  const backend = normalizeVersion(backendVersion);
+  return !!frontend && !!backend && frontend !== backend;
+}
+
 export function VersionBadge({
   frontendVersion,
   backendVersion,
@@ -31,9 +38,7 @@ export function VersionBadge({
     return null;
   }
 
-  const hasMismatch = !!normalizedFrontendVersion
-    && !!normalizedBackendVersion
-    && normalizedFrontendVersion !== normalizedBackendVersion;
+  const hasMismatch = versionMismatch(frontendVersion, backendVersion);
 
   const tooltip = [
     t("frontend", { version: normalizedFrontendVersion ?? t("unknown") }),

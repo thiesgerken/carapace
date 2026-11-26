@@ -105,8 +105,6 @@ export interface AppShell {
   onSelectSession: (id: string) => void;
   /** Resolves to the created session, or null when creating it failed. */
   onNewSession: (options?: NewSessionOptions) => Promise<SessionInfo | null>;
-  onGoHome: () => void;
-  onOpenSettings: (tab?: string) => void;
   onOpenJobSettings: (jobId: string) => void;
   onShowArchivedSessionsChange: (showArchivedSessions: boolean) => void;
   onUpdateSessionAttributes: (
@@ -548,14 +546,6 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     router.push(`/?session=${id}`);
   }, [router]);
 
-  const onGoHome = useCallback(() => {
-    router.push("/");
-  }, [router]);
-
-  const onOpenSettings = useCallback((tab: string = "preferences") => {
-    router.push(`/settings/${tab}`);
-  }, [router]);
-
   const onOpenJobSettings = useCallback((jobId: string) => {
     router.push(`/settings/jobs?job=${encodeURIComponent(jobId)}`);
   }, [router]);
@@ -580,8 +570,6 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onDisconnect,
     onSelectSession,
     onNewSession,
-    onGoHome,
-    onOpenSettings,
     onOpenJobSettings,
     onShowArchivedSessionsChange,
     onUpdateSessionAttributes,
@@ -605,11 +593,9 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onDeleteSession,
     onDisconnect,
     onForkSession,
-    onGoHome,
     onLoadMore,
     onNewSession,
     onOpenJobSettings,
-    onOpenSettings,
     onBudgetUpdate,
     onSandboxUpdate,
     onSelectSession,

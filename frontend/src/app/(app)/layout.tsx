@@ -79,8 +79,6 @@ function AppChrome({ children }: { children: ReactNode }) {
           currentUser={shell.currentUser}
           onSelect={shell.onSelectSession}
           onNew={shell.onNewSession}
-          onGoHome={shell.onGoHome}
-          onOpenSettings={() => shell.onOpenSettings()}
           onNavigate={() => setSidebarOpen(false)}
           onUpdateAttributes={shell.onUpdateSessionAttributes}
           onDelete={shell.onDeleteSession}

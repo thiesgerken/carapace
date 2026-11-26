@@ -301,9 +301,9 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
     return () => clearTimeout(id);
   }, [refresh]);
 
-  // Several of these hooks are mounted at once (sidebar indicator, account menu,
-  // knowledge browser). A pull or push from any of them moves the repo for all, so
-  // they re-read status together instead of the others going stale until remount.
+  // Several of these hooks are mounted at once (the Knowledge nav dot, the knowledge
+  // browser). A refresh, pull or push from any of them changes what all of them should
+  // show, so they re-read status together instead of the others going stale until remount.
   useEffect(() => {
     const onChanged = () => void refresh();
     window.addEventListener(KNOWLEDGE_GIT_CHANGED_EVENT, onChanged);
@@ -336,40 +336,29 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
     loading,
     busy,
     outcome,
-    refresh: () => void refresh(),
+    // Through the event, like pull and push: the acting instance re-reads via its own listener.
+    refresh: () => { window.dispatchEvent(new Event(KNOWLEDGE_GIT_CHANGED_EVENT)); },
     pull: () => void runAction("pull", () => globalGitPull(server, token)),
     push: () => void runAction("push", () => globalGitPush(server, token)),
   };
 }
 
-/** Status dot for the account button — shown only when there are upstream changes to pull. */
-export function GlobalGitIndicator({ git, className }: { git: GlobalGit; className?: string }) {
+/** Status dot for the Knowledge nav entry — shown while the server repo and its remote differ. */
+export function GlobalGitIndicator({ git }: { git: GlobalGit }) {
   const t = useTranslations("git");
   const behind = git.counts?.behind ?? 0;
-  if (git.configured !== true || behind <= 0) return null;
+  const ahead = git.counts?.ahead ?? 0;
+  if (git.configured !== true || (behind === 0 && ahead === 0)) return null;
   return (
-    <span
-      title={t("global.indicatorBehind", { count: behind })}
-      className={cn("h-2.5 w-2.5 rounded-full border-2 border-surface bg-info", className)}
-    />
+    <span title={t("global.indicatorOutOfSync", { behind, ahead })} className="h-2 w-2 shrink-0 rounded-full bg-info">
+      <span className="sr-only">{t("global.indicatorOutOfSync", { behind, ahead })}</span>
+    </span>
   );
 }
 
-/**
- * Full git panel for inside the account menu — hidden when no remote is configured,
- * unless `alwaysShow` is set (the knowledge browser shows the refresh control regardless).
- */
-export function GlobalGitPanel({
-  git,
-  className,
-  alwaysShow = false,
-}: {
-  git: GlobalGit;
-  className?: string;
-  alwaysShow?: boolean;
-}) {
+/** Full git panel for the knowledge browser, shown even without a remote so the refresh control stays reachable. */
+export function GlobalGitPanel({ git, className }: { git: GlobalGit; className?: string }) {
   const t = useTranslations("git");
-  if (git.configured === false && !alwaysShow) return null;
   return (
     <div className={className}>
       <GitSyncControls

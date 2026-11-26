@@ -1647,7 +1647,7 @@
         "global": {
             "label": "Knowledge remote",
             "help": "Sync between your knowledge repository on the server and its external git remote. Counts show commits the server repo is ahead (↑) and behind (↓) the remote.",
-            "indicatorBehind": "{count, plural, one {# commit} other {# commits}} to pull from the knowledge remote",
+            "indicatorOutOfSync": "Not in sync with the knowledge remote: {behind} to pull, {ahead} to push",
             "refresh": "Re-check the server repository against the remote (fetches first)",
             "pull": "Pull commits from the external remote into the server repository",
             "push": "Push the server repository's commits to the external remote"
