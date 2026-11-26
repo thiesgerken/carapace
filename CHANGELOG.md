@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.193.3 (2026-11-26)
+
+### 💄 Add or update the UI and style files
+
+- style: drop the border under the sidebar logo header
+- style: fold Knowledge, Memory and Settings into the account menu
+- style: labeled sidebar navigation with account row at the bottom
+
+### 🐛 Fix a bug
+
+- fix: keep the knowledge git dot current after a refresh
+
 ## v0.193.2 (2026-11-26)
 
 ### 💄 Add or update the UI and style files
