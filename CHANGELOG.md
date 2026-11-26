@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v0.193.5 (2026-11-26)
+
+### 💄 Add or update the UI and style files
+
+- style: keep the session meta line to one short line
+- style: option switches as a compact settings list, visible off state
+- style: bring the option icons back to the inspector switches
+- style: option help text, copy session ID in the ⋯ menu, tab scroll reset
+- style: inspector closed by default, in tabs, slimmed
+
 ## v0.193.4 (2026-11-26)
 
 ### 💄 Add or update the UI and style files
