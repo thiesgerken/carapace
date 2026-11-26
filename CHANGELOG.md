@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.193.7 (2026-11-26)
+
+### ⬆️ Upgrade dependencies
+
+- chore: Lock file maintenance
+
+### 💚 Fix CI Build
+
+- fix: rename credential list() to search()
+- fix: build the pruned Bitwarden CLI on current nixpkgs
+
 ## v0.193.6 (2026-11-26)
 
 ### 🐛 Fix a bug
