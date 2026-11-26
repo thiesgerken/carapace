@@ -192,10 +192,8 @@ test("WaitingIndicator stays awake through a long step", async (t) => {
 });
 
 test("a wait for the user always says so plainly, whatever runs meanwhile and whatever the turn rolled", () => {
-  const userWait: RunningStep = { spanId: "w", kind: "wait", name: "pypi.org", startedAt: NOW };
   for (let seed = 0; seed < 64; seed++) {
     assert.deepEqual(act(true, GENERATING, BUILD, seed), { pose: "hourglass", phrase: "awaitsYourGo" });
-    assert.deepEqual(act(false, null, userWait, seed), { pose: "hourglass", phrase: "awaitsYourGo" });
   }
 });
 

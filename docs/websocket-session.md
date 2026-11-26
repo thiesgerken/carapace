@@ -130,12 +130,14 @@ that load can land after them. A disconnect takes every step off the cards, and 
 live notice never does: a new call's `tool` span starts before its card exists and, with a provider that
 reuses ids such as `call_0`, would hit an older card.
 
-The waiting line below the messages acts out the step of the running cards: a wait for the user first,
-then the newest card's. Nested steps of one kind (a sandbox start's stages, the sentinel reviewing a
-domain check) count from the outermost one, so the counter doesn't restart with each. A card that names
-no step but runs an `exec` span gets "Runs the command…" there; the card itself keeps its spinner. While
-an approval or escalation card is open, the line says only "Waits for your go…": it takes that from the
-card, since the turn's approval `wait` span belongs to no call.
+The waiting line below the messages acts out what the turn waits on. While an approval or escalation
+card of the current turn is open, it says only "Waits for your go…". It takes that from the card, not
+from spans: the turn's approval `wait` span belongs to no call, and a user wait's span outlives the
+answer for a moment, so the line skips those spans. Otherwise it shows the newest running card's step;
+nested steps of one kind (a sandbox start's stages, the sentinel reviewing a domain check) count from
+the outermost one, so the counter doesn't restart with each. A card that names no step but runs an
+`exec` span gets "Runs the command…" there; the card itself keeps its spinner. The card labels and a
+collapsed group's header still name a user wait's span, ranked above a newer card's step.
 
 #### Span names clients match on
 

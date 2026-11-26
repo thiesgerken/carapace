@@ -2,6 +2,21 @@ import type { ChatMessage, RunningSpan, SpanUpdate } from "@/lib/types";
 
 type ToolCallMessage = Extract<ChatMessage, { kind: "tool_call" }>;
 
+/** A card that waits for the user's answer: a tool approval or a sentinel escalation. */
+export type EscalationCard = Extract<
+  ChatMessage,
+  { kind: "approval" | "domain_access_approval" | "git_push_approval" | "credential_approval" }
+>;
+
+export function isEscalationCard(message: ChatMessage): message is EscalationCard {
+  return (
+    message.kind === "approval"
+    || message.kind === "domain_access_approval"
+    || message.kind === "git_push_approval"
+    || message.kind === "credential_approval"
+  );
+}
+
 /** The span kinds a card names while they run; the others (the gate, the exec itself) are the card's own spinner. */
 export const STATUS_SPAN_KINDS = ["sentinel", "sandbox", "skill", "credential", "domain", "wait"] as const;
 export type StatusSpanKind = (typeof STATUS_SPAN_KINDS)[number];
@@ -114,8 +129,25 @@ export function runningStep(messages: ChatMessage[]): RunningStep | null {
   return newest;
 }
 
+/**
+ * What the waiting line acts out: whether the current turn waits for the user, else the step it waits on.
+ * Only the turn's own cards count (those after the last user message), so a card left open by an earlier
+ * turn can't claim the line. The open card is what says the user has to act: a user wait's span outlives
+ * the answer for a moment, so the line skips those spans and falls through to the next step.
+ */
+export function waitingLineState(messages: ChatMessage[]): { awaitsUser: boolean; step: RunningStep | ExecStep | null } {
+  const turn = messages.slice(messages.findLastIndex((m) => m.kind === "user") + 1);
+  if (turn.some(isEscalationCard)) return { awaitsUser: true, step: null };
+  for (let i = turn.length - 1; i >= 0; i--) {
+    const m = turn[i];
+    const step = m.kind === "tool_call" && m.loading ? toolCallStatus(m.runningSpans) : null;
+    if (step && !isUserWait(step)) return { awaitsUser: false, step };
+  }
+  return { awaitsUser: false, step: runningExec(turn) };
+}
+
 /** The command the newest running card runs, for the waiting line when no card names a step. */
-export function runningExec(messages: ChatMessage[]): ExecStep | null {
+function runningExec(messages: ChatMessage[]): ExecStep | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     const exec = m.kind === "tool_call" && m.loading ? m.runningSpans?.findLast((s): s is ExecStep => s.kind === "exec") : undefined;

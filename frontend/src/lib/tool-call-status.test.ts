@@ -8,11 +8,11 @@ import {
   applySpanToToolCall,
   applySpansToToolCalls,
   dropRunningSpans,
-  runningExec,
   runningStep,
   stepTopic,
   toolCallStatus,
   trackRunningSpan,
+  waitingLineState,
 } from "./tool-call-status";
 
 const card = (toolCallId: string): ChatMessage => ({ kind: "tool_call", tool: "exec", args: {}, detail: "", loading: true, toolCallId });
@@ -126,11 +126,24 @@ test("a call waiting for the user outranks a newer call's step, such as one queu
   assert.equal(runningStep([withSpan("sandbox", "ensure"), withSpan("wait", EXEC_LOCK_SPAN)])?.name, EXEC_LOCK_SPAN);
 });
 
-test("the running command is the newest loading card's exec span", () => {
-  const withSpans = (loading: boolean, ...kinds: string[]): ChatMessage => ({
-    kind: "tool_call", tool: "exec", args: {}, detail: "", loading, runningSpans: kinds.map((kind, i) => ({ spanId: `${kind}${i}`, kind, name: kind, startedAt: i })),
+test("the waiting line waits for the user while the turn has an open approval or escalation card", () => {
+  const withSpans = (...kinds: [string, string][]): ChatMessage => ({
+    kind: "tool_call", tool: "exec", args: {}, detail: "", loading: true,
+    runningSpans: kinds.map(([kind, name], i) => ({ spanId: `${kind}${i}`, kind, name, startedAt: i })),
   });
-  assert.equal(runningExec([withSpans(true, "tool", "exec"), withSpans(true, "tool")])?.spanId, "exec1");
-  assert.equal(runningExec([withSpans(false, "tool", "exec")]), null);
-  assert.equal(runningExec([card("call_0")]), null);
+  const user: ChatMessage = { kind: "user", content: "go on" };
+  const approval: ChatMessage = { kind: "approval", request: { type: "approval_request", tool_call_id: "call_1", tool: "exec", args: {}, explanation: "" } };
+  const queued = withSpans(["tool", "exec"], ["wait", EXEC_LOCK_SPAN]);
+
+  assert.deepEqual(waitingLineState([user, approval, queued]), { awaitsUser: true, step: null });
+  // A card an earlier turn left open (cancelled, or answered in another client) doesn't claim the next turn.
+  const next = waitingLineState([approval, user, queued]);
+  assert.deepEqual([next.awaitsUser, next.step?.name], [false, EXEC_LOCK_SPAN]);
+
+  // Answered: the card is gone while the wait's span still runs; the line moves on to the next step...
+  const answered = waitingLineState([user, withSpans(["tool", "exec"], ["sandbox", "ensure"]), withSpans(["tool", "exec"], ["wait", "pypi.org"])]);
+  assert.deepEqual([answered.awaitsUser, answered.step?.kind], [false, "sandbox"]);
+  // ...or, with none, to the newest running command.
+  assert.equal(waitingLineState([user, withSpans(["tool", "exec"], ["exec", "exec"], ["wait", "pypi.org"])]).step?.kind, "exec");
+  assert.deepEqual(waitingLineState([user, withSpans(["tool", "exec"])]), { awaitsUser: false, step: null });
 });
