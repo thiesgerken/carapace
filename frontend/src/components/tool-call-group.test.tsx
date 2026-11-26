@@ -4,7 +4,7 @@ import test from "node:test";
 import { NextIntlClientProvider } from "next-intl";
 
 import messages from "../../messages/en.json";
-import { installDom, renderReact } from "../../test/react-test-utils";
+import { click, installDom, renderReact } from "../../test/react-test-utils";
 import type { ChatMessage } from "@/lib/types";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 
@@ -41,6 +41,31 @@ test("a group's summary counts calls that never ran apart from the ones that did
       </NextIntlClientProvider>,
     );
     assert.equal(view.container.textContent, "Ran 1 command, wrote 1 file, 1 not run");
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("a collapsed group names the step its running call waits for", async () => {
+  const restore = installDom();
+  try {
+    const items: ChatMessage[] = [
+      { kind: "thinking", content: "Needs a skill" },
+      {
+        kind: "tool_call", tool: "read_skill", args: { skill_name: "ferret" }, detail: "", loading: true, toolCallId: "call_1",
+        runningSpans: [{ spanId: "b", kind: "skill", name: "build wait", startedAt: 0 }],
+      },
+    ];
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <ToolCallGroup items={items} inProgress>{null}</ToolCallGroup>
+      </NextIntlClientProvider>,
+    );
+    const header = () => view.container.querySelector("button")?.textContent;
+    assert.equal(header(), "Reading 1 skill", "the open group shows the step on the card itself");
+    await click(view.container.querySelector("button")!);
+    assert.equal(header(), "Reading 1 skill · Waiting for the skill build…");
     await view.unmount();
   } finally {
     restore();

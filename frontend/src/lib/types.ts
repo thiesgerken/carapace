@@ -360,6 +360,8 @@ export interface RunningSpan {
   spanId: string;
   kind: string;
   name: string;
+  /** When the browser heard the step start (ms since the epoch): the spans carry no start time. */
+  startedAt: number;
 }
 
 export interface ToolCallInfo {

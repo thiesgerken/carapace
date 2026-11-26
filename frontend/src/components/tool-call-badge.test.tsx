@@ -43,16 +43,18 @@ test("a loading card names the step it waits for, and drops it once done", async
         <ToolCallBadge tool="exec" args={{ command: "pip install rich" }} detail="" {...props} />
       </NextIntlClientProvider>
     );
-    const exec = { spanId: "e", kind: "exec", name: "exec" };
-    const view = await renderReact(card({ loading: true, runningSpans: [exec, { spanId: "d", kind: "domain", name: "pypi.org" }] }));
+    const exec = { spanId: "e", kind: "exec", name: "exec", startedAt: 0 };
+    const view = await renderReact(card({ loading: true, runningSpans: [exec, { spanId: "d", kind: "domain", name: "pypi.org", startedAt: 0 }] }));
     const status = () => view.container.querySelector('[role="status"]')?.textContent ?? null;
     assert.equal(status(), "Checking domain pypi.org…");
 
-    await view.rerender(card({ loading: true, runningSpans: [exec, { spanId: "w", kind: "wait", name: "pypi.org" }] }));
+    await view.rerender(card({ loading: true, runningSpans: [exec, { spanId: "w", kind: "wait", name: "pypi.org", startedAt: 0 }] }));
     assert.equal(status(), "Waiting for approval…");
+    await view.rerender(card({ loading: true, runningSpans: [exec, { spanId: "l", kind: "wait", name: "exec lock", startedAt: 0 }] }));
+    assert.equal(status(), "Waiting for the previous command…");
     await view.rerender(card({ loading: true, runningSpans: [exec] }));
     assert.equal(status(), null, "the exec itself is the card's spinner");
-    await view.rerender(card({ loading: false, runningSpans: [{ spanId: "s", kind: "sentinel", name: "tool_call" }] }));
+    await view.rerender(card({ loading: false, runningSpans: [{ spanId: "s", kind: "sentinel", name: "tool_call", startedAt: 0 }] }));
     assert.equal(status(), null, "a finished card shows no step");
     await view.unmount();
   } finally {
@@ -230,14 +232,14 @@ test("read_skill names the skill, says what it waits for, and shows the skill on
         <ToolCallBadge tool="read_skill" args={{ skill_name: "weather" }} detail="" {...props} />
       </NextIntlClientProvider>
     );
-    const tool = { spanId: "t", kind: "tool", name: "read_skill" };
-    const view = await renderReact(card({ loading: true, runningSpans: [tool, { spanId: "b", kind: "skill", name: "build wait" }] }));
+    const tool = { spanId: "t", kind: "tool", name: "read_skill", startedAt: 0 };
+    const view = await renderReact(card({ loading: true, runningSpans: [tool, { spanId: "b", kind: "skill", name: "build wait", startedAt: 0 }] }));
     const text = () => view.container.textContent ?? "";
     assert.match(text(), /read skill/);
     assert.match(text(), /weather/);
     assert.match(text(), /Waiting for the skill build…/);
 
-    await view.rerender(card({ loading: true, runningSpans: [tool, { spanId: "p", kind: "skill", name: "profile sync" }] }));
+    await view.rerender(card({ loading: true, runningSpans: [tool, { spanId: "p", kind: "skill", name: "profile sync", startedAt: 0 }] }));
     assert.match(text(), /Installing the skill's commands…/);
 
     await view.rerender(card({ result: "# weather\n\n# Commands\n- `weather`: Current weather\n\nThe commands are on PATH." }));
@@ -245,6 +247,24 @@ test("read_skill names the skill, says what it waits for, and shows the skill on
     (view.container.querySelector("button") as HTMLButtonElement).click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.match(text(), /The commands are on PATH\./);
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("an open running card shows the step it waits for and how long it has run", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-01-01T12:00:00Z") });
+  const restore = installDom();
+  try {
+    const build = { spanId: "b", kind: "skill", name: "build wait", startedAt: Date.now() - 95_000 };
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <ToolCallBadge tool="read_skill" args={{ skill_name: "ferret" }} detail="" loading runningSpans={[build]} />
+      </NextIntlClientProvider>,
+    );
+    await click(view.container.querySelector("button")!);
+    assert.equal(view.container.querySelector(".tool-row-details")?.textContent, "Waiting for the skill build…·1 min 35 s");
     await view.unmount();
   } finally {
     restore();

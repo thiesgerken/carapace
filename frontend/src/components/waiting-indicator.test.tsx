@@ -5,6 +5,7 @@ import { NextIntlClientProvider } from "next-intl";
 import de from "../../messages/de.json";
 import en from "../../messages/en.json";
 import { installDom, renderReact, runInAct } from "../../test/react-test-utils";
+import type { RunningStep } from "@/lib/tool-call-status";
 import type { LlmActivity } from "@/lib/types";
 
 import { GENERATING_POSES, PHRASES, STALL_MS, WaitingIndicator } from "./waiting-indicator";
@@ -18,14 +19,23 @@ type Locale = keyof typeof MESSAGES;
 const GENERATING: LlmActivity = { request_id: "r1", source: "agent", phase: "generating", started_at: ago(78_500), streamed_chars: 7_300 };
 const THINKING: LlmActivity = { ...GENERATING, phase: "thinking" };
 
-const node = (activity: LlmActivity | null, { locale = "en", hidden }: { locale?: Locale; hidden?: boolean } = {}) => (
+const BUILD: RunningStep = { spanId: "b", kind: "skill", name: "build wait", startedAt: NOW - 95_000 };
+
+const node = (
+  activity: LlmActivity | null,
+  { locale = "en", hidden, step }: { locale?: Locale; hidden?: boolean; step?: RunningStep } = {},
+) => (
   <NextIntlClientProvider locale={locale} messages={MESSAGES[locale]} timeZone="UTC">
-    <WaitingIndicator activity={activity} hidden={hidden} />
+    <WaitingIndicator activity={activity} step={step} hidden={hidden} />
   </NextIntlClientProvider>
 );
 
-async function shown(activity: LlmActivity | null, locale: Locale = "en"): Promise<{ text: string; pose: string | null }> {
-  const view = await renderReact(node(activity, { locale }));
+async function shown(
+  activity: LlmActivity | null,
+  locale: Locale = "en",
+  step?: RunningStep,
+): Promise<{ text: string; pose: string | null }> {
+  const view = await renderReact(node(activity, { locale, step }));
   const result = { text: view.container.textContent ?? "", pose: view.container.querySelector("svg")?.getAttribute("data-pose") ?? null };
   await view.unmount();
   return result;
@@ -131,6 +141,41 @@ test("WaitingIndicator starts a request awake after a long gap between requests"
     await runInAct(async () => t.mock.timers.tick(STALL_MS + 5_000));
     await view.rerender(node({ ...GENERATING, request_id: "r2", phase: "processing_prompt", streamed_chars: 0 }));
     await runInAct(async () => t.mock.timers.tick(1_000));
+    assert.notEqual(view.container.querySelector("svg")?.getAttribute("data-pose"), "sleep");
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("between requests WaitingIndicator acts out the step a tool call waits on and how long it has run", async (t) => {
+  const restore = setUp(t);
+  try {
+    const build = await shown(null, "en", BUILD);
+    assert.ok(build.text.endsWith("1 min 35 s"), build.text);
+    assert.equal(build.pose, phraseIn(build.text, "skillBuild").pose);
+
+    // A span the chat has no words for by name gets its kind's phrases.
+    const lookup = await shown(null, "en", { ...BUILD, name: "ensure_built" });
+    assert.equal(lookup.pose, phraseIn(lookup.text, "skill").pose);
+    const lock = await shown(null, "de", { ...BUILD, kind: "wait", name: "exec lock" });
+    assert.ok(lock.text.endsWith("1 min 35 s"), lock.text);
+    assert.equal(lock.pose, "hourglass");
+
+    // A running request is what the line is about, even while a step runs.
+    const thinking = await shown(THINKING, "en", BUILD);
+    assert.equal(thinking.pose, phraseIn(thinking.text, "thinking").pose);
+    assert.ok(thinking.text.endsWith("1 min 18 s · 1.8k tokens"), thinking.text);
+  } finally {
+    restore();
+  }
+});
+
+test("WaitingIndicator stays awake through a long step", async (t) => {
+  const restore = setUp(t, ["Date", "setInterval"]);
+  try {
+    const view = await renderReact(node(null, { step: BUILD }));
+    await runInAct(async () => t.mock.timers.tick(STALL_MS * 3));
     assert.notEqual(view.container.querySelector("svg")?.getAttribute("data-pose"), "sleep");
     await view.unmount();
   } finally {
