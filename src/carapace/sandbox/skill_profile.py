@@ -14,6 +14,7 @@ from collections.abc import Awaitable, Callable
 from loguru import logger
 
 from ..builder.profile import SKILLS_PROFILE, SKILLS_PROFILE_MARKER, ProfilePlan, sync_script
+from ..span_names import SKILL_PROFILE_SYNC_SPAN
 from ..spans import span
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult
 from .session_lifecycle import SessionContainer
@@ -101,7 +102,7 @@ class SkillProfileSync:
         script = f"echo $$ > {SYNC_PID_FILE}\n{sync_script(plan)}rm -f {SYNC_PID_FILE}\n"
         try:
             # Started from an exec or a sandbox start, so the span lands in that turn's timeline.
-            with span("skill", "profile sync", paths=len(plan.store_paths)):
+            with span("skill", SKILL_PROFILE_SYNC_SPAN, paths=len(plan.store_paths)):
                 self._installing.add(session_id)
                 try:
                     # The session env carries NIX_CONFIG (the builder cache as substituter) and the proxy.

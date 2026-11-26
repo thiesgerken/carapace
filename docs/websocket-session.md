@@ -130,6 +130,27 @@ that load can land after them. A disconnect takes every step off the cards, and 
 live notice never does: a new call's `tool` span starts before its card exists and, with a provider that
 reuses ids such as `call_0`, would hit an older card.
 
+The waiting line below the messages acts out the step of the running cards: a wait for the user first,
+then the newest card's. Nested steps of one kind (a sandbox start's stages, the sentinel reviewing a
+domain check) count from the outermost one, so the counter doesn't restart with each. A card that names
+no step but runs an `exec` span gets "Runs the command…" there; the card itself keeps its spinner. While
+an approval or escalation card is open, the line says only "Waits for your go…": it takes that from the
+card, since the turn's approval `wait` span belongs to no call.
+
+#### Span names clients match on
+
+Clients key some behaviour on a span's `kind` and `name`, so these names are part of the protocol. The
+server defines them in `src/carapace/span_names.py`; the web UI matches them in
+`frontend/src/lib/tool-call-status.ts`.
+
+| `kind` | `name` | Meaning | Matched by |
+| --- | --- | --- | --- |
+| `skill` | `build wait` | `read_skill` waits for a skill's build (`SKILL_BUILD_WAIT_SPAN`) | web UI (card label, waiting line), CLI and Matrix (announce the wait) |
+| `skill` | `profile sync` | the sandbox's skill profile gets the built commands (`SKILL_PROFILE_SYNC_SPAN`) | web UI (card label, waiting line) |
+| `wait` | `exec lock` | a call queued behind another command holding the sandbox (`EXEC_LOCK_WAIT_SPAN`) | web UI (card label, waiting line; the Debug view doesn't count it as waiting for you) |
+
+Any other `wait` span waits for the user's answer. Other names fall back to their kind's label.
+
 ### `tool_call` variants
 
 The same envelope is used for normal agent tools and for security-side notifications. Examples:
