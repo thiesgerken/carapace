@@ -4,7 +4,6 @@
         "description": "Security-first personal AI agent"
     },
     "navigation": {
-        "label": "Main navigation",
         "home": "Home",
         "settings": "Settings",
         "jobs": "Jobs",
