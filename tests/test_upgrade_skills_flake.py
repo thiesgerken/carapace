@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).parent.parent / "scripts" / "upgrade-skills-flake.sh"
+ROOT = Path(__file__).parent.parent
+SCRIPT = ROOT / "scripts" / "upgrade-skills-flake.sh"
 BOOTSTRAP = "🔧 bootstrap: seed default files"
 _ENV = {"GIT_AUTHOR_NAME": "T", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "T"}
 _ENV |= {"GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": os.devnull}
@@ -48,10 +50,18 @@ def repo(tmp_path: Path) -> Path:
     _skill(repo, "artifacts")
     _skill(repo, "mermaid")
     _skill(repo, "carapace", flake=_OLD_FLAKE)
-    _skill(repo, "web", "metadata:\n  carapace:\n    disabled: true\n", flake=_OLD_FLAKE.replace('carapace"', 'web"'))
+    # As bootstrap re-seeds it after the old copy was deleted: no `disabled`, but not set up either.
+    _skill(repo, "web", flake=_OLD_FLAKE.replace('carapace"', 'web"'))
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", BOOTSTRAP)
     _skill(repo, "notes")
+    _skill(repo, "drafts", "metadata:\n  carapace:\n    disabled: true # later\n")
+    # A package of its own takes a `src`; mkSkill still lacks one.
+    _skill(
+        repo,
+        "tool",
+        flake=_OLD_FLAKE.replace('name = "carapace";', 'name = "tool";\n        app = build { src = ./app; };'),
+    )
     (repo / "skills" / "mermaid" / "SKILL.md").write_text("---\nname: mermaid\n---\nMy way.\n")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "my changes")
@@ -81,11 +91,13 @@ def test_an_existing_repo_gets_its_skills_listed(repo: Path, tmp_path: Path) -> 
     assert 'carapace-cli = {\n      url = "path:./carapace";' in flake
     assert 'notes = {\n      url = "path:./notes";' in flake
     assert '# web = {\n    #   url = "path:./web";' in flake
-    assert flake.count('inputs.carapace.follows = "carapace";') == 5
+    assert '# drafts = {\n    #   url = "path:./drafts";' in flake
+    assert flake.count('inputs.carapace.follows = "carapace";') == 7
     # Skills without a flake get one; a flake without src gets it.
     assert 'name = "notes";\n          src = ./.;' in (repo / "skills" / "notes" / "flake.nix").read_text()
     assert (repo / "skills" / "mermaid" / "flake.nix").is_file()
     assert 'name = "carapace";\n        src = ./.;' in (repo / "skills" / "carapace" / "flake.nix").read_text()
+    assert 'name = "tool";\n        src = ./.;' in (repo / "skills" / "tool" / "flake.nix").read_text()
     assert (tmp_path / "calls").read_text() == "flake lock ./skills\n"
     staged = _git(repo, "diff", "--cached", "--name-status")
     assert "D\tskills/artifacts/SKILL.md" in staged and "A\tskills/flake.lock" in staged
@@ -101,10 +113,34 @@ def test_a_repo_that_has_a_skills_flake_is_left_alone(repo: Path, tmp_path: Path
     assert (repo / "skills" / "flake.nix").read_text() == "mine\n"
 
 
-def test_a_directory_that_cannot_be_an_attribute_stops_it(repo: Path, tmp_path: Path) -> None:
+def test_a_directory_that_cannot_be_an_attribute_stops_it_before_any_change(repo: Path, tmp_path: Path) -> None:
     _skill(repo, "nixpkgs")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "a skill named nixpkgs")
 
     result = _run(repo, tmp_path)
 
     assert result.returncode == 1
     assert "nixpkgs is reserved" in result.stderr
+    assert _git(repo, "status", "--porcelain") == ""
+
+
+def test_uncommitted_changes_under_skills_stop_it(repo: Path, tmp_path: Path) -> None:
+    (repo / "skills" / "notes" / "SKILL.md").write_text("work in progress\n")
+
+    result = _run(repo, tmp_path)
+
+    assert result.returncode == 1
+    assert "uncommitted changes" in result.stderr
+    assert not (repo / "skills" / "flake.nix").exists()
+
+
+def test_the_bundled_skills_it_replaces_are_the_inputs_of_the_seeded_flake() -> None:
+    script = SCRIPT.read_text()
+    seeded = (ROOT / "src" / "carapace" / "assets" / "skills" / "flake.nix").read_text()
+
+    listed = re.search(r'^FROM_CARAPACE="([^"]*)"$', script, re.M)
+    assert listed is not None
+    assert sorted(listed.group(1).split()) == sorted(
+        re.findall(r'url = "github:thiesgerken/carapace\?dir=src/carapace/assets/skills/([a-z-]+)";', seeded)
+    )
