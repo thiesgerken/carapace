@@ -4,7 +4,6 @@
         "description": "Sicherheitsorientierter persönlicher KI-Agent"
     },
     "navigation": {
-        "label": "Hauptnavigation",
         "home": "Start",
         "settings": "Einstellungen",
         "jobs": "Jobs",
