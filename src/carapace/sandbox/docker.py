@@ -17,6 +17,7 @@ from loguru import logger
 
 from .runtime import (
     EGRESS_PROBE_LABEL,
+    INSTANCE_LABEL,
     ContainerConfig,
     ContainerGoneError,
     ContainerRuntime,
@@ -63,15 +64,17 @@ class DockerRuntime(ContainerRuntime):
         *,
         data_dir: Path | None = None,
         host_data_dir: Path | None = None,
-        network_name: str = "carapace-sandbox",
+        instance: str,
+        network_name: str,
     ) -> None:
         self._client = _connect()
         self._data_dir = data_dir
         self._host_data_dir = host_data_dir
+        self._instance = instance
         self._network_name = network_name
         # Maps logical network name → actual Docker network name.
         # Docker Compose prefixes networks with the project name, so
-        # "carapace-sandbox" becomes "carapace_carapace-sandbox".  We resolve
+        # "carapace-sandbox-default" becomes "carapace_carapace-sandbox-default".  We resolve
         # this once and reuse the actual name for all container operations.
         self._network_name_cache: dict[str, str] = {}
         logger.info("Docker runtime connected")
@@ -114,7 +117,7 @@ class DockerRuntime(ContainerRuntime):
     def _ensure_network(self, name: str, *, internal: bool = False) -> str:
         """Ensure the network exists and return its actual Docker name.
 
-        Docker Compose adds a project-name prefix (e.g. ``carapace_carapace-sandbox``).
+        Docker Compose adds a project-name prefix (e.g. ``carapace_carapace-sandbox-default``).
         When the server container is already on that net, we prefer it over
         ``docker network list`` by short name (which can miss the prefixed net).
         """
@@ -243,7 +246,7 @@ class DockerRuntime(ContainerRuntime):
         container_config = ContainerConfig(
             image=config.image,
             name=config.name,
-            labels=config.labels,
+            labels={**config.labels, INSTANCE_LABEL: self._instance},
             mounts=mounts,
             network=self._network_name,
             command=config.command,
@@ -278,12 +281,12 @@ class DockerRuntime(ContainerRuntime):
         return await asyncio.to_thread(_check)
 
     async def list_sandboxes(self) -> dict[str, list[str]]:
-        """List all carapace-managed containers, returning ``{session_id: [container_id, ...]}``."""
+        """List this instance's sandbox containers, returning ``{session_id: [container_id, ...]}``."""
 
         def _list() -> dict[str, list[str]]:
             containers = self._client.containers.list(
                 all=True,
-                filters={"label": ["carapace.managed=true"]},
+                filters={"label": ["carapace.managed=true", f"{INSTANCE_LABEL}={self._instance}"]},
             )
             result: dict[str, list[str]] = {}
             for c in containers:
@@ -295,7 +298,9 @@ class DockerRuntime(ContainerRuntime):
 
     async def list_egress_probes(self) -> dict[str, str]:
         def _list() -> dict[str, str]:
-            containers = self._client.containers.list(all=True, filters={"label": [f"{EGRESS_PROBE_LABEL}=true"]})
+            containers = self._client.containers.list(
+                all=True, filters={"label": [f"{EGRESS_PROBE_LABEL}=true", f"{INSTANCE_LABEL}={self._instance}"]}
+            )
             return {c.labels["carapace.sandbox"]: c.id or "" for c in containers}
 
         return await asyncio.to_thread(_list)
@@ -574,7 +579,7 @@ class DockerRuntime(ContainerRuntime):
         """Return the actual Docker network name this container is attached to.
 
         Docker Compose prefixes network names with the project name, so the
-        logical name ``carapace-sandbox`` becomes ``carapace_carapace-sandbox``.
+        logical name ``carapace-sandbox-default`` becomes ``carapace_carapace-sandbox-default``.
         This method inspects the current container's ``NetworkSettings`` to find
         the real name, falling back to ``logical_name`` when not running inside
         Docker or no match is found.
@@ -602,36 +607,25 @@ class DockerRuntime(ContainerRuntime):
         return await asyncio.to_thread(_resolve)
 
     async def get_host_ip(self, network: str) -> str | None:
-        """Get the IP reachable by containers on *network* to reach this process.
+        """This server container's IP on *network*, or ``None`` when the server does not run in a container on it.
 
-        When running inside Docker, returns the container's IP on *network*.
-        When running on the host, falls back to the network's gateway IP
-        (the host's address as seen from containers on that bridge).
+        A server outside a container has no address that works everywhere (Docker Desktop keeps the bridge
+        gateway inside its VM), so it must be given ``sandbox.server_host`` instead.
         """
-        import os
-
         hostname = os.environ.get("HOSTNAME", "")
-        if hostname:
+        if not hostname:
+            return None
 
-            def _resolve() -> str | None:
-                try:
-                    container = self._client.containers.get(hostname)
-                    container.reload()
-                    nets = container.attrs.get("NetworkSettings", {}).get("Networks", {})
-                    info = nets.get(network)
-                    return info.get("IPAddress") if info else None
-                except NotFound:
-                    return None
+        def _resolve() -> str | None:
+            try:
+                container = self._client.containers.get(hostname)
+                container.reload()
+                info = container.attrs.get("NetworkSettings", {}).get("Networks", {}).get(network)
+                return info.get("IPAddress") if info else None
+            except NotFound:
+                return None
 
-            ip = await asyncio.to_thread(_resolve)
-            if ip:
-                return ip
-
-        # Fallback for host execution: use the bridge gateway IP
-        gw = await self._get_network_gateway(network)
-        if gw:
-            logger.debug(f"Using network gateway {gw} as host IP for '{network}' (not running in Docker)")
-        return gw
+        return await asyncio.to_thread(_resolve)
 
     async def write_stdout_log(self, container_id: str, message: str) -> None:
         quoted_message = shlex.quote(message)
@@ -642,28 +636,6 @@ class DockerRuntime(ContainerRuntime):
         )
         if result.exit_code != 0:
             raise RuntimeError(f"stdout log write failed: {result.output}")
-
-    async def _get_network_gateway(self, network: str) -> str | None:
-        """Return the gateway IP of a Docker bridge *network*.
-
-        This is the host's IP as seen from containers on that network.
-        Useful when the server runs on the host (not inside Docker).
-        """
-
-        def _resolve() -> str | None:
-            nets = self._client.networks.list(names=[network])
-            if not nets:
-                return None
-            net = nets[0]
-            net.reload()
-            ipam_configs = net.attrs.get("IPAM", {}).get("Config", [])
-            for cfg in ipam_configs:
-                gw = cfg.get("Gateway")
-                if gw:
-                    return gw
-            return None
-
-        return await asyncio.to_thread(_resolve)
 
     async def get_ip(self, container_id: str, network: str) -> str | None:
         def _get_ip() -> str | None:

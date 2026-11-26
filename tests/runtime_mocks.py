@@ -44,7 +44,6 @@ def make_runtime_mock() -> MagicMock:
     runtime.is_running = AsyncMock(return_value=True)
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
     runtime.resolve_self_network_name = AsyncMock(return_value="bridge")
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.image_exists = MagicMock(return_value=True)
     runtime.ensure_network = AsyncMock()
     runtime.get_self_network_info = AsyncMock(return_value={"network": "bridge"})

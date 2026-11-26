@@ -15,6 +15,7 @@ from carapace.models.config import (
     AgentConfig,
     AvailableModelEntry,
     Config,
+    SandboxConfig,
     agent_available_model_entries,
 )
 from carapace.models.jobs import JobCronTrigger, JobDefinition, JobsFile
@@ -41,9 +42,22 @@ def test_config_defaults():
     assert cfg.agent.tool_output_max_chars == 16_000
     assert cfg.notifications.enabled is True
     assert cfg.notifications.presence_ttl_seconds == 60
-    assert cfg.sandbox.network_name == "carapace-sandbox"
+    assert cfg.sandbox.instance == "default"
+    assert cfg.sandbox.network_name == "carapace-sandbox-default"
+    assert cfg.sandbox.server_host is None
+    assert (cfg.server.host, cfg.server.sandbox_host) == ("127.0.0.1", "127.0.0.1")
     ids = {e.model_id for e in cfg.agent.available_models}
     assert ids == {"anthropic:claude-sonnet-4-6", "anthropic:claude-haiku-4-5"}
+
+
+@pytest.mark.parametrize("instance", ["", "-dev", "dev-", "dev wt", "dev/wt", "x" * 64])
+def test_sandbox_instance_must_be_a_valid_label_value(instance: str) -> None:
+    with pytest.raises(ValidationError):
+        SandboxConfig(instance=instance)
+
+
+def test_sandbox_instance_names_the_docker_network() -> None:
+    assert SandboxConfig(instance="dev-wt-carapace_x.1").network_name == "carapace-sandbox-dev-wt-carapace_x.1"
 
 
 def test_notification_subscription_rejects_non_normalized_user() -> None:

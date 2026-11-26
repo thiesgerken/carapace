@@ -264,6 +264,7 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
             owner_ref=config.sandbox.k8s_owner_ref,
             server_deployment_name=config.sandbox.k8s_server_deployment_name,
             server_service=server_service,
+            instance=config.sandbox.instance,
             sandboxes_name=config.sandbox.k8s_sandboxes_name,
             app_instance=config.sandbox.k8s_app_instance,
             session_pvc_size=config.sandbox.k8s_session_pvc_size,
@@ -282,8 +283,25 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
     return DockerRuntime(
         data_dir=data_dir,
         host_data_dir=Path(host_data_dir_env) if host_data_dir_env else None,
+        instance=config.sandbox.instance,
         network_name=config.sandbox.network_name,
     )
+
+
+async def _sandbox_facing_host(runtime: ContainerRuntime, config: SandboxConfig, network: str) -> str:
+    """Where sandboxes reach this server's proxy and sandbox API; exits when there is no such address."""
+    if config.server_host:
+        return config.server_host
+    host = await runtime.get_host_ip(network)
+    if host is None:
+        logger.error(
+            f"No address at which sandboxes reach this server: it is not a container on the network '{network}'. "
+            f"Attach the server container to '{network}' (Compose: the network key "
+            f"'carapace-sandbox-{config.instance}'), or set CARAPACE_SANDBOX_SERVER_HOST, which a server outside a "
+            "container always needs (see docs/sandbox.md#server-address)."
+        )
+        raise SystemExit(1)
+    return host
 
 
 def _enabled_usernames() -> list[str]:
@@ -519,15 +537,19 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if _config.sandbox.runtime == "docker":
         # Resolve the actual Docker network name once at startup.
         # Docker Compose prefixes networks with the project name, so the logical
-        # name "carapace-sandbox" may be "carapace_carapace-sandbox" in Docker.
+        # name "carapace-sandbox-default" may be "carapace_carapace-sandbox-default" in Docker.
         sandbox_network = await runtime.resolve_self_network_name(sandbox_network)
         if sandbox_network != _config.sandbox.network_name:
             logger.info(f"Resolved sandbox network '{_config.sandbox.network_name}' → '{sandbox_network}'")
 
+    # Before the network is created, so a server without an address exits without leaving one behind.
+    server_host = await _sandbox_facing_host(runtime, _config.sandbox, sandbox_network)
+    logger.info(f"Sandboxes reach this server at {server_host}")
+
+    if _config.sandbox.runtime == "docker":
         # Pre-create the network when not already managed by docker-compose,
         # always as internal so sandbox containers have no direct internet egress.
         await runtime.ensure_network(sandbox_network, internal=True)
-
     proxy_port = _config.sandbox.proxy_port
 
     def resolve_session_owner(session_id: str) -> str:
@@ -546,6 +568,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         session_factory=_session_factory,
         base_image=base_image,
         network_name=sandbox_network,
+        server_host=server_host,
         idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
         proxy_port=proxy_port,
         sandbox_port=_config.server.sandbox_port,
@@ -686,7 +709,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         notify_domain_access=_sandbox_mgr.notify_domain_access,
         destinations=_destinations,
         builder_cache_url=_config.builder.cache_url,
-        host="0.0.0.0",
+        host=_config.server.sandbox_host,
         port=proxy_port,
     )
     await proxy.start()
@@ -712,14 +735,14 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     sandbox_server = uvicorn.Server(
         uvicorn.Config(
             sandbox_app,
-            host="0.0.0.0",
+            host=_config.server.sandbox_host,
             port=_config.server.sandbox_port,
             log_level=_config.carapace.log_level,
             log_config=None,
         )
     )
     sandbox_task = asyncio.create_task(sandbox_server.serve())
-    logger.info(f"Sandbox API listening on 0.0.0.0:{_config.server.sandbox_port}")
+    logger.info(f"Sandbox API listening on {_config.server.sandbox_host}:{_config.server.sandbox_port}")
 
     # Start internal API server (loopback only, no auth)
     internal_server = uvicorn.Server(
@@ -914,7 +937,7 @@ def main() -> None:
     ensure_data_dir(Path(config.data_dir).resolve())
     _setup_logging(config.carapace.log_level)
     logger.info(f"Starting carapace server on {config.server.host}:{config.server.port}")
-    logger.info(f"Sandbox API on 0.0.0.0:{config.server.sandbox_port}")
+    logger.info(f"Sandbox API on {config.server.sandbox_host}:{config.server.sandbox_port}")
     logger.info(f"Internal API on 127.0.0.1:{config.server.internal_port}")
 
     uvicorn.run(

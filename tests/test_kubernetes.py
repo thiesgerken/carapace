@@ -35,6 +35,7 @@ def _make_runtime(*, namespace: str = "carapace", data_dir: str = "/data") -> Ku
     rt._service_account = None
     rt._priority_class = None
     rt._app_instance = "carapace"
+    rt._instance = "default"
     rt._session_pvc_size = "1Gi"
     rt._session_pvc_storage_class = None
     rt._resource_spec = None
@@ -86,7 +87,8 @@ def test_default_command_list():
 
 
 def test_standard_labels():
-    labels = _standard_labels("carapace")
+    labels = _standard_labels("carapace", "dev-wt")
+    assert labels["carapace.instance"] == "dev-wt"
     assert labels["app"] == "carapace-sandbox"
     assert labels["app.kubernetes.io/component"] == "sandbox"
     assert labels["app.kubernetes.io/managed-by"] == "carapace-server"
@@ -624,7 +626,26 @@ async def test_list_egress_probes_selects_this_release_and_skips_terminating() -
     assert probes == {"egress-check-aa": "carapace-sandbox-egress-check-aa-0"}
     selector = list_sts.call_args.kwargs["label_selector"].split(",")
     assert f"app.kubernetes.io/instance={rt._app_instance}" in selector
+    assert "carapace.instance=default" in selector
     assert "carapace.egress-check=true" in selector
+
+
+@pytest.mark.asyncio
+async def test_list_sandboxes_and_pool_select_only_this_instance() -> None:
+    rt = _make_runtime()
+    rt._ensure_api = AsyncMock(return_value=object())
+
+    async def _none():
+        return
+        yield
+
+    with patch("carapace.sandbox.kubernetes.StatefulSet.list", side_effect=lambda **_kw: _none()) as list_sts:
+        await rt.list_sandboxes()
+        await rt.list_pool_sandboxes()
+
+    for call in list_sts.call_args_list:
+        selector = call.kwargs["label_selector"].split(",")
+        assert selector == ["app.kubernetes.io/managed-by=carapace-server", "carapace.instance=default"]
 
 
 @pytest.mark.asyncio

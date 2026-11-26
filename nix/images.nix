@@ -100,6 +100,9 @@ in
         ]
       }"
       "CARAPACE_DATA_DIR=/var/lib/carapace"
+      # The server defaults to loopback; in a container, peers reach it on the container's interfaces.
+      "CARAPACE_SERVER_HOST=0.0.0.0"
+      "CARAPACE_SERVER_SANDBOX_HOST=0.0.0.0"
       "TIKTOKEN_CACHE_DIR=${tokenizerCache}"
       "PYTHONDONTWRITEBYTECODE=1"
       "PYTHONUNBUFFERED=1"

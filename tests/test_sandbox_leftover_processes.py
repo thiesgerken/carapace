@@ -60,6 +60,8 @@ def _deps(tmp_path: Path, db_factory, processes: _ProcessTable) -> Deps:
     )
     sandbox = SandboxManager(
         runtime=runtime,
+        server_host="172.18.0.1",
+        network_name="carapace-sandbox-default",
         data_dir=tmp_path,
         knowledge_repo_for_session=lambda _session_id: handle,
         session_factory=db_factory,

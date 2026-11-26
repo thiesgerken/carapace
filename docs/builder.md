@@ -102,7 +102,7 @@ The server builds a skill tree after a push that changes it and otherwise on fir
 
 ### Docker Compose
 
-`docker-compose.yml` runs `builder-init` and `builder` with a named volume `builder-nix`, and points the server at `http://builder:8330` and `http://builder:8331`. Set `CARAPACE_BUILDER_TOKEN` in `.env`. The builder is on the default network only, so sandboxes, which sit on the internal `carapace-sandbox` network, cannot reach it.
+`docker-compose.yml` runs `builder-init` and `builder` with a named volume `builder-nix`, and points the server at `http://builder:8330` and `http://builder:8331`. Set `CARAPACE_BUILDER_TOKEN` in `.env`. The builder is on the default network only, so sandboxes, which sit on the internal `carapace-sandbox-<instance>` network ([instances](sandbox.md#instances)), cannot reach it.
 
 The Nix build sandbox needs `security_opt: [seccomp=unconfined, apparmor=unconfined, systempaths=unconfined]`: unshare must be allowed and `/proc` unmasked so that Nix can mount its own. Without all three the builder refuses to start.
 
