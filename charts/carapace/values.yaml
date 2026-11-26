@@ -74,6 +74,11 @@ builder:
   # `{url, public_key}` entries. Replaces the image default (cache.nixos.org) when set, so list
   # cache.nixos.org too when adding a cache.
   upstreamCaches: []
+  egress:
+    # -- CIDRs the builder may reach although they are private, cluster-internal or link-local, which its
+    # NetworkPolicy blocks otherwise: a binary cache or other substituter in your network, a Git server
+    # that skill flakes fetch from, NodeLocal DNSCache (169.254.20.10/32).
+    allowedCidrs: []
   auth:
     # -- Secret holding the builder token under the key `token`. Generated for the in-cluster
     # builder when empty; required with externalUrl.
