@@ -118,7 +118,7 @@ def _skill_docs(metadata: object) -> _SkillDocs:
 
 _NO_MANIFESTS = (
     "skills/flake.nix has no manifests for its skills: write its outputs with carapace.lib.skillsFlake "
-    "(docs/skill-flakes.md, \"The skills flake\").\n"
+    '(docs/skill-flakes.md, "The skills flake").\n'
 )
 
 

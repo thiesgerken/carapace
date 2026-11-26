@@ -521,6 +521,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                 "builder builds it after the push.",
                 exit_code=1,
             )
+        if not build.enabled:
+            return _emit_tool_result(
+                ctx,
+                "read_skill",
+                f"Error: {skill_name} is turned off in skills/config.json. Remove its `\"enable\": false` there, "
+                "commit and push to use it.",
+                exit_code=1,
+            )
         instructions = build.skill_md
         if instructions is None:
             reason = build.detail or "its skill directory has no SKILL.md"

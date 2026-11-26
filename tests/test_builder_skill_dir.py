@@ -90,7 +90,7 @@ def _nix(directory: str, *, build_code: int = 0):
 
     async def run(*args: str) -> tuple[int, str, str]:
         if args[1] == "eval":
-            return 0, json.dumps({"name": "demo", "skillDir": directory, "commands": {}}), ""
+            return 0, json.dumps({"enable": True, "name": "demo", "skillDir": directory, "settings": {}, "commands": {}}), ""
         if build_code:
             return build_code, "", "error: builder ran out of disk"
         return 0, json.dumps([{"outputs": {"out": "/nix/store/x-skill-demo"}}]), "built"

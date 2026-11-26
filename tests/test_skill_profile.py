@@ -27,7 +27,7 @@ from carapace.sandbox.skill_profile import KILLER_MARKER, SYNC_PID_FILE, SkillPr
 from carapace.session.manager import SessionManager, SessionMeta
 from tests.runtime_mocks import make_runtime_mock
 
-_NEEDS = SkillNeeds(domains=[], credentials={}, tunnels=[])
+_NEEDS = SkillNeeds(domains=[], credentials={}, oauth=[], tunnels=[])
 _IMAGE = "carapace-sandbox:latest"
 
 
@@ -41,7 +41,7 @@ def _build(skill: str, *commands: str, state: str = "succeeded") -> SkillBuild:
         key=skill * 64,
         state=state,  # type: ignore[arg-type]
         store_paths=[_path(f"{skill}-skill"), _path(f"{skill}-skill-man")] if state == "succeeded" else [],
-        commands={command: SkillCommand(description="", needs=_NEEDS) for command in commands},
+        commands={command: SkillCommand(description="", needs=_NEEDS, mcp=False) for command in commands},
         detail="",
     )
 
