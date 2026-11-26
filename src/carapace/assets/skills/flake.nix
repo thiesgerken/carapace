@@ -10,33 +10,37 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Bundled with Carapace and taken from its main branch, so they stay current without a copy here:
+    # `nix flake update <name> --flake ./skills` brings one to the latest version.
     artifacts = {
-      url = "path:./artifacts";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.carapace.follows = "carapace";
-    };
-    carapace-cli = {
-      url = "path:./carapace";
+      url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/artifacts";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };
     create-skill = {
-      url = "path:./create-skill";
+      url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/create-skill";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };
     credentials = {
-      url = "path:./credentials";
+      url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/credentials";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };
     mermaid = {
-      url = "path:./mermaid";
+      url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/mermaid";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };
     wikipedia = {
-      url = "path:./wikipedia";
+      url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/wikipedia";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.carapace.follows = "carapace";
+    };
+
+    # Bundled and copied into this repo, because their flake carries settings for this instance.
+    carapace-cli = {
+      url = "path:./carapace";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };

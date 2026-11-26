@@ -10,14 +10,20 @@
         ]
       },
       "locked": {
-        "path": "./artifacts",
-        "type": "path"
+        "dir": "src/carapace/assets/skills/artifacts",
+        "lastModified": 1795735214,
+        "narHash": "sha256-RqkEzUDZ3QeSQBEiRrF9N7cqyru4b2fScFra8La1DIk=",
+        "owner": "thiesgerken",
+        "repo": "carapace",
+        "rev": "0725b33972cdc8d20bd70bb3e932eed32dfbb0a6",
+        "type": "github"
       },
       "original": {
-        "path": "./artifacts",
-        "type": "path"
-      },
-      "parent": []
+        "dir": "src/carapace/assets/skills/artifacts",
+        "owner": "thiesgerken",
+        "repo": "carapace",
+        "type": "github"
+      }
     },
     "carapace": {
       "inputs": {
@@ -30,11 +36,11 @@
       },
       "locked": {
         "dir": "nix/skills",
-        "lastModified": 1795729417,
-        "narHash": "sha256-5QqWxd5YJHUB75/MWH1Fc0Kw6ZGlt+7d4NwKPaqvx2Y=",
+        "lastModified": 1795735214,
+        "narHash": "sha256-RqkEzUDZ3QeSQBEiRrF9N7cqyru4b2fScFra8La1DIk=",
         "owner": "thiesgerken",
         "repo": "carapace",
-        "rev": "1bbd25926bb392dfe96b6362c217379b2235d2fc",
+        "rev": "0725b33972cdc8d20bd70bb3e932eed32dfbb0a6",
         "type": "github"
       },
       "original": {
@@ -73,14 +79,20 @@
         ]
       },
       "locked": {
-        "path": "./create-skill",
-        "type": "path"
+        "dir": "src/carapace/assets/skills/create-skill",
+        "lastModified": 1795735214,
+        "narHash": "sha256-RqkEzUDZ3QeSQBEiRrF9N7cqyru4b2fScFra8La1DIk=",
+        "owner": "thiesgerken",
+        "repo": "carapace",
+        "rev": "0725b33972cdc8d20bd70bb3e932eed32dfbb0a6",
+        "type": "github"
       },
       "original": {
-        "path": "./create-skill",
-        "type": "path"
-      },
-      "parent": []
+        "dir": "src/carapace/assets/skills/create-skill",
+        "owner": "thiesgerken",
+        "repo": "carapace",
+        "type": "github"
+      }
     },
     "credentials": {
       "inputs": {
@@ -92,14 +104,20 @@
         ]
       },
       "locked": {
-        "path": "./credentials",
-        "type": "path"
+        "dir": "src/carapace/assets/skills/credentials",
+        "lastModified": 1795735214,
+        "narHash": "sha256-RqkEzUDZ3QeSQBEiRrF9N7cqyru4b2fScFra8La1DIk=",
+        "owner": "thiesgerken",
+        "repo": "carapace",
+        "rev": "0725b33972cdc8d20bd70bb3e932eed32dfbb0a6",
+        "type": "github"
       },
       "original": {
-        "path": "./credentials",
-        "type": "path"
-      },
-      "parent": []
+        "dir": "src/carapace/assets/skills/credentials",
+        "owner": "thiesgerken",
+        "repo": "carapace",
+        "type": "github"
+      }
     },
     "mermaid": {
       "inputs": {
@@ -111,14 +129,20 @@
         ]
       },
       "locked": {
-        "path": "./mermaid",
-        "type": "path"
+        "dir": "src/carapace/assets/skills/mermaid",
+        "lastModified": 1795735214,
+        "narHash": "sha256-RqkEzUDZ3QeSQBEiRrF9N7cqyru4b2fScFra8La1DIk=",
+        "owner": "thiesgerken",
+        "repo": "carapace",
+        "rev": "0725b33972cdc8d20bd70bb3e932eed32dfbb0a6",
+        "type": "github"
       },
       "original": {
-        "path": "./mermaid",
-        "type": "path"
-      },
-      "parent": []
+        "dir": "src/carapace/assets/skills/mermaid",
+        "owner": "thiesgerken",
+        "repo": "carapace",
+        "type": "github"
+      }
     },
     "nixpkgs": {
       "locked": {
@@ -233,14 +257,20 @@
         ]
       },
       "locked": {
-        "path": "./wikipedia",
-        "type": "path"
+        "dir": "src/carapace/assets/skills/wikipedia",
+        "lastModified": 1795735214,
+        "narHash": "sha256-RqkEzUDZ3QeSQBEiRrF9N7cqyru4b2fScFra8La1DIk=",
+        "owner": "thiesgerken",
+        "repo": "carapace",
+        "rev": "0725b33972cdc8d20bd70bb3e932eed32dfbb0a6",
+        "type": "github"
       },
       "original": {
-        "path": "./wikipedia",
-        "type": "path"
-      },
-      "parent": []
+        "dir": "src/carapace/assets/skills/wikipedia",
+        "owner": "thiesgerken",
+        "repo": "carapace",
+        "type": "github"
+      }
     }
   },
   "root": "root",

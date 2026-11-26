@@ -63,7 +63,7 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 
 ## The skills flake
 
-`skills/flake.nix` at the top of the knowledge repo is the only list of skills. Every input except `nixpkgs` and `carapace` is a skill, named by its attribute; a skill's `name` in `mkSkill` or in its frontmatter does not matter. A new knowledge repo gets this one, listing the bundled skills that have a flake and need no setup:
+`skills/flake.nix` at the top of the knowledge repo is the only list of skills. Every input except `nixpkgs` and `carapace` is a skill, named by its attribute; a skill's `name` in `mkSkill` or in its frontmatter does not matter. A new knowledge repo gets this one, listing the bundled skills that need no setup (shortened):
 
 ```nix
 {
@@ -74,14 +74,16 @@ The functions below come from the skills subflake of the Carapace repo, `github:
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # A local skill: the directory skills/carapace, under the name carapace-cli.
-    carapace-cli = {
-      url = "path:./carapace";
+    # A skill from elsewhere: bundled with Carapace, taken from its main branch.
+    wikipedia = {
+      url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/wikipedia";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };
-    wikipedia = {
-      url = "path:./wikipedia";
+
+    # A local skill: the directory skills/carapace, under the name carapace-cli.
+    carapace-cli = {
+      url = "path:./carapace";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };
@@ -104,7 +106,8 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 }
 ```
 
-- A local skill is a `path:./<dir>` input, a skill from elsewhere any flake reference (e.g. `github:someone/skill-weather`). Every skill follows `nixpkgs` and `carapace`, so the lock holds one of each.
+- A local skill is a `path:./<dir>` input, a skill from elsewhere any flake reference (e.g. `github:someone/skill-weather`). Every skill follows `nixpkgs` and `carapace`, so the lock holds one of each, and `nix flake update carapace --flake ./skills` moves the helpers of every skill at once.
+- The bundled skills that need no setup (`artifacts`, `create-skill`, `credentials`, `mermaid`, `wikipedia`) come from Carapace's `main` branch, without a tag: every push to `main` is a release. The lock pins the commit they were last updated to; `nix flake update <name> --flake ./skills` brings one to the latest.
 - `outputs` exposes each skill's package as `packages.<system>.<name>`. The builder builds every attribute on its own, from the whole `skills/` directory at `HEAD` (relative `path:` inputs resolve inside it), so one broken skill leaves the others built and usable.
 - The server reads the list from `skills/flake.lock` (the root's inputs), never by evaluating Nix. Without `skills/flake.nix` or its lock the repo has no skills, and the Knowledge view says so.
 - `carapace` is the helpers' attribute, so the bundled skill in `skills/carapace` is listed as `carapace-cli`.

@@ -141,7 +141,7 @@ A built-in `create-skill` skill is seeded into every new knowledge repo to guide
 
 ## Bundled skills
 
-These are seeded into every new knowledge repo and can be edited or deleted like any other skill. The seeded `skills/flake.nix` lists the ones that have a flake and need no setup, `carapace-cli` and `wikipedia`:
+Every new knowledge repo gets them. The ones that need no setup (`artifacts`, `create-skill`, `credentials`, `mermaid`, `wikipedia`) are listed in the seeded `skills/flake.nix` as inputs on Carapace's `main` branch, not copied ([skill-flakes.md](skill-flakes.md#the-skills-flake)). The ones whose flake carries this instance's settings are copied into the repo: `carapace-cli` (listed), `ferret` and `web` (not listed until set up):
 
 | Skill          | Purpose                                                                        |
 | -------------- | ------------------------------------------------------------------------------ |
@@ -154,6 +154,6 @@ These are seeded into every new knowledge repo and can be edited or deleted like
 | `web`          | Web search and page fetch. Not listed by default; requires a Brave Search API key at `vault/brave-api-key` before listing it. |
 | `wikipedia`    | Wikipedia search and article fetch.                                            |
 
-`carapace-cli`, `ferret`, `web` and `wikipedia` have commands, so they are [skill flakes](skill-flakes.md); in a knowledge repo they follow the Carapace commit that `skills/flake.lock` pins. The others are a `SKILL.md` with references and are not listed yet. Examples of the helpers live in [`nix/skills/examples`](../nix/skills/examples).
+All of them are [skill flakes](skill-flakes.md); `artifacts`, `create-skill`, `credentials` and `mermaid` carry only instructions. In a knowledge repo they follow the Carapace helpers that `skills/flake.lock` pins. Examples of the helpers live in [`nix/skills/examples`](../nix/skills/examples).
 
-To turn on a bundled skill that is not listed, set it up in its copied directory, uncomment its input in `skills/flake.nix`, run `nix flake lock ./skills`, push, and start a new session. Normal bootstrap seeds missing bundled skill directories without overwriting existing copies or user edits. Explicit `reset-assets` overwrites bundled customization, but never `skills/flake.nix`.
+To change a skill that comes from Carapace, copy its directory into `skills/` and point its input at `path:./<name>`; it is then a local skill like any other. To turn on `ferret` or `web`, set it up in its copied directory, uncomment its input in `skills/flake.nix`, run `nix flake lock ./skills`, push, and start a new session. Normal bootstrap seeds the missing copies without overwriting existing ones or user edits. Explicit `reset-assets` overwrites the copies, but never `skills/flake.nix`.
