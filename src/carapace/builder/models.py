@@ -7,8 +7,10 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, StringConstraints
 
-# A Git tree hash, SHA-1 or SHA-256 object format.
-TreeHash = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}([0-9a-f]{24})?$")]
+# A sha256 over everything a skill's build depends on, computed by the server (`skill_builds.build_key`).
+BuildKey = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+# An attribute of `packages.<system>` in skills/flake.nix. It ends up in a flake reference, so no dots or quotes.
+SkillName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_'-]*$")]
 
 # Sandboxes reach the builder's binary cache under this name through their session proxy, which
 # maps it to the cache listener (`.internal` is reserved for private use, so it never collides).
@@ -35,9 +37,10 @@ class UpstreamCache(BaseModel):
 
 
 class BuildResult(BaseModel):
-    tree: TreeHash
+    key: BuildKey
+    skill: SkillName
     state: Literal["succeeded", "failed"]
-    # Every output of `packages.<system>.default`; empty for a failed build.
+    # Every output of `packages.<system>.<skill>`; empty for a failed build.
     store_paths: list[str] = []
     # `passthru.carapace` of that package as JSON, defined by `mkSkill`; None when absent.
     metadata: Any = None
@@ -46,12 +49,12 @@ class BuildResult(BaseModel):
 
 
 class Roots(BaseModel):
-    # The skill trees the current heads of all knowledge repos reference; replaces the last set.
-    trees: list[TreeHash]
+    # The build keys of the skills at the current heads of all knowledge repos.
+    keys: list[BuildKey]
 
 
 class GcResult(BaseModel):
-    # Trees whose results and GC roots were dropped because no head referenced them for the grace period.
+    # Keys whose results and GC roots were dropped because no head referenced them for the grace period.
     dropped: list[str]
     log_tail: str
 

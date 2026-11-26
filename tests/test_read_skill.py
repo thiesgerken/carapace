@@ -23,6 +23,7 @@ from carapace.sandbox.manager import SandboxLimitError, SandboxManager
 from carapace.sandbox.runtime import ExecResult
 from carapace.security.context import SessionSecurity, ToolCallEntry
 from carapace.usage import UsageTracker
+from tests.skills_flake import write_skills_flake
 
 _WEATHER = SkillCommand(
     description="Current weather.",
@@ -42,7 +43,7 @@ _TOOLS = "search\tFind issues by text\ncreate\tOpen an issue\n"
 def _build(skill: str, state: BuildState, **commands: SkillCommand) -> SkillBuild:
     return SkillBuild(
         skill=skill,
-        tree=skill[0] * 40,
+        key=skill[0] * 64,
         state=state,
         store_paths=[f"/nix/store/{'a' * 32}-{skill}"] if state == "succeeded" else [],
         commands=dict(commands),
@@ -82,6 +83,8 @@ def _write_skill(tmp_path: Path, name: str, frontmatter: str = "") -> None:
     skill_dir = tmp_path / "skills" / name
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(f"---\nname: {name}\ndescription: demo\n{frontmatter}---\nUse it well.\n")
+    skills = tmp_path / "skills"
+    write_skills_flake(skills, sorted(path.name for path in skills.iterdir() if path.is_dir()))
 
 
 async def _read_skill(deps: Deps, name: str) -> str:
@@ -168,13 +171,15 @@ async def test_reading_a_skill_is_logged_for_the_sentinel(tmp_path: Path) -> Non
 
 
 @pytest.mark.anyio
-async def test_a_skill_without_a_flake_has_no_commands_and_needs_no_sync(tmp_path: Path) -> None:
+async def test_a_skill_without_a_build_at_head_has_no_commands_and_needs_no_sync(tmp_path: Path) -> None:
     _write_skill(tmp_path, "notes")
     deps = _deps(tmp_path, [])
 
     result = await _read_skill(deps, "notes")
 
-    assert result.endswith("Use it well.\n\nThe skill has no flake.nix, so it has no commands.")
+    assert result.endswith(
+        "Use it well.\n\nThe skill is not listed in skills/flake.nix at HEAD, so it has no build yet."
+    )
     _sync(deps).assert_not_awaited()
 
 
@@ -243,19 +248,31 @@ async def test_a_missing_skill_is_reported(tmp_path: Path) -> None:
     result = await _read_skill(_deps(tmp_path, []), "nowhere")
 
     assert result == (
-        "Error: there is no skill 'nowhere'. read_skill sees only pushed skills: if skills/nowhere exists in "
-        "/workspace, commit and push it, and the builder builds it after the push."
+        "Error: there is no skill 'nowhere'. read_skill sees only skills that skills/flake.nix lists in the pushed "
+        "repo: add its input there, run `nix flake lock ./skills`, commit and push, and the builder builds it after "
+        "the push."
     )
 
 
 @pytest.mark.anyio
-async def test_a_disabled_skill_is_not_read(tmp_path: Path) -> None:
+async def test_an_unlisted_skill_directory_is_no_skill(tmp_path: Path) -> None:
+    _write_skill(tmp_path, "weather")
+    write_skills_flake(tmp_path / "skills", [])
+
+    result = await _read_skill(_deps(tmp_path, []), "weather")
+
+    assert result.startswith("Error: there is no skill 'weather'.")
+
+
+@pytest.mark.anyio
+async def test_disabled_in_the_frontmatter_is_reported(tmp_path: Path) -> None:
     _write_skill(tmp_path, "parked", "metadata:\n  carapace:\n    disabled: true\n")
     deps = _deps(tmp_path, [])
 
     result = await _read_skill(deps, "parked")
 
-    assert result == "Skill 'parked' is disabled (metadata.carapace.disabled)."
+    assert result.startswith("Error: the SKILL.md of parked is invalid: ")
+    assert "disabled is gone" in result
 
 
 @pytest.mark.anyio
@@ -272,6 +289,6 @@ async def test_a_broken_skill_md_is_reported_with_its_text(tmp_path: Path, moved
 
     result = await _read_skill(deps, "ideas")
 
-    assert result.startswith("Error: skills/ideas/SKILL.md is invalid: ")
+    assert result.startswith("Error: the SKILL.md of ideas is invalid: ")
     assert "moved out of the frontmatter into the skill's flake" in result
     assert result.endswith("Use it well.\n")

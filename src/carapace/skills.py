@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
+import posixpath
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -15,6 +17,63 @@ class SkillDocumentError(ValueError):
     """A SKILL.md whose frontmatter cannot be read as a skill declaration."""
 
 
+class SkillsFlakeError(ValueError):
+    """`skills/flake.nix` or its lock is missing or unreadable, so the repo has no skills."""
+
+
+# The inputs of skills/flake.nix that every skill follows; all other inputs are skills.
+_SHARED_INPUTS = frozenset({"nixpkgs", "carapace"})
+_FIX = "List the skills in skills/flake.nix and run `nix flake lock ./skills` (docs/skill-flakes.md)."
+
+
+@dataclass(frozen=True, slots=True)
+class ListedSkill:
+    """An input of skills/flake.nix: a skill, named by its attribute."""
+
+    name: str
+    # Below skills/, for a `path:` input; None for a flake from elsewhere.
+    directory: PurePosixPath | None
+
+
+def parse_skills_lock(text: str) -> list[ListedSkill]:
+    """The skills `skills/flake.lock` lists, sorted by name.
+
+    The lock and not the flake: the server never evaluates Nix, and the lock holds every input the builder builds.
+    """
+    try:
+        lock = json.loads(text)
+        nodes = lock["nodes"]
+        inputs = nodes[lock["root"]].get("inputs", {})
+        skills = [
+            ListedSkill(name=name, directory=_local_directory(name, nodes[node]))
+            for name, node in sorted(inputs.items())
+            if name not in _SHARED_INPUTS
+        ]
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise SkillsFlakeError(f"skills/flake.lock is not a flake lock file ({exc}). {_FIX}") from exc
+    return skills
+
+
+def _local_directory(name: str, node: dict[str, Any]) -> PurePosixPath | None:
+    locked = node["locked"]
+    if locked["type"] != "path" or locked["path"].startswith("/"):
+        return None
+    directory = posixpath.normpath(locked["path"])
+    if directory == "." or directory.startswith(".."):
+        raise SkillsFlakeError(f"skill {name}: a local skill is a directory below skills/, not {locked['path']!r}")
+    return PurePosixPath(directory)
+
+
+def read_skills_flake(skills_dir: Path) -> list[ListedSkill]:
+    """The skills of *skills_dir*'s flake. Without `flake.nix` a repo has no skills: there is no other discovery."""
+    if not (skills_dir / "flake.nix").is_file():
+        raise SkillsFlakeError(f"skills/flake.nix is missing, so this knowledge repo has no skills. {_FIX}")
+    lock = skills_dir / "flake.lock"
+    if not lock.is_file():
+        raise SkillsFlakeError(f"skills/flake.lock is missing. {_FIX}")
+    return parse_skills_lock(lock.read_text())
+
+
 @dataclass(frozen=True)
 class SkillDocument:
     """A parsed SKILL.md: frontmatter fields plus the markdown body below it."""
@@ -23,12 +82,6 @@ class SkillDocument:
     description: str
     metadata: dict[str, Any]
     body: str
-
-    @property
-    def disabled(self) -> bool:
-        # Opt-out must survive validation failures in unrelated runtime declarations.
-        config = self.metadata.get("carapace")
-        return isinstance(config, dict) and config.get("disabled") is True
 
     def carapace_config(self) -> SkillCarapaceConfig | None:
         """Validate ``metadata.carapace``; None only when the skill declares none."""
@@ -86,8 +139,7 @@ def _optional_str(frontmatter: dict[str, Any], key: str) -> str | None:
 
 
 def _describe_yaml_error(exc: yaml.YAMLError) -> str:
-    # The default rendering quotes the offending line, which would leak the content of
-    # a skill that may be disabled into the catalog; line and column suffice to find it.
+    # The default rendering quotes the offending line into the catalog; line and column suffice to find it.
     if isinstance(exc, yaml.MarkedYAMLError) and exc.problem_mark is not None:
         mark = exc.problem_mark
         return f"{exc.problem} (line {mark.line + 1}, column {mark.column + 1})"
@@ -98,77 +150,78 @@ class SkillRegistry:
     def __init__(self, skills_dir: Path):
         self.skills_dir = skills_dir
         self._catalog: list[SkillInfo] | None = None
+        self._listed: dict[str, ListedSkill] | None = None
 
     def invalidate(self) -> None:
         self._catalog = None
+        self._listed = None
+
+    def listed(self) -> dict[str, ListedSkill]:
+        """The skills of skills/flake.nix by name. Raises ``SkillsFlakeError`` when it or its lock is unusable."""
+        if self._listed is None:
+            self._listed = {skill.name: skill for skill in read_skills_flake(self.skills_dir)}
+        return self._listed
 
     def scan(self) -> list[SkillInfo]:
-        """Scan skills/ directory and load frontmatter only (progressive disclosure)."""
+        """Frontmatter of every listed local skill (progressive disclosure)."""
         if self._catalog is not None:
             return self._catalog
+        try:
+            listed = self.listed().values()
+        except SkillsFlakeError as exc:
+            logger.error(f"No skills in {self.skills_dir}: {exc}")
+            listed = []
+        # A skill from elsewhere has no SKILL.md in this repo to list.
+        self._catalog = [
+            self._catalog_entry(skill.name, self.skills_dir / skill.directory)
+            for skill in listed
+            if skill.directory is not None
+        ]
+        return self._catalog
 
-        catalog: list[SkillInfo] = []
-        if not self.skills_dir.exists():
-            self._catalog = catalog
-            return catalog
-
-        for skill_dir in sorted(self.skills_dir.iterdir()):
-            if not skill_dir.is_dir():
-                continue
-            skill_md = skill_dir / "SKILL.md"
-            if not skill_md.exists():
-                continue
-            info = self._catalog_entry(skill_md, skill_dir)
-            if info:
-                catalog.append(info)
-
-        self._catalog = catalog
-        return catalog
-
-    def is_disabled(self, skill_name: str) -> bool:
-        """Read the current opt-out flag without validating runtime declarations.
-
-        Raises ``SkillDocumentError`` when the frontmatter itself is unreadable.
-        """
-        skill_dir = self.skills_dir / skill_name
-        skill_md = skill_dir / "SKILL.md"
-        return skill_md.exists() and self._load_frontmatter(skill_md, skill_dir).disabled
+    def skill_dir(self, skill_name: str) -> Path | None:
+        """The directory of a listed local skill."""
+        try:
+            skill = self.listed().get(skill_name)
+        except SkillsFlakeError:
+            return None
+        return None if skill is None or skill.directory is None else self.skills_dir / skill.directory
 
     def get_full_instructions(self, skill_name: str) -> str | None:
         """Load the full SKILL.md of a skill (``read_skill``)."""
-        skill_dir = self.skills_dir / skill_name
-        skill_md = skill_dir / "SKILL.md"
-        if not skill_md.exists():
-            return None
-        return skill_md.read_text()
+        skill_md = self._skill_md(skill_name)
+        return skill_md.read_text() if skill_md is not None else None
 
     def get_carapace_config(self, skill_name: str) -> SkillCarapaceConfig | None:
         """Load carapace skill config from SKILL.md frontmatter.
 
         Raises ``SkillDocumentError`` when the frontmatter or ``metadata.carapace`` is invalid.
         """
-        skill_dir = self.skills_dir / skill_name
-        skill_md = skill_dir / "SKILL.md"
-        if not skill_md.exists():
+        skill_md = self._skill_md(skill_name)
+        if skill_md is None:
             return None
-        return self._load_frontmatter(skill_md, skill_dir).carapace_config()
+        return parse_skill_document(skill_md.read_text(), fallback_name=skill_name).carapace_config()
 
-    def _catalog_entry(self, skill_md: Path, skill_dir: Path) -> SkillInfo | None:
+    def _skill_md(self, skill_name: str) -> Path | None:
+        skill_dir = self.skill_dir(skill_name)
+        if skill_dir is None or not (skill_dir / "SKILL.md").is_file():
+            return None
+        return skill_dir / "SKILL.md"
+
+    def _catalog_entry(self, name: str, skill_dir: Path) -> SkillInfo:
+        skill_md = skill_dir / "SKILL.md"
         try:
-            document = self._load_frontmatter(skill_md, skill_dir)
-            if document.disabled:
-                return None
+            if not skill_md.is_file():
+                raise SkillDocumentError(f"{skill_md.relative_to(self.skills_dir.parent)} is missing")
+            document = parse_skill_document(skill_md.read_text(), fallback_name=name)
             document.carapace_config()
         except SkillDocumentError as exc:
             # Listed rather than dropped: the agent has to see the skill is broken to fix it.
-            logger.error(f"Skill '{skill_dir.name}' has an invalid SKILL.md: {exc}")
+            logger.error(f"Skill '{name}' has an invalid SKILL.md: {exc}")
             return SkillInfo(
-                name=skill_dir.name,
-                description=f"BROKEN, cannot be used until its SKILL.md frontmatter is fixed: {exc}",
+                name=name,
+                description=f"BROKEN, cannot be used until its SKILL.md is fixed: {exc}",
                 path=skill_dir,
             )
-
-        return SkillInfo(name=document.name, description=document.description, path=skill_dir)
-
-    def _load_frontmatter(self, skill_md: Path, skill_dir: Path) -> SkillDocument:
-        return parse_skill_document(skill_md.read_text(), fallback_name=skill_dir.name)
+        # Named by its attribute in skills/flake.nix, whatever the frontmatter says.
+        return SkillInfo(name=name, description=document.description, path=skill_dir)

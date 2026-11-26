@@ -1,4 +1,4 @@
-"""Skills are built per tree when a head changes: only what changed, never what is disabled or has no flake."""
+"""Skills are what skills/flake.nix lists, each built under its own key: a push builds only what it changed."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from carapace.builder.client import BuilderClient
 from carapace.builder.models import BuildResult
 from carapace.builder.skill_builds import SkillBuilds
 from carapace.spans import TurnTrace, attach
+from tests.skills_flake import write_skills_flake
 
 _METADATA = {
     "name": "weather",
@@ -32,46 +33,60 @@ _METADATA = {
 
 
 class FakeBuilder:
-    """The builder API: stored results by tree, and a record of what was sent to build."""
+    """The builder API: stored results by key, and a record of what was sent to build."""
 
     def __init__(self) -> None:
         self.stored: dict[str, BuildResult] = {}
-        self.built: list[tuple[str, set[str]]] = []
+        self.built: list[tuple[str, str, set[str]]] = []
         self.unreachable = False
         self.reject_with: int | None = None
         self.retries = 0
-        self.answer = lambda tree: BuildResult(
-            tree=tree, state="succeeded", store_paths=[f"/nix/store/{tree[:32]}-skill"], metadata=_METADATA
+        self.answer = lambda key, skill: BuildResult(
+            key=key, skill=skill, state="succeeded", store_paths=[f"/nix/store/{key[:32]}-skill"], metadata=_METADATA
         )
 
-    async def get(self, tree: str) -> BuildResult | None:
+    async def get(self, key: str) -> BuildResult | None:
         if self.unreachable:
             raise httpx.ConnectError("builder down")
-        return self.stored.get(tree)
+        return self.stored.get(key)
 
-    async def build(self, tree: str, archive: bytes, *, retry: bool = False) -> BuildResult:
+    async def build(self, key: str, skill: str, archive: bytes, *, retry: bool = False) -> BuildResult:
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
-            self.built.append((tree, set(tar.getnames())))
+            self.built.append((key, skill, set(tar.getnames())))
         self.retries += retry
         if self.reject_with is not None:
-            request = httpx.Request("PUT", f"http://builder/builds/{tree}")
-            response = httpx.Response(self.reject_with, text="archive member escapes the skill directory")
+            request = httpx.Request("PUT", f"http://builder/builds/{key}")
+            response = httpx.Response(self.reject_with, text="archive member escapes the skills directory")
             raise httpx.HTTPStatusError("rejected", request=request, response=response)
-        self.stored[tree] = self.answer(tree)
-        return self.stored[tree]
+        self.stored[key] = self.answer(key, skill)
+        return self.stored[key]
 
 
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
-def _write_skill(repo: Path, name: str, *, flake: bool = True, frontmatter: str = "") -> None:
+def _write_skill(repo: Path, name: str) -> None:
     skill = repo / "skills" / name
     skill.mkdir(parents=True, exist_ok=True)
-    (skill / "SKILL.md").write_text(f"---\nname: {name}\ndescription: demo\n{frontmatter}---\nBody\n")
-    if flake:
-        (skill / "flake.nix").write_text("{ outputs = _: { }; }\n")
-        (skill / "flake.lock").write_text('{"nodes": {"root": {}}, "root": "root", "version": 7}\n')
+    (skill / "SKILL.md").write_text(f"---\nname: {name}\ndescription: demo\n---\nBody\n")
+    (skill / "flake.nix").write_text("{ outputs = _: { }; }\n")
+
+
+def _write_skills_flake(repo: Path, local: list[str], external: tuple[str, ...] = ()) -> None:
+    write_skills_flake(repo / "skills", local, external)
+
+
+def _key(repo: Path, name: str, directory: str | None = None) -> str:
+    def object_id(spec: str) -> str:
+        return _git(repo, "rev-parse", f"HEAD:{spec}")
+
+    return skill_builds.build_key(
+        name,
+        object_id("skills/flake.nix"),
+        object_id("skills/flake.lock"),
+        object_id(f"skills/{directory or name}") if directory != "" else "",
+    )
 
 
 def _commit(repo: Path, message: str) -> None:
@@ -86,8 +101,8 @@ def repo(tmp_path: Path) -> Path:
     _git(repo, "init", "-q")
     _write_skill(repo, "weather")
     _write_skill(repo, "notes")
-    _write_skill(repo, "instructions-only", flake=False)
-    _write_skill(repo, "parked", frontmatter="metadata:\n  carapace:\n    disabled: true\n")
+    _write_skill(repo, "unlisted")
+    _write_skills_flake(repo, ["weather", "notes"])
     _commit(repo, "skills")
     return repo
 
@@ -99,7 +114,7 @@ async def _settled(builds: SkillBuilds, repo: Path) -> dict[str, str]:
 
 
 @pytest.mark.anyio
-async def test_a_head_change_builds_only_the_skill_trees_without_a_result(repo: Path) -> None:
+async def test_a_head_change_builds_only_the_skills_whose_key_changed(repo: Path) -> None:
     builder = FakeBuilder()
     builds = SkillBuilds(cast(BuilderClient, builder))
 
@@ -107,16 +122,45 @@ async def test_a_head_change_builds_only_the_skill_trees_without_a_result(repo: 
 
     assert {build.skill: build.state for build in first} == {"notes": "building", "weather": "building"}
     assert await _settled(builds, repo) == {"notes": "succeeded", "weather": "succeeded"}
-    assert sorted(files for _, files in builder.built) == [{"SKILL.md", "flake.lock", "flake.nix"}] * 2
+    assert sorted(skill for _, skill, _ in builder.built) == ["notes", "weather"]
+    # The builder gets the whole skills/ directory: relative path inputs resolve inside it.
+    assert {"flake.nix", "flake.lock", "weather/SKILL.md", "notes/flake.nix", "unlisted/SKILL.md"} <= builder.built[0][
+        2
+    ]
 
-    (repo / "skills" / "weather" / "flake.nix").write_text("{ outputs = _: { packages = { }; }; }\n")
+    (repo / "skills" / "weather" / "SKILL.md").write_text("---\nname: weather\ndescription: changed\n---\n")
     _commit(repo, "change weather")
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
-    weather_tree = _git(repo, "rev-parse", "HEAD:skills/weather")
     assert len(builder.built) == 3
-    assert builder.built[-1][0] == weather_tree
+    assert builder.built[-1][:2] == (_key(repo, "weather"), "weather")
+
+
+@pytest.mark.anyio
+async def test_a_lock_change_rekeys_every_skill(repo: Path) -> None:
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    _write_skills_flake(repo, ["weather", "notes"], external=("tracker",))
+    _commit(repo, "add tracker")
+    await builds.ensure_built(repo)
+
+    assert await _settled(builds, repo) == {"notes": "succeeded", "tracker": "succeeded", "weather": "succeeded"}
+    assert sorted(skill for _, skill, _ in builder.built[2:]) == ["notes", "tracker", "weather"]
+
+
+@pytest.mark.anyio
+async def test_an_external_skill_is_keyed_without_a_directory(repo: Path) -> None:
+    _write_skills_flake(repo, ["weather"], external=("tracker",))
+    _commit(repo, "external tracker")
+    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
+
+    keys = {build.skill: build.key for build in await builds.ensure_built(repo)}
+
+    assert keys == {"tracker": _key(repo, "tracker", directory=""), "weather": _key(repo, "weather")}
 
 
 @pytest.mark.anyio
@@ -127,8 +171,8 @@ async def test_a_built_skill_reports_its_store_paths_and_commands(repo: Path) ->
 
     weather = next(build for build in await builds.ensure_built(repo) if build.skill == "weather")
 
-    assert weather.tree == _git(repo, "rev-parse", "HEAD:skills/weather")
-    assert weather.store_paths == [f"/nix/store/{weather.tree[:32]}-skill"]
+    assert weather.key == _key(repo, "weather")
+    assert weather.store_paths == [f"/nix/store/{weather.key[:32]}-skill"]
     assert weather.commands["weather"].needs.domains == ["api.example.com"]
 
 
@@ -136,8 +180,7 @@ async def test_a_built_skill_reports_its_store_paths_and_commands(repo: Path) ->
 async def test_a_result_the_builder_already_has_is_not_built_again(repo: Path) -> None:
     builder = FakeBuilder()
     for name in ("weather", "notes"):
-        tree = _git(repo, "rev-parse", f"HEAD:skills/{name}")
-        builder.stored[tree] = builder.answer(tree)
+        builder.stored[_key(repo, name)] = builder.answer(_key(repo, name), name)
     builds = SkillBuilds(cast(BuilderClient, builder))
 
     await builds.ensure_built(repo)
@@ -149,8 +192,8 @@ async def test_a_result_the_builder_already_has_is_not_built_again(repo: Path) -
 @pytest.mark.anyio
 async def test_a_failed_build_is_reported_with_its_log(repo: Path) -> None:
     builder = FakeBuilder()
-    builder.answer = lambda tree: BuildResult(
-        tree=tree, state="failed", log_tail="error: flake.lock is missing nixpkgs"
+    builder.answer = lambda key, skill: BuildResult(
+        key=key, skill=skill, state="failed", log_tail="error: flake.lock is missing nixpkgs"
     )
     builds = SkillBuilds(cast(BuilderClient, builder))
     await builds.ensure_built(repo)
@@ -165,7 +208,9 @@ async def test_a_failed_build_is_reported_with_its_log(repo: Path) -> None:
 @pytest.mark.anyio
 async def test_a_package_without_mkskill_metadata_counts_as_failed(repo: Path) -> None:
     builder = FakeBuilder()
-    builder.answer = lambda tree: BuildResult(tree=tree, state="succeeded", store_paths=["/nix/store/x"], metadata=None)
+    builder.answer = lambda key, skill: BuildResult(
+        key=key, skill=skill, state="succeeded", store_paths=["/nix/store/x"], metadata=None
+    )
     builds = SkillBuilds(cast(BuilderClient, builder))
     await builds.ensure_built(repo)
     await _settled(builds, repo)
@@ -204,12 +249,12 @@ async def test_a_skill_the_builder_refuses_fails_and_is_not_sent_again(repo: Pat
     await _settled(builds, repo)
 
     assert weather.state == "failed"
-    assert weather.detail == "The builder refused the skill (400): archive member escapes the skill directory"
+    assert weather.detail == "The builder refused the skill (400): archive member escapes the skills directory"
     assert len(builder.built) == 2
 
 
 @pytest.mark.anyio
-async def test_without_a_builder_flake_skills_are_unavailable(repo: Path) -> None:
+async def test_without_a_builder_listed_skills_are_unavailable(repo: Path) -> None:
     builds = SkillBuilds(None)
 
     states = {build.skill: build.state for build in await builds.ensure_built(repo)}
@@ -218,18 +263,12 @@ async def test_without_a_builder_flake_skills_are_unavailable(repo: Path) -> Non
 
 
 @pytest.mark.anyio
-async def test_an_unreadable_skill_md_is_reported_and_not_built(repo: Path) -> None:
-    (repo / "skills" / "weather" / "SKILL.md").write_text("---\nname: [unclosed\n---\n")
-    _commit(repo, "break weather")
-    builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+@pytest.mark.parametrize("missing", ["flake.nix", "flake.lock"])
+async def test_without_the_skills_flake_a_repo_has_no_skills(repo: Path, missing: str) -> None:
+    (repo / "skills" / missing).unlink()
+    _commit(repo, f"drop {missing}")
 
-    [weather] = [build for build in await builds.ensure_built(repo) if build.skill == "weather"]
-    await _settled(builds, repo)
-
-    assert weather.state == "failed"
-    assert weather.detail.startswith("skills/weather/SKILL.md:")
-    assert [tree for tree, _ in builder.built] == [_git(repo, "rev-parse", "HEAD:skills/notes")]
+    assert await SkillBuilds(cast(BuilderClient, FakeBuilder())).ensure_built(repo) == []
 
 
 @pytest.mark.anyio
@@ -289,17 +328,23 @@ async def test_a_skill_that_cannot_be_archived_fails(repo: Path, monkeypatch: py
     assert builder.built == []
 
 
-@pytest.mark.anyio
-async def test_waiting_for_a_build_returns_its_result_and_is_a_span(repo: Path) -> None:
-    builder = FakeBuilder()
+def _held(builder: FakeBuilder) -> asyncio.Event:
+    """Hold every build until the returned event is set."""
     release = asyncio.Event()
     build = builder.build
 
-    async def held_build(tree: str, archive: bytes, *, retry: bool = False) -> BuildResult:
+    async def held_build(key: str, skill: str, archive: bytes, *, retry: bool = False) -> BuildResult:
         await release.wait()
-        return await build(tree, archive, retry=retry)
+        return await build(key, skill, archive, retry=retry)
 
     builder.build = held_build  # type: ignore[method-assign]
+    return release
+
+
+@pytest.mark.anyio
+async def test_waiting_for_a_build_returns_its_result_and_is_a_span(repo: Path) -> None:
+    builder = FakeBuilder()
+    release = _held(builder)
     builds = SkillBuilds(cast(BuilderClient, builder))
     trace = TurnTrace("t1", on_change=lambda _span: None)
     root = trace.start("turn", "turn", parent_id=None, attrs={})
@@ -318,12 +363,12 @@ async def test_waiting_for_a_build_returns_its_result_and_is_a_span(repo: Path) 
 
 
 @pytest.mark.anyio
-async def test_waiting_for_a_skill_without_a_flake_returns_none_at_once(repo: Path) -> None:
+async def test_waiting_for_an_unlisted_skill_returns_none_at_once(repo: Path) -> None:
     builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
 
-    instructions_only, _ = await builds.wait_built(repo, "instructions-only")
+    unlisted, _ = await builds.wait_built(repo, "unlisted")
 
-    assert instructions_only is None
+    assert unlisted is None
 
 
 class RootsBuilder(FakeBuilder):
@@ -331,16 +376,18 @@ class RootsBuilder(FakeBuilder):
         super().__init__()
         self.roots: list[list[str]] = []
 
-    async def put_roots(self, trees: list[str]) -> None:
-        self.roots.append(trees)
+    async def put_roots(self, keys: list[str]) -> None:
+        self.roots.append(keys)
 
 
 @pytest.mark.anyio
-async def test_the_builder_roots_are_the_flake_skill_trees_of_all_heads(repo: Path, tmp_path: Path) -> None:
+async def test_the_builder_roots_are_the_skill_keys_of_all_heads(repo: Path, tmp_path: Path) -> None:
     other = tmp_path / "other"
     other.mkdir()
     _git(other, "init", "-q")
-    _write_skill(other, "weather", frontmatter="license: demo\n")
+    _write_skill(other, "weather")
+    (other / "skills" / "weather" / "LICENSE").write_text("demo\n")
+    _write_skills_flake(other, ["weather"])
     _commit(other, "another user's weather")
     empty = tmp_path / "empty"
     empty.mkdir()
@@ -349,32 +396,31 @@ async def test_the_builder_roots_are_the_flake_skill_trees_of_all_heads(repo: Pa
 
     await SkillBuilds(cast(BuilderClient, builder)).sync_roots([repo, other, empty])
 
-    expected = {_git(repo, "rev-parse", f"HEAD:skills/{name}") for name in ("weather", "notes")}
-    expected.add(_git(other, "rev-parse", "HEAD:skills/weather"))
+    expected = {_key(repo, "weather"), _key(repo, "notes"), _key(other, "weather")}
     assert builder.roots == [sorted(expected)]
 
 
 @pytest.mark.anyio
-async def test_a_tree_no_head_references_is_looked_up_again(repo: Path) -> None:
+async def test_a_key_no_head_references_is_looked_up_again(repo: Path) -> None:
     builder = RootsBuilder()
     builds = SkillBuilds(cast(BuilderClient, builder))
     await builds.ensure_built(repo)
     await _settled(builds, repo)
-    old_weather = _git(repo, "rev-parse", "HEAD:skills/weather")
+    old_weather = _key(repo, "weather")
 
     (repo / "skills" / "weather" / "flake.nix").write_text("{ outputs = _: { packages = { }; }; }\n")
     _commit(repo, "change weather")
     await builds.sync_roots([repo])
 
-    # The builder may collect the old tree, so its remembered result must not outlive the sync.
+    # The builder may collect the old key, so its remembered result must not outlive the sync.
     assert old_weather not in builds._results
-    assert _git(repo, "rev-parse", "HEAD:skills/notes") in builds._results
+    assert _key(repo, "notes") in builds._results
 
 
 @pytest.mark.anyio
 async def test_a_failed_build_is_retried_on_request(repo: Path) -> None:
     builder = FakeBuilder()
-    builder.answer = lambda tree: BuildResult(tree=tree, state="failed", log_tail="error: connection reset")
+    builder.answer = lambda key, skill: BuildResult(key=key, skill=skill, state="failed", log_tail="error: reset")
     builds = SkillBuilds(cast(BuilderClient, builder))
     await builds.ensure_built(repo)
     assert (await _settled(builds, repo))["weather"] == "failed"
@@ -387,8 +433,8 @@ async def test_a_failed_build_is_retried_on_request(repo: Path) -> None:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("name", ["weather", "parked", "instructions-only", "missing"])
-async def test_only_a_failed_flake_skill_can_be_retried(repo: Path, name: str) -> None:
+@pytest.mark.parametrize("name", ["weather", "unlisted", "missing"])
+async def test_only_a_failed_listed_skill_can_be_retried(repo: Path, name: str) -> None:
     builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
     await builds.ensure_built(repo)
     await _settled(builds, repo)
@@ -403,29 +449,22 @@ async def test_an_unreadable_repo_does_not_stop_the_other_repos_roots(repo: Path
     broken.mkdir()
     _git(broken, "init", "-q")
     _write_skill(broken, "weather")
+    _write_skills_flake(broken, ["weather"])
     _commit(broken, "skills")
-    # A head that names a missing tree object: git ls-tree fails for this repo only.
+    # A head that names a missing tree object: reading its skills fails for this repo only.
     tree = _git(broken, "rev-parse", "HEAD^{tree}")
     (broken / ".git" / "objects" / tree[:2] / tree[2:]).unlink()
     builder = RootsBuilder()
 
     await SkillBuilds(cast(BuilderClient, builder)).sync_roots([broken, repo])
 
-    expected = sorted(_git(repo, "rev-parse", f"HEAD:skills/{name}") for name in ("weather", "notes"))
-    assert builder.roots == [expected]
+    assert builder.roots == [sorted([_key(repo, "weather"), _key(repo, "notes")])]
 
 
 @pytest.mark.anyio
 async def test_a_cancelled_waiter_leaves_the_build_running_for_the_others(repo: Path) -> None:
     builder = FakeBuilder()
-    release = asyncio.Event()
-    build = builder.build
-
-    async def held_build(tree: str, archive: bytes, *, retry: bool = False) -> BuildResult:
-        await release.wait()
-        return await build(tree, archive, retry=retry)
-
-    builder.build = held_build  # type: ignore[method-assign]
+    release = _held(builder)
     builds = SkillBuilds(cast(BuilderClient, builder))
     trace = TurnTrace("t1", on_change=lambda _span: None)
     root = trace.start("turn", "turn", parent_id=None, attrs={})

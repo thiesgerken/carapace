@@ -1,7 +1,7 @@
 ---
 name: ferret
-# Before enabling, list your actual indexed sources in this description as a coverage hint.
-# Operator setup: SETUP.md (configure the endpoint and vault reference before enabling).
+# Before listing it in skills/flake.nix, list your actual indexed sources in this description as a coverage hint.
+# Operator setup: SETUP.md (configure the endpoint and vault reference first).
 description: >-
   Search engine for almost all of the user's important data.
   Searches X, Y, Z (TODO: add specific sources here!).
@@ -10,9 +10,6 @@ description: >-
   lookup path is known. Knowing the origin alone is not a reason to skip:
   Ferret's search may be better implemented. Discover personal indexed-source
   content, not public metasearch or routine code navigation.
-metadata:
-  carapace:
-    disabled: true
 ---
 
 # Ferret

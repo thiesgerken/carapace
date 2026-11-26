@@ -79,14 +79,14 @@ Run the builder image as in [builder.md](builder.md#on-a-separate-machine), then
 
 ## Knowledge repos
 
-Each user's knowledge repo needs the same three checks. Make the changes in a clone of the repo and push them, or ask the agent to do it. Either way the push goes through the sentinel like any other.
+Each user's knowledge repo needs the same four checks. Make the changes in a clone of the repo and push them, or ask the agent to do it. Either way the push goes through the sentinel like any other.
 
 ### Bundled skills
 
 Bootstrap only seeds bundled skills that are missing, so an existing repo keeps its old copies:
 
 - `carapace`, `web` and `wikipedia` declare commands in their frontmatter, so they show up as broken. Their new versions are flakes.
-- `ferret` declares `mcp`, so it breaks too. It is disabled by default.
+- `ferret` declares `mcp`, so it breaks too.
 - `create-skill` and `credentials` stay valid but are stale: they still teach frontmatter declarations and `use_skill`.
 - `example` is no longer bundled. The helper examples in [`nix/skills/examples`](../nix/skills/examples) replace it.
 
@@ -99,9 +99,22 @@ git push
 # then restart the server
 ```
 
-Re-seeded skills come with their shipped defaults. `web` and `ferret` are disabled again; set `metadata.carapace.disabled: false` to turn them back on. A vault path you had changed in the old frontmatter now goes into the skill's `flake.nix` (`web`: `credentials.BRAVE_API_KEY`; `carapace`: the `server` and `apiKey` bindings at the top of its `flake.nix`). Copies you had changed beyond that need converting like your own skills (below).
+Re-seeded skills come with their shipped defaults. A vault path you had changed in the old frontmatter now goes into the skill's `flake.nix` (`web`: `credentials.BRAVE_API_KEY`; `carapace`: the `server` and `apiKey` bindings at the top of its `flake.nix`). Copies you had changed beyond that need converting like your own skills (below).
 
 `CARAPACE_RESET_ASSETS=true` overwrites the bundled skills and `SECURITY.md` in place, but leaves files that the new versions no longer have (`setup.sh`, the old `pyproject.toml` of `carapace`). Prefer deleting the copies.
+
+### The skills flake
+
+`skills/flake.nix` is now the only list of skills ([skill-flakes.md](skill-flakes.md#the-skills-flake)). Bootstrap seeds it only into a new repo, so an existing one has no skills until it gets one: the catalog is empty, and the Knowledge view says so on the repo root and on `skills/`. Write it like the example there, with one `path:./<dir>` input per skill you want active (the bundled `carapace` skill is listed as `carapace-cli`; `web` and `ferret` only once they are set up), then lock, commit and push:
+
+```sh
+nix flake lock ./skills
+git add skills/flake.nix skills/flake.lock
+git commit -m "List the skills in skills/flake.nix"
+git push
+```
+
+`metadata.carapace.disabled` is gone: a skill is off when it is not listed. A `SKILL.md` that still sets it shows up as broken; delete the field.
 
 ### `SECURITY.md`
 
@@ -126,7 +139,8 @@ A skill with `commands` or `mcp` gets a `flake.nix` and a `flake.lock` next to i
 | `commands` (`name`, `command`) | `mkSkill { commands.<name> = { exec = …; description = …; }; }`. A `uv run --directory …` becomes `"${skill.uvEnv { root = ./.; }}/bin/<script>"` |
 | `mcp` (HTTP, `auth.type: bearer` or `oauth`) | `skill.mcpCommands { <name> = { url = …; bearer = "<vault path>"; description = …; }; }` (or `oauth = "<vault path>"`). The URL must be `https://` with a host name: `http://` and IP addresses fail the evaluation. `description` is required ([skill-flakes.md](skill-flakes.md#mcp-servers)) |
 | `mcp` (stdio, `command`) | `skill.mcpCommands { <name> = { command = …; description = …; needs.credentials… }; }` |
-| `disabled`, `hints` | stay in the frontmatter |
+| `hints` | stays in the frontmatter |
+| `disabled` | gone: leave the skill out of `skills/flake.nix` |
 
 Then delete `network`, `credentials`, `commands` and `mcp` from the frontmatter. Their presence is what marks the skill as broken.
 

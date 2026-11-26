@@ -1,6 +1,6 @@
 # Skill flakes
 
-A skill that has commands is a Nix flake: `flake.nix` and `flake.lock` live in the skill directory next to its `SKILL.md`. The flake's package holds one wrapper per command, nothing else. The Carapace builder builds it whenever the skill changes, and every session gets the commands on its `PATH`. A skill without commands needs no flake.
+A skill that has commands is a Nix flake: `flake.nix` and `flake.lock` live in the skill directory next to its `SKILL.md`. The flake's package holds one wrapper per command, nothing else. The Carapace builder builds it whenever the skill changes, and every session gets the commands on its `PATH`. The knowledge repo lists its skills in [`skills/flake.nix`](#the-skills-flake); a skill directory that is not listed there is not a skill.
 
 The functions below come from the skills subflake of the Carapace repo, `github:thiesgerken/carapace?dir=nix/skills` ([`nix/skills/flake.nix`](../nix/skills/flake.nix)). It has only `nixpkgs` and the uv2nix stack as inputs, so a skill's `flake.lock` stays small. Three working examples live in [`nix/skills/examples`](../nix/skills/examples): uv, npm and plain nixpkgs. CI builds them against the helpers of the current checkout. The bundled skills with commands (`src/carapace/assets/skills`) are flakes too; CI builds them both against the commit their `flake.lock` pins and against the current helpers.
 
@@ -54,11 +54,63 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 }
 ```
 
-- Each skill locks its own `nixpkgs`, so one skill can move to a newer one without touching the others. `inputs.nixpkgs.follows` makes the Carapace helpers use the same one.
-- `carapace` pins a released Carapace commit in `flake.lock`. The helpers keep working when Carapace moves on, because their arguments only grow; a skill updates its pin when it wants something new.
+- Built standalone (`nix build path:<dir>`), a skill uses its own `flake.lock`. Built through [`skills/flake.nix`](#the-skills-flake), as the builder does, its `nixpkgs` and `carapace` follow the ones that file pins, so every skill of a repo shares them. `inputs.nixpkgs.follows` makes the Carapace helpers use the same `nixpkgs`.
+- `carapace` pins a released Carapace commit. The helpers keep working when Carapace moves on, because their arguments only grow.
 - `flake.lock` must be committed and complete: the builder never writes locks. Run `nix flake lock` after changing inputs.
-- The build sees nothing but the skill directory (`nix build path:<dir>`). Evaluation runs with import-from-derivation off, which all helpers support.
+- Evaluation runs with import-from-derivation off, which all helpers support.
 - `forSkillSystems` covers `x86_64-linux` and `aarch64-linux`, the architectures sandboxes run on.
+
+## The skills flake
+
+`skills/flake.nix` at the top of the knowledge repo is the only list of skills. Every input except `nixpkgs` and `carapace` is a skill, named by its attribute; a skill's `name` in `mkSkill` or in its frontmatter does not matter. A new knowledge repo gets this one, listing the bundled skills that work without setup:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+    carapace = {
+      url = "github:thiesgerken/carapace?dir=nix/skills";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # A local skill: the directory skills/carapace, under the name carapace-cli.
+    carapace-cli = {
+      url = "path:./carapace";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.carapace.follows = "carapace";
+    };
+    wikipedia = {
+      url = "path:./wikipedia";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.carapace.follows = "carapace";
+    };
+  };
+
+  outputs =
+    { carapace, ... }@inputs:
+    let
+      skills = removeAttrs inputs [
+        "self"
+        "nixpkgs"
+        "carapace"
+      ];
+    in
+    {
+      packages = carapace.lib.forSkillSystems (
+        system: builtins.mapAttrs (_name: skill: skill.packages.${system}.default) skills
+      );
+    };
+}
+```
+
+- A local skill is a `path:./<dir>` input, a skill from elsewhere any flake reference (e.g. `github:someone/skill-weather`). Every skill follows `nixpkgs` and `carapace`, so the lock holds one of each.
+- `outputs` exposes each skill's package as `packages.<system>.<name>`. The builder builds every attribute on its own, from the whole `skills/` directory at `HEAD` (relative `path:` inputs resolve inside it), so one broken skill leaves the others built and usable.
+- The server reads the list from `skills/flake.lock` (the root's inputs), never by evaluating Nix. Without `skills/flake.nix` or its lock the repo has no skills, and the Knowledge view says so.
+- `carapace` is the helpers' attribute, so the bundled skill in `skills/carapace` is listed as `carapace-cli`.
+
+To add a skill, add its input and lock: `nix flake lock ./skills`. A new skill directory must be tracked by Git first (`git add`), because `./skills` is a Git flake. After changing a local skill's inputs or its own `flake.lock`, run `nix flake update <name> --flake ./skills`: the top-level lock copies a local skill's inputs once and does not notice later changes. Editing a local skill's code or `SKILL.md` needs no new lock. Commit `skills/flake.lock` together with the change.
+
+To turn a skill off, remove its input and lock again.
 
 ## Commands and what they need
 
