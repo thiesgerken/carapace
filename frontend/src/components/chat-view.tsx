@@ -51,6 +51,7 @@ import type {
   SentFile,
   SessionInfo,
   SessionSandboxSnapshot,
+  SpanUpdate,
   TurnUsage,
 } from "@/lib/types";
 import { isRecord } from "@/lib/decoding";
@@ -68,7 +69,7 @@ import {
   shouldConfirmArchiveSession,
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
-import { applySpanToToolCall } from "@/lib/tool-call-status";
+import { applySpanToToolCall, applySpansToToolCalls, dropRunningSpans, runningStep, trackRunningSpan } from "@/lib/tool-call-status";
 import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall, streamingCallIndex } from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
@@ -731,6 +732,8 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         loading,
         toolId: normalizeOptionalString(entry.tool_id),
         parentToolId: normalizeOptionalString(entry.parent_tool_id),
+        // What the running turn's span notices name the call by, so a reload shows its running step.
+        toolCallId: normalizeOptionalString(entry.model_tool_call_id),
         compaction: entry.compaction,
         eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
       });
@@ -1149,6 +1152,9 @@ export function ChatView({
   // card's last fetch goes stale.
   const budgetGauges = (usageVisible ? usageState.data?.budget_gauges : undefined) ?? usage?.budget_gauges ?? [];
   const lastThinkingStartedAtRef = useRef<string | null>(null);
+  // The turn's steps still running, by span id. The replay on connect can arrive before the history load
+  // brings the cards it belongs to, so the load applies them again.
+  const runningSpansRef = useRef(new Map<string, SpanUpdate>());
   const queueRef = useRef<string | null>(null);
   const queuedAttachmentsRef = useRef<Attachment[]>([]);
   const resetRollbackRef = useRef<ChatMessage[] | null>(null);
@@ -1297,7 +1303,7 @@ export function ChatView({
     fetchHistory(server, token, sessionId)
       .then((history) => {
         if (cancelled) return;
-        setMessages(projectHistoryToMessages(history));
+        setMessages(applySpansToToolCalls(projectHistoryToMessages(history), runningSpansRef.current.values()));
       })
       .catch(() => {
         // history fetch can fail for new sessions - that's fine
@@ -1346,6 +1352,8 @@ export function ChatView({
 
   // The turn is over: a streamed call that has not become a real one by now never ran.
   const endTurn = useCallback(() => {
+    // Nothing runs after the turn: a span whose end notice got lost must not revive a card on the next history load.
+    runningSpansRef.current.clear();
     setMessages(markUnrunCalls);
     finishWaiting();
   }, [finishWaiting]);
@@ -1703,6 +1711,7 @@ export function ChatView({
           endTurn();
           break;
         case "span":
+          trackRunningSpan(runningSpansRef.current, msg);
           setMessages((prev) => applySpanToToolCall(prev, msg));
           break;
         case "llm_activity":
@@ -1789,9 +1798,11 @@ export function ChatView({
     queueRef.current = null;
     queuedAttachmentsRef.current = [];
     lastThinkingStartedAtRef.current = null;
+    // The server sends the spans still running again on the reconnect; one that ends meanwhile must not stay.
+    runningSpansRef.current.clear();
     setQueuedMessage(null);
     // The server keeps writing and running these calls; after the reconnect they arrive as tool_call.
-    setMessages(dropOpenCalls);
+    setMessages((prev) => dropRunningSpans(dropOpenCalls(prev)));
     clearToolLoading();
     setWaiting(false);
   }, [clearToolLoading]);
@@ -1808,6 +1819,8 @@ export function ChatView({
   const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
   // The card being written carries the request's counter; the waiting line covers the other phases.
   const streamingCall = waiting ? streamingCallIndex(messages, llmActivity) : -1;
+  // Between model requests the waiting line acts out what the running tool call waits on.
+  const step = waiting ? runningStep(messages) : null;
   const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
 
   function showInspector(open: boolean): void {
@@ -2953,7 +2966,7 @@ export function ChatView({
                   ),
                 );
               })()}
-              {waiting && <WaitingIndicator activity={llmActivity} hidden={streamingCall !== -1} />}
+              {waiting && <WaitingIndicator activity={llmActivity} step={step} hidden={streamingCall !== -1} />}
               <div ref={bottomRef} />
             </div>
           </div>

@@ -89,7 +89,8 @@ failed, budget-stopped or stopped one.
   exec), and **not covered**. Each instant of the turn counts once, for the sequential main path: starting at the
   turn, it steps into the running child that started first, level by level, and the instant
   belongs to where that stops, so parallel work never counts twice. Anything inside a `wait` span
-  is waiting for you. Instants that stop at the turn itself are not covered: time no span measured.
+  is waiting for you, except the `exec lock` wait: that is a call queued behind another command, so its
+  time goes to the main path like any other. Instants that stop at the turn itself are not covered: time no span measured.
 - **Waterfall**: one row per span, drawn as a tree with guide lines, with its bar placed within the
   turn (on a phone the label sits above the bar). A chevron collapses or expands a row's children;
   that state lasts while the turn is shown. Running spans grow until they end. Errors are red,
@@ -322,6 +323,7 @@ keeps them.
 | `gate` | tool name | the security gate of a tool call; only in turns recorded before tool calls stopped being reviewed | `denied` |
 | `sentinel` | evaluation kind | one sentinel evaluation, its compaction and requests included | `subject`, `verdict` |
 | `wait` | `approval`, or the escalation's subject | the user's answer: tool approvals, domain, credential and git push escalations | `reason` (`approval`, `domain`, `credential`), `calls` |
+| `wait` | `exec lock` | a sandbox call (exec, `read_skill`'s profile sync, a git pull or push from the UI) waiting for the session's exec lock while another holds it; none when the lock is free (`EXEC_LOCK_WAIT_SPAN`) | |
 | `credential` | vault path | one credential or metadata fetch | `fetch` |
 | `spill` | `spill` | saving oversized exec output to the sandbox | `chars` |
 | `compaction` | `agent` or `sentinel` | a compaction that runs during the turn (not the checks that skip it) | |
@@ -385,7 +387,10 @@ bars included (their `span_id` is the `request_id`):
 {"type": "span", "turn_id": "9c1e0a7f", "span_id": "3f9c0a1b2d4e5f60", "status": "running"}
 ```
 
-Clients refetch the timeline, and the turn list on a `turn_id` they don't know yet. LLM bars notify
+The message also carries `kind`, `name`, `started_at` and `tool_call_id` (see
+[websocket-session.md](websocket-session.md#span)), and a client that connects mid-turn gets the
+turn's open spans replayed as `running`. Clients refetch the timeline, and the turn list on a
+`turn_id` they don't know yet. LLM bars notify
 like spans: `running` when their request starts, then `ok`, `interrupted` or `error` (a failed
 request) when it ends. A streamed request cut by a provider error first notifies `interrupted`, then
 `error` once the run reports the failure.

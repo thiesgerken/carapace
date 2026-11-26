@@ -38,22 +38,22 @@ The server keeps its data in `./data` (SQLite), and its global git config in `./
 
 ### Stack numbers and ports
 
-Each stack gets 10 ports from 7300 on, starting at `7300 + 10·N`, where `N` is `CARAPACE_DEV_STACK` from the checkout's `.env`: 0 (the default) for the main checkout, 1 to 9 for worktrees, set by hand. The shell hook reads only that key from `.env`, never the whole file. With direnv, `.envrc` reloads the shell when `.env` changes; without it, leave and reenter `nix develop`.
+Each stack gets 10 ports from 7500 on, starting at `7500 + 10·N`, where `N` is `CARAPACE_DEV_STACK` from the checkout's `.env`: 0 (the default) for the main checkout, 1 to 9 for worktrees, set by hand. The shell hook reads only that key from `.env`, never the whole file. With direnv, `.envrc` reloads the shell when `.env` changes; without it, leave and reenter `nix develop`.
 
 | Port | Service | Stack 0 |
 | --- | --- | --- |
-| +0 | frontend (Next dev) | 7300 |
-| +1 | server API | 7301 |
-| +2 | server sandbox API | 7302 |
-| +3 | server internal API | 7303 |
-| +4 | session proxy | 7304 |
-| +5 | Redis | 7305 |
-| +6 | builder API | 7306 |
-| +7 | builder cache | 7307 |
-| +8 | process-compose API (`PC_PORT_NUM`, so `attach` and `down` find their stack) | 7308 |
+| +0 | frontend (Next dev) | 7500 |
+| +1 | server API | 7501 |
+| +2 | server sandbox API | 7502 |
+| +3 | server internal API | 7503 |
+| +4 | session proxy | 7504 |
+| +5 | Redis | 7505 |
+| +6 | builder API | 7506 |
+| +7 | builder cache | 7507 |
+| +8 | process-compose API (`PC_PORT_NUM`, so `attach` and `down` find their stack) | 7508 |
 | +9 | spare | |
 
-Open the frontend at `http://127.0.0.1:<base>`. The CLI needs the server port: `uv run carapace --server http://127.0.0.1:7301` for stack 0.
+Open the frontend at `http://127.0.0.1:<base>`. The CLI needs the server port: `uv run carapace --server http://127.0.0.1:7501` for stack 0.
 
 ### Instance and Docker resources
 
@@ -83,7 +83,7 @@ process-compose up --detached
 process-compose process start demo  # once the server is up
 ```
 
-Then open `http://127.0.0.1:7310` and log in as `demo` with password `carapace-demo`. The `demo` process runs [`scripts/seed_demo.py`](#screenshots) against the stack's `./data`. It never starts on its own, and the seed refuses a data dir that already has sessions. The shell hook doesn't write `.env` for you.
+Then open `http://127.0.0.1:7510` and log in as `demo` with password `carapace-demo`. The `demo` process runs [`scripts/seed_demo.py`](#screenshots) against the stack's `./data`. It never starts on its own, and the seed refuses a data dir that already has sessions. The shell hook doesn't write `.env` for you.
 
 ### Testing images locally
 
@@ -131,11 +131,11 @@ The demo user also has memory data for the Memory pages and the home page: `memo
 3. Capture with headless Chrome. `scripts/screenshot.mjs` logs in as the demo user over the DevTools protocol (Node built-ins only), since the session cookie is HTTP-only. Per page it writes `NAME-light.png` and `NAME-dark.png` at 1280×800 with device scale factor 2, or `NAME-phone-light.png` and `NAME-phone-dark.png` at 390×844 with `--phone`. It prints the files; without `--out` they land in a fresh temp directory, so they can't end up in a commit. Light and dark come from `--blink-settings=preferredColorScheme=1` and `=0`. The UI is English and the time zone UTC. Each page gets the load event plus `--settle` milliseconds (default 3000) to render. Set `CHROME` to the Chrome binary outside macOS.
 
    ```sh
-   node scripts/screenshot.mjs --base http://127.0.0.1:7310 --out /tmp/shots 'budget=/?session=demo-budget-stop'
-   node scripts/screenshot.mjs --base http://127.0.0.1:7310 --out /tmp/shots --phone 'budget=/?session=demo-budget-stop'
+   node scripts/screenshot.mjs --base http://127.0.0.1:7510 --out /tmp/shots 'budget=/?session=demo-budget-stop'
+   node scripts/screenshot.mjs --base http://127.0.0.1:7510 --out /tmp/shots --phone 'budget=/?session=demo-budget-stop'
    ```
 
-   For "before" pictures, run the base branch's frontend (e.g. from a worktree on `origin/main`) against the same server, e.g. `CARAPACE_BACKEND_URL=http://127.0.0.1:7311 npm run dev -- --port 7319` in its `frontend/`, and capture from there into another directory.
+   For "before" pictures, run the base branch's frontend (e.g. from a worktree on `origin/main`) against the same server, e.g. `CARAPACE_BACKEND_URL=http://127.0.0.1:7511 npm run dev -- --port 7519` in its `frontend/`, and capture from there into another directory.
 
 4. Attach the pictures to the PR instead of committing them. gh 2.99 or newer uploads images natively and rewrites `![alt](./file.png)` references in the body:
 

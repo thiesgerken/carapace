@@ -354,6 +354,9 @@ class SpanUpdate(SpanNotice):
     """Server → Client: a timing span of the running turn started or ended. Clients fetch the timeline via REST."""
 
     type: Literal["span"] = "span"
+    # Sent again on connect for a span still running: a client may restart the spinner of a call it had to
+    # stop when its connection dropped, which a live notice must never do (reused provider call ids).
+    replayed: bool = False
 
 
 class StatusUpdate(BaseModel):

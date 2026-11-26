@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -976,7 +976,15 @@ async def test_only_the_skill_build_wait_becomes_a_notice(tmp_path: Path, db_fac
     sub = MatrixSubscriber(ch, room_id)
 
     def notice(span_id: str, kind: str, name: str, status: str) -> SpanNotice:
-        return SpanNotice(turn_id="t", span_id=span_id, kind=kind, name=name, status=status, tool_call_id="toolu_1")
+        return SpanNotice(
+            turn_id="t",
+            span_id=span_id,
+            kind=kind,
+            name=name,
+            status=status,
+            started_at=datetime.now(tz=UTC),
+            tool_call_id="toolu_1",
+        )
 
     await sub.on_span(notice("a", "skill", "build wait", "running"))
     await sub.on_span(notice("a", "skill", "build wait", "ok"))

@@ -175,6 +175,7 @@ class SessionTurnHost(Protocol):
         approval_comment: str | None = None,
         parent_tool_id: str | None = None,
         match_args: dict[str, Any] | None = None,
+        model_tool_call_id: str | None = None,
     ) -> str: ...
 
     def llm_request_recording(self, active: ActiveSession) -> AbstractContextManager[Any, bool | None]: ...
@@ -295,6 +296,7 @@ class SessionTurnMixin(SessionTurnHost):
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
                 approval_comment=approval_comment,
+                model_tool_call_id=tool_call_id,
             )
             # A denied call never returns: its entry would outlive it and catch the result of a later
             # unrecorded call under a reused id such as `call_0`.
