@@ -266,7 +266,7 @@
               carapace_stack=$(sed -n 's/^CARAPACE_DEV_STACK=//p' "$carapace_root/.env" 2>/dev/null | tail -n 1)
               carapace_stack=''${carapace_stack:-0}
               if [[ $carapace_stack =~ ^[0-9]$ ]]; then
-                carapace_base=$((7300 + 10 * carapace_stack))
+                carapace_base=$((7500 + 10 * carapace_stack))
                 export CARAPACE_DEV_STACK=$carapace_stack
                 export CARAPACE_DEV_FRONTEND_PORT=$carapace_base
                 export CARAPACE_DEV_SERVER_PORT=$((carapace_base + 1))
