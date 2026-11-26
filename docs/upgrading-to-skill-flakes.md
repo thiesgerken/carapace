@@ -108,7 +108,7 @@ git push
 - Every other directory with a `SKILL.md` becomes a `path:./<dir>` input. The bundled `carapace` skill is listed as `carapace-cli`, because `carapace` names the helpers.
 - A skill without a `flake.nix` gets a flake of a few lines ([Skills with only instructions](skill-flakes.md#skills-with-only-instructions)).
 - `mkSkill` now takes the skill directory as `src`. The script adds `src = ./.;` to each local flake that lacks it, right after `mkSkill`'s `name`, and names any flake where it could not.
-- A skill whose `SKILL.md` still sets `metadata.carapace.disabled` is written as a commented-out input. `disabled` is gone: a skill is off when it is not listed, and one that still sets the field shows up as broken once listed, so delete the field before you uncomment it.
+- `web` and `ferret` as bootstrap seeded them are written as commented-out inputs, since they need setting up first. So is a skill whose `SKILL.md` still sets `metadata.carapace.disabled`. `disabled` is gone: a skill is off when it is not listed, and one that still sets the field shows up as broken once listed, so delete the field before you uncomment it.
 - Every input follows the repo's `nixpkgs` and `carapace`. The script then runs `nix flake lock ./skills` and stages everything, but commits nothing.
 
 It needs Git and Nix and runs anywhere in a clone of the repo. The agent can run it in its sandbox too; fetching the script is a domain request like any other:
@@ -121,7 +121,7 @@ git commit -m "List the skills in skills/flake.nix"
 git push
 ```
 
-It refuses to run when `skills/flake.nix` exists already, and stops at a skill directory whose name can't be a flake attribute (`nixpkgs`, `self`, or one with dots), which you rename first.
+It refuses to run when `skills/flake.nix` exists already or `skills/` has uncommitted changes, and when a skill directory's name can't be a flake attribute (`nixpkgs`, `self`, or one with dots), which you rename first. It checks all of that before it changes anything.
 
 ### `SECURITY.md`
 
