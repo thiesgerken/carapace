@@ -18,14 +18,20 @@ _PUBLIC_TARGETS = ("1.1.1.1/443", "8.8.8.8/53", "9.9.9.9/443")
 _DOCS = "See docs/security.md, section 'Start-up egress self-test'."
 
 # Runs as the sandbox's own process without proxy variables. Prints one line per leak, nothing when sealed.
-# PROXY_TARGET must connect: a failed connect to it means the probe cannot tell sealed from broken.
+# The session proxy at PROXY_TARGET must answer, or the probe cannot tell sealed from broken. A request without
+# credentials, whose 407 only the proxy itself sends: a relay in between accepts the connection even when it
+# cannot reach the server, so a TCP handshake alone proves nothing.
 # `timeout` matters: a NetworkPolicy drops packets, so an unguarded connect would hang for minutes.
 PROBE_SCRIPT = f"""\
-for tool in timeout getent; do
+for tool in timeout getent head; do
     command -v "$tool" >/dev/null || {{ echo "missing $tool in the sandbox image" >&2; exit 1; }}
 done
-if ! timeout 5 bash -c "exec 3<>/dev/tcp/$PROXY_TARGET"; then
-    echo "positive control failed: cannot reach the session proxy at ${{PROXY_TARGET/\\//:}}" >&2
+status=$(timeout 5 bash -c "exec 3<>/dev/tcp/$PROXY_TARGET && \\
+    printf 'GET http://egress-check.invalid/ HTTP/1.1\\r\\nHost: egress-check.invalid\\r\\n\\r\\n' >&3 && \\
+    head -n 1 <&3" 2>/dev/null)
+if [[ $status != "HTTP/1."?" 407 "* ]]; then
+    echo "positive control failed: the session proxy at ${{PROXY_TARGET/\\//:}} did not answer \\
+(got: ${{status:-nothing}})" >&2
     exit 1
 fi
 for target in {" ".join(_PUBLIC_TARGETS)} $DNS_TARGETS; do

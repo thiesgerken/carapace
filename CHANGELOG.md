@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.194.0 (2026-11-26)
+
+### ✨ Introduce new features
+
+- feat: native process-compose dev stack with isolated sandbox instances
+
+### 🐛 Fix a bug
+
+- fix: reach the dev server over unix sockets on Linux and check the proxy's own answer
+- fix: keep the dev stack server's git config out of ~/.gitconfig
+- fix: load dev images under their hash tag and fail on an unknown sandbox bind host
+
+### 📝 Add or update documentation
+
+- docs: list what the dev stack needs before nix develop
+- docs: say why the dev stack's relay sits on two networks
+
 ## v0.193.10 (2026-11-26)
 
 ### 🐛 Fix a bug

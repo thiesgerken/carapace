@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import os
 import shutil
+import socket
 import subprocess
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -25,25 +28,10 @@ from tests.runtime_mocks import make_runtime_mock
 _PROXY = "10.0.0.2/3128"
 
 
-def _probe(
-    tmp_path: Path,
-    *,
-    network_open: bool,
-    proxy_reachable: bool = True,
-    tools: tuple[str, ...] = ("timeout", "getent"),
-) -> ExecResult:
-    """Run the probe script against stub tools: `timeout` decides whether a connection gets out."""
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    open_code, proxy_code = (0 if network_open else 1), (0 if proxy_reachable else 1)
-    stubs = {
-        "timeout": f'case "$*" in *{_PROXY}*) exit {proxy_code};; esac\nexit {open_code}',
-        "getent": f"exit {open_code}",
-    }
-    for tool in tools:
-        stub = bin_dir / tool
-        stub.write_text(f"#!/bin/sh\n{stubs[tool]}\n")
-        stub.chmod(0o755)
+_PROXY_ANSWERS = "HTTP/1.1 407 Proxy Authentication Required"
+
+
+def _run_probe(bin_dir: Path, proxy_host: str, proxy_port: int) -> ExecResult:
     bash = shutil.which("bash")
     assert bash is not None
     done = subprocess.run(
@@ -53,11 +41,59 @@ def _probe(
         env={
             **os.environ,
             "PATH": f"{bin_dir}:{Path(bash).parent}",
-            **probe_env("10.0.0.2", 3128, "search svc.cluster.local\nnameserver 10.96.0.10\n"),
+            **probe_env(proxy_host, proxy_port, "search svc.cluster.local\nnameserver 10.96.0.10\n"),
         },
         check=False,
     )
     return ExecResult(exit_code=done.returncode, output=done.stdout + done.stderr, stdout=done.stdout)
+
+
+def _write_tools(bin_dir: Path, scripts: dict[str, str]) -> None:
+    bin_dir.mkdir()
+    for tool, script in scripts.items():
+        stub = bin_dir / tool
+        stub.write_text(f"#!/bin/sh\n{script}\n")
+        stub.chmod(0o755)
+
+
+def _probe(
+    tmp_path: Path,
+    *,
+    network_open: bool,
+    proxy_answer: str = _PROXY_ANSWERS,
+    tools: tuple[str, ...] = ("timeout", "getent", "head"),
+) -> ExecResult:
+    """Run the probe script against stub tools: `timeout` decides whether a connection gets out, and
+    prints what the proxy answers."""
+    open_code = 0 if network_open else 1
+    stubs = {
+        "timeout": f'case "$*" in *{_PROXY}*) printf "%s\\n" "{proxy_answer}"; exit 0;; esac\nexit {open_code}',
+        "getent": f"exit {open_code}",
+        "head": "exit 0",
+    }
+    _write_tools(tmp_path / "bin", {tool: stubs[tool] for tool in tools})
+    return _run_probe(tmp_path / "bin", "10.0.0.2", 3128)
+
+
+@pytest.fixture
+def listener() -> Iterator[tuple[socket.socket, list[bytes]]]:
+    """A local TCP listener that sends each connection the queued reply, then closes it."""
+    server = socket.create_server(("127.0.0.1", 0))
+    replies: list[bytes] = []
+
+    def serve() -> None:
+        while True:
+            try:
+                conn, _ = server.accept()
+            except OSError:
+                return
+            with conn:
+                conn.recv(4096)
+                conn.sendall(replies[0] if replies else b"")
+
+    threading.Thread(target=serve, daemon=True).start()
+    yield server, replies
+    server.close()
 
 
 def test_a_sealed_sandbox_reports_nothing(tmp_path: Path) -> None:
@@ -79,12 +115,45 @@ def test_an_open_sandbox_reports_every_leak(tmp_path: Path) -> None:
 
 
 def test_a_probe_that_cannot_reach_the_proxy_does_not_pass(tmp_path: Path) -> None:
-    result = _probe(tmp_path, network_open=False, proxy_reachable=False)
+    result = _probe(tmp_path, network_open=False, proxy_answer="")
 
     assert result.exit_code == 1
-    assert "positive control failed: cannot reach the session proxy at 10.0.0.2:3128" in result.output
+    assert "positive control failed: the session proxy at 10.0.0.2:3128 did not answer" in result.output
     with pytest.raises(EgressProbeError, match="could not run"):
         raise_for_leaks(result)
+
+
+@pytest.mark.parametrize(
+    ("reply", "answered"),
+    [
+        (b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic\r\n\r\n", True),
+        # A relay that accepts the connection but cannot reach the server.
+        (b"", False),
+        (b"HTTP/1.1 200 OK\r\n\r\n", False),
+    ],
+)
+def test_only_the_proxys_own_answer_passes_the_positive_control(
+    tmp_path: Path, listener: tuple[socket.socket, list[bytes]], reply: bytes, answered: bool
+) -> None:
+    server, replies = listener
+    replies.append(reply)
+    real_head = shutil.which("head")
+    assert real_head is not None
+    # The real control: bash's /dev/tcp and head against a socket. `timeout` only drops its duration, and
+    # every other connect fails, so an answered control reports nothing.
+    _write_tools(
+        tmp_path / "bin",
+        {
+            "timeout": f'shift\ncase "$*" in *{server.getsockname()[1]}*) exec "$@";; esac\nexit 1',
+            "getent": "exit 1",
+            "head": f'exec {real_head} "$@"',
+        },
+    )
+
+    result = _run_probe(tmp_path / "bin", "127.0.0.1", server.getsockname()[1])
+
+    assert (result.exit_code == 0) is answered, result.output
+    assert ("positive control failed" in result.output) is not answered
 
 
 def test_the_cluster_resolver_is_probed_and_loopback_resolvers_are_not() -> None:

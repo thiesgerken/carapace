@@ -3,7 +3,7 @@ import test from "node:test";
 
 import type { ChatMessage, SpanUpdate } from "@/lib/types";
 
-import { applySpanToToolCall, applySpansToToolCalls, toolCallStatus, trackRunningSpan } from "./tool-call-status";
+import { EXEC_LOCK_SPAN, applySpanToToolCall, applySpansToToolCalls, runningStep, stepTopic, toolCallStatus, trackRunningSpan } from "./tool-call-status";
 
 const card = (toolCallId: string): ChatMessage => ({ kind: "tool_call", tool: "exec", args: {}, detail: "", loading: true, toolCallId });
 const span = (span_id: string, kind: string, status: SpanUpdate["status"], tool_call_id: string | null = "call_0"): SpanUpdate => ({
@@ -19,7 +19,7 @@ test("a call's running spans land on its newest card and leave it when they end"
   }
   assert.equal(spansOf(messages, 0), undefined);
   assert.deepEqual(spansOf(messages, 1)?.map((s) => s.spanId), ["s1", "s3"]);
-  assert.deepEqual(toolCallStatus(spansOf(messages, 1)), { spanId: "s3", kind: "domain", name: "pypi.org" });
+  assert.deepEqual(toolCallStatus(spansOf(messages, 1)), { spanId: "s3", kind: "domain", name: "pypi.org", startedAt: Date.parse("2026-11-26T12:00:00Z") });
 
   // Spans outside a tool call, or of a call without a card, change nothing.
   assert.equal(applySpanToToolCall(messages, span("s4", "sandbox", "running", null)), messages);
@@ -27,8 +27,8 @@ test("a call's running spans land on its newest card and leave it when they end"
 });
 
 test("only steps a card names make its status, the innermost one first", () => {
-  assert.equal(toolCallStatus([{ spanId: "a", kind: "tool", name: "exec" }, { spanId: "b", kind: "gate", name: "exec" }]), null);
-  assert.equal(toolCallStatus([{ spanId: "a", kind: "sandbox", name: "ensure" }, { spanId: "b", kind: "exec", name: "exec" }])?.kind, "sandbox");
+  assert.equal(toolCallStatus([{ spanId: "a", kind: "tool", name: "exec", startedAt: 0 }, { spanId: "b", kind: "gate", name: "exec", startedAt: 0 }]), null);
+  assert.equal(toolCallStatus([{ spanId: "a", kind: "sandbox", name: "ensure", startedAt: 0 }, { spanId: "b", kind: "exec", name: "exec", startedAt: 0 }])?.kind, "sandbox");
   assert.equal(toolCallStatus(undefined), null);
 });
 
@@ -49,4 +49,30 @@ test("spans heard before their card exists reach it once it does, the ended ones
   // The history load brings the card after the replay on connect.
   const messages = applySpansToToolCalls([card("call_0")], running.values());
   assert.deepEqual(spansOf(messages, 0)?.map((s) => s.spanId), ["s1", "s3"]);
+});
+
+test("a step's start is the server's, also when its running notice comes again after a reconnect", () => {
+  let messages = applySpanToToolCall([card("call_0")], span("s1", "skill", "running"));
+  messages = applySpanToToolCall(messages, span("s1", "skill", "running"));
+  assert.equal(spansOf(messages, 0)?.[0].startedAt, Date.parse("2026-11-26T12:00:00Z"));
+});
+
+test("a step's topic comes from its name where the chat knows it, else from its kind", () => {
+  const topic = (kind: "skill" | "wait", name: string) => stepTopic({ spanId: "s", kind, name, startedAt: 0 });
+  assert.equal(topic("skill", "build wait"), "skillBuild");
+  assert.equal(topic("skill", "profile sync"), "skillProfile");
+  assert.equal(topic("wait", EXEC_LOCK_SPAN), "execLock");
+  // Names it doesn't know, like a span added later or an approval's subject, fall back to the kind.
+  assert.equal(topic("skill", "ensure_built"), "skill");
+  assert.equal(topic("wait", "pypi.org"), "wait");
+});
+
+test("the running step is the one of the newest loading card that names a step", () => {
+  const withSpans = (loading: boolean, kind: string, name: string): ChatMessage => ({
+    kind: "tool_call", tool: "exec", args: {}, detail: "", loading, runningSpans: [{ spanId: kind, kind, name, startedAt: 0 }],
+  });
+  const messages = [withSpans(true, "sandbox", "ensure"), withSpans(true, "skill", "build wait"), withSpans(true, "exec", "exec"), withSpans(false, "wait", "approval")];
+  assert.equal(runningStep(messages)?.name, "build wait");
+  assert.equal(runningStep(messages.slice(0, 1))?.kind, "sandbox");
+  assert.equal(runningStep([]), null);
 });

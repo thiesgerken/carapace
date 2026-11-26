@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Seed a throwaway carapace data dir with a demo user and ready-made sessions for screenshots.
 
-Usage: ``uv run python scripts/seed_demo.py DATA_DIR``. Run it against the data dir of an already
-started server (see "Screenshots" in docs/development.md): server startup closes approval
-requests left open by a previous process, and two demo sessions show open requests.
+Usage: ``uv run python scripts/seed_demo.py DATA_DIR``, or ``--dev-stack data`` for a dev stack's own
+data dir (the stack's ``demo`` process does that). Run it against the data dir of an already started
+server (see "Screenshots" in docs/development.md): server startup closes approval requests left open
+by a previous process, and two demo sessions show open requests.
 
 Nothing here calls an LLM. All sessions are written directly as events, with fixed IDs and
 timestamps relative to the seeding time, so the same script gives the same pictures.
@@ -1225,11 +1226,12 @@ def _require_throwaway_database(data_dir: Path, url: str) -> None:
         sys.exit(f"Refusing to seed {url}: the demo database must be a SQLite file inside {data_dir}.")
 
 
-def seed(data_dir: Path, now: datetime) -> None:
+def seed(data_dir: Path, now: datetime, *, dev_stack: bool = False) -> None:
     # A real data dir (e.g. ./data) also keeps its SQLite file inside, so only a temp dir is
-    # throwaway enough. This runs before anything opens the database.
+    # throwaway enough, unless the caller says it is a dev stack's. A data dir with sessions is refused
+    # either way. This runs before anything opens the database.
     temp_root = Path(tempfile.gettempdir()).resolve()
-    if not data_dir.is_relative_to(temp_root):
+    if not dev_stack and not data_dir.is_relative_to(temp_root):
         sys.exit(f"Refusing to seed {data_dir}: the demo data dir must be inside {temp_root} (use mktemp -d).")
     if not data_dir.is_dir():
         sys.exit(f"{data_dir} does not exist. Start the demo server on it first.")
@@ -1278,8 +1280,11 @@ def seed(data_dir: Path, now: datetime) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("data_dir", type=Path, help="throwaway CARAPACE_DATA_DIR of the demo server")
+    parser.add_argument(
+        "--dev-stack", action="store_true", help="DATA_DIR is a dev stack's, so it need not be in the temp directory"
+    )
     args = parser.parse_args()
-    seed(args.data_dir.resolve(), datetime.now(tz=UTC).replace(second=0, microsecond=0))
+    seed(args.data_dir.resolve(), datetime.now(tz=UTC).replace(second=0, microsecond=0), dev_stack=args.dev_stack)
     print(f"Log in as {DEMO_USER!r} with password {DEMO_PASSWORD!r}.")
 
 

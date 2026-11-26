@@ -1209,7 +1209,17 @@
                 "wordByWord": "Puts one word in front of the other…",
                 "writes": "Writes…",
                 "keepsShort": "Keeps it short. Tries to…",
-                "tinker": "Tinkers with the answer…"
+                "tinker": "Tinkers with the answer…",
+                "rummagesForKey": "Rummages for the key…",
+                "buildsHouse": "Builds itself a house…",
+                "movesIn": "Moves into the sandbox…",
+                "studiesSkill": "Takes a close look at the skill…",
+                "tinkersTools": "Tinkers with its tools…",
+                "awaitsBuild": "Waits for the build. Patiently…",
+                "learnsCommands": "Learns the new commands by heart…",
+                "stowsCommands": "Stuffs the commands into its shell…",
+                "awaitsYourGo": "Waits for your go…",
+                "waitsItsTurn": "Waits its turn…"
             },
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",

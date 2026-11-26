@@ -69,7 +69,7 @@ import {
   shouldConfirmArchiveSession,
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
-import { applySpanToToolCall, applySpansToToolCalls, trackRunningSpan } from "@/lib/tool-call-status";
+import { applySpanToToolCall, applySpansToToolCalls, runningStep, trackRunningSpan } from "@/lib/tool-call-status";
 import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall, streamingCallIndex } from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
@@ -1819,6 +1819,8 @@ export function ChatView({
   const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
   // The card being written carries the request's counter; the waiting line covers the other phases.
   const streamingCall = waiting ? streamingCallIndex(messages, llmActivity) : -1;
+  // Between model requests the waiting line acts out what the running tool call waits on.
+  const step = waiting ? runningStep(messages) : null;
   const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
 
   function showInspector(open: boolean): void {
@@ -2964,7 +2966,7 @@ export function ChatView({
                   ),
                 );
               })()}
-              {waiting && <WaitingIndicator activity={llmActivity} hidden={streamingCall !== -1} />}
+              {waiting && <WaitingIndicator activity={llmActivity} step={step} hidden={streamingCall !== -1} />}
               <div ref={bottomRef} />
             </div>
           </div>

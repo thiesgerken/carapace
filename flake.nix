@@ -253,12 +253,44 @@
               pkgs.kubernetes-helm
               pkgs.skopeo
               pkgs.jq
+              pkgs.process-compose
+              pkgs.redis
+              pkgs.socat
             ];
             UV_PYTHON = pkgs.python314.interpreter;
             UV_PYTHON_DOWNLOADS = "never";
+            # The process-compose dev stack's ports and Docker names (docs/development.md#dev-stack). Only the
+            # CARAPACE_DEV_STACK key of .env is read, never the whole file, so the shell gets no secrets.
             shellHook = ''
+              carapace_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+              carapace_stack=$(sed -n 's/^CARAPACE_DEV_STACK=//p' "$carapace_root/.env" 2>/dev/null | tail -n 1)
+              carapace_stack=''${carapace_stack:-0}
+              if [[ $carapace_stack =~ ^[0-9]$ ]]; then
+                carapace_base=$((7300 + 10 * carapace_stack))
+                export CARAPACE_DEV_STACK=$carapace_stack
+                export CARAPACE_DEV_FRONTEND_PORT=$carapace_base
+                export CARAPACE_DEV_SERVER_PORT=$((carapace_base + 1))
+                export CARAPACE_DEV_SANDBOX_PORT=$((carapace_base + 2))
+                export CARAPACE_DEV_INTERNAL_PORT=$((carapace_base + 3))
+                export CARAPACE_DEV_PROXY_PORT=$((carapace_base + 4))
+                export CARAPACE_DEV_REDIS_PORT=$((carapace_base + 5))
+                export CARAPACE_DEV_BUILDER_PORT=$((carapace_base + 6))
+                export CARAPACE_DEV_BUILDER_CACHE_PORT=$((carapace_base + 7))
+                export PC_PORT_NUM=$((carapace_base + 8))
+                # A Kubernetes label value: at most 63 of [A-Za-z0-9_.-].
+                carapace_dir=$(basename "$carapace_root" | tr -c 'A-Za-z0-9_.\n-' '-')
+                export CARAPACE_DEV_INSTANCE="dev-''${carapace_dir:0:59}"
+                export CARAPACE_DEV_SANDBOX_NETWORK="carapace-sandbox-$CARAPACE_DEV_INSTANCE"
+                export CARAPACE_DEV_RELAY="carapace-relay-$CARAPACE_DEV_INSTANCE"
+                export CARAPACE_DEV_BUILDER="carapace-builder-$CARAPACE_DEV_INSTANCE"
+                export CARAPACE_DEV_BUILDER_VOLUME="carapace-builder-nix-$CARAPACE_DEV_INSTANCE"
+                export CARAPACE_DEV_LINUX_SYSTEM=${linux}
+              else
+                printf '\033[31mCARAPACE_DEV_STACK=%s in .env is not a digit 0-9; the dev stack is not configured.\033[0m\n' "$carapace_stack" >&2
+              fi
+              unset carapace_root carapace_stack carapace_base carapace_dir
               printf '🦀 \033[1m\033[38;2;231;76;60mc\033[38;2;220;78;77ma\033[38;2;209;80;95mr\033[38;2;198;82;112ma\033[38;2;188;83;130mp\033[38;2;177;85;147ma\033[38;2;166;87;165mc\033[38;2;155;89;182me\033[0m  \033[2m%s\033[0m\n' 'Python ${pkgs.python314.version} · node ${tools.nodejs.version} · 📖 docs/development.md'
-              printf '  \033[32m%s\033[0m \033[2m·\033[0m \033[32m%s\033[0m\n' 'uv run python -m carapace' 'npm --prefix frontend run dev'
+              printf '  \033[32m%s\033[0m \033[2m%s\033[0m\n' 'process-compose up' "stack ''${CARAPACE_DEV_STACK:-?} · http://localhost:''${CARAPACE_DEV_FRONTEND_PORT:-?}"
               printf '  \033[32m%s\033[0m\n' 'nix build .#checks.${linux}.<check>'
             '';
           };

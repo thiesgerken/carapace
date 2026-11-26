@@ -364,6 +364,8 @@ export interface RunningSpan {
   spanId: string;
   kind: string;
   name: string;
+  /** When the step started on the server's clock (ms since the epoch), also for a step replayed after a reconnect. */
+  startedAt: number;
 }
 
 export interface ToolCallInfo {

@@ -149,8 +149,9 @@ mcp --help | grep -q -- --list-tools
 # The tunnel forwarder runs by absolute path on the same environment.
 { /bin/carapace-tunnel || true; } 2>&1 | grep -q 'LISTEN_ADDRESS:PORT HOST:PORT READY_FILE'
 ! compgen -G '/bin/python*' > /dev/null || { ls /bin/python*; exit 1; }
-# The server's start-up egress probe needs bash's /dev/tcp, timeout and getent.
-timeout 5 bash -c 'exec 3<>/dev/tcp/example.com/80'
+# The server's start-up egress probe needs bash's /dev/tcp, timeout, head and getent.
+timeout 5 bash -c 'exec 3<>/dev/tcp/example.com/80 && printf "HEAD / HTTP/1.0\r\n\r\n" >&3 && head -n 1 <&3' \
+  | grep -q '^HTTP/'
 getent hosts example.com > /dev/null
 python=$(realpath "$(command -v python3)")
 [[ $python == /root/.local/share/uv/python/cpython-3.14.* ]] || { echo "python3 is $python"; exit 1; }
