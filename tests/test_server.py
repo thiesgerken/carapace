@@ -4310,6 +4310,48 @@ def test_ws_status_includes_live_llm_activity_when_running(client, auth_headers)
         assert status["llm_activity"]["source"] == "agent"
 
 
+def test_ws_connect_mid_turn_replays_the_running_spans(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    active = srv._engine.get_or_activate(sid)
+    trace = TurnTrace("t1", on_change=lambda _notice: None)
+    root = trace.start("turn", "turn", parent_id=None, attrs={})
+    tool = trace.start("tool", "read_skill", parent_id=root.span_id, attrs={"tool_call_id": "toolu_1"})
+    done = trace.start("sandbox", "ensure", parent_id=tool.span_id, attrs={})
+    trace.end(done, "ok")
+    build = trace.start("skill", "build wait", parent_id=tool.span_id, attrs={"skill": "weather"})
+    active.turn_trace = trace
+    active.agent_task = MagicMock()
+    active.agent_task.done.return_value = False
+
+    with client.websocket_connect(f"/api/chat/{sid}", headers=auth_headers) as ws:
+        assert _consume_status(ws)["agent_running"] is True
+        replayed = [ws.receive_json() for _ in range(3)]
+
+    assert [(m["type"], m["span_id"], m["status"], m["tool_call_id"], m["replayed"]) for m in replayed] == [
+        ("span", root.span_id, "running", None, True),
+        ("span", tool.span_id, "running", "toolu_1", True),
+        ("span", build.span_id, "running", "toolu_1", True),
+    ]
+    # The client counts a step's duration from the server's start, not from the reconnect.
+    assert datetime.fromisoformat(replayed[2]["started_at"]) == build.started_at
+    active.turn_trace = None
+
+
+def test_history_tool_call_carries_the_provider_call_id(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+
+    srv._engine._record_tool_call_event(
+        sid, tool="exec", args={"command": "ls"}, detail="", model_tool_call_id="toolu_1"
+    )
+
+    history = client.get(f"/api/sessions/{sid}/history", headers=auth_headers).json()
+    # A reloaded chat finds the card of a running call by the id the turn's span notices carry.
+    assert history[-1]["role"] == "tool_call"
+    assert history[-1]["model_tool_call_id"] == "toolu_1"
+
+
 def test_history_includes_thinking_reasoning_metadata(client, auth_headers):
     create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
