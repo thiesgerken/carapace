@@ -186,8 +186,31 @@ def assert_sandbox() -> None:
     run(*docker, image, "bash", "-c", SANDBOX_SMOKE)
 
 
-# A skill flake without inputs builds offline: /bin/sh inside the Nix build sandbox is Nix's own shell.
-BUILDER_SMOKE_FLAKE = b"""{
+# A skills/ directory with one local skill, as a knowledge repo has it. Nothing to fetch, so it builds
+# offline: /bin/sh inside the Nix build sandbox is Nix's own shell.
+BUILDER_SMOKE_SKILLS = {
+    "flake.nix": b"""{
+  inputs.smoke.url = "path:./smoke";
+  outputs = { self, smoke }: {
+    packages = builtins.mapAttrs (_system: packages: { smoke = packages.default; }) smoke.packages;
+  };
+}
+""",
+    "flake.lock": json.dumps(
+        {
+            "nodes": {
+                "root": {"inputs": {"smoke": "smoke"}},
+                "smoke": {
+                    "locked": {"path": "./smoke", "type": "path"},
+                    "original": {"path": "./smoke", "type": "path"},
+                    "parent": [],
+                },
+            },
+            "root": "root",
+            "version": 7,
+        }
+    ).encode(),
+    "smoke/flake.nix": b"""{
   outputs = { self }: {
     packages = builtins.listToAttrs (map (system: {
       name = system;
@@ -200,7 +223,9 @@ BUILDER_SMOKE_FLAKE = b"""{
     }) [ "x86_64-linux" "aarch64-linux" ]);
   };
 }
-"""
+""",
+    "smoke/flake.lock": b'{"nodes":{"root":{}},"root":"root","version":7}',
+}
 
 
 def skill_archive(files: dict[str, bytes]) -> bytes:
@@ -250,12 +275,9 @@ def assert_builder() -> str:
         )
         base = "http://" + run("docker", "port", container, "8330")
         eventually(lambda: request(base + "/healthz"))
-        url = base + "/builds/" + "5" * 40
-        archive = skill_archive(
-            {"flake.nix": BUILDER_SMOKE_FLAKE, "flake.lock": b'{"nodes":{"root":{}},"root":"root","version":7}'}
-        )
-        built = put_build(url, token, archive)
-        assert built["state"] == "succeeded", built
+        url = base + "/builds/" + "5" * 64 + "?skill=smoke"
+        built = put_build(url, token, skill_archive(BUILDER_SMOKE_SKILLS))
+        assert (built["state"], built["skill"]) == ("succeeded", "smoke"), built
         assert built["metadata"] == {"commands": {"smoke": {"description": "Smoke"}}}, built
         assert put_build(url, token, b"stored results need no archive") == built
         assert_builder_cache(container, base, token, built["store_paths"][0])

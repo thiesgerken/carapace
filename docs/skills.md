@@ -125,11 +125,11 @@ The workflow for the agent to create a skill via chat:
 5. Agent commits and pushes via Git (the skill, `skills/flake.nix` and its lock); the sentinel evaluates the push via the pre-receive hook
 6. On approval, the skill is persisted in the workspace repository, the builder builds it, and its commands reach `PATH` in every session, and the catalog lists it from the next turn on
 
-A built-in `create-skill` skill is seeded on first run to guide the agent through this process.
+A built-in `create-skill` skill is seeded into every new knowledge repo to guide the agent through this process; like any skill, the agent can use it once `skills/flake.nix` lists it ([Bundled skills](#bundled-skills)).
 
 ## Bundled skills
 
-These are seeded into every new knowledge repo, together with a `skills/flake.nix` that lists the ones that work without setup, and can be edited or deleted like any other skill:
+These are seeded into every new knowledge repo and can be edited or deleted like any other skill. The seeded `skills/flake.nix` lists the ones that have a flake and need no setup, `carapace-cli` and `wikipedia`:
 
 | Skill          | Purpose                                                                        |
 | -------------- | ------------------------------------------------------------------------------ |

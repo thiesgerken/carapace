@@ -37,3 +37,19 @@ def test_an_existing_repo_keeps_its_own_list(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setenv("CARAPACE_RESET_ASSETS", "true")
     ensure_knowledge_dir(tmp_path)
     assert (tmp_path / "skills" / "flake.nix").read_text() == "my own list\n"
+
+
+def test_a_reset_overwrites_seeded_files_even_when_they_are_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ensure_knowledge_dir(tmp_path)
+    security = tmp_path / "SECURITY.md"
+    original = security.read_text()
+    security.write_text("changed\n")
+    # What copying from the Nix store left behind before.
+    security.chmod(0o444)
+
+    monkeypatch.setenv("CARAPACE_RESET_ASSETS", "true")
+    ensure_knowledge_dir(tmp_path)
+
+    assert security.read_text() == original

@@ -76,7 +76,10 @@ def _copy_asset(asset_path: str, target: Path) -> None:
     source = _ASSETS.joinpath(*asset_path.split("/"))
     with as_file(source) as src:
         logger.debug(f"Copying asset {asset_path} to {target}")
-        shutil.copy2(src, target)
+        # Content only: from the Nix store, a copied mode would make the file read-only, and a reset could
+        # not overwrite it. Earlier versions copied it, so a read-only copy is replaced rather than opened.
+        target.unlink(missing_ok=True)
+        shutil.copyfile(src, target)
 
 
 def _skill_file_relpaths(skill_root: Traversable) -> list[str]:
