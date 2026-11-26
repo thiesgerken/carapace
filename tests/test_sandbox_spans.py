@@ -167,6 +167,7 @@ def _manager(tmp_path: Path, db_factory) -> SandboxManager:
     )
     mgr = SandboxManager(
         runtime=runtime,
+        server_host="172.18.0.1",
         data_dir=tmp_path,
         knowledge_repo_for_session=lambda _session_id: handle,
         session_factory=db_factory,

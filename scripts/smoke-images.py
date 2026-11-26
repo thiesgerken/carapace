@@ -331,7 +331,7 @@ def main() -> None:
                                 "CARAPACE_DATABASE_URL": "postgresql+psycopg://carapace:carapace@postgres:5432/carapace",
                                 "CARAPACE_CACHE_REDIS_URL": "redis://redis:6379/0",
                                 "CARAPACE_SANDBOX_BASE_IMAGE": "carapace-sandbox:local",
-                                "CARAPACE_SANDBOX_NETWORK_NAME": "carapace-sandbox",
+                                "CARAPACE_SANDBOX_INSTANCE": "smoke",
                                 "CARAPACE_SANDBOX_WARM_POOL_SIZE": "0",
                                 "CARAPACE_SANDBOX_CLEANUP_ORPHANS_ON_STARTUP": "false",
                             },
@@ -339,7 +339,7 @@ def main() -> None:
                                 "postgres": {"condition": "service_healthy"},
                                 "redis": {"condition": "service_healthy"},
                             },
-                            "networks": ["default", "carapace-sandbox"],
+                            "networks": ["default", "carapace-sandbox-smoke"],
                         },
                         "frontend": {**hardened, "image": "carapace-frontend:local", "ports": ["127.0.0.1::8080"]},
                         "frontend-extra": {
@@ -372,7 +372,7 @@ def main() -> None:
                         },
                     },
                     "volumes": {data_volume: {"external": True}},
-                    "networks": {"carapace-sandbox": {"internal": True}},
+                    "networks": {"carapace-sandbox-smoke": {"internal": True}},
                 }
             )
         )

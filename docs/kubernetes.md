@@ -136,6 +136,16 @@ Nothing else frees a scaled-down sandbox, so abandoned sessions keep their PVC. 
 
 Images are compared as plain reference strings. Re-pushing a mutable tag such as `:latest` under the same name is not detected, which is another reason to pin a specific version tag.
 
+### Instance label
+
+The server lists, cleans up and claims only StatefulSets labelled `carapace.instance=<CARAPACE_SANDBOX_INSTANCE>` (default `default`), so releases with different instances can share a namespace (see [sandbox.md](sandbox.md#instances)). Sandboxes created before the label existed don't have it, and a server would neither find them nor clean them up. Label them once before upgrading from a version without it:
+
+```bash
+kubectl -n carapace label sts -l app.kubernetes.io/managed-by=carapace-server carapace.instance=default
+```
+
+Only StatefulSet metadata changes (the selector and the pod template stay as they are), so nothing rolls out and the PVCs are untouched. Use your instance name instead of `default` if you set one.
+
 ## Configuration
 
 All operator settings are configured via environment variables (there is no `config.yaml`); sandbox settings use the `CARAPACE_SANDBOX_` prefix. This keeps deployment-specific settings separate from UI-managed runtime data on the server PVC.
@@ -260,7 +270,8 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`            | `carapace-sandboxes`      | Required `Sandboxes` owner; set `null`/`""` for Deployment |
 | `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`    | `carapace`                | Server Deployment name (Helm sets to release name)         |
 | `CARAPACE_SANDBOX_K8S_SERVER_SERVICE`            | (required on Kubernetes)  | Server Service; sandboxes reach the proxy at its ClusterIP (Helm sets to release name) |
-| `CARAPACE_SANDBOX_NETWORK_NAME`                  | `carapace-sandbox`        | Docker network name (Docker only)                          |
+| `CARAPACE_SANDBOX_INSTANCE`                      | `default`                 | Value of the `carapace.instance` label; a server manages only sandboxes with its own ([instances](sandbox.md#instances)) |
+| `CARAPACE_SANDBOX_SERVER_HOST`                   | (the Service's ClusterIP) | Where sandboxes reach the proxy and sandbox API ([server address](sandbox.md#server-address)) |
 | `CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS`        | `[]`                      | CIDRs the proxy may reach despite being [internal](sandbox.md#internal-destinations) (Helm: `sandbox.allowedInternalNetworks`) |
 | `CARAPACE_SANDBOX_PROXY_ALLOWED_HOSTS`           | `[]`                      | Host names allowed to resolve to internal addresses (Helm: `sandbox.allowedInternalHosts`) |
 | `CARAPACE_SANDBOX_K8S_RESOURCE_REQUESTS_EPHEMERAL_STORAGE` | `2Gi`           | Sandbox ephemeral storage request, for skill store paths (Helm: `sandbox.resources.requests.ephemeral-storage`) |

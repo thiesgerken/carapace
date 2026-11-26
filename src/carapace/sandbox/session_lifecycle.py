@@ -17,7 +17,7 @@ from ..database.engine import SessionFactory
 from ..database.models import SandboxTokenRow
 from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
 from ..spans import span
-from .egress_check import PROBE_SCRIPT, EgressProbeError, probe_env, raise_for_leaks
+from .egress_check import PROBE_SCRIPT, probe_env, raise_for_leaks
 from .exec_scope import RunningExec
 from .runtime import EGRESS_PROBE_LABEL, ContainerRuntime, DuplicateSandboxError, PoolSandbox, SandboxConfig
 from .state import load_sandbox_snapshot
@@ -66,6 +66,7 @@ class SandboxSessionLifecycle:
         session_factory: SessionFactory,
         base_image: str,
         network_name: str,
+        server_host: str,
         idle_timeout: int,
         proxy_port: int,
         sandbox_port: int,
@@ -80,6 +81,7 @@ class SandboxSessionLifecycle:
         self._session_factory = session_factory
         self._base_image = base_image
         self._network_name = network_name
+        self._server_host = server_host
         self._idle_timeout = idle_timeout
         self._proxy_port = proxy_port
         self._sandbox_port = sandbox_port
@@ -217,14 +219,7 @@ class SandboxSessionLifecycle:
     async def build_session_proxy_env(self, session_id: str) -> dict[str, str]:
         """Resolve the proxy URL and build the session's proxy env vars."""
         proxy_token = self.get_or_create_token(session_id)
-        host_ip = await self._runtime.get_host_ip(self._network_name)
-        if not host_ip:
-            raise RuntimeError(
-                f"Cannot build proxy env for session {session_id}: "
-                f"no IP found on network '{self._network_name}'. "
-                "Is the proxy network configured correctly?"
-            )
-        proxy_url = f"http://{host_ip}:{self._proxy_port}"
+        proxy_url = f"http://{self._server_host}:{self._proxy_port}"
         logger.info(f"Proxy URL for session {session_id}: {proxy_url}")
         env = self.build_proxy_env(session_id, proxy_token, proxy_url)
         if self._nix_config is not None:
@@ -583,10 +578,7 @@ class SandboxSessionLifecycle:
         *resolv_conf* is the server's own resolver config (``/etc/resolv.conf``), whose resolvers the probe must
         not reach.
         """
-        proxy_host = await self._runtime.get_host_ip(self._network_name)
-        if proxy_host is None:
-            raise EgressProbeError(f"no address of the session proxy on network '{self._network_name}'")
-        env = probe_env(proxy_host, self._proxy_port, resolv_conf.read_text())
+        env = probe_env(self._server_host, self._proxy_port, resolv_conf.read_text())
         # Unique per run: Kubernetes deletes a StatefulSet asynchronously, so a name is not free again right after
         # the previous run's probe was deleted, and releases sharing a namespace must not share a probe.
         probe_id = f"egress-check-{secrets.token_hex(4)}"

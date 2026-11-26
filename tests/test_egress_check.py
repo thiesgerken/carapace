@@ -103,6 +103,7 @@ def test_a_missing_tool_fails_the_probe_instead_of_passing_it(tmp_path: Path) ->
 def _manager(tmp_path: Path, db_factory: Any, runtime: MagicMock) -> SandboxManager:
     return SandboxManager(
         runtime=runtime,
+        server_host="172.18.0.1",
         data_dir=tmp_path,
         knowledge_repo_for_session=MagicMock(),
         session_factory=db_factory,

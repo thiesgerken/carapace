@@ -395,12 +395,14 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 
 carapace runs three separate listener ports for security isolation:
 
-| Port                | Bind address | Auth                                 | Purpose                                                                               |
-| ------------------- | ------------ | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| 8321 (public API)   | `0.0.0.0`    | HttpOnly session cookie              | REST API, WebSocket — used by the frontend and CLI                                    |
-| 8322 (sandbox API)  | `0.0.0.0`    | HTTP Basic Auth (`session_id:token`) | Git HTTP backend + credential endpoints (`/credentials`) — used by sandbox containers |
-| 8320 (internal API) | `127.0.0.1`  | None (loopback only)                 | Sentinel callback — used by the pre-receive hook                                      |
-| 3128 (proxy)        | `0.0.0.0`    | Proxy-Authorization Basic Auth       | HTTP forward proxy — used by sandbox containers for outbound traffic                  |
+| Port                | Bind address                   | Auth                                 | Purpose                                                                               |
+| ------------------- | ------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------- |
+| 8321 (public API)   | `CARAPACE_SERVER_HOST`         | HttpOnly session cookie              | REST API, WebSocket — used by the frontend and CLI                                    |
+| 8322 (sandbox API)  | `CARAPACE_SERVER_SANDBOX_HOST` | HTTP Basic Auth (`session_id:token`) | Git HTTP backend + credential endpoints (`/credentials`) — used by sandbox containers |
+| 8320 (internal API) | `127.0.0.1`                    | None (loopback only)                 | Sentinel callback — used by the pre-receive hook                                      |
+| 3128 (proxy)        | `CARAPACE_SERVER_SANDBOX_HOST` | Proxy-Authorization Basic Auth       | HTTP forward proxy — used by sandbox containers for outbound traffic                  |
+
+Both bind addresses default to `127.0.0.1`; the server image sets them to `0.0.0.0`. See [sandbox.md](sandbox.md#server-address) for the address sandboxes connect to.
 
 Sandbox containers can only reach ports 3128 (proxy) and 8322 (sandbox API). The public API (8321) and internal API (8320) are unreachable from sandboxes — enforced by Docker's internal network or Kubernetes NetworkPolicy.
 

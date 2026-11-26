@@ -42,7 +42,7 @@ from carapace.git.store import GitStore
 from carapace.jobs import JobsScheduler, JobsStore
 from carapace.knowledge import KnowledgeRepoRegistry
 from carapace.memory.prompt_block import MemoryBlock
-from carapace.models.config import AgentConfig, AvailableModelEntry, Secret
+from carapace.models.config import AgentConfig, AvailableModelEntry, SandboxConfig, Secret
 from carapace.models.credentials import (
     BasicAuthConfig,
     BitwardenCredentialBackendConfig,
@@ -671,6 +671,9 @@ def _patch_lifespan_dependencies(tmp_path, monkeypatch, *, stub_model_factory: b
         async def ensure_network(self, _name: str, *, internal: bool) -> None:
             assert internal is True
 
+        async def get_host_ip(self, _network: str) -> str | None:
+            return "172.18.0.5"
+
     class _FakeProxyServer:
         def __init__(self, **_kwargs) -> None:
             pass
@@ -771,6 +774,69 @@ async def test_lifespan_initializes_knowledge_repo_registry_module_state(tmp_pat
 
     sandbox_mgr.cleanup_all.assert_awaited_once()
     sandbox_mgr.verify_no_direct_egress.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_lifespan_binds_the_sandbox_listeners_to_the_sandbox_host(tmp_path, monkeypatch):
+    _patch_lifespan_dependencies(tmp_path, monkeypatch)
+    srv.build_config().server.sandbox_host = "192.0.2.7"
+    proxy_hosts: list[str] = []
+    uvicorn_hosts: list[str] = []
+
+    class _RecordingProxyServer:
+        def __init__(self, *, host: str, **_kwargs) -> None:
+            proxy_hosts.append(host)
+
+        async def start(self) -> None:
+            return None
+
+        async def stop(self) -> None:
+            return None
+
+    class _RecordingUvicornServer:
+        def __init__(self, config) -> None:
+            uvicorn_hosts.append(config.host)
+            self.should_exit = False
+
+        async def serve(self) -> None:
+            return None
+
+    monkeypatch.setattr(srv, "ProxyServer", _RecordingProxyServer)
+    monkeypatch.setattr(srv.uvicorn, "Server", _RecordingUvicornServer)
+
+    async with srv._lifespan(app):
+        pass
+
+    assert proxy_hosts == ["192.0.2.7"]
+    assert "192.0.2.7" in uvicorn_hosts
+
+
+@pytest.mark.anyio
+async def test_sandbox_facing_host_prefers_the_configured_server_host():
+    runtime = MagicMock()
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.5")
+
+    host = await srv._sandbox_facing_host(runtime, SandboxConfig(server_host="relay"), "carapace-sandbox-default")
+
+    assert host == "relay"
+    runtime.get_host_ip.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_sandbox_facing_host_defaults_to_the_server_containers_address():
+    runtime = MagicMock()
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.5")
+
+    assert await srv._sandbox_facing_host(runtime, SandboxConfig(), "carapace-sandbox-default") == "172.18.0.5"
+
+
+@pytest.mark.anyio
+async def test_sandbox_facing_host_refuses_to_start_a_server_outside_a_container_without_one():
+    runtime = MagicMock()
+    runtime.get_host_ip = AsyncMock(return_value=None)
+
+    with pytest.raises(SystemExit):
+        await srv._sandbox_facing_host(runtime, SandboxConfig(), "carapace-sandbox-default")
 
 
 @pytest.mark.anyio

@@ -47,6 +47,7 @@ def _sandbox_manager(
 
     return SandboxManager(
         runtime=runtime,
+        server_host="172.18.0.1",
         data_dir=data_dir,
         knowledge_repo_for_session=knowledge_repo_for_session,
         session_factory=session_factory,

@@ -5,6 +5,7 @@ from typing import Literal, Protocol
 from pydantic import BaseModel
 
 EGRESS_PROBE_LABEL = "carapace.egress-check"
+INSTANCE_LABEL = "carapace.instance"
 
 
 class ContainerGoneError(Exception):

@@ -331,8 +331,14 @@ class SandboxConfig(BaseSettings):
     base_image: str = "carapace-sandbox:latest"
     # Minutes of inactivity before a sandbox is automatically cleaned up.
     idle_timeout_minutes: int = 60
-    # Docker network to attach sandbox containers to (docker runtime only).
-    network_name: str = "carapace-sandbox"
+    # Separates carapace servers that share a Docker daemon or a Kubernetes namespace: every sandbox resource
+    # carries it as the carapace.instance label, and a server only lists, cleans up and probes its own. On Docker
+    # it also names the sandbox network (see network_name). Must be valid as a Kubernetes label value.
+    instance: str = Field(default="default", pattern=r"^[A-Za-z0-9]([A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?$")
+    # Host name or IP at which sandboxes reach the server's proxy and sandbox API (both ports on that host).
+    # Unset, a server in a container uses its own address on the sandbox network (Kubernetes: its Service IP);
+    # a server outside a container has no usable default and must set it.
+    server_host: str | None = None
     # Port of the HTTP proxy sidecar that sandbox traffic is routed through.
     proxy_port: int = 3128
     # The proxy refuses private and internal destinations. These lift that for hosts a skill should
@@ -387,9 +393,14 @@ class SandboxConfig(BaseSettings):
     k8s_resource_limits_ephemeral_storage: str = ""
     # Remove sandbox resources for sessions that no longer exist on disk at startup.
     cleanup_orphans_on_startup: bool = True
-    # The start-up egress self-test (docs/security.md). Only for development on a Mac, where a server on the host
-    # is unreachable from Docker Desktop's sandboxes and the test can never pass; production must keep it.
+    # The start-up egress self-test (docs/security.md). Switching it off is for development only; production must
+    # keep it.
     egress_self_test: bool = True
+
+    @property
+    def network_name(self) -> str:
+        """The Docker network sandboxes sit on (Compose prefixes it with its project name)."""
+        return f"carapace-sandbox-{self.instance}"
 
 
 class BuilderConfig(BaseSettings):
@@ -474,8 +485,11 @@ class DatabaseConfig(BaseSettings):
 class ServerConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CARAPACE_SERVER_", extra="forbid")
 
-    host: str = "0.0.0.0"
+    # Loopback by default; the server image binds both to 0.0.0.0 via env.
+    host: str = "127.0.0.1"
     port: int = 8321
+    # The sandbox API and the session proxy, the listeners sandboxes connect to.
+    sandbox_host: str = "127.0.0.1"
     sandbox_port: int = 8322
     internal_port: int = 8320
     cors_origins: list[str] = [

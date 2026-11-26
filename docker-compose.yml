@@ -46,7 +46,7 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     networks:
       - default
-      - carapace-sandbox
+      - carapace-sandbox-default
 
   # Bitwarden CLI sidecar — shares carapace's network namespace so bw serve
   # is reachable at 127.0.0.1:8087 from the carapace container.
@@ -158,6 +158,7 @@ volumes:
   pgdata:
 
 networks:
-  carapace-sandbox:
+  # carapace-sandbox-<CARAPACE_SANDBOX_INSTANCE>, the network the server puts sandboxes on.
+  carapace-sandbox-default:
     driver: bridge
     internal: true

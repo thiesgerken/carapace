@@ -18,6 +18,7 @@ from loguru import logger
 from .k8s_exec_v5 import EXEC_V5_PROTOCOL, ExecProtocolError, exec_v5
 from .runtime import (
     EGRESS_PROBE_LABEL,
+    INSTANCE_LABEL,
     ContainerConfig,
     ContainerGoneError,
     ContainerRuntime,
@@ -97,8 +98,9 @@ def _default_command(command: str | list[str] | None) -> list[str]:
     return command
 
 
-def _standard_labels(app_instance: str) -> dict[str, str]:
+def _standard_labels(app_instance: str, instance: str) -> dict[str, str]:
     return {
+        INSTANCE_LABEL: instance,
         "app.kubernetes.io/instance": app_instance,
         "app.kubernetes.io/part-of": "carapace",
         "app.kubernetes.io/component": "sandbox",
@@ -157,6 +159,7 @@ class KubernetesRuntime(ContainerRuntime):
         owner_ref: bool = True,
         server_deployment_name: str = "carapace",
         server_service: str,
+        instance: str,
         sandboxes_name: str | None = "carapace-sandboxes",
         app_instance: str = "carapace",
         session_pvc_size: str = "1Gi",
@@ -174,6 +177,7 @@ class KubernetesRuntime(ContainerRuntime):
         self._service_account = service_account
         self._priority_class = priority_class
         self._app_instance = app_instance
+        self._instance = instance
         self._session_pvc_size = session_pvc_size
         self._session_pvc_storage_class = session_pvc_storage_class or None
         self._resource_spec = self._build_resource_spec(
@@ -195,6 +199,11 @@ class KubernetesRuntime(ContainerRuntime):
         self._sandbox_owner: _SandboxOwner | None = None
 
         logger.info(f"KubernetesRuntime initialized (namespace={namespace}, pvc={pvc_claim}, data_dir={data_dir})")
+
+    @property
+    def _own_sandboxes_selector(self) -> str:
+        # StatefulSet metadata carries everything this selects on, so an upgrade can label existing ones in place.
+        return f"app.kubernetes.io/managed-by=carapace-server,{INSTANCE_LABEL}={self._instance}"
 
     @staticmethod
     def _build_resource_spec(*, requests: dict[str, str], limits: dict[str, str]) -> dict | None:
@@ -335,7 +344,7 @@ class KubernetesRuntime(ContainerRuntime):
 
         env_vars = [{"name": k, "value": v} for k, v in config.environment.items()]
 
-        labels = _standard_labels(self._app_instance)
+        labels = _standard_labels(self._app_instance, self._instance)
         labels.update(config.labels)
 
         return {
@@ -428,7 +437,7 @@ class KubernetesRuntime(ContainerRuntime):
             {"name": "session-data", "mountPath": "/tmp", "subPath": "tmp"},
         ]
 
-        labels = _standard_labels(self._app_instance)
+        labels = _standard_labels(self._app_instance, self._instance)
         labels.update(config.labels)
 
         pvc_spec: dict = {
@@ -600,7 +609,7 @@ class KubernetesRuntime(ContainerRuntime):
         result: dict[str, list[str]] = {}
         async for sts in StatefulSet.list(
             namespace=self._namespace,
-            label_selector="app.kubernetes.io/managed-by=carapace-server",
+            label_selector=self._own_sandboxes_selector,
             api=api,
         ):
             sts = cast(StatefulSet, sts)
@@ -617,8 +626,7 @@ class KubernetesRuntime(ContainerRuntime):
         async for sts in StatefulSet.list(
             namespace=self._namespace,
             label_selector=(
-                f"app.kubernetes.io/managed-by=carapace-server,"
-                f"app.kubernetes.io/instance={self._app_instance},{EGRESS_PROBE_LABEL}=true"
+                f"{self._own_sandboxes_selector},app.kubernetes.io/instance={self._app_instance},{EGRESS_PROBE_LABEL}=true"
             ),
             api=api,
         ):
@@ -637,7 +645,7 @@ class KubernetesRuntime(ContainerRuntime):
         result: dict[str, PoolSandbox] = {}
         async for sts in StatefulSet.list(
             namespace=self._namespace,
-            label_selector="app.kubernetes.io/managed-by=carapace-server",
+            label_selector=self._own_sandboxes_selector,
             api=api,
         ):
             sts = cast(StatefulSet, sts)

