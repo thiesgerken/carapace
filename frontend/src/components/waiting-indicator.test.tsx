@@ -5,10 +5,10 @@ import { NextIntlClientProvider } from "next-intl";
 import de from "../../messages/de.json";
 import en from "../../messages/en.json";
 import { installDom, renderReact, runInAct } from "../../test/react-test-utils";
-import type { RunningStep } from "@/lib/tool-call-status";
+import type { ExecStep, RunningStep } from "@/lib/tool-call-status";
 import type { LlmActivity } from "@/lib/types";
 
-import { GENERATING_POSES, PHRASES, STALL_MS, WaitingIndicator } from "./waiting-indicator";
+import { GENERATING_POSES, PHRASES, STALL_MS, WaitingIndicator, act } from "./waiting-indicator";
 
 // The clock is frozen at NOW, so the elapsed time does not depend on how long the test runs.
 const NOW = Date.parse("2026-01-01T12:00:00Z");
@@ -23,19 +23,20 @@ const BUILD: RunningStep = { spanId: "b", kind: "skill", name: "build wait", sta
 
 const node = (
   activity: LlmActivity | null,
-  { locale = "en", hidden, step }: { locale?: Locale; hidden?: boolean; step?: RunningStep } = {},
+  { locale = "en", hidden, step, awaitsUser }: { locale?: Locale; hidden?: boolean; step?: RunningStep | ExecStep; awaitsUser?: boolean } = {},
 ) => (
   <NextIntlClientProvider locale={locale} messages={MESSAGES[locale]} timeZone="UTC">
-    <WaitingIndicator activity={activity} step={step} hidden={hidden} />
+    <WaitingIndicator activity={activity} step={step} awaitsUser={awaitsUser} hidden={hidden} />
   </NextIntlClientProvider>
 );
 
 async function shown(
   activity: LlmActivity | null,
   locale: Locale = "en",
-  step?: RunningStep,
+  step?: RunningStep | ExecStep,
+  awaitsUser?: boolean,
 ): Promise<{ text: string; pose: string | null }> {
-  const view = await renderReact(node(activity, { locale, step }));
+  const view = await renderReact(node(activity, { locale, step, awaitsUser }));
   const result = { text: view.container.textContent ?? "", pose: view.container.querySelector("svg")?.getAttribute("data-pose") ?? null };
   await view.unmount();
   return result;
@@ -185,6 +186,28 @@ test("WaitingIndicator stays awake through a long step", async (t) => {
     await runInAct(async () => t.mock.timers.tick(STALL_MS * 3));
     assert.notEqual(view.container.querySelector("svg")?.getAttribute("data-pose"), "sleep");
     await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("a wait for the user always says so plainly, whatever runs meanwhile and whatever the turn rolled", () => {
+  const userWait: RunningStep = { spanId: "w", kind: "wait", name: "pypi.org", startedAt: NOW };
+  for (let seed = 0; seed < 64; seed++) {
+    assert.deepEqual(act(true, GENERATING, BUILD, seed), { pose: "hourglass", phrase: "awaitsYourGo" });
+    assert.deepEqual(act(false, null, userWait, seed), { pose: "hourglass", phrase: "awaitsYourGo" });
+  }
+});
+
+test("WaitingIndicator names a wait for the user without a counter, and a long command with one", async (t) => {
+  const restore = setUp(t);
+  try {
+    const approval = await shown(GENERATING, "en", BUILD, true);
+    assert.deepEqual(approval, { text: "Waits for your go…", pose: "hourglass" });
+
+    const exec: ExecStep = { spanId: "e", kind: "exec", name: "exec", startedAt: NOW - 42_000 };
+    const command = await shown(null, "de", exec);
+    assert.equal(command.text, "Führt den Befehl aus…42 s");
   } finally {
     restore();
   }

@@ -3,7 +3,17 @@ import test from "node:test";
 
 import type { ChatMessage, SpanUpdate } from "@/lib/types";
 
-import { EXEC_LOCK_SPAN, applySpanToToolCall, applySpansToToolCalls, dropRunningSpans, runningStep, stepTopic, toolCallStatus, trackRunningSpan } from "./tool-call-status";
+import {
+  EXEC_LOCK_SPAN,
+  applySpanToToolCall,
+  applySpansToToolCalls,
+  dropRunningSpans,
+  runningExec,
+  runningStep,
+  stepTopic,
+  toolCallStatus,
+  trackRunningSpan,
+} from "./tool-call-status";
 
 const card = (toolCallId: string): ChatMessage => ({ kind: "tool_call", tool: "exec", args: {}, detail: "", loading: true, toolCallId });
 const span = (span_id: string, kind: string, status: SpanUpdate["status"], tool_call_id: string | null = "call_0"): SpanUpdate => ({
@@ -91,4 +101,36 @@ test("the running step is the one of the newest loading card that names a step",
   assert.equal(runningStep(messages)?.name, "build wait");
   assert.equal(runningStep(messages.slice(0, 1))?.kind, "sandbox");
   assert.equal(runningStep([]), null);
+});
+
+test("nested steps of one bucket count from the outermost, a new bucket from its own start", () => {
+  const at = (kind: string, name: string, startedAt: number) => ({ spanId: `${kind}:${name}`, kind, name, startedAt });
+  const sandbox = toolCallStatus([at("tool", "exec", 0), at("sandbox", "ensure", 1_000), at("sandbox", "create", 3_000), at("sandbox", "wait_for_ready", 4_000)]);
+  assert.deepEqual([sandbox?.name, sandbox?.startedAt], ["wait_for_ready", 1_000]);
+  // The sentinel reviewing a domain is the domain check's bucket; the user's answer to it is a wait of its own.
+  const review = toolCallStatus([at("domain", "pypi.org", 1_000), at("sentinel", "domain", 2_000)]);
+  assert.deepEqual([review?.kind, review?.startedAt], ["sentinel", 1_000]);
+  const escalated = toolCallStatus([at("domain", "pypi.org", 1_000), at("sentinel", "domain", 2_000), at("wait", "pypi.org", 5_000)]);
+  assert.deepEqual([escalated?.kind, escalated?.startedAt], ["wait", 5_000]);
+  const build = toolCallStatus([at("skill", "ensure_built", 1_000), at("skill", "build wait", 2_000)]);
+  assert.deepEqual([build?.name, build?.startedAt], ["build wait", 2_000]);
+});
+
+test("a call waiting for the user outranks a newer call's step, such as one queued behind it on the exec lock", () => {
+  const withSpan = (kind: string, name: string): ChatMessage => ({
+    kind: "tool_call", tool: "exec", args: {}, detail: "", loading: true, runningSpans: [{ spanId: kind, kind, name, startedAt: 0 }],
+  });
+  const awaitsUser = withSpan("wait", "pypi.org");
+  assert.equal(runningStep([awaitsUser, withSpan("wait", EXEC_LOCK_SPAN)])?.name, "pypi.org");
+  assert.equal(runningStep([awaitsUser, withSpan("sandbox", "ensure")])?.name, "pypi.org");
+  assert.equal(runningStep([withSpan("sandbox", "ensure"), withSpan("wait", EXEC_LOCK_SPAN)])?.name, EXEC_LOCK_SPAN);
+});
+
+test("the running command is the newest loading card's exec span", () => {
+  const withSpans = (loading: boolean, ...kinds: string[]): ChatMessage => ({
+    kind: "tool_call", tool: "exec", args: {}, detail: "", loading, runningSpans: kinds.map((kind, i) => ({ spanId: `${kind}${i}`, kind, name: kind, startedAt: i })),
+  });
+  assert.equal(runningExec([withSpans(true, "tool", "exec"), withSpans(true, "tool")])?.spanId, "exec1");
+  assert.equal(runningExec([withSpans(false, "tool", "exec")]), null);
+  assert.equal(runningExec([card("call_0")]), null);
 });

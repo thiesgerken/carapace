@@ -6,6 +6,10 @@ type ToolCallMessage = Extract<ChatMessage, { kind: "tool_call" }>;
 export const STATUS_SPAN_KINDS = ["sentinel", "sandbox", "skill", "credential", "domain", "wait"] as const;
 export type StatusSpanKind = (typeof STATUS_SPAN_KINDS)[number];
 export type RunningStep = RunningSpan & { kind: StatusSpanKind };
+/** A card's running command: the waiting line's step when the card names none, never a label of the card's own. */
+export type ExecStep = RunningSpan & { kind: "exec" };
+
+// Span names are protocol: see "Span names clients match on" in docs/websocket-session.md.
 
 /** The `wait` span of a call queued behind another command in the sandbox: system time, not the user's. */
 export const EXEC_LOCK_SPAN = "exec lock";
@@ -23,6 +27,19 @@ const NAMED_TOPICS: Partial<Record<StatusSpanKind, Record<string, StepTopic>>> =
 
 export function stepTopic(step: RunningStep): StepTopic {
   return NAMED_TOPICS[step.kind]?.[step.name] ?? step.kind;
+}
+
+/** Steps that read as one: a domain check is the sentinel's review of it, so they share a bucket. */
+export type StepBucket = Exclude<StepTopic, "domain">;
+
+export function stepBucket(step: RunningStep): StepBucket {
+  const topic = stepTopic(step);
+  return topic === "domain" ? "sentinel" : topic;
+}
+
+/** A step that waits for the user's answer, unlike the exec lock's wait behind another command. */
+export function isUserWait(step: RunningStep): boolean {
+  return step.kind === "wait" && step.name !== EXEC_LOCK_SPAN;
 }
 
 /**
@@ -65,18 +82,44 @@ export function trackRunningSpan(running: Map<string, SpanUpdate>, span: SpanUpd
   else running.delete(span.span_id);
 }
 
-/** The newest running step the card names: the innermost one, as spans nest in start order. */
+const isStatusSpan = (span: RunningSpan): span is RunningStep => (STATUS_SPAN_KINDS as readonly string[]).includes(span.kind);
+
+/**
+ * The running step the card names: the innermost one, as spans nest in start order. It counts from the
+ * outermost running span of its bucket, so nested steps (a sandbox start's stages, the sentinel inside a
+ * domain check) keep one counter instead of restarting with each.
+ */
 export function toolCallStatus(spans: RunningSpan[] | undefined): RunningStep | null {
-  const named = spans?.findLast((s): s is RunningStep => (STATUS_SPAN_KINDS as readonly string[]).includes(s.kind));
-  return named ?? null;
+  const named = spans?.filter(isStatusSpan) ?? [];
+  const innermost = named.at(-1);
+  if (!innermost) return null;
+  const bucket = stepBucket(innermost);
+  const outermost = named.find((s) => stepBucket(s) === bucket) ?? innermost;
+  return { ...innermost, startedAt: outermost.startedAt };
 }
 
-/** The step the newest running card waits on, if any; *messages* may also be just a tool group's. */
+/**
+ * The step the running cards wait on, if any; *messages* may also be just a tool group's. A wait for the
+ * user beats every other step, since a call queued behind it would hide that the user has to act; otherwise
+ * the newest card's step.
+ */
 export function runningStep(messages: ChatMessage[]): RunningStep | null {
+  let newest: RunningStep | null = null;
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     const step = m.kind === "tool_call" && m.loading ? toolCallStatus(m.runningSpans) : null;
-    if (step) return step;
+    if (step && isUserWait(step)) return step;
+    newest ??= step;
+  }
+  return newest;
+}
+
+/** The command the newest running card runs, for the waiting line when no card names a step. */
+export function runningExec(messages: ChatMessage[]): ExecStep | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const exec = m.kind === "tool_call" && m.loading ? m.runningSpans?.findLast((s): s is ExecStep => s.kind === "exec") : undefined;
+    if (exec) return exec;
   }
   return null;
 }

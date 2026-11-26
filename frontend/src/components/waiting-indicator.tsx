@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Tortoise, type TortoisePose } from "@/components/tortoise";
 import { useNow } from "@/hooks/use-now";
 import { compactCount } from "@/lib/request-table";
-import { stepTopic, type RunningStep, type StepTopic } from "@/lib/tool-call-status";
+import { stepBucket, type ExecStep, type RunningStep, type StepBucket } from "@/lib/tool-call-status";
 import type { LlmActivity } from "@/lib/types";
 
 // A rough average for English text and code; the request record brings the real count.
@@ -34,11 +34,13 @@ const EITHER_PHASE: readonly Phrase[] = [
 const KNOCKING: Phrase = { key: "knocking", pose: "peek" };
 const PEEKS_OUT: Phrase = { key: "peeksOut", pose: "peek" };
 const PLENTY_OF_TIME: Phrase = { key: "plentyOfTime", pose: "hourglass" };
+// The one phrase while the user has to act: a joke here would hide that the turn waits for them.
+const AWAITS_YOUR_GO: Phrase = { key: "awaitsYourGo", pose: "hourglass" };
 
 // Each phrase names the pose that acts it out. To add one: an entry here and its text under
 // `chatView.waiting.phrases` in both message files. Besides the model's phases, the buckets are the
 // steps a tool call waits on between model requests; "sentinel" is both, as its requests are its steps.
-export const PHRASES: Record<"processing_prompt" | "thinking" | Exclude<StepTopic, "domain">, readonly Phrase[]> = {
+export const PHRASES: Record<"processing_prompt" | "thinking" | StepBucket | "exec", readonly Phrase[]> = {
   processing_prompt: [
     { key: "nibble", pose: "munch" },
     { key: "digest", pose: "munch" },
@@ -80,8 +82,10 @@ export const PHRASES: Record<"processing_prompt" | "thinking" | Exclude<StepTopi
     { key: "learnsCommands", pose: "book" },
     { key: "stowsCommands", pose: "munch" },
   ],
-  wait: [{ key: "awaitsYourGo", pose: "hourglass" }, PLENTY_OF_TIME],
+  wait: [AWAITS_YOUR_GO],
   execLock: [{ key: "waitsItsTurn", pose: "hourglass" }, PLENTY_OF_TIME],
+  // A command that runs long without a step of its own, like `pip install`.
+  exec: [{ key: "runsCommand", pose: "wrench" }],
 };
 
 // While the answer streams, the text itself shows the work, so the tortoise acts without a phrase.
@@ -89,22 +93,24 @@ export const PHRASES: Record<"processing_prompt" | "thinking" | Exclude<StepTopi
 export const GENERATING_POSES: readonly TortoisePose[] = ["walk", "scribble", "wrench"];
 
 /**
- * What the tortoise does for *activity*, or for the tool call's *step* between model requests, and the
- * phrase that goes with it, if any. One pick per turn and bucket.
+ * What the tortoise does while the user has to answer (*awaitsUser*), for *activity*, or for the tool
+ * call's *step* between model requests, and the phrase that goes with it, if any. One pick per turn and bucket.
  */
-function act(activity: LlmActivity | null, step: RunningStep | null, turnSeed: number): { pose: TortoisePose; phrase?: string } {
-  const bucket = activity ? (activity.source === "sentinel" ? "sentinel" : activity.phase) : step ? stepBucket(step) : null;
+export function act(
+  awaitsUser: boolean,
+  activity: LlmActivity | null,
+  step: RunningStep | ExecStep | null,
+  turnSeed: number,
+): { pose: TortoisePose; phrase?: string } {
+  if (awaitsUser) return { pose: AWAITS_YOUR_GO.pose, phrase: AWAITS_YOUR_GO.key };
+  const bucket = activity
+    ? (activity.source === "sentinel" ? "sentinel" : activity.phase)
+    : step ? (step.kind === "exec" ? "exec" : stepBucket(step)) : null;
   if (bucket === null) return { pose: "pulse" };
   if (bucket === "generating" || bucket === "tool_call") return { pose: pick(GENERATING_POSES, turnSeed, "generating") };
   const { key, pose } = pick(PHRASES[bucket], turnSeed, bucket);
   return { pose, phrase: key };
 }
-
-// A domain check is the sentinel's review of it: one bucket, so its requests during the step keep the phrase.
-const stepBucket = (step: RunningStep) => {
-  const topic = stepTopic(step);
-  return topic === "domain" ? "sentinel" : topic;
-};
 
 const pick = <T,>(items: readonly T[], turnSeed: number, bucket: string): T => items[fnv1a(`${turnSeed}:${bucket}`) % items.length];
 
@@ -151,16 +157,19 @@ export function ActivityCounter({ activity }: { activity: LlmActivity }) {
 /**
  * What the agent's request is doing, acted out by the tortoise, with how long it has run and roughly
  * how many tokens it has written. Between requests it acts out the *step* a tool call waits on, with how
- * long that has run. Mount it once per turn and *hide* it rather than unmounting it, so the phrases,
+ * long that has run. While an approval or escalation card waits for the user (*awaitsUser*), it says so
+ * and nothing else. Mount it once per turn and *hide* it rather than unmounting it, so the phrases,
  * the stall clock and the shimmer hold for the whole turn instead of re-rolling.
  */
 export function WaitingIndicator({
   activity,
   step = null,
+  awaitsUser = false,
   hidden = false,
 }: {
   activity: LlmActivity | null;
-  step?: RunningStep | null;
+  step?: RunningStep | ExecStep | null;
+  awaitsUser?: boolean;
   hidden?: boolean;
 }) {
   const t = useTranslations("chatView.waiting");
@@ -172,9 +181,9 @@ export function WaitingIndicator({
   const [turnSeed] = useState(() => Math.floor(Math.random() * 2 ** 32));
   const [shimmerDelay] = useState(() => `-${Date.now() % SHIMMER_MS}ms`);
 
-  const { pose, phrase } = act(activity, step, turnSeed);
+  const { pose, phrase } = act(awaitsUser, activity, step, turnSeed);
   // Only a request can stall: a known step may take minutes (a skill build) without being stuck.
-  const stalled = agent !== null && now - lastProgressAt >= STALL_MS;
+  const stalled = !awaitsUser && agent !== null && now - lastProgressAt >= STALL_MS;
 
   return (
     <div hidden={hidden} className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
@@ -184,7 +193,7 @@ export function WaitingIndicator({
           {t(`phrases.${phrase}`)}
         </span>
       )}
-      {agent ? <ActivityCounter activity={agent} /> : step && <Elapsed since={step.startedAt} />}
+      {awaitsUser ? null : agent ? <ActivityCounter activity={agent} /> : step && <Elapsed since={step.startedAt} />}
     </div>
   );
 }
