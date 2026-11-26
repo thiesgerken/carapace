@@ -4,9 +4,11 @@ import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { ChevronRight, Layers } from "lucide-react";
 import type { ReactNode } from "react";
+import { runningStep } from "@/lib/tool-call-status";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { BrailleSpinner } from "./braille-spinner";
+import { StepLabel } from "./tool-call-badge";
 
 interface ToolCallGroupProps {
   /** The grouped tool_call / thinking messages, for summary counting. */
@@ -134,6 +136,8 @@ export function ToolCallGroup({
   const open = override ?? inProgress;
 
   const summary = buildSummary(items, inProgress, t);
+  // Collapsed, the header is the only place that says what the group is waiting for.
+  const step = open ? null : runningStep(items);
 
   return (
     <div className="my-1 w-full min-w-0">
@@ -155,6 +159,12 @@ export function ToolCallGroup({
         <Layers className="h-3 w-3 shrink-0 text-foreground/65 dark:text-foreground/70" />
         <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-foreground/75 dark:text-foreground/80">
           {summary}
+          {step && (
+            <span className="font-normal text-muted-foreground">
+              {" · "}
+              <StepLabel step={step} />
+            </span>
+          )}
         </span>
         {inProgress && (
           <BrailleSpinner className="ml-auto text-sm text-muted-foreground" />

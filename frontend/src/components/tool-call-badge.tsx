@@ -34,7 +34,7 @@ import { CodeBlockShell } from "./markdown-code-pre";
 import { FilePreview } from "./file-preview";
 import { ArtifactPreview } from "./artifact-preview";
 import { BrailleSpinner } from "./braille-spinner";
-import { ActivityCounter } from "./waiting-indicator";
+import { ActivityCounter, Elapsed } from "./waiting-indicator";
 import {
   fencedCodeBlock,
   languageFromFilePath,
@@ -43,7 +43,7 @@ import {
 } from "@/lib/sandbox-read";
 import { splitHeredocs, splitLastLines, type CommandFragment } from "@/lib/shell-heredoc";
 import type { ApprovalSource, ApprovalVerdict, CompactionAnnotation, LlmActivity, RunningSpan, SentFile } from "@/lib/types";
-import { toolCallStatus } from "@/lib/tool-call-status";
+import { stepTopic, toolCallStatus, type RunningStep } from "@/lib/tool-call-status";
 import { cn } from "@/lib/utils";
 import { getArtifact, knowledgeArtifactUrl, knowledgeRawUrl } from "@/lib/api";
 import { ArtifactIcon, artifactViewerHref, type ArtifactReference } from "@/lib/artifacts";
@@ -551,11 +551,15 @@ const SENTINEL_VERDICT_ICONS: Record<ApprovalVerdict, { Icon: LucideIcon; colorC
 };
 
 /** What the card says while *step* runs; `read_skill` waits for a build and a profile sync. */
-function stepLabel(step: RunningSpan, t: TranslateFn): string {
-  if (step.kind === "domain") return t("status.domain", { domain: step.name });
-  if (step.kind === "skill" && step.name === "build wait") return t("status.skillBuild");
-  if (step.kind === "skill" && step.name === "profile sync") return t("status.skillProfile");
-  return t(`status.${step.kind}`);
+function stepLabel(step: RunningStep, t: TranslateFn): string {
+  const topic = stepTopic(step);
+  return topic === "domain" ? t("status.domain", { domain: step.name }) : t(`status.${topic}`);
+}
+
+/** *step* in the words of its card, for places that name it outside the card. */
+export function StepLabel({ step }: { step: RunningStep }) {
+  const t = useTranslations("toolCallBadge");
+  return stepLabel(step, t);
 }
 
 export function ToolCallBadge({
@@ -853,7 +857,8 @@ export function ToolCallBadge({
         )}
       </div>
 
-      {step && (
+      {/* An open card says it in its details, with how long the step has run. */}
+      {step && !expanded && (
         <div role="status" className="ml-5 truncate text-[11px] text-muted-foreground">
           {stepLabel(step, t)}
         </div>
@@ -863,6 +868,16 @@ export function ToolCallBadge({
 
       {expanded && (
         <div className="tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-inset p-3 space-y-2 text-xs">
+          {step && (
+            <div role="status" className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <BrailleSpinner className="text-xs" />
+              <span className="min-w-0 truncate">{stepLabel(step, t)}</span>
+              {/* The status is a live region: a ticking counter would be announced every second. */}
+              <span aria-hidden>
+                · <Elapsed since={step.startedAt} />
+              </span>
+            </div>
+          )}
           {compaction?.model_text && (
             <details className="rounded-md border border-info/30 bg-info/5">
               <summary className="flex cursor-pointer list-none items-center gap-1 px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent/50">
