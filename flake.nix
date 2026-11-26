@@ -163,6 +163,7 @@
           skill-wrapper-contract = import ./nix/skills/tests.nix {
             inherit (p) pkgs;
             skillLib = skillLib.skill p.pkgs;
+            inherit (skillLib) skillsFlake;
           };
           # The examples' local commands run: the venv imports its packages, Node finds node_modules, the
           # nixpkgs script finds its runtimeInputs.

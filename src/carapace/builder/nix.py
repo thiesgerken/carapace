@@ -116,21 +116,31 @@ def _skill_docs(metadata: object) -> _SkillDocs:
     return _SkillDocs(skill_dir=skill_dir, skill_md=skill_md, skill_files=list_files(skill_dir))
 
 
-async def build_skill(source: Path, key: str, skill: str, system: str, roots: Path) -> BuildResult:
-    """Build `packages.<system>.<skill>` of the skills flake in `source` and read its metadata.
+_NO_MANIFESTS = (
+    "skills/flake.nix has no manifests for its skills: write its outputs with carapace.lib.skillsFlake "
+    "(docs/skill-flakes.md, \"The skills flake\").\n"
+)
 
-    Only that attribute is evaluated, so a broken skill does not stop the others' builds.
+
+async def build_skill(source: Path, key: str, skill: str, system: str, roots: Path) -> BuildResult:
+    """Build `packages.<system>.<skill>` of the skills flake in `source` and read its manifest.
+
+    Only that attribute is evaluated, so a broken skill does not stop the others' builds. A skill that
+    skills/config.json turns off is not built: its manifest says so and nothing else.
     """
     if not (source / "flake.lock").is_file():
         return _failed(key, skill, "skills/flake.lock is missing. The builder never writes lock files; commit one.")
-    package = f"path:{source}#packages.{system}.{skill}"
-    # The metadata first: it fails fast on a mistake in the declarations, before any build runs.
+    # The manifest first: it fails fast on a mistake in the declarations or settings, before any build runs.
     code, stdout, eval_log = await _run(
-        "nix", "eval", "--json", "--no-update-lock-file", package, "--apply", "p: p.passthru.carapace or null"
+        "nix", "eval", "--json", "--no-update-lock-file", f"path:{source}#manifests.{system}.{skill}"
     )
     if code != 0:
-        return _failed(key, skill, eval_log)
+        missing = "does not provide attribute 'manifests" in eval_log
+        return _failed(key, skill, (_NO_MANIFESTS if missing else "") + eval_log)
     metadata = json.loads(stdout)
+    if isinstance(metadata, dict) and metadata.get("enable") is False:
+        return BuildResult(key=key, skill=skill, state="succeeded", metadata=metadata)
+    package = f"path:{source}#packages.{system}.{skill}"
     try:
         docs = _skill_docs(metadata)
     except (SkillFileError, OSError, UnicodeDecodeError) as exc:

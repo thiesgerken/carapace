@@ -7,6 +7,7 @@
   pyproject-nix,
   uv2nix,
   pyproject-build-systems,
+  settingTypes,
 }:
 let
   inherit (pkgs) lib;
@@ -54,31 +55,42 @@ let
     ) "${where}: tunnels must be host:port with an exact host name: ${lib.concatStringsSep ", " badTunnels}";
     needs;
 
-  wrapper =
-    command: needs:
+  checkSettings =
+    name: settings:
     let
-      gateArgs =
-        map (domain: "--domain ${lib.escapeShellArg domain}") needs.domains
-        ++ map (path: "--credential ${lib.escapeShellArg path}") (lib.attrValues needs.credentials)
-        ++ map (path: "--oauth ${lib.escapeShellArg path}") needs.oauth
-        ++ map (tunnel: "--tunnel ${lib.escapeShellArg tunnel}") needs.tunnels;
-      # Assignment and export apart: `export X="$(…)"` would hide a failing ccred from `set -e`.
-      exports = lib.mapAttrsToList (var: path: ''
-        ${var}="$(ccred get ${lib.escapeShellArg path})"
-        export ${var}'') needs.credentials;
+      where = "skill ${name}";
+      # Each becomes an environment variable of the skill's commands.
+      badNames = lib.filter (var: builtins.match "[A-Za-z_][A-Za-z0-9_]*" var == null) (lib.attrNames settings);
+      badTypes = lib.filter (setting: !(settingTypes ? ${settings.${setting}.type or ""})) (
+        lib.attrNames settings
+      );
     in
-    ''
-      #!${pkgs.runtimeShell}
-      set -eu
-    ''
-    # cgate and ccred come from the sandbox image, not from the skill: they talk to this Carapace.
-    + lib.optionalString (gateArgs != [ ]) ''
-      cgate request --store-path "@out@" ${lib.concatStringsSep " " gateArgs}
-    ''
-    + lib.concatMapStrings (line: line + "\n") exports
-    + ''
-      exec ${command.exec} "$@"
-    '';
+    assert lib.assertMsg (
+      badNames == [ ]
+    ) "${where}: setting names must be shell identifiers: ${lib.concatStringsSep ", " badNames}";
+    assert lib.assertMsg (badTypes == [ ])
+      "${where}: settings need a type, one of ${lib.concatStringsSep ", " (lib.attrNames settingTypes)}: ${lib.concatStringsSep ", " badTypes}";
+    lib.mapAttrs (_: setting: { description = ""; } // setting) settings;
+
+  # `needs` may depend on the skill's settings: a function from their values to the needs.
+  withSettings = settings: needs: if lib.isFunction needs then needs settings else needs;
+
+  # The values of settings and needs belong to an instance, not to the package: Carapace hands them to the
+  # wrapper when it runs (`cgate request --command`), so every instance runs the same build.
+  wrapper = command: gated: ''
+    #!${pkgs.runtimeShell}
+    set -eu
+  ''
+  # cgate and ccred come from the sandbox image, not from the skill: they talk to this Carapace. Assignment
+  # and eval apart: `eval "$(…)"` would hide a failing cgate from `set -e`.
+  + lib.optionalString gated ''
+    gate="$(cgate request --store-path "@out@" --command ${lib.escapeShellArg command.name})"
+    eval "$gate"
+  ''
+  + ''
+    exec ${command.exec} "$@"
+  '';
+
 
   # Only the named files of the skill directory, so a derivation built from them survives code edits.
   lockFiles =
@@ -106,14 +118,17 @@ in
   # The skill's package: one wrapper per command in bin/, so skills never collide on interpreters or
   # libraries in the session profile, and a reference to the skill directory (SKILL.md, scripts,
   # references), which brings it into every sandbox that installs the commands. The declarations travel as
-  # `passthru.carapace`, which the builder evaluates without building anything; its `skillDir` is
-  # already in the store after that evaluation, so SKILL.md can be read before the commands are built.
+  # `passthru.carapace`, which `skillsFlake` turns into the manifest the builder evaluates without building
+  # anything; its `skillDir` is already in the store after that evaluation, so SKILL.md can be read before
+  # the commands are built. `settings` are typed values from skills/config.json; a command sees each as an
+  # environment variable, and `needs` (skill-wide or per command) may be a function of them.
   #
   #   mkSkill { name = "notes"; src = ./.; }   # instructions only
   #
   #   mkSkill {
   #     name = "weather";
   #     src = ./.;
+  #     settings.CITY = { type = "str"; description = "City to report on"; default = "Berlin"; };
   #     needs = { domains = [ "api.example.com" ]; credentials.WEATHER_TOKEN = "personal/weather"; };
   #     commands.weather = { exec = "${env}/bin/weather"; description = "Current weather"; };
   #     commands.weather-offline = { exec = "..."; description = "..."; needs = { domains = [ ]; }; };
@@ -124,6 +139,7 @@ in
       src,
       commands ? { },
       needs ? { },
+      settings ? { },
     }:
     let
       # A store path of its own: with a `path:` input `src` lies inside the whole skills tree, which
@@ -132,19 +148,39 @@ in
         path = src;
         name = "skill-${name}-src";
       };
-      declared = lib.mapAttrs (cmd: command: {
-        inherit (command) description;
-        needs = needsOf "skill ${name}, command ${cmd}" needs command;
-        # `read_skill` runs `<cmd> --list-tools` for an MCP server, so the agent sees its tools.
-        mcp = command.mcp or false;
-      }) commands;
+      declaredSettings = checkSettings name settings;
+      commandNeeds =
+        values:
+        lib.mapAttrs (
+          cmd: command:
+          needsOf "skill ${name}, command ${cmd}" (withSettings values needs) (
+            command // { needs = withSettings values (command.needs or { }); }
+          )
+        ) commands;
+      # Whether a command asks Carapace before it runs: for its settings, or for needs it has or may have.
+      gated =
+        cmd: command:
+        declaredSettings != { }
+        || lib.isFunction needs
+        || lib.isFunction (command.needs or { })
+        || (commandNeeds { }).${cmd} != noNeeds;
     in
     pkgs.runCommand "skill-${name}"
       {
-        passthru.carapace = {
-          inherit name;
-          skillDir = "${skillDir}";
-          commands = declared;
+        passthru = {
+          # What the skills flake (`skillsFlake`) and the builder read, as JSON.
+          carapace = {
+            inherit name;
+            skillDir = "${skillDir}";
+            settings = declaredSettings;
+            commands = lib.mapAttrs (_: command: {
+              inherit (command) description;
+              # `read_skill` runs `<cmd> --list-tools` for an MCP server, so the agent sees its tools.
+              mcp = command.mcp or false;
+            }) commands;
+          };
+          # Each command's needs for the given setting values; checked when `skillsFlake` resolves them.
+          carapaceNeeds = commandNeeds;
         };
       }
       (
@@ -156,8 +192,9 @@ in
         ''
         + lib.concatStrings (
           lib.mapAttrsToList (cmd: command: ''
-            substitute ${pkgs.writeText "${cmd}-wrapper" (wrapper command declared.${cmd}.needs)} \
-              $out/bin/${cmd} --subst-var out
+            substitute ${
+              pkgs.writeText "${cmd}-wrapper" (wrapper (command // { name = cmd; }) (gated cmd command))
+            } $out/bin/${cmd} --subst-var out
             chmod +x $out/bin/${cmd}
           '') commands
         )
