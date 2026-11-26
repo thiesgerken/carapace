@@ -1,6 +1,12 @@
 # CHANGELOG
 
 
+## v0.197.0 (2026-11-26)
+
+### ✨ Introduce new features
+
+- feat: sandbox liveness after the session id in the chat header
+
 ## v0.196.1 (2026-11-26)
 
 ### 🔧 Add or update configuration files
