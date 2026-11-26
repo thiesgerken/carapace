@@ -69,7 +69,7 @@ import {
   shouldConfirmArchiveSession,
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
-import { applySpanToToolCall, applySpansToToolCalls, runningStep, trackRunningSpan } from "@/lib/tool-call-status";
+import { applySpanToToolCall, applySpansToToolCalls, dropRunningSpans, runningStep, trackRunningSpan } from "@/lib/tool-call-status";
 import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall, streamingCallIndex } from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
@@ -1798,11 +1798,11 @@ export function ChatView({
     queueRef.current = null;
     queuedAttachmentsRef.current = [];
     lastThinkingStartedAtRef.current = null;
-    // The server sends the spans still running again on the reconnect.
+    // The server sends the spans still running again on the reconnect; one that ends meanwhile must not stay.
     runningSpansRef.current.clear();
     setQueuedMessage(null);
     // The server keeps writing and running these calls; after the reconnect they arrive as tool_call.
-    setMessages(dropOpenCalls);
+    setMessages((prev) => dropRunningSpans(dropOpenCalls(prev)));
     clearToolLoading();
     setWaiting(false);
   }, [clearToolLoading]);

@@ -40,8 +40,9 @@ export function applySpanToToolCall(messages: ChatMessage[], span: SpanUpdate): 
     span.status === "running"
       ? [...others, { spanId: span.span_id, kind: span.kind, name: span.name, startedAt: Date.parse(span.started_at) }]
       : others;
-  // A running step proves the call still runs: after a reconnect, whose disconnect stopped every spinner, it spins again.
-  const loading = card.loading || (span.status === "running" && card.result === undefined);
+  // A replayed step proves the call still runs: the disconnect stopped every spinner, so it spins again. Only a
+  // replay: the live start of a new call's step can precede that call's card and hit an older one of the same id.
+  const loading = card.loading || (span.replayed && span.status === "running" && card.result === undefined);
   return messages.with(index, { ...card, runningSpans, loading });
 }
 
@@ -50,6 +51,12 @@ export function applySpansToToolCalls(messages: ChatMessage[], spans: Iterable<S
   let applied = messages;
   for (const span of spans) applied = applySpanToToolCall(applied, span);
   return applied;
+}
+
+/** Without the steps on the cards: on a disconnect, since the server replays the ones still running on the reconnect. */
+export function dropRunningSpans(messages: ChatMessage[]): ChatMessage[] {
+  if (!messages.some((m) => m.kind === "tool_call" && m.runningSpans?.length)) return messages;
+  return messages.map((m) => (m.kind === "tool_call" && m.runningSpans?.length ? { ...m, runningSpans: undefined } : m));
 }
 
 /** Keeps *running* (by span id, in start order) at the spans that have started and not ended yet. */

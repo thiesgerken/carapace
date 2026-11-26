@@ -3,12 +3,14 @@ import test from "node:test";
 
 import type { ChatMessage, SpanUpdate } from "@/lib/types";
 
-import { EXEC_LOCK_SPAN, applySpanToToolCall, applySpansToToolCalls, runningStep, stepTopic, toolCallStatus, trackRunningSpan } from "./tool-call-status";
+import { EXEC_LOCK_SPAN, applySpanToToolCall, applySpansToToolCalls, dropRunningSpans, runningStep, stepTopic, toolCallStatus, trackRunningSpan } from "./tool-call-status";
 
 const card = (toolCallId: string): ChatMessage => ({ kind: "tool_call", tool: "exec", args: {}, detail: "", loading: true, toolCallId });
 const span = (span_id: string, kind: string, status: SpanUpdate["status"], tool_call_id: string | null = "call_0"): SpanUpdate => ({
-  type: "span", turn_id: "t1", span_id, kind, name: kind === "domain" ? "pypi.org" : kind, status, started_at: "2026-11-26T12:00:00Z", tool_call_id,
+  type: "span", turn_id: "t1", span_id, kind, name: kind === "domain" ? "pypi.org" : kind, status, started_at: "2026-11-26T12:00:00Z", tool_call_id, replayed: false,
 });
+const replayed = (span_id: string, kind: string, tool_call_id = "call_0"): SpanUpdate => ({ ...span(span_id, kind, "running", tool_call_id), replayed: true });
+const loadingOf = (messages: ChatMessage[], index: number) => (messages[index] as Extract<ChatMessage, { kind: "tool_call" }>).loading;
 const spansOf = (messages: ChatMessage[], index: number) => (messages[index] as Extract<ChatMessage, { kind: "tool_call" }>).runningSpans;
 
 test("a call's running spans land on its newest card and leave it when they end", () => {
@@ -36,9 +38,23 @@ test("after a reconnect a replayed running step makes its card spin again, unles
   // The disconnect stopped every spinner.
   const stopped = { ...card("call_0"), loading: false } as ChatMessage;
   const done = { ...card("call_1"), loading: false, result: "ok" } as ChatMessage;
-  const messages = applySpansToToolCalls([stopped, done], [span("s1", "tool", "running"), span("s2", "tool", "running", "call_1")]);
-  assert.equal((messages[0] as Extract<ChatMessage, { kind: "tool_call" }>).loading, true);
-  assert.equal((messages[1] as Extract<ChatMessage, { kind: "tool_call" }>).loading, false);
+  const messages = applySpansToToolCalls([stopped, done], [replayed("s1", "tool"), replayed("s2", "tool", "call_1")]);
+  assert.equal(loadingOf(messages, 0), true);
+  assert.equal(loadingOf(messages, 1), false);
+});
+
+test("a live step never revives a stopped card: it can be a new call's, heard before its own card, under a reused id", () => {
+  // An earlier call_0 whose result the disconnect lost; the provider reuses call_0 for the next call.
+  const earlier = { ...card("call_0"), loading: false } as ChatMessage;
+  const messages = applySpanToToolCall([earlier], span("s9", "tool", "running"));
+  assert.equal(loadingOf(messages, 0), false);
+});
+
+test("a disconnect takes the steps off the cards: one that ends offline would otherwise stay for good", () => {
+  const messages = applySpanToToolCall([card("call_0")], span("s1", "wait", "running"));
+  const dropped = dropRunningSpans(messages);
+  assert.equal(spansOf(dropped, 0), undefined);
+  assert.equal(dropRunningSpans(dropped), dropped);
 });
 
 test("spans heard before their card exists reach it once it does, the ended ones not", () => {

@@ -4328,10 +4328,10 @@ def test_ws_connect_mid_turn_replays_the_running_spans(client, auth_headers):
         assert _consume_status(ws)["agent_running"] is True
         replayed = [ws.receive_json() for _ in range(3)]
 
-    assert [(m["type"], m["span_id"], m["status"], m["tool_call_id"]) for m in replayed] == [
-        ("span", root.span_id, "running", None),
-        ("span", tool.span_id, "running", "toolu_1"),
-        ("span", build.span_id, "running", "toolu_1"),
+    assert [(m["type"], m["span_id"], m["status"], m["tool_call_id"], m["replayed"]) for m in replayed] == [
+        ("span", root.span_id, "running", None, True),
+        ("span", tool.span_id, "running", "toolu_1", True),
+        ("span", build.span_id, "running", "toolu_1", True),
     ]
     # The client counts a step's duration from the server's start, not from the reconnect.
     assert datetime.fromisoformat(replayed[2]["started_at"]) == build.started_at

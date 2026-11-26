@@ -37,7 +37,7 @@ After `subscribe` succeeds:
    - `llm_activity`: current in-flight LLM activity metadata, if a request is active.
    - `budget`: the session's budget limits (`input_tokens`, `output_tokens`, `cost_usd`, `equivalent_cost_usd`, `tool_calls`, `autonomous_tool_calls`; `null` means no limit). The same message is broadcast after every budget change.
 
-2. **Running spans (zero or more)**: while a turn runs, a `span` message with `status: "running"` for every span of it still open, oldest first (the turn's root, tool calls, and their steps such as a skill build wait). They are the same messages a client connected all along got when those spans started, `started_at` included, so a reconnected or reloaded chat names a running call's step again (see [`span`](#span)). LLM bars are not replayed: `llm_activity` in `status` carries the request in flight.
+2. **Running spans (zero or more)**: while a turn runs, a `span` message with `status: "running"` for every span of it still open, oldest first (the turn's root, tool calls, and their steps such as a skill build wait). They are the messages a client connected all along got when those spans started, `started_at` included, plus `replayed: true`, so a reconnected or reloaded chat names a running call's step again (see [`span`](#span)). LLM bars are not replayed: `llm_activity` in `status` carries the request in flight.
 
 3. **Pending tool approvals (zero or more)** — for each entry in `active.pending_approval_requests`:
    - `approval_request`
@@ -88,7 +88,7 @@ Each message is one JSON object with a `type` field.
 | `error`                          | Parse error, unknown command, busy agent, etc.      | `detail`, `turn_terminal`; on the error that ended a turn also its `turn_id`                     |
 | `cancelled`                      | Turn cancelled after `cancel`                       | `detail` (default explains cancellation), `turn_id`                                              |
 | `session_title`                  | Title changed                                       | `title`                                                                                          |
-| `span`                           | A span of the running turn started or ended; on connect, its open spans | `turn_id`, `span_id`, `kind`, `name`, `status`, `started_at`, `tool_call_id`; LLM bars included (see [debug-view.md](debug-view.md#websocket)) |
+| `span`                           | A span of the running turn started or ended; on connect, its open spans | `turn_id`, `span_id`, `kind`, `name`, `status`, `started_at`, `tool_call_id`, `replayed`; LLM bars included (see [debug-view.md](debug-view.md#websocket)) |
 | `user_message`                   | Echo: user line from this client or another channel | `content`                                                                                        |
 
 ### `llm_activity`
@@ -125,8 +125,10 @@ running call's card waits for (the sentinel, a sandbox start, a domain check, an
 command holding the sandbox: `wait` named `exec lock`), the Debug view to refetch its timeline. On
 connect the server sends the spans still running again (see [Fresh connect](#fresh-connect-server--client-in-order)).
 The web UI keeps them until they end and applies them again to the cards the history load brings, since
-that load can land after them; a running step also makes a card spin again whose spinner the disconnect
-stopped.
+that load can land after them. A disconnect takes every step off the cards, and a replayed step
+(`replayed: true`, live notices have `false`) makes its card spin again if the call has no result yet. A
+live notice never does: a new call's `tool` span starts before its card exists and, with a provider that
+reuses ids such as `call_0`, would hit an older card.
 
 ### `tool_call` variants
 

@@ -357,6 +357,8 @@ export interface SpanUpdate {
   started_at: string;
   /** The provider id of the tool call whose span this is or nests under. */
   tool_call_id?: string | null;
+  /** Sent again on (re)connect because the span still runs, not because it just started. */
+  replayed: boolean;
 }
 
 /** A step of a tool call that is still running, as far as its card needs it. */
