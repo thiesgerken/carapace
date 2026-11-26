@@ -33,6 +33,7 @@ from carapace.artifact_shares import ArtifactShareStore
 from carapace.auth import AuthStore
 from carapace.bootstrap import ensure_data_dir
 from carapace.builder.skill_builds import RetryRefusedError, SkillBuild, SkillBuilds
+from carapace.builder.skill_updates import PendingUpdate, UpdateRefusedError
 from carapace.codex_auth import CodexAccounts, CodexCredentialStore
 from carapace.config import build_config, resolve_user_knowledge_dir
 from carapace.credentials import CredentialBackendError, CredentialRegistry
@@ -5522,3 +5523,44 @@ def test_the_skill_list_shows_origins_and_an_update_check_on_request(
     assert (response.status_code, started) == (200, [root.resolve()])
     assert checked["checked_at"] is not None
     assert "CARAPACE_BUILDER_URL" in checked["check_error"]
+
+
+def test_a_skill_update_is_committed_as_the_user_and_pushed(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = srv._knowledge_repo_registry.get_for_user("thies").knowledge_dir
+    write_skills_flake(root / "skills", [], external=["tracker"])
+    git = ["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@example.com"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", "skills"], check=True)
+    subprocess.run([*git[:3], "config", "user.email", "carapace@example.com"], check=True)
+    subprocess.run([*git[:3], "config", "user.name", "carapace"], check=True)
+    base = subprocess.run([*git, "rev-parse", "HEAD:skills/flake.lock"], check=True, capture_output=True, text=True)
+    builds = SkillBuilds(None)
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+    pending = PendingUpdate(base_lock=base.stdout.strip(), lock_text="{}\n", message="⬆️ skills: update tracker")
+    monkeypatch.setattr(builds.updates, "pending_update", AsyncMock(return_value=pending))
+    after_push = AsyncMock()
+    monkeypatch.setattr(srv, "_after_push", after_push)
+
+    response = client.post("/api/knowledge/skills/tracker/update", headers=auth_headers)
+
+    log = subprocess.run([*git, "log", "-1", "--format=%an|%s"], check=True, capture_output=True, text=True)
+    assert response.status_code == 200
+    assert log.stdout.strip() == "Thies|⬆️ skills: update tracker"
+    assert (root / "skills" / "flake.lock").read_text() == "{}\n"
+    after_push.assert_awaited_once_with("thies")
+
+
+def test_a_skill_update_that_cannot_be_applied_is_a_conflict(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    builds = SkillBuilds(None)
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+    refused = UpdateRefusedError("skills/ changed since the last check; check for updates again.")
+    monkeypatch.setattr(builds.updates, "pending_update", AsyncMock(side_effect=refused))
+
+    response = client.post("/api/knowledge/skills/tracker/update", headers=auth_headers)
+
+    assert (response.status_code, response.json()["detail"]) == (409, str(refused))
