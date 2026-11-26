@@ -8,6 +8,7 @@ The skill catalog comes from here too: the names and the descriptions of the SKI
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -92,6 +93,8 @@ class _HeadSkill:
 
 
 _BUILDING = _Outcome(state="building")
+# How long a refresh waits for the builder's answer to its lookups before the catalog goes on without them.
+_LOOKUP_WAIT_SECONDS = 5.0
 _NO_BUILDER = _Outcome(state="unavailable", detail="No skill builder is configured (CARAPACE_BUILDER_URL).")
 
 
@@ -106,8 +109,13 @@ class SkillBuilds:
         self.updates = SkillUpdates(builder)
         self._results: dict[str, _Outcome] = {}
         self._running: dict[str, asyncio.Task[None]] = {}
-        # The skills each repo listed at its head when last asked, for the catalog.
+        # The skills each repo listed at its head when last asked, for the catalog, and that head's commit.
         self._heads: dict[Path, list[_HeadSkill]] = {}
+        self._head_commits: dict[Path, str] = {}
+        # Set once the builder said whether it has a running key's result already, before any build.
+        self._looked_up: dict[str, asyncio.Event] = {}
+        # The last succeeded build of each (repo, attribute), used while its key builds or failed.
+        self._last_succeeded: dict[tuple[Path, str], SkillBuild] = {}
 
     async def ensure_built(self, repo_dir: Path) -> list[SkillBuild]:
         """The build state of every skill skills/flake.nix lists at the head of *repo_dir*.
@@ -115,17 +123,57 @@ class SkillBuilds:
         A key without a result starts building in the background; this never waits for a build. A skill
         whose key did not change since its last build already has a result, so a push builds only what it touched.
         """
-        heads = await _skills_at_head(repo_dir)
-        self._heads[repo_dir] = heads
-        return [_build(skill, self._outcome(repo_dir, skill)) for skill in heads]
+        heads = await self._skills_at_head(repo_dir)
+        builds = [_build(skill, self._outcome(repo_dir, skill)) for skill in heads]
+        self._remember_succeeded(repo_dir, builds)
+        return builds
+
+    async def installable(self, repo_dir: Path) -> list[SkillBuild]:
+        """What the session profile should hold: each skill's build at head, or its last succeeded one.
+
+        A change to skills/flake.nix or its lock re-keys every skill; without the fallback, every command
+        would leave PATH until its rebuild is done, and a failed rebuild would keep it off.
+        """
+        return [self._usable(repo_dir, build) for build in await self.ensure_built(repo_dir)]
+
+    async def refresh(self, repo_dir: Path) -> None:
+        """`ensure_built`, then wait briefly until the builder said which of the new keys it built before.
+
+        After a restart nothing is known, and a lookup is one request where a build may take minutes: without
+        the wait, the catalog would show every skill as being built and change again on the next turn.
+        """
+        builds = await self.ensure_built(repo_dir)
+        lookups = [self._looked_up[build.key].wait() for build in builds if build.key in self._looked_up]
+        # A slow builder only leaves those skills at what the catalog knew of them.
+        with contextlib.suppress(TimeoutError):
+            async with asyncio.timeout(_LOOKUP_WAIT_SECONDS):
+                await asyncio.gather(*lookups)
+        self._remember_succeeded(repo_dir, [_build(skill, self._known(skill)) for skill in self._heads[repo_dir]])
 
     def catalog(self, repo_dir: Path) -> list[SkillInfo]:
         """Name and description of every skill *repo_dir* listed when `ensure_built` last looked, as known now.
 
         It starts nothing and does not wait: the catalog is part of the shared prompt prefix, which sentinel,
-        memory and compaction build outside a turn. A turn refreshes it by calling `ensure_built` first.
+        memory and compaction build outside a turn. A turn refreshes it first (`refresh`).
         """
-        return [_catalog_entry(skill.name, self._known(skill)) for skill in self._heads.get(repo_dir, [])]
+        heads = self._heads.get(repo_dir, [])
+        return [
+            _catalog_entry(skill.name, self.readable(repo_dir, skill.name) or _build(skill, self._known(skill)))
+            for skill in heads
+        ]
+
+    def readable(self, repo_dir: Path, name: str) -> SkillBuild | None:
+        """The build of *name* whose skill directory the catalog and the sentinel read.
+
+        That is the build at head once it has one, and until then the last succeeded build of this attribute:
+        a changed skill keeps its description and files until the new ones are there, instead of dropping to
+        "being built" and back. None for a skill whose skill directory was never read.
+        """
+        skill = next((skill for skill in self._heads.get(repo_dir, []) if skill.name == name), None)
+        if skill is None:
+            return None
+        build = _build(skill, self._known(skill))
+        return build if build.skill_dir is not None else self._last_succeeded.get((repo_dir, name))
 
     async def skill_file(self, build: SkillBuild, path: str) -> bytes | None:
         """A file of *build*'s skill directory; None when it has no such file or no skill directory."""
@@ -133,8 +181,8 @@ class SkillBuilds:
             return None
         return await self._builder.skill_file(build.key, path)
 
-    async def wait_built(self, repo_dir: Path, skill: str) -> tuple[SkillBuild | None, list[SkillBuild]]:
-        """*skill*'s build once it no longer runs (None for a skill skills/flake.nix does not list), and every build.
+    async def wait_built(self, repo_dir: Path, skill: str) -> SkillBuild | None:
+        """*skill*'s build once it no longer runs; None for a skill skills/flake.nix does not list.
 
         A crashed build raises here: asking again would only start it again. The build is shared by every
         session on its key, so a waiter that is cancelled (a stopped turn) leaves it running for the others.
@@ -143,7 +191,7 @@ class SkillBuilds:
             builds = await self.ensure_built(repo_dir)
             build = next((build for build in builds if build.skill == skill), None)
             if build is None or build.state != "building":
-                return build, builds
+                return build
             with span("skill", "build wait", skill=skill):
                 await asyncio.shield(self._running[build.key])
 
@@ -181,7 +229,30 @@ class SkillBuilds:
         del self._results[skill.key]
         self._start(self._builder, repo_dir, skill, retry=True)
 
+    async def _skills_at_head(self, repo_dir: Path) -> list[_HeadSkill]:
+        # One git call while the head stays: every turn asks, and the skills are a function of the commit.
+        commit = await object_id(repo_dir, "HEAD")
+        if self._head_commits.get(repo_dir) != commit:
+            # Without a commit there is nothing to list.
+            self._heads[repo_dir] = await _skills_at_head(repo_dir) if commit else []
+            self._head_commits[repo_dir] = commit
+        return self._heads[repo_dir]
+
+    def _remember_succeeded(self, repo_dir: Path, builds: list[SkillBuild]) -> None:
+        listed = {build.skill for build in builds}
+        for repo, name in [key for key in self._last_succeeded if key[0] == repo_dir and key[1] not in listed]:
+            del self._last_succeeded[(repo, name)]
+        for build in builds:
+            if build.state == "succeeded":
+                self._last_succeeded[(repo_dir, build.skill)] = build
+
+    def _usable(self, repo_dir: Path, build: SkillBuild) -> SkillBuild:
+        if build.state == "succeeded":
+            return build
+        return self._last_succeeded.get((repo_dir, build.skill), build)
+
     def _start(self, builder: BuilderClient, repo_dir: Path, skill: _HeadSkill, *, retry: bool = False) -> None:
+        self._looked_up[skill.key] = asyncio.Event()
         task = asyncio.create_task(self._build(builder, repo_dir, skill, retry=retry))
         task.add_done_callback(lambda done: _log_crash(done, skill))
         self._running[skill.key] = task
@@ -199,16 +270,24 @@ class SkillBuilds:
         return self._results.get(skill.key) or _BUILDING
 
     async def _build(self, builder: BuilderClient, repo_dir: Path, skill: _HeadSkill, *, retry: bool) -> None:
+        looked_up = self._looked_up[skill.key]
         try:
-            self._results[skill.key] = await _build_outcome(builder, repo_dir, skill, retry=retry)
+            self._results[skill.key] = await _build_outcome(builder, repo_dir, skill, looked_up, retry=retry)
         finally:
+            looked_up.set()
+            del self._looked_up[skill.key]
             del self._running[skill.key]
 
 
-async def _build_outcome(builder: BuilderClient, repo_dir: Path, skill: _HeadSkill, *, retry: bool) -> _Outcome:
+async def _build_outcome(
+    builder: BuilderClient, repo_dir: Path, skill: _HeadSkill, looked_up: asyncio.Event, *, retry: bool
+) -> _Outcome:
     try:
         # A retry skips the stored result: it is the failure being retried.
-        result = None if retry else await builder.get(skill.key)
+        try:
+            result = None if retry else await builder.get(skill.key)
+        finally:
+            looked_up.set()
         if result is None:
             try:
                 archive = await archive_skills(repo_dir, skill.skills_tree)
@@ -285,17 +364,17 @@ def _build(skill: _HeadSkill, outcome: _Outcome) -> SkillBuild:
     )
 
 
-def _catalog_entry(name: str, outcome: _Outcome) -> SkillInfo:
+def _catalog_entry(name: str, build: SkillBuild) -> SkillInfo:
     """The skill under its attribute name, with the description of its SKILL.md or why there is none yet."""
-    if outcome.skill_md is None:
+    if build.skill_md is None:
         description = {
             "building": "Being built; its description follows once it is. read_skill waits for the build.",
             # Fixed text, not the error: the catalog is part of the cached prompt prefix.
             "unavailable": "Not available: the skill builder cannot be reached. read_skill shows why.",
-        }.get(outcome.state, "BROKEN, its build has no SKILL.md; read_skill shows why.")
+        }.get(build.state, "BROKEN, its build has no SKILL.md; read_skill shows why.")
         return SkillInfo(name=name, description=description)
     try:
-        document = parse_skill_document(outcome.skill_md, fallback_name=name)
+        document = parse_skill_document(build.skill_md, fallback_name=name)
         document.carapace_config()
     except SkillDocumentError as exc:
         # Listed rather than dropped: the agent has to see the skill is broken to fix it.

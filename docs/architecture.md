@@ -20,7 +20,7 @@ flowchart TB
         ApprovalGate[Approval Gate]
         AgentLoop[Agent Loop]
         Agent["Pydantic AI Agent"]
-        SkillRegistry[Skill Registry]
+        SkillBuilds["Skill Builds<br/>(catalog, skill files)"]
         GitStore[Git Store]
         CredentialRegistry[Credential Registry]
         Proxy[HTTP Forward Proxy]
@@ -58,7 +58,7 @@ flowchart TB
     SessionEngine <--> SessionMgr
     SessionEngine --> AgentLoop
     AgentLoop <--> Agent
-    Agent <--> SkillRegistry
+    Agent <--> SkillBuilds
     Agent -->|tool calls, logged| SecurityMod
     Proxy -->|domain requests| SecurityMod
     SecurityMod --> Sentinel
@@ -73,6 +73,7 @@ flowchart TB
     CredentialRegistry --> Vault
     GitStore --> Sentinel
     GitStore -->|skill trees| Builder
+    SkillBuilds <-->|results, SKILL.md, skill files| Builder
     Proxy -->|cache.carapace.internal| Builder
 
     Server --> MemorySvc

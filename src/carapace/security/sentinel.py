@@ -358,13 +358,16 @@ class Sentinel:
         )
 
     async def _built_skill(self, skill_name: str) -> SkillBuild | str:
-        """The build of *skill_name* at head with its skill directory, or why there is none."""
+        """The build of *skill_name* whose skill directory there is to read, or why there is none.
+
+        While a changed skill builds, that is its previous build: older files are better than none.
+        """
         builds = await self._skill_builds.ensure_built(self._knowledge_dir)
-        build = next((build for build in builds if build.skill == skill_name), None)
-        if build is None:
+        if not any(build.skill == skill_name for build in builds):
             return f"Skill '{skill_name}' not found."
-        if build.skill_dir is None:
-            return f"Skill '{skill_name}' has no skill directory to read ({build.state})."
+        build = self._skill_builds.readable(self._knowledge_dir, skill_name)
+        if build is None:
+            return f"Skill '{skill_name}' has no skill directory to read yet: its first build has not got that far."
         return build
 
     async def _read_skill_file_cached(self, skill_name: str, path: str) -> str:

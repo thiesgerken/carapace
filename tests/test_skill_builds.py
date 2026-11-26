@@ -369,10 +369,9 @@ async def test_waiting_for_a_build_returns_its_result_and_is_a_span(repo: Path) 
         await asyncio.sleep(0.05)
         assert not waiting.done()
         release.set()
-        weather, every = await waiting
+        weather = await waiting
 
     assert weather is not None and weather.state == "succeeded"
-    assert {build.skill for build in every} == {"notes", "weather"}
     [wait] = [span for span in trace.spans.values() if span.name == "build wait"]
     assert (wait.kind, wait.attrs, wait.status) == ("skill", {"skill": "weather"}, "ok")
 
@@ -381,7 +380,7 @@ async def test_waiting_for_a_build_returns_its_result_and_is_a_span(repo: Path) 
 async def test_waiting_for_an_unlisted_skill_returns_none_at_once(repo: Path) -> None:
     builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
 
-    unlisted, _ = await builds.wait_built(repo, "unlisted")
+    unlisted = await builds.wait_built(repo, "unlisted")
 
     assert unlisted is None
 
@@ -492,7 +491,7 @@ async def test_a_cancelled_waiter_leaves_the_build_running_for_the_others(repo: 
     stopped.cancel()
     await asyncio.sleep(0)
     release.set()
-    weather, _ = await waiting
+    weather = await waiting
 
     assert stopped.cancelled()
     assert weather is not None and weather.state == "succeeded"
@@ -616,3 +615,95 @@ async def test_a_skill_file_is_read_from_the_builder_under_its_build_key(repo: P
     assert await builds.skill_file(weather, "references/syntax.md") == b"syntax"
     assert await builds.skill_file(weather, "missing.md") is None
     assert builder.file_reads == [(weather.key, "references/syntax.md"), (weather.key, "missing.md")]
+
+
+@pytest.mark.anyio
+async def test_a_rekeyed_skill_keeps_its_description_and_files_while_it_builds(repo: Path) -> None:
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.refresh(repo)
+    await _settled(builds, repo)
+    await builds.ensure_built(repo)
+    before = builds.catalog(repo)
+    previous = builds.readable(repo, "weather")
+
+    _write_skills_flake(repo, ["weather", "notes"], external=("tracker",))
+    _commit(repo, "add tracker")
+    release = _held(builder)
+    await builds.ensure_built(repo)
+
+    # Every key changed and builds; the catalog and the sentinel keep what they had.
+    assert {info.name: info.description for info in builds.catalog(repo)} == {
+        **{info.name: info.description for info in before},
+        "tracker": "Being built; its description follows once it is. read_skill waits for the build.",
+    }
+    assert previous is not None and builds.readable(repo, "weather") == previous
+    assert builds.readable(repo, "tracker") is None
+    release.set()
+    await _settled(builds, repo)
+    weather = builds.readable(repo, "weather")
+    assert weather is not None and weather.key != previous.key
+
+
+@pytest.mark.anyio
+async def test_after_a_restart_the_refresh_waits_for_what_the_builder_already_has(repo: Path) -> None:
+    builder = FakeBuilder()
+    for name in ("weather", "notes"):
+        builder.stored[_key(repo, name)] = builder.answer(_key(repo, name), name)
+    builds = SkillBuilds(cast(BuilderClient, builder))
+
+    await builds.refresh(repo)
+
+    assert {info.name: info.description for info in builds.catalog(repo)} == {
+        "notes": "Current weather",
+        "weather": "Current weather",
+    }
+    assert builder.built == []
+
+
+@pytest.mark.anyio
+async def test_a_slow_lookup_does_not_hold_up_the_refresh(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    builder = FakeBuilder()
+    answered = asyncio.Event()
+
+    async def slow_get(_key: str) -> BuildResult | None:
+        await answered.wait()
+        return None
+
+    builder.get = slow_get  # type: ignore[method-assign]
+    monkeypatch.setattr(skill_builds, "_LOOKUP_WAIT_SECONDS", 0.01)
+    builds = SkillBuilds(cast(BuilderClient, builder))
+
+    await builds.refresh(repo)
+
+    assert {info.description for info in builds.catalog(repo)} == {
+        "Being built; its description follows once it is. read_skill waits for the build."
+    }
+    answered.set()
+    await _settled(builds, repo)
+
+
+@pytest.mark.anyio
+async def test_the_profile_keeps_the_last_succeeded_build_while_skills_rebuild_or_fail(repo: Path) -> None:
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+    before = {build.skill: build for build in await builds.installable(repo)}
+
+    _write_skills_flake(repo, ["weather", "notes"], external=("tracker",))
+    _commit(repo, "add tracker")
+    release = _held(builder)
+
+    # Every key builds: the old commands stay, the new skill has nothing to install yet.
+    during = {build.skill: build for build in await builds.installable(repo)}
+    assert during["weather"] == before["weather"] and during["notes"] == before["notes"]
+    assert during["tracker"].state == "building"
+
+    builder.answer = lambda key, skill: BuildResult(key=key, skill=skill, state="failed", log_tail="error: boom")
+    release.set()
+    await _settled(builds, repo)
+
+    after = {build.skill: build for build in await builds.installable(repo)}
+    assert after["weather"] == before["weather"]
+    assert after["tracker"].state == "failed"

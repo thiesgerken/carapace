@@ -214,11 +214,24 @@ class SessionEngine(
         return self._repo_handle_for_session(session_id).git_store
 
     def _skill_catalog_for_session(self, session_id: str) -> list[SkillInfo]:
+        """The catalog in the session's agent prompt; the current one before the session has a prompt."""
+        active = self._active.get(session_id)
+        if active is not None and active.state.skill_catalog is not None:
+            return active.state.skill_catalog
         return self._skill_builds.catalog(self._knowledge_dir_for_session(session_id))
 
-    async def _refresh_skill_catalog(self, session_id: str) -> None:
-        """Look at the skills at head before a turn, so its catalog has the builds the last push started."""
-        await self._skill_builds.ensure_built(self._knowledge_dir_for_session(session_id))
+    async def _ensure_skill_catalog(self, active: ActiveSession) -> None:
+        """Take the session's skill catalog from the builds once and keep it, like the memory block.
+
+        The catalog is in the cached prompt prefix, so a skill pushed mid-session shows up there only after
+        compaction; `read_skill` finds it by name right away.
+        """
+        if active.state.skill_catalog is not None:
+            return
+        knowledge_dir = self._knowledge_dir_for_session(active.state.session_id)
+        await self._skill_builds.refresh(knowledge_dir)
+        active.state.skill_catalog = self._skill_builds.catalog(knowledge_dir)
+        self._session_mgr.save_state(active.state)
 
     @property
     def sandbox_mgr(self) -> SandboxManager:

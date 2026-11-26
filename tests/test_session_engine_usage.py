@@ -307,6 +307,33 @@ def test_handle_slash_command_usage_includes_tool_call_total(tmp_path: Path, db_
         asyncio.run(_run())
 
 
+def test_the_skill_catalog_is_frozen_per_session_until_compaction(tmp_path: Path, db_factory) -> None:
+    current = [SkillInfo(name="alpha", description="First")]
+    skill_builds = MagicMock(spec=SkillBuilds)
+    skill_builds.refresh = AsyncMock()
+    skill_builds.catalog = MagicMock(side_effect=lambda _repo_dir: list(current))
+
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory, skill_builds=skill_builds)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+
+        async def _run() -> None:
+            await engine._ensure_skill_catalog(active)
+            current.append(SkillInfo(name="beta", description="Pushed mid-session"))
+            await engine._ensure_skill_catalog(active)
+
+            assert [info.name for info in engine._skill_catalog_for_session(sid)] == ["alpha"]
+            assert engine.session_mgr.load_state(sid).skill_catalog == [SkillInfo(name="alpha", description="First")]
+
+            # Compaction drops the snapshot together with the memory block; the next turn takes it anew.
+            active.state.skill_catalog = None
+            await engine._ensure_skill_catalog(active)
+            assert [info.name for info in engine._skill_catalog_for_session(sid)] == ["alpha", "beta"]
+
+        asyncio.run(_run())
+
+
 def test_handle_slash_command_skills_stays_owner_scoped_for_two_users(tmp_path: Path, db_factory) -> None:
     with _patch_sentinel():
         registry = KnowledgeRepoRegistry(tmp_path)
@@ -316,7 +343,7 @@ def test_handle_slash_command_skills_stays_owner_scoped_for_two_users(tmp_path: 
         }
         refreshed: list[Path] = []
         skill_builds = MagicMock(spec=SkillBuilds)
-        skill_builds.ensure_built = AsyncMock(side_effect=lambda repo_dir: refreshed.append(repo_dir) or [])
+        skill_builds.refresh = AsyncMock(side_effect=lambda repo_dir: refreshed.append(repo_dir))
         skill_builds.catalog = MagicMock(
             side_effect=lambda repo_dir: catalogs[repo_dir] if repo_dir in refreshed else []
         )
