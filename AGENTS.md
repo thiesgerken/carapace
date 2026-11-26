@@ -10,7 +10,7 @@ carapace is a security-first personal AI agent with LLM-powered security gating.
 - Install client-only deps: `uv sync` (base package is the CLI client; ~16 light deps)
 - Install server stack: `uv sync --extra server`
 - Install with dev deps: `uv sync --dev` (includes the `server` extra)
-- Start server: `uv run python -m carapace` (or `uv run carapace-server`) — needs the `server` extra
+- Start the dev stack (server, frontend, Redis, builder, sandboxes): `process-compose up` in the dev shell; ports from `CARAPACE_DEV_STACK` in `.env` (stack 0: frontend 7300, server 7301), demo data via `process-compose process start demo`. See "Dev stack" in `docs/development.md`
 - Start CLI client: `uv run python -m carapace.cli` (or `uv run carapace`)
 - Start frontend: `cd frontend && npm ci && npm run dev`
 - Run type checks: `uv run pyrefly check`

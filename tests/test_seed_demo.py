@@ -21,7 +21,7 @@ from carapace.usage import CostSplit
 _SEED_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "seed_demo.py"
 
 
-def test_seeded_demo_sessions_load_like_real_sessions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _load_seed_demo(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("CARAPACE_DATABASE_URL", raising=False)
     spec = importlib.util.spec_from_file_location("seed_demo", _SEED_SCRIPT)
     assert spec is not None and spec.loader is not None
@@ -29,6 +29,29 @@ def test_seeded_demo_sessions_load_like_real_sessions(tmp_path: Path, monkeypatc
     # Dataclasses resolve their string annotations through the module's sys.modules entry.
     monkeypatch.setitem(sys.modules, spec.name, seed_demo)
     spec.loader.exec_module(seed_demo)
+    return seed_demo
+
+
+def test_seed_refuses_a_data_dir_outside_the_temp_directory_unless_it_is_a_dev_stacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seed_demo = _load_seed_demo(monkeypatch)
+    (tmp_path / "tmp").mkdir()
+    data_dir = (tmp_path / "data").resolve()
+    data_dir.mkdir()
+    monkeypatch.setattr(seed_demo.tempfile, "gettempdir", lambda: str(tmp_path / "tmp"))
+    now = datetime(2026, 11, 9, 8, 0, tzinfo=UTC)
+
+    with pytest.raises(SystemExit, match="must be inside"):
+        seed_demo.seed(data_dir, now)
+    seed_demo.seed(data_dir, now, dev_stack=True)
+
+    _engine, session_factory = create_engine_and_factory(DatabaseConfig(), data_dir)
+    assert SessionManager(session_factory, data_dir).list_sessions(user=seed_demo.DEMO_USER)
+
+
+def test_seeded_demo_sessions_load_like_real_sessions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seed_demo = _load_seed_demo(monkeypatch)
     data_dir = tmp_path.resolve()
     now = datetime(2026, 11, 9, 8, 0, tzinfo=UTC)
 
