@@ -293,6 +293,7 @@ The Bitwarden CLI binds to the fixed localhost-only internal port `8088` inside 
 | `builder.auth.existingSecret`                          | `""` (generated)                 | Secret with the builder token under `token`                         |
 | `builder.persistence.size`                             | `20Gi`                           | The builder's Nix store                                             |
 | `builder.upstreamCaches`                               | `[]` (cache.nixos.org)           | Binary caches the builder substitutes from                          |
+| `builder.egress.allowedCidrs`                          | `[]`                             | Private CIDRs the builder may reach, e.g. a substituter in your network |
 | `ingress.enabled`                                      | `true`                           | Create a Gateway API HTTPRoute                                      |
 | `ingress.hostname`                                     | `carapace.example.com`           | Ingress hostname                                                    |
 | `ingress.parentRefs`                                   | `[{name: default-gateway}]`      | Gateway parent references                                           |

@@ -63,4 +63,62 @@ spec:
         # The binary cache: sandboxes reach it only through the server's session proxy.
         - protocol: TCP
           port: 8331
+---
+# Builds run agent-authored flakes: they may fetch from the internet (upstream caches, flake inputs),
+# but nothing private, in the cluster or on the node, unless builder.egress.allowedCidrs names it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-builder-egress
+  namespace: {{ include "carapace.builder.namespace" . }}
+  labels:
+    {{- include "carapace.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: carapace
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: builder
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        # What is not globally routable, like the sandbox proxy's private-address rule.
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.168.0.0/16
+              - 198.18.0.0/15
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::1/128
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
+        {{- range .Values.builder.egress.allowedCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
 {{- end }}

@@ -55,7 +55,17 @@ def parse_skills_lock(text: str) -> list[ListedSkill]:
 
 def _local_directory(name: str, node: dict[str, Any]) -> PurePosixPath | None:
     locked = node["locked"]
-    if locked["type"] != "path" or locked["path"].startswith("/"):
+    # A path on the builder's own disk: it would read the builder, not this repo, and no key covers it.
+    if (
+        (locked["type"] == "path" and locked["path"].startswith("/"))
+        or locked["type"] == "file"
+        or (str(locked.get("url", "")).startswith("file:"))
+    ):
+        raise SkillsFlakeError(
+            f"skill {name}: an absolute path, file: or git+file: input reads the builder's disk; "
+            "use path:./<dir> for a skill in this repo or a remote flake reference"
+        )
+    if locked["type"] != "path":
         return None
     directory = posixpath.normpath(locked["path"])
     if directory == "." or directory.startswith(".."):

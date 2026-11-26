@@ -136,10 +136,15 @@ async def test_a_head_change_builds_only_the_skills_whose_key_changed(repo: Path
     assert {build.skill: build.state for build in first} == {"notes": "building", "weather": "building"}
     assert await _settled(builds, repo) == {"notes": "succeeded", "weather": "succeeded"}
     assert sorted(skill for _, skill, _ in builder.built) == ["notes", "weather"]
-    # The builder gets the whole skills/ directory: relative path inputs resolve inside it.
-    assert {"flake.nix", "flake.lock", "weather/SKILL.md", "notes/flake.nix", "unlisted/SKILL.md"} <= builder.built[0][
-        2
-    ]
+    # Each build gets the flake, its lock and its own directory, nothing else of skills/: what its key covers.
+    for _, skill, files in builder.built:
+        assert {name.rstrip("/") for name in files} == {
+            "flake.nix",
+            "flake.lock",
+            skill,
+            f"{skill}/SKILL.md",
+            f"{skill}/flake.nix",
+        }
 
     (repo / "skills" / "weather" / "SKILL.md").write_text("---\nname: weather\ndescription: changed\n---\n")
     _commit(repo, "change weather")
@@ -705,3 +710,29 @@ async def test_the_profile_keeps_the_last_succeeded_build_while_skills_rebuild_o
     after = {build.skill: build for build in await builds.installable(repo)}
     assert after["weather"] == before["weather"]
     assert after["tracker"].state == "failed"
+
+
+@pytest.mark.anyio
+async def test_an_external_skill_gets_only_the_flake_and_its_lock(repo: Path) -> None:
+    _write_skills_flake(repo, [], external=("tracker",))
+    _commit(repo, "only tracker")
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+
+    assert await _settled(builds, repo) == {"tracker": "succeeded"}
+    assert [files for _, _, files in builder.built] == [{"flake.nix", "flake.lock"}]
+
+
+@pytest.mark.anyio
+async def test_a_listed_directory_that_is_missing_fails_before_the_builder(repo: Path) -> None:
+    _write_skills_flake(repo, ["weather", "gone"])
+    _commit(repo, "list a skill without its directory")
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    gone = next(build for build in await builds.ensure_built(repo) if build.skill == "gone")
+    assert gone.state == "failed" and "gone" in gone.detail
+    assert [skill for _, skill, _ in builder.built] == ["weather"]
