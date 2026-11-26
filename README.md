@@ -138,7 +138,7 @@ docker compose up -d
 
 This starts the proxy at `http://localhost:3001`, serving the frontend and routing `/api` to the backend internally.
 
-Published images target Linux x64. On Apple Silicon, use the [native ARM Linux build instructions](docs/development.md#native-linux-images-on-apple-silicon) and local Compose overlay instead of x86 emulation. Nix is the single build/check definition for all images, the sandbox included. The maintained Compose and Helm configurations run the application images non-root with read-only roots.
+Published images target Linux x64. On Apple Silicon, build native ARM Linux images ([instructions](docs/development.md#native-linux-images-on-apple-silicon)) and run them in Compose as described in [testing images locally](docs/development.md#testing-images-locally), instead of x86 emulation. Nix is the single build/check definition for all images, the sandbox included. The maintained Compose and Helm configurations run the application images non-root with read-only roots.
 
 Optional CLI connection:
 
@@ -198,16 +198,14 @@ npm --prefix frontend ci
 npm --prefix frontend run lint
 ```
 
-For local development without Docker Compose:
+To run carapace from the checkout, start the dev stack in the dev shell. It runs the server and frontend from source and only the sandboxes, the skill builder and a small relay in Docker. Every checkout or worktree gets its own ports (`CARAPACE_DEV_STACK` in `.env`), and stacks run side by side next to a Compose deployment:
 
 ```bash
-docker load -i "$(nix build .#packages.x86_64-linux.sandbox-image --no-link --print-out-paths)"  # aarch64-linux.sandbox-image-lite on Apple Silicon
-CARAPACE_SANDBOX_BASE_IMAGE=carapace-sandbox:local uv run carapace-server
-npm --prefix frontend run dev
-uv run carapace
+process-compose up          # frontend on http://127.0.0.1:7300 for stack 0
+uv run carapace --server http://127.0.0.1:7301
 ```
 
-The dev shell supplies Python 3.14, uv, Node.js 24 (with npm), Helm, and Skopeo. See [docs/development.md](docs/development.md) for host services, sandboxed checks, image builds, and dependency refreshes.
+The dev shell supplies Python 3.14, uv, Node.js 24 (with npm), Helm, Skopeo, process-compose, and Redis. See [docs/development.md](docs/development.md) for the dev stack, demo data, sandboxed checks, image builds, and dependency refreshes.
 
 ### Brand assets
 

@@ -13,41 +13,77 @@ nix develop
 uv sync --dev
 ```
 
-The shell provides Python 3.14, uv, Node.js 24 (with npm), Git, Helm, Skopeo, and jq. uv manages `.venv`; `UV_PYTHON` selects the Nix interpreter and `UV_PYTHON_DOWNLOADS=never` prevents another interpreter download. With direnv and nix-direnv, run `direnv allow` once in each checkout or worktree to load `.envrc` automatically.
+The shell provides Python 3.14, uv, Node.js 24 (with npm), Git, Helm, Skopeo, jq, process-compose and Redis. uv manages `.venv`; `UV_PYTHON` selects the Nix interpreter and `UV_PYTHON_DOWNLOADS=never` prevents another interpreter download. With direnv and nix-direnv, run `direnv allow` once in each checkout or worktree to load `.envrc` automatically.
 
-For host iteration, start a disposable Redis and the [skill builder](builder.md), build and load the sandbox and builder images, then run the server:
+## Dev stack
 
-```sh
-docker run --rm -d --name carapace-dev-redis -p 127.0.0.1:6379:6379 redis:8-alpine
-docker load -i "$(nix build .#packages.x86_64-linux.sandbox-image --no-link --print-out-paths)"  # aarch64-linux on ARM Linux
-docker load -i "$(nix build .#packages.x86_64-linux.builder-image --no-link --print-out-paths)"  # aarch64-linux on ARM Linux
-export CARAPACE_BUILDER_TOKEN="$(openssl rand -hex 20)"
-docker volume create carapace-dev-builder-nix
-docker run --rm -v carapace-dev-builder-nix:/mnt/nix carapace-builder:local /bin/carapace-builder-init
-docker run -d --name carapace-dev-builder -p 127.0.0.1:8330:8330 -p 127.0.0.1:8331:8331 \
-  -e CARAPACE_BUILDER_TOKEN \
-  --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined \
-  -v carapace-dev-builder-nix:/nix carapace-builder:local
-export CARAPACE_SANDBOX_BASE_IMAGE=carapace-sandbox:local
-export CARAPACE_DATA_DIR=./data/development
-export CARAPACE_CACHE_REDIS_URL=redis://localhost:6379/0
-export CARAPACE_BUILDER_URL=http://127.0.0.1:8330
-export CARAPACE_BUILDER_CACHE_URL=http://127.0.0.1:8331
-uv run carapace-server
-```
-
-A server on the host refuses to start without `CARAPACE_SANDBOX_SERVER_HOST`, the address at which sandboxes reach its proxy and Git endpoint, and binds those listeners to `CARAPACE_SERVER_SANDBOX_HOST` (default `127.0.0.1`); see [sandbox.md](sandbox.md#server-address). On Linux, both can be the sandbox network's gateway. Docker Desktop keeps that gateway inside its VM, so on a Mac the start-up egress self-test fails. With `CARAPACE_SANDBOX_EGRESS_SELF_TEST=false` and any `CARAPACE_SANDBOX_SERVER_HOST` the server starts on a Mac anyway, for the UI and the API, but sandboxes still can't reach the proxy or the Git endpoint: no knowledge clone, no domain or credential access, so no real turn that runs commands. For those, run the stack from [native Linux images](#native-linux-images-on-apple-silicon) on Apple Silicon. The builder's cache on loopback works because the session proxy forwards cache reads to it without the destination check.
-
-The server reads `CARAPACE_TOKEN` and the model keys from `.env` in the working directory (see `.env.example`). The SQLite database defaults to `carapace.db` in the data directory. For Postgres-backed host iteration, expose a separate development Postgres port and set `CARAPACE_DATABASE_URL`; keep development data separate from an existing deployment. Clean up with `docker stop carapace-dev-redis`, `docker rm -f carapace-dev-builder` and `docker volume rm carapace-dev-builder-nix`.
-
-In another shell:
+[`process-compose.yaml`](../process-compose.yaml) runs a complete stack from the checkout. The server (`uv run carapace-server`) and the frontend (`npm run dev`) run live from the source and Redis runs natively. Only what needs Docker runs in containers: the sandboxes, the [skill builder](builder.md) and a small relay. Several stacks run side by side on one Docker daemon, one per checkout or worktree, next to a Compose deployment, and none touches another's sandboxes, networks or ports.
 
 ```sh
-npm --prefix frontend ci
-npm --prefix frontend run dev
+nix develop                 # or direnv
+process-compose up          # with its TUI; or `up --detached`, then `process-compose attach`
+process-compose down
 ```
 
-Next.js serves port 3000 and proxies `/api` to `http://127.0.0.1:8321`; set `CARAPACE_BACKEND_URL` for a different host server. Compose images are immutable and no longer bind-mount `src/carapace`. Use `uv run` for live server code.
+Run it in the dev shell: the shell hook exports the stack's ports and Docker names (`CARAPACE_DEV_*`). `.env` needs `CARAPACE_TOKEN` (the password of the bootstrapped `admin`) and `CARAPACE_BUILDER_TOKEN`, plus model keys for real turns (see `.env.example`); process-compose passes it to every process. The first start builds `sandbox-image-lite` and `builder-image` for Linux (on a Mac through the [native Linux builder](#native-linux-images-on-apple-silicon)), loads them into Docker and tags them with their store path's hash, so worktrees with different sandbox or builder code use different images. Later starts load nothing unless an image changed. The `result-dev-*` links keep the images from being garbage-collected.
+
+The server keeps its data in `./data` (SQLite) and doesn't reload code: restart the `server` process (in the TUI, or `process-compose process restart server`) after a change. The frontend reloads on its own.
+
+### Stack numbers and ports
+
+Each stack gets 10 ports from 7300 on, starting at `7300 + 10·N`, where `N` is `CARAPACE_DEV_STACK` from the checkout's `.env`: 0 (the default) for the main checkout, 1 to 9 for worktrees, set by hand. The shell hook reads only that key from `.env`, never the whole file. With direnv, `.envrc` reloads the shell when `.env` changes; without it, leave and reenter `nix develop`.
+
+| Port | Service | Stack 0 |
+| --- | --- | --- |
+| +0 | frontend (Next dev) | 7300 |
+| +1 | server API | 7301 |
+| +2 | server sandbox API | 7302 |
+| +3 | server internal API | 7303 |
+| +4 | session proxy | 7304 |
+| +5 | Redis | 7305 |
+| +6 | builder API | 7306 |
+| +7 | builder cache | 7307 |
+| +8 | process-compose API (`PC_PORT_NUM`, so `attach` and `down` find their stack) | 7308 |
+| +9 | spare | |
+
+Open the frontend at `http://127.0.0.1:<base>`. The CLI needs the server port: `uv run carapace --server http://127.0.0.1:7301` for stack 0.
+
+### Instance and Docker resources
+
+The stack's [sandbox instance](sandbox.md#instances) is `dev-<checkout directory name>`, e.g. `dev-carapace` or `dev-wt-carapace-foo`. Its Docker resources carry the instance in their names: the sandbox network `carapace-sandbox-<instance>`, the relay `carapace-relay-<instance>`, the builder `carapace-builder-<instance>` and the builder's store volume `carapace-builder-nix-<instance>`. Sandbox containers keep their names (`carapace-sandbox-<id>`) and carry the instance as a label, so the stack's orphan cleanup never sees the sandboxes of another stack or of a Compose deployment.
+
+Stopping the stack stops and removes the builder and relay containers. The network and the builder volume stay for the next start. To remove a stack for good, also run `docker network rm carapace-sandbox-<instance>` and `docker volume rm carapace-builder-nix-<instance>`, and delete its `./data`.
+
+### How sandboxes reach the server
+
+Sandboxes sit on an internal network, so they reach nothing but its containers. The relay (`alpine/socat`) is one of them, and also on Docker's default bridge. It forwards the stack's proxy and sandbox API ports to `host.docker.internal`, and the server gives sandboxes the relay's name as its address (`CARAPACE_SANDBOX_SERVER_HOST`, see [server address](sandbox.md#server-address)). On a Mac, Docker Desktop forwards `host.docker.internal` to the host's loopback, where the server listens. On Linux, `host.docker.internal` is the docker0 gateway, so the shell hook binds the server's sandbox listeners there (`CARAPACE_SERVER_SANDBOX_HOST`), while the main API stays on loopback. It is the same path on both, so the start-up egress self-test passes and real turns work: the knowledge clone, domains through the proxy and git pushes.
+
+The builder stays a container on purpose: skill flakes are agent-authored, `nix eval` runs unsandboxed, harmonia serves the whole store, and Darwin's build sandbox is weak. Its ports are published on loopback, see [builder.md](builder.md#dev-stack).
+
+### A worktree with demo data
+
+```sh
+git worktree add ../wt-carapace-foo -b foo origin/main
+cd ../wt-carapace-foo
+printf 'CARAPACE_DEV_STACK=1\nCARAPACE_TOKEN=%s\nCARAPACE_BUILDER_TOKEN=%s\n' "$(openssl rand -hex 12)" "$(openssl rand -hex 20)" > .env
+nix develop                         # or direnv allow
+process-compose up --detached
+process-compose process start demo  # once the server is up
+```
+
+Then open `http://127.0.0.1:7310` and log in as `demo` with password `carapace-demo`. The `demo` process runs [`scripts/seed_demo.py`](#screenshots) against the stack's `./data`. It never starts on its own, and the seed refuses a data dir that already has sessions. The shell hook doesn't write `.env` for you.
+
+### Testing images locally
+
+The dev stack runs the server and frontend from source. To try locally built images of all services, run them in Compose under the names it expects: load the images, tag each `:local` image as `ghcr.io/thiesgerken/<name>:<tag>` (`carapace`, `carapace-frontend`, `carapace-bitwarden-cli`, `carapace-sandbox`, `carapace-builder`) and start Compose with `CARAPACE_IMAGE_TAG=<tag>`. Compose uses an image that is present locally instead of pulling it. That is the Compose deployment of that checkout, on its `./data`.
+
+```sh
+for image in result-{server,frontend,bitwarden,sandbox,builder}-image; do docker load -i "$image"; done
+for name in carapace carapace-frontend carapace-bitwarden-cli carapace-sandbox carapace-builder; do
+  docker tag "$name:local" "ghcr.io/thiesgerken/$name:dev"
+done
+CARAPACE_IMAGE_TAG=dev docker compose up -d
+```
 
 ## Screenshots
 
@@ -74,47 +110,27 @@ A session opens at `/?session=<ID>`.
 
 The demo user also has memory data for the Memory pages and the home page: `memory_low` runs on the subscription model, today's budget window holds a session extraction on Sonnet (`demo-pancake-recipe`) and one on Codex (`demo-subscription`), and `demo-recipe-skill` has a pending extraction task for the run dialog. Today's spend sits close to the memory budget's day limits, so the home page shows the budget notice.
 
-1. Start a disposable Redis and the server on a fresh data dir inside the temp directory (the seed refuses any other). Startup bootstraps an `admin` user from `CARAPACE_TOKEN`. Stop a running development server first, or move this one to other ports with `CARAPACE_SERVER_PORT`/`CARAPACE_SERVER_SANDBOX_PORT` and `CARAPACE_BACKEND_URL` for the frontend.
+1. Bring up a [dev stack with demo data](#a-worktree-with-demo-data), in a fresh worktree so its `./data` has no sessions yet. Order matters: server startup closes approval requests left open by a previous process, and two demo sessions show open ones, so seed (`process-compose process start demo`) once the server is up. The seed refuses a database outside the data dir and a data dir that already has sessions.
+
+2. Log in as `demo` with password `carapace-demo` at the stack's frontend if you want to look around.
+
+3. Capture with headless Chrome. `scripts/screenshot.mjs` logs in as the demo user over the DevTools protocol (Node built-ins only), since the session cookie is HTTP-only. Per page it writes `NAME-light.png` and `NAME-dark.png` at 1280×800 with device scale factor 2, or `NAME-phone-light.png` and `NAME-phone-dark.png` at 390×844 with `--phone`. It prints the files; without `--out` they land in a fresh temp directory, so they can't end up in a commit. Light and dark come from `--blink-settings=preferredColorScheme=1` and `=0`. The UI is English and the time zone UTC. Each page gets the load event plus `--settle` milliseconds (default 3000) to render. Set `CHROME` to the Chrome binary outside macOS.
 
    ```sh
-   docker run --rm -d --name carapace-demo-redis -p 127.0.0.1:6390:6379 redis:8-alpine
-   export CARAPACE_DATA_DIR="$(mktemp -d)"
-   unset CARAPACE_DATABASE_URL  # the demo database must be the default SQLite file in the data dir
-   CARAPACE_CACHE_REDIS_URL=redis://127.0.0.1:6390/0 \
-   CARAPACE_SANDBOX_BASE_IMAGE=carapace-sandbox:local \
-   CARAPACE_SANDBOX_EGRESS_SELF_TEST=false \
-   CARAPACE_SANDBOX_SERVER_HOST=127.0.0.1 \
-   CARAPACE_TOKEN=demo-admin-password-0123456789 \
-   uv run carapace-server
+   node scripts/screenshot.mjs --base http://127.0.0.1:7310 --out /tmp/shots 'budget=/?session=demo-budget-stop'
+   node scripts/screenshot.mjs --base http://127.0.0.1:7310 --out /tmp/shots --phone 'budget=/?session=demo-budget-stop'
    ```
 
-   The demo sessions need no sandbox, so the server skips the egress self-test, which a server on a Mac host can never pass (see [host iteration](#native-developer-shell)), and any sandbox address will do. It warns about the skipped test at start.
+   For "before" pictures, run the base branch's frontend (e.g. from a worktree on `origin/main`) against the same server, e.g. `CARAPACE_BACKEND_URL=http://127.0.0.1:7311 npm run dev -- --port 7319` in its `frontend/`, and capture from there into another directory.
 
-2. In another shell with the same `CARAPACE_DATA_DIR`, seed it once the server is up. Order matters: server startup closes approval requests left open by a previous process, and two demo sessions show open ones. The script refuses a data dir outside the temp directory, a database outside the data dir, and a data dir that already has sessions.
-
-   ```sh
-   uv run python scripts/seed_demo.py "$CARAPACE_DATA_DIR"
-   ```
-
-3. Start the frontend with `npm --prefix frontend run dev` and log in as `demo` with password `carapace-demo` if you want to look around.
-
-4. Capture with headless Chrome. `scripts/screenshot.mjs` logs in as the demo user over the DevTools protocol (Node built-ins only), since the session cookie is HTTP-only. Per page it writes `NAME-light.png` and `NAME-dark.png` at 1280×800 with device scale factor 2, or `NAME-phone-light.png` and `NAME-phone-dark.png` at 390×844 with `--phone`. It prints the files; without `--out` they land in a fresh temp directory, so they can't end up in a commit. Light and dark come from `--blink-settings=preferredColorScheme=1` and `=0`. The UI is English and the time zone UTC. Each page gets the load event plus `--settle` milliseconds (default 3000) to render. Set `CHROME` to the Chrome binary outside macOS.
-
-   ```sh
-   node scripts/screenshot.mjs --out /tmp/shots 'budget=/?session=demo-budget-stop'
-   node scripts/screenshot.mjs --out /tmp/shots --phone 'budget=/?session=demo-budget-stop'
-   ```
-
-   For "before" pictures, run the base branch's frontend (e.g. from a worktree on `origin/main`) against the same server and capture into another directory.
-
-5. Attach the pictures to the PR instead of committing them. gh 2.99 or newer uploads images natively and rewrites `![alt](./file.png)` references in the body:
+4. Attach the pictures to the PR instead of committing them. gh 2.99 or newer uploads images natively and rewrites `![alt](./file.png)` references in the body:
 
    ```sh
    cd /tmp/shots
    gh pr edit 123 -R thiesgerken/carapace --body-file body.md --attach ./budget-light.png --attach ./budget-dark.png
    ```
 
-The README screenshots in `docs/assets/screenshots/` are not regenerated automatically, and most of them can't come from `screenshot.mjs`: the chat opens scrolled to the bottom, and some shots need scrolling or expanded tool details, which the script doesn't do. To retake them, run steps 1 to 3, log in as `demo` in a 1280×800 browser window, and take them by hand:
+The README screenshots in `docs/assets/screenshots/` are not regenerated automatically, and most of them can't come from `screenshot.mjs`: the chat opens scrolled to the bottom, and some shots need scrolling or expanded tool details, which the script doesn't do. To retake them, run steps 1 and 2, log in as `demo` in a 1280×800 browser window, and take them by hand:
 
 | README file | Session | Position |
 | --- | --- | --- |
@@ -125,7 +141,7 @@ The README screenshots in `docs/assets/screenshots/` are not regenerated automat
 | `pancake_tree.png` | `demo-recipe-skill` | workspace tree in the last answer |
 | `post_readonly.png` | `demo-blocked-post` | denied call expanded |
 
-Clean up with `docker stop carapace-demo-redis` and by deleting the data dir.
+Clean up with `process-compose down`, then remove the stack's [Docker resources](#instance-and-docker-resources) and the worktree.
 
 ## Native Linux images on Apple Silicon
 
@@ -139,14 +155,11 @@ nix build .#packages.aarch64-linux.frontend-image --out-link result-frontend-ima
 nix build .#packages.aarch64-linux.bitwarden-image --out-link result-bitwarden-image
 nix build .#packages.aarch64-linux.sandbox-image-lite --out-link result-sandbox-image
 nix build .#packages.aarch64-linux.builder-image --out-link result-builder-image
-for image in result-{server,frontend,bitwarden,sandbox,builder}-image; do docker load -i "$image"; done
-export COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml
-docker compose up -d
 ```
 
-These are native ARM Linux builds, not x86 emulation. Only x86_64 Linux images are published. Non-Nix x64 users pull release images as described in the [quickstart](quickstart.md).
+Run them in Compose as described in [testing images locally](#testing-images-locally). These are native ARM Linux builds, not x86 emulation. Only x86_64 Linux images are published. Non-Nix x64 users pull release images as described in the [quickstart](quickstart.md).
 
-On Linux x64, use `packages.x86_64-linux.` in the Nix output paths and the full `sandbox-image`. The local Compose overlay selects `:local` images with `pull_policy: never` and points the server at `carapace-sandbox:local`.
+On Linux x64, use `packages.x86_64-linux.` in the Nix output paths and the full `sandbox-image`.
 
 `sandbox-image` cannot be built on the Native Linux Builder: it fails with "Too many open files in system" once a single build opens about 100k files, and the nixpkgs source that the image ships has 90k. Build `sandbox-image-lite` there instead (the commands above do); CI or a real Linux builder builds the full image. The lite image is the same except for that source, so its first `nix run nixpkgs#…` fetches nixpkgs (from `cache.nixos.org`, a few seconds) where the full image needs no network. Building on a Mac also reads macOS's case-insensitive store, so in local images names that differ only in case carry a `~nix~case~hack~1` suffix (terminfo entries, for example). Published x64 images are built on Linux and are not affected.
 

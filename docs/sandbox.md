@@ -272,7 +272,7 @@ Sandboxes reach the server's proxy (`CARAPACE_SANDBOX_PROXY_PORT`, default `3128
 
 A server that runs outside a container has no such default and refuses to start without `CARAPACE_SANDBOX_SERVER_HOST`. There is no gateway fallback: Docker Desktop keeps the bridge gateway inside its VM, where nothing reaches a server on the Mac.
 
-The listeners bind to loopback by default: `CARAPACE_SERVER_HOST` (main API) and `CARAPACE_SERVER_SANDBOX_HOST` (sandbox API and proxy) are both `127.0.0.1`. The server image sets both to `0.0.0.0`, so Compose and the Helm chart need nothing. A server outside a container binds the sandbox listeners to an address the sandboxes' path arrives at, such as the Docker bridge gateway on Linux.
+The listeners bind to loopback by default: `CARAPACE_SERVER_HOST` (main API) and `CARAPACE_SERVER_SANDBOX_HOST` (sandbox API and proxy) are both `127.0.0.1`. The server image sets both to `0.0.0.0`, so Compose and the Helm chart need nothing. A server outside a container binds the sandbox listeners to an address the sandboxes' path arrives at, such as the Docker bridge gateway on Linux. The [dev stack](development.md#how-sandboxes-reach-the-server) does that with a relay container on the sandbox network.
 
 ## Docker socket
 

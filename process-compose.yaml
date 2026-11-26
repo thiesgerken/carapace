@@ -1,0 +1,143 @@
+# Native dev stack, see docs/development.md#dev-stack. Run `process-compose up` inside the dev shell, which
+# exports this stack's ports and Docker names (CARAPACE_DEV_*, PC_PORT_NUM) from CARAPACE_DEV_STACK in .env.
+# ${VAR} is expanded by process-compose when it loads this file; $$VAR is left to the shell.
+version: "0.5"
+
+processes:
+  redis:
+    command: redis-server --bind 127.0.0.1 --port ${CARAPACE_DEV_REDIS_PORT} --save "" --appendonly no
+    readiness_probe:
+      exec:
+        command: redis-cli -p ${CARAPACE_DEV_REDIS_PORT} ping
+
+  # Tagged with the store path's hash, so stacks in worktrees with different sandbox or builder code don't
+  # share an image. The out-link keeps the image from being garbage-collected and tells the users the tag.
+  sandbox-image:
+    command: &load-image |
+      set -eu
+      : "$${CARAPACE_DEV_LINUX_SYSTEM:?run process-compose inside the dev shell (nix develop)}"
+      out=$$(nix build ".#packages.$$CARAPACE_DEV_LINUX_SYSTEM.$$ATTR" --print-out-paths --out-link "result-dev-$$ATTR")
+      tag="$$IMAGE:$$(basename "$$out" | cut -d- -f1)"
+      if ! docker image inspect "$$tag" > /dev/null 2>&1; then
+        docker load -i "$$out"
+        # ponytail: two stacks loading different images at the same moment could swap :local before the tag
+        docker tag "$$IMAGE:local" "$$tag"
+      fi
+      echo "$$tag is loaded"
+    environment:
+      - ATTR=sandbox-image-lite
+      - IMAGE=carapace-sandbox
+
+  builder-image:
+    command: *load-image
+    environment:
+      - ATTR=builder-image
+      - IMAGE=carapace-builder
+
+  sandbox-network:
+    command: |
+      docker network inspect "${CARAPACE_DEV_SANDBOX_NETWORK}" > /dev/null 2>&1 ||
+        docker network create --internal "${CARAPACE_DEV_SANDBOX_NETWORK}"
+
+  builder-init:
+    command: |
+      tag=$$(basename "$$(readlink result-dev-builder-image)" | cut -d- -f1)
+      docker run --rm -v "${CARAPACE_DEV_BUILDER_VOLUME}:/mnt/nix" "carapace-builder:$$tag" /bin/carapace-builder-init
+    depends_on:
+      builder-image:
+        condition: process_completed_successfully
+
+  # A container on purpose: skill flakes are agent-authored, `nix eval` runs unsandboxed, harmonia serves
+  # the whole store, and Darwin's build sandbox is weak. Foreground with --rm: stopping the process removes it.
+  builder:
+    command: |
+      tag=$$(basename "$$(readlink result-dev-builder-image)" | cut -d- -f1)
+      docker rm -f "${CARAPACE_DEV_BUILDER}" > /dev/null 2>&1 || true
+      exec docker run --rm --name "${CARAPACE_DEV_BUILDER}" \
+        -p "127.0.0.1:${CARAPACE_DEV_BUILDER_PORT}:8330" -p "127.0.0.1:${CARAPACE_DEV_BUILDER_CACHE_PORT}:8331" \
+        -e CARAPACE_BUILDER_TOKEN \
+        --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined \
+        -v "${CARAPACE_DEV_BUILDER_VOLUME}:/nix" "carapace-builder:$$tag"
+    depends_on:
+      builder-init:
+        condition: process_completed_successfully
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: ${CARAPACE_DEV_BUILDER_PORT}
+        path: /healthz
+      initial_delay_seconds: 2
+      period_seconds: 2
+      failure_threshold: 60
+
+  # Sandboxes sit on an internal network and reach nothing but its containers. The relay is one of them and
+  # forwards the server's proxy and sandbox API to the host (Docker Desktop: the Mac's loopback; Linux: the
+  # docker0 gateway), so a server outside Docker works the same on both.
+  relay:
+    command: |
+      docker rm -f "${CARAPACE_DEV_RELAY}" > /dev/null 2>&1 || true
+      docker create --rm --name "${CARAPACE_DEV_RELAY}" --add-host host.docker.internal:host-gateway \
+        --entrypoint sh alpine/socat@sha256:5aa280c6fc5bee94dbd2bbdf2a58d30f50396eaa110be84b03636945b157ae68 -c '
+          socat TCP-LISTEN:${CARAPACE_DEV_PROXY_PORT},fork,reuseaddr TCP:host.docker.internal:${CARAPACE_DEV_PROXY_PORT} &
+          exec socat TCP-LISTEN:${CARAPACE_DEV_SANDBOX_PORT},fork,reuseaddr TCP:host.docker.internal:${CARAPACE_DEV_SANDBOX_PORT}' \
+        > /dev/null
+      docker network connect "${CARAPACE_DEV_SANDBOX_NETWORK}" "${CARAPACE_DEV_RELAY}"
+      exec docker start --attach "${CARAPACE_DEV_RELAY}"
+    depends_on:
+      sandbox-network:
+        condition: process_completed_successfully
+    readiness_probe:
+      exec:
+        # No docker inspect -f: process-compose renders {{ }} as its own template.
+        command: docker ps --quiet --filter "name=^${CARAPACE_DEV_RELAY}$$" --filter status=running | grep -q .
+
+  # No hot reload: restart the process after a change.
+  server:
+    command: |
+      export CARAPACE_DATA_DIR="$$PWD/data"
+      export CARAPACE_SANDBOX_BASE_IMAGE="carapace-sandbox:$$(basename "$$(readlink result-dev-sandbox-image-lite)" | cut -d- -f1)"
+      exec uv run carapace-server
+    environment:
+      - CARAPACE_SERVER_PORT=${CARAPACE_DEV_SERVER_PORT}
+      - CARAPACE_SERVER_SANDBOX_PORT=${CARAPACE_DEV_SANDBOX_PORT}
+      - CARAPACE_SERVER_INTERNAL_PORT=${CARAPACE_DEV_INTERNAL_PORT}
+      - CARAPACE_SERVER_SANDBOX_HOST=${CARAPACE_DEV_SANDBOX_BIND}
+      - CARAPACE_SANDBOX_PROXY_PORT=${CARAPACE_DEV_PROXY_PORT}
+      - CARAPACE_SANDBOX_INSTANCE=${CARAPACE_DEV_INSTANCE}
+      - CARAPACE_SANDBOX_SERVER_HOST=${CARAPACE_DEV_RELAY}
+      - CARAPACE_CACHE_REDIS_URL=redis://127.0.0.1:${CARAPACE_DEV_REDIS_PORT}/0
+      - CARAPACE_BUILDER_URL=http://127.0.0.1:${CARAPACE_DEV_BUILDER_PORT}
+      - CARAPACE_BUILDER_CACHE_URL=http://127.0.0.1:${CARAPACE_DEV_BUILDER_CACHE_PORT}
+    depends_on:
+      redis:
+        condition: process_healthy
+      sandbox-image:
+        condition: process_completed_successfully
+      builder:
+        condition: process_healthy
+      relay:
+        condition: process_healthy
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: ${CARAPACE_DEV_SERVER_PORT}
+        path: /openapi.json
+      initial_delay_seconds: 5
+      period_seconds: 2
+      failure_threshold: 90
+
+  frontend:
+    command: |
+      [ -d node_modules ] || npm ci
+      exec npm run dev -- --hostname 127.0.0.1 --port ${CARAPACE_DEV_FRONTEND_PORT}
+    working_dir: ./frontend
+    environment:
+      - CARAPACE_BACKEND_URL=http://127.0.0.1:${CARAPACE_DEV_SERVER_PORT}
+
+  # Never starts on its own: `process-compose process start demo` once the server is up.
+  demo:
+    command: uv run python scripts/seed_demo.py --dev-stack data
+    disabled: true
+    depends_on:
+      server:
+        condition: process_healthy
