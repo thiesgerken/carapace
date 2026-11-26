@@ -1,6 +1,13 @@
 # CHANGELOG
 
 
+## v0.196.1 (2026-11-26)
+
+### 🔧 Add or update configuration files
+
+- chore(frontend): update Next.js-generated agent rules
+- chore: move the dev stack port block to 7500-7599
+
 ## v0.196.0 (2026-11-26)
 
 ### ✨ Introduce new features
