@@ -115,6 +115,10 @@ sudo sysctl --system
 
 This switches the restriction off for the whole host, not only for the builder. If that is not acceptable, run the builder on Kubernetes or on another machine. Docker Desktop, Debian and Fedora hosts need nothing extra. The builder never falls back to building without the sandbox: if user namespaces are missing, it logs Nix's reason and exits. Plain Docker has no per-container user namespace, so root in the builder is root on the host, with the default capabilities. That is weaker than the Kubernetes setup (see [security](security.md#skill-builder)).
 
+### Dev stack
+
+The [dev stack](development.md#dev-stack) runs the builder as a container too, from the `builder-image` built from the checkout: `builder-init` and `builder` with the volume `carapace-builder-nix-<instance>`, ports published on loopback at the stack's builder ports (`7306` and `7307` for stack 0). The server reaches it there, sandboxes reach the cache through the session proxy. Stopping the stack removes the container; the volume keeps the store. Set `CARAPACE_BUILDER_TOKEN` in `.env`.
+
 ### Kubernetes
 
 The chart deploys the builder by default (`builder.enabled`). That covers a Deployment with an init container, a PVC (`builder.persistence.size`, default 20Gi), a Service, a NetworkPolicy that admits only the server on ports 8330 and 8331, and a generated token Secret. The pod runs with `hostUsers: false` (root in the pod is an unprivileged host user), `procMount: Unmasked`, and `Unconfined` seccomp and AppArmor profiles. It gets no added capabilities.

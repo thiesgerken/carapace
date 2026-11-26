@@ -61,7 +61,7 @@ curl -X POST http://localhost:3001/api/admin/users \
 
 The web UI uses the same origin for frontend and API requests, so it only prompts for username and password on first connect.
 
-Set `CARAPACE_IMAGE_TAG` to a matching release or PR tag when you need a version other than `latest`. All images are built with Nix, not Dockerfiles. For local builds use the [development guide](development.md) and `docker-compose.local.yml`; the server source is not bind-mounted.
+Set `CARAPACE_IMAGE_TAG` to a matching release or PR tag when you need a version other than `latest`. All images are built with Nix, not Dockerfiles. This Compose file is the production path; for development from source use the [dev stack](development.md#dev-stack), and for locally built images see [testing images locally](development.md#testing-images-locally).
 
 The frontend listens on 8080 internally. If your API is on another origin, mount a one-line nginx snippet instead of setting an environment variable:
 
