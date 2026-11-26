@@ -139,7 +139,6 @@ def _notify_result(
                 tool=tool_name,
                 output=result,
                 exit_code=exit_code,
-                tool_id=ctx.deps.security.current_parent_tool_id,
                 model_tool_call_id=ctx.tool_call_id,
                 files=files,
             )
@@ -280,7 +279,10 @@ async def _mcp_tools(ctx: RunContext[Deps], server: str) -> str:
     """
     with span("skill", "list tools", server=server):
         result = await ctx.deps.sandbox.exec_command(
-            ctx.deps.session_state.session_id, f"{server} --list-tools", timeout=_LIST_TOOLS_TIMEOUT_SECONDS
+            ctx.deps.session_state.session_id,
+            f"{server} --list-tools",
+            timeout=_LIST_TOOLS_TIMEOUT_SECONDS,
+            tool_call_id=ctx.tool_call_id,
         )
     lines = [f"# Tools of `{server}`", ""]
     if result.exit_code == 0:
@@ -710,7 +712,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         session_id = ctx.deps.session_state.session_id
         try:
             with span("exec", "exec", command=command) as call:
-                exec_result = await ctx.deps.sandbox.exec_command(session_id, command)
+                exec_result = await ctx.deps.sandbox.exec_command(session_id, command, tool_call_id=ctx.tool_call_id)
                 call.attrs["exit_code"] = exec_result.exit_code
             result = exec_result.output
             exit_code = exec_result.exit_code

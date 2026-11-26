@@ -21,6 +21,9 @@ class RunningExec:
     command: str
     domains: set[str]
     credentials: set[CredentialGrant]
+    # The model's id for the agent tool call that runs this exec (None for execs of no call): the UI
+    # nests the exec's boundary decisions under that call.
+    tool_call_id: str | None
     # Once the sentinel has seen this exec in a boundary decision, its later requests are short follow-ups.
     boundary_reviewed: bool = False
     # Names this exec where the security layer must tell it from the next one, e.g. its domain decisions.
