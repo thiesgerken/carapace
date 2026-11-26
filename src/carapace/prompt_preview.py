@@ -163,7 +163,7 @@ async def _sentinel(inputs: PreviewInputs) -> PromptPreview:
     state = _fresh_session(inputs)
     sentinel = _sentinel_for(inputs, state)
     model = state.sentinel_model_name or inputs.config.agent.sentinel_model
-    request = await _record(sentinel.agent, deps=SentinelDeps(sentinel.skills_dir, agent_reads_verdict=True))
+    request = await _record(sentinel.agent, deps=SentinelDeps(agent_reads_verdict=True))
     sections = [
         *_tool_sections(request, model),
         _section("role_instructions", "Sentinel instructions", SENTINEL_INSTRUCTIONS, model),
@@ -272,7 +272,8 @@ def _sentinel_for(inputs: PreviewInputs, state: SessionState) -> Sentinel:
         model=state.sentinel_model_name or inputs.config.agent.sentinel_model,
         user=inputs.user,
         knowledge_dir=inputs.repo.knowledge_dir,
-        skills_dir=inputs.repo.knowledge_dir / "skills",
+        # The preview records the first request and runs no tool.
+        skill_builds=SkillBuilds(None),
         # Previews record the request locally instead of sending it, so they take no LLM slot.
         llm_slots=None,
         model_factory=lambda model_name, *, user: _recording_model(),

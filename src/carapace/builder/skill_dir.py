@@ -56,12 +56,12 @@ def read_file(skill_dir: str, path: str) -> bytes:
         finally:
             for directory in opened:
                 os.close(directory)
+    info = os.fstat(file_fd)
+    if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_FILE_BYTES:
+        os.close(file_fd)
+        reason = "is not a file" if not stat.S_ISREG(info.st_mode) else f"is larger than {MAX_FILE_BYTES} bytes"
+        raise SkillFileError(f"{path} {reason}")
     with os.fdopen(file_fd, "rb") as file:
-        info = os.fstat(file.fileno())
-        if not stat.S_ISREG(info.st_mode):
-            raise SkillFileError(f"{path} is not a file")
-        if info.st_size > MAX_FILE_BYTES:
-            raise SkillFileError(f"{path} is larger than {MAX_FILE_BYTES} bytes")
         return file.read()
 
 

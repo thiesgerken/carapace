@@ -1,14 +1,19 @@
-"""Tests for SkillRegistry (no LLM tokens needed)."""
+"""Listing skills from skills/flake.lock and reading SKILL.md frontmatter (no LLM tokens needed)."""
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
-from carapace.prompt_prefix import shared_prompt_prefix
-from carapace.skills import SkillDocumentError, SkillRegistry, SkillsFlakeError, parse_skills_lock
+from carapace.skills import (
+    SkillDocumentError,
+    SkillsFlakeError,
+    parse_skill_document,
+    parse_skills_lock,
+    read_skills_flake,
+)
 from tests.skills_flake import write_skills_flake
 
 
@@ -21,12 +26,9 @@ def _write_skill(skills_dir: Path, directory: str, text: str) -> Path:
 
 def test_without_a_skills_flake_there_are_no_skills(tmp_path: Path) -> None:
     _write_skill(tmp_path, "my-skill", "---\nname: my-skill\ndescription: A test skill\n---\n")
-    registry = SkillRegistry(tmp_path)
 
-    assert registry.scan() == []
-    assert registry.get_full_instructions("my-skill") is None
     with pytest.raises(SkillsFlakeError, match=r"skills/flake\.nix is missing"):
-        registry.listed()
+        read_skills_flake(tmp_path)
 
 
 def test_without_a_lock_there_are_no_skills(tmp_path: Path) -> None:
@@ -34,73 +36,24 @@ def test_without_a_lock_there_are_no_skills(tmp_path: Path) -> None:
     (tmp_path / "flake.lock").unlink()
 
     with pytest.raises(SkillsFlakeError, match=r"nix flake lock \./skills"):
-        SkillRegistry(tmp_path).listed()
+        read_skills_flake(tmp_path)
 
 
-def test_scan_lists_only_what_the_flake_lists(tmp_path: Path) -> None:
-    _write_skill(tmp_path, "my-skill", "---\nname: my-skill\ndescription: A test skill\n---\nBody here.\n")
-    _write_skill(tmp_path, "unlisted", "---\nname: unlisted\ndescription: Not listed\n---\n")
-    write_skills_flake(tmp_path, ["my-skill"], external=["tracker"])
+def test_only_what_the_flake_lists_is_a_skill_named_by_its_attribute(tmp_path: Path) -> None:
+    _write_skill(tmp_path, "carapace", "---\nname: carapace\n---\n")
+    _write_skill(tmp_path, "unlisted", "---\nname: unlisted\n---\n")
+    write_skills_flake(tmp_path, {"carapace-cli": "carapace"}, external=["tracker"])
 
-    catalog = SkillRegistry(tmp_path).scan()
+    listed = {skill.name: skill.directory for skill in read_skills_flake(tmp_path)}
 
-    # An external skill has no SKILL.md in this repo to list.
-    assert [(info.name, info.description) for info in catalog] == [("my-skill", "A test skill")]
-
-
-def test_a_skill_is_named_by_its_attribute(tmp_path: Path) -> None:
-    content = "---\nname: carapace\ndescription: Drive carapace\n---\nDo the thing.\n"
-    _write_skill(tmp_path, "carapace", content)
-    write_skills_flake(tmp_path, {"carapace-cli": "carapace"})
-    registry = SkillRegistry(tmp_path)
-
-    assert [info.name for info in registry.scan()] == ["carapace-cli"]
-    assert registry.get_full_instructions("carapace-cli") == content
-    assert registry.get_full_instructions("carapace") is None
+    assert listed == {"carapace-cli": PurePosixPath("carapace"), "tracker": None}
 
 
-def test_scan_no_frontmatter(tmp_path: Path) -> None:
-    _write_skill(tmp_path, "plain-skill", "Just a body, no frontmatter.\n")
-    write_skills_flake(tmp_path, ["plain-skill"])
+def test_disabled_in_the_frontmatter_is_refused() -> None:
+    text = "---\nname: private-search\nmetadata:\n  carapace:\n    disabled: true\n---\nFull instructions.\n"
 
-    assert [info.name for info in SkillRegistry(tmp_path).scan()] == ["plain-skill"]
-
-
-def test_a_listed_skill_without_skill_md_is_listed_as_broken(tmp_path: Path) -> None:
-    (tmp_path / "commands-only").mkdir()
-    write_skills_flake(tmp_path, ["commands-only"])
-
-    [entry] = SkillRegistry(tmp_path).scan()
-
-    assert entry.name == "commands-only"
-    assert entry.description.startswith("BROKEN") and "SKILL.md is missing" in entry.description
-
-
-def test_get_full_instructions_missing(tmp_path: Path) -> None:
-    write_skills_flake(tmp_path, [])
-    assert SkillRegistry(tmp_path).get_full_instructions("nope") is None
-
-
-def test_scan_caches(tmp_path: Path) -> None:
-    registry = SkillRegistry(tmp_path)
-    assert registry.scan() is registry.scan()
-
-
-def test_disabled_in_the_frontmatter_is_refused(tmp_path: Path) -> None:
-    text = (
-        "---\nname: private-search\ndescription: Private indexed material\n"
-        "metadata:\n  carapace:\n    disabled: true\n---\nFull instructions.\n"
-    )
-    _write_skill(tmp_path, "private-search", text)
-    write_skills_flake(tmp_path, ["private-search"])
-    registry = SkillRegistry(tmp_path)
-
-    [entry] = registry.scan()
-
-    assert entry.description.startswith("BROKEN") and "unlist it there" in entry.description
-    assert "Private indexed material" not in shared_prompt_prefix(tmp_path, registry.scan())
     with pytest.raises(SkillDocumentError, match="disabled is gone"):
-        registry.get_carapace_config("private-search")
+        parse_skill_document(text, fallback_name="private-search").carapace_config()
 
 
 @pytest.mark.parametrize("path", ["../outside", ".", "./a/../.."])

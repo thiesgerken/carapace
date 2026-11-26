@@ -6,11 +6,9 @@ from pathlib import Path
 
 from .config import resolve_knowledge_repos_dir, resolve_user_knowledge_dir
 from .git.store import GitStore
-from .skills import SkillRegistry
 from .usernames import normalize_username
 
 type GitStoreFactory = Callable[[Path], GitStore]
-type SkillRegistryFactory = Callable[[Path], SkillRegistry]
 type SessionOwnerResolver = Callable[[str], str]
 
 
@@ -19,7 +17,6 @@ class KnowledgeRepoHandle:
     owner: str
     knowledge_dir: Path
     git_store: GitStore
-    skill_registry: SkillRegistry
 
 
 type KnowledgeRepoResolver = Callable[[str], KnowledgeRepoHandle]
@@ -32,12 +29,10 @@ class KnowledgeRepoRegistry:
         *,
         knowledge_repos_dir: Path | None = None,
         git_store_factory: GitStoreFactory | None = None,
-        skill_registry_factory: SkillRegistryFactory | None = None,
     ) -> None:
         self._data_dir = data_dir
         self._knowledge_repos_dir = resolve_knowledge_repos_dir(data_dir, knowledge_repos_dir)
         self._git_store_factory = git_store_factory or GitStore
-        self._skill_registry_factory = skill_registry_factory or SkillRegistry
         self._handles: dict[str, KnowledgeRepoHandle] = {}
 
     @property
@@ -59,7 +54,6 @@ class KnowledgeRepoRegistry:
             owner=owner,
             knowledge_dir=knowledge_dir,
             git_store=self._git_store_factory(knowledge_dir),
-            skill_registry=self._skill_registry_factory(knowledge_dir / "skills"),
         )
         self._handles[owner] = handle
         return handle

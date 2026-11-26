@@ -24,6 +24,7 @@ from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import RunContext
 
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.security.context import SENTINEL_VERDICT_TOOL, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.compaction_summarizer import summary_agent
@@ -116,7 +117,7 @@ async def _sentinel(model: Model, tmp_path: Path) -> None:
         model="test:model",
         user="thies",
         knowledge_dir=tmp_path,
-        skills_dir=tmp_path / "skills",
+        skill_builds=SkillBuilds(None),
         llm_slots=None,
         model_factory=lambda _name, *, user: model,
     )

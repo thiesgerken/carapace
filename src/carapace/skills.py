@@ -7,10 +7,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
-from loguru import logger
 from pydantic import ValidationError
 
-from .models.skills import SkillCarapaceConfig, SkillInfo
+from .models.skills import SkillCarapaceConfig
 
 
 class SkillDocumentError(ValueError):
@@ -144,84 +143,3 @@ def _describe_yaml_error(exc: yaml.YAMLError) -> str:
         mark = exc.problem_mark
         return f"{exc.problem} (line {mark.line + 1}, column {mark.column + 1})"
     return str(exc)
-
-
-class SkillRegistry:
-    def __init__(self, skills_dir: Path):
-        self.skills_dir = skills_dir
-        self._catalog: list[SkillInfo] | None = None
-        self._listed: dict[str, ListedSkill] | None = None
-
-    def invalidate(self) -> None:
-        self._catalog = None
-        self._listed = None
-
-    def listed(self) -> dict[str, ListedSkill]:
-        """The skills of skills/flake.nix by name. Raises ``SkillsFlakeError`` when it or its lock is unusable."""
-        if self._listed is None:
-            self._listed = {skill.name: skill for skill in read_skills_flake(self.skills_dir)}
-        return self._listed
-
-    def scan(self) -> list[SkillInfo]:
-        """Frontmatter of every listed local skill (progressive disclosure)."""
-        if self._catalog is not None:
-            return self._catalog
-        try:
-            listed = self.listed().values()
-        except SkillsFlakeError as exc:
-            logger.error(f"No skills in {self.skills_dir}: {exc}")
-            listed = []
-        # A skill from elsewhere has no SKILL.md in this repo to list.
-        self._catalog = [
-            self._catalog_entry(skill.name, self.skills_dir / skill.directory)
-            for skill in listed
-            if skill.directory is not None
-        ]
-        return self._catalog
-
-    def skill_dir(self, skill_name: str) -> Path | None:
-        """The directory of a listed local skill."""
-        try:
-            skill = self.listed().get(skill_name)
-        except SkillsFlakeError:
-            return None
-        return None if skill is None or skill.directory is None else self.skills_dir / skill.directory
-
-    def get_full_instructions(self, skill_name: str) -> str | None:
-        """Load the full SKILL.md of a skill (``read_skill``)."""
-        skill_md = self._skill_md(skill_name)
-        return skill_md.read_text() if skill_md is not None else None
-
-    def get_carapace_config(self, skill_name: str) -> SkillCarapaceConfig | None:
-        """Load carapace skill config from SKILL.md frontmatter.
-
-        Raises ``SkillDocumentError`` when the frontmatter or ``metadata.carapace`` is invalid.
-        """
-        skill_md = self._skill_md(skill_name)
-        if skill_md is None:
-            return None
-        return parse_skill_document(skill_md.read_text(), fallback_name=skill_name).carapace_config()
-
-    def _skill_md(self, skill_name: str) -> Path | None:
-        skill_dir = self.skill_dir(skill_name)
-        if skill_dir is None or not (skill_dir / "SKILL.md").is_file():
-            return None
-        return skill_dir / "SKILL.md"
-
-    def _catalog_entry(self, name: str, skill_dir: Path) -> SkillInfo:
-        skill_md = skill_dir / "SKILL.md"
-        try:
-            if not skill_md.is_file():
-                raise SkillDocumentError(f"{skill_md.relative_to(self.skills_dir.parent)} is missing")
-            document = parse_skill_document(skill_md.read_text(), fallback_name=name)
-            document.carapace_config()
-        except SkillDocumentError as exc:
-            # Listed rather than dropped: the agent has to see the skill is broken to fix it.
-            logger.error(f"Skill '{name}' has an invalid SKILL.md: {exc}")
-            return SkillInfo(
-                name=name,
-                description=f"BROKEN, cannot be used until its SKILL.md is fixed: {exc}",
-                path=skill_dir,
-            )
-        # Named by its attribute in skills/flake.nix, whatever the frontmatter says.
-        return SkillInfo(name=name, description=document.description, path=skill_dir)

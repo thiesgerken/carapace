@@ -73,9 +73,10 @@ class SkillBuild:
     store_paths: list[str]
     commands: dict[str, SkillCommand]
     detail: str
-    skill_dir: str | None
-    skill_md: str | None
-    skill_files: list[str]
+    # None and empty while building, unavailable, or failed before the builder could read them.
+    skill_dir: str | None = None
+    skill_md: str | None = None
+    skill_files: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,12 +123,11 @@ class SkillBuilds:
         """
         return [_catalog_entry(skill.name, self._known(skill)) for skill in self._heads.get(repo_dir, [])]
 
-    async def skill_file(self, repo_dir: Path, name: str, path: str) -> bytes | None:
-        """A file of *name*'s skill directory at the head of *repo_dir*; None for no such skill or file."""
-        skill = next((skill for skill in await _skills_at_head(repo_dir) if skill.name == name), None)
-        if self._builder is None or skill is None or self._known(skill).skill_dir is None:
+    async def skill_file(self, build: SkillBuild, path: str) -> bytes | None:
+        """A file of *build*'s skill directory; None when it has no such file or no skill directory."""
+        if self._builder is None or build.skill_dir is None:
             return None
-        return await self._builder.skill_file(skill.key, path)
+        return await self._builder.skill_file(build.key, path)
 
     async def wait_built(self, repo_dir: Path, skill: str) -> tuple[SkillBuild | None, list[SkillBuild]]:
         """*skill*'s build once it no longer runs (None for a skill skills/flake.nix does not list), and every build.

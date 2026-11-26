@@ -41,9 +41,18 @@ class FakeBuilder:
         self.unreachable = False
         self.reject_with: int | None = None
         self.retries = 0
+        self.files: dict[str, bytes] = {"SKILL.md": b"---\nname: weather\ndescription: Current weather\n---\n"}
         self.answer = lambda key, skill: BuildResult(
-            key=key, skill=skill, state="succeeded", store_paths=[f"/nix/store/{key[:32]}-skill"], metadata=_METADATA
+            key=key,
+            skill=skill,
+            state="succeeded",
+            store_paths=[f"/nix/store/{key[:32]}-skill"],
+            metadata=_METADATA,
+            skill_dir=f"/nix/store/{key[32:64]}-skill-src",
+            skill_md=self.files["SKILL.md"].decode(),
+            skill_files=sorted(self.files),
         )
+        self.file_reads: list[tuple[str, str]] = []
 
     async def get(self, key: str) -> BuildResult | None:
         if self.unreachable:
@@ -60,6 +69,10 @@ class FakeBuilder:
             raise httpx.HTTPStatusError("rejected", request=request, response=response)
         self.stored[key] = self.answer(key, skill)
         return self.stored[key]
+
+    async def skill_file(self, key: str, path: str) -> bytes | None:
+        self.file_reads.append((key, path))
+        return self.files.get(path)
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -482,3 +495,122 @@ async def test_a_cancelled_waiter_leaves_the_build_running_for_the_others(repo: 
     assert stopped.cancelled()
     assert weather is not None and weather.state == "succeeded"
     assert len(builder.built) == 2
+
+
+def _answer_with(skill_mds: dict[str, str | None], state: str = "succeeded"):
+    """Results whose SKILL.md is *skill_mds* by skill, the way the builder reads it from the skill directory."""
+
+    def answer(key: str, skill: str) -> BuildResult:
+        return BuildResult.model_validate(
+            {
+                "key": key,
+                "skill": skill,
+                "state": state,
+                "store_paths": [f"/nix/store/{key[:32]}-skill"] if state == "succeeded" else [],
+                "metadata": _METADATA,
+                "skill_dir": f"/nix/store/{key[32:64]}-skill-src",
+                "skill_md": skill_mds[skill],
+                "skill_files": ["SKILL.md"],
+                "log_tail": "error: builder ran out of disk" if state == "failed" else "",
+            }
+        )
+
+    return answer
+
+
+@pytest.mark.anyio
+async def test_the_catalog_names_each_skill_by_its_attribute_with_its_built_description(repo: Path) -> None:
+    # Two flakes whose frontmatter names collide coexist under their attributes, one of them from elsewhere.
+    _write_skills_flake(repo, ["weather"], external=("tracker",))
+    _commit(repo, "external tracker")
+    builder = FakeBuilder()
+    same = "---\nname: weather\ndescription: {}\n---\n"
+    builder.answer = _answer_with({"weather": same.format("Local weather"), "tracker": same.format("Remote weather")})
+    builds = SkillBuilds(cast(BuilderClient, builder))
+
+    assert builds.catalog(repo) == []
+    await builds.ensure_built(repo)
+    building = {info.name: info.description for info in builds.catalog(repo)}
+    await _settled(builds, repo)
+
+    assert set(building) == {"tracker", "weather"}
+    assert all(description.startswith("Being built") for description in building.values())
+    assert {info.name: info.description for info in builds.catalog(repo)} == {
+        "tracker": "Remote weather",
+        "weather": "Local weather",
+    }
+
+
+@pytest.mark.anyio
+async def test_a_failed_build_keeps_the_description_it_read(repo: Path) -> None:
+    builder = FakeBuilder()
+    builder.answer = _answer_with({"weather": "---\ndescription: Current weather\n---\n", "notes": None}, "failed")
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    catalog = {info.name: info.description for info in builds.catalog(repo)}
+
+    assert catalog["weather"] == "Current weather"
+    assert catalog["notes"] == "BROKEN, its build has no SKILL.md; read_skill shows why."
+
+
+@pytest.mark.anyio
+async def test_a_broken_frontmatter_is_listed_as_broken(repo: Path) -> None:
+    builder = FakeBuilder()
+    disabled = "---\ndescription: Private material\nmetadata:\n  carapace:\n    disabled: true\n---\n"
+    builder.answer = _answer_with({"weather": disabled, "notes": "Just a body.\n"})
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    catalog = {info.name: info.description for info in builds.catalog(repo)}
+
+    assert catalog["weather"].startswith("BROKEN") and "unlist it there" in catalog["weather"]
+    assert "Private material" not in catalog["weather"]
+    assert catalog["notes"] == ""
+
+
+@pytest.mark.anyio
+async def test_a_package_without_a_skill_directory_counts_as_failed(repo: Path) -> None:
+    builder = FakeBuilder()
+    builder.answer = lambda key, skill: BuildResult(
+        key=key, skill=skill, state="succeeded", store_paths=["/nix/store/x"], metadata=_METADATA
+    )
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    [weather] = [build for build in await builds.ensure_built(repo) if build.skill == "weather"]
+
+    assert weather.state == "failed"
+    assert "nix flake update carapace --flake ./skills" in weather.detail
+
+
+@pytest.mark.anyio
+async def test_an_unavailable_builder_has_a_fixed_catalog_text(repo: Path) -> None:
+    builder = FakeBuilder()
+    builder.unreachable = True
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    # The error text varies; the catalog is part of the cached prompt prefix.
+    assert {info.description for info in builds.catalog(repo)} == {
+        "Not available: the skill builder cannot be reached. read_skill shows why."
+    }
+
+
+@pytest.mark.anyio
+async def test_a_skill_file_is_read_from_the_builder_under_its_build_key(repo: Path) -> None:
+    builder = FakeBuilder()
+    builder.files["references/syntax.md"] = b"syntax"
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+    [weather] = [build for build in await builds.ensure_built(repo) if build.skill == "weather"]
+
+    assert weather.skill_files == ["SKILL.md", "references/syntax.md"]
+    assert await builds.skill_file(weather, "references/syntax.md") == b"syntax"
+    assert await builds.skill_file(weather, "missing.md") is None
+    assert builder.file_reads == [(weather.key, "references/syntax.md"), (weather.key, "missing.md")]

@@ -100,8 +100,8 @@ class BuilderClient:
 
         Raises ``SkillFileError`` for a path outside the directory: the URL would resolve its `..` away.
         """
-        await self._ensure_system()
         quoted = "/".join(quote(part, safe="") for part in relative_parts(path))
+        await self._ensure_system()
         response = await self._client.get(f"/builds/{key}/files/{quoted}")
         if response.status_code == httpx.codes.NOT_FOUND:
             return None
