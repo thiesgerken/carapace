@@ -191,18 +191,26 @@ assert pkgs.lib.assertMsg (
     };
   }
 ) "mcpCommands declared the wrong needs: ${builtins.toJSON mcpNeeds}";
-assert pkgs.lib.assertMsg (
-  marks mcp == {
-    tracker = true;
-    notes = true;
-    local = true;
-  }
-  && marks skill == {
-    show-token = false;
-    local = false;
-    mail = false;
-  }
-) "mkSkill marked the wrong commands as MCP servers: ${builtins.toJSON [ (marks mcp) (marks skill) ]}";
+assert pkgs.lib.assertMsg
+  (
+    marks mcp == {
+      tracker = true;
+      notes = true;
+      local = true;
+    }
+    &&
+      marks skill == {
+        show-token = false;
+        local = false;
+        mail = false;
+      }
+  )
+  "mkSkill marked the wrong commands as MCP servers: ${
+    builtins.toJSON [
+      (marks mcp)
+      (marks skill)
+    ]
+  }";
 assert pkgs.lib.assertMsg (
   configured.weather.settings == {
     CITY = "Berlin";
@@ -210,17 +218,20 @@ assert pkgs.lib.assertMsg (
   }
   && configured.weather.commands.show.needs.domains == [ "berlin.example.com" ]
   && configured.weather.enable
-  && configured.notes == {
-    enable = true;
-    name = "notes";
-    skillDir = notes.passthru.carapace.skillDir;
-    settings = { };
-    commands = { };
-  }
+  &&
+    configured.notes == {
+      enable = true;
+      name = "notes";
+      skillDir = notes.passthru.carapace.skillDir;
+      settings = { };
+      commands = { };
+    }
 ) "skillsFlake resolved the wrong manifests: ${builtins.toJSON configured}";
 # A required setting without a value fails, also for every other key of config.json; a skill that is off
 # needs none.
-assert pkgs.lib.assertMsg (fails (manifestsWith { }).weather) "skillsFlake accepted a missing setting";
+assert pkgs.lib.assertMsg (fails
+  (manifestsWith { }).weather
+) "skillsFlake accepted a missing setting";
 assert pkgs.lib.assertMsg (fails
   (manifestsWith {
     weather.settings = {
@@ -229,27 +240,29 @@ assert pkgs.lib.assertMsg (fails
     };
   }).weather
 ) "skillsFlake accepted an undeclared setting";
-assert pkgs.lib.assertMsg (fails (manifestsWith { weather.settings.CITY = 7; }).weather)
-  "skillsFlake accepted a setting of the wrong type";
-assert pkgs.lib.assertMsg (fails (manifestsWith { typo.enable = false; }).notes)
-  "skillsFlake accepted a skill that is not listed";
+assert pkgs.lib.assertMsg (fails
+  (manifestsWith { weather.settings.CITY = 7; }).weather
+) "skillsFlake accepted a setting of the wrong type";
+assert pkgs.lib.assertMsg (fails
+  (manifestsWith { typo.enable = false; }).notes
+) "skillsFlake accepted a skill that is not listed";
 assert pkgs.lib.assertMsg (
   (manifestsWith { weather.enable = false; }).weather == { enable = false; }
 ) "skillsFlake did not turn weather off";
-assert pkgs.lib.assertMsg (fails (
-  skillLib.mkSkill {
+assert pkgs.lib.assertMsg (fails
+  (skillLib.mkSkill {
     src = fixture;
     name = "bad-settings";
     settings."NOT-A-VAR".type = "str";
-  }
-).passthru.carapace) "mkSkill accepted a setting that is no shell identifier";
-assert pkgs.lib.assertMsg (fails (
-  skillLib.mkSkill {
+  }).passthru.carapace
+) "mkSkill accepted a setting that is no shell identifier";
+assert pkgs.lib.assertMsg (fails
+  (skillLib.mkSkill {
     src = fixture;
     name = "bad-settings";
     settings.URL.type = "url";
-  }
-).passthru.carapace) "mkSkill accepted an unknown setting type";
+  }).passthru.carapace
+) "mkSkill accepted an unknown setting type";
 pkgs.runCommand "skill-wrapper-contract" { } ''
   mkdir stubs
   # Carapace answers with the setting values and credentials as shell code; here a marker stands for them.

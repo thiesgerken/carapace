@@ -28,9 +28,8 @@ let
       packages = lib.mapAttrs (_: skill: skill.packages.${system}.default) skills;
       carapaceOf =
         attr: package:
-        package.passthru.carapace.settings or (throw
-          "skill ${attr}: its Carapace helpers are older than settings; let it follow carapace and run `nix flake update carapace --flake ./skills`"
-        );
+        package.passthru.carapace.settings
+          or (throw "skill ${attr}: its Carapace helpers are older than settings; let it follow carapace and run `nix flake update carapace --flake ./skills`");
       evaluated = lib.evalModules {
         modules = [
           {

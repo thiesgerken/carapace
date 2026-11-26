@@ -50,9 +50,8 @@ let
     assert lib.assertMsg (
       badVars == [ ]
     ) "${where}: credential variables must be shell identifiers: ${lib.concatStringsSep ", " badVars}";
-    assert lib.assertMsg (
-      badTunnels == [ ]
-    ) "${where}: tunnels must be host:port with an exact host name: ${lib.concatStringsSep ", " badTunnels}";
+    assert lib.assertMsg (badTunnels == [ ])
+      "${where}: tunnels must be host:port with an exact host name: ${lib.concatStringsSep ", " badTunnels}";
     needs;
 
   checkSettings =
@@ -60,7 +59,9 @@ let
     let
       where = "skill ${name}";
       # Each becomes an environment variable of the skill's commands.
-      badNames = lib.filter (var: builtins.match "[A-Za-z_][A-Za-z0-9_]*" var == null) (lib.attrNames settings);
+      badNames = lib.filter (var: builtins.match "[A-Za-z_][A-Za-z0-9_]*" var == null) (
+        lib.attrNames settings
+      );
       badTypes = lib.filter (setting: !(settingTypes ? ${settings.${setting}.type or ""})) (
         lib.attrNames settings
       );
@@ -77,20 +78,21 @@ let
 
   # The values of settings and needs belong to an instance, not to the package: Carapace hands them to the
   # wrapper when it runs (`cgate request --command`), so every instance runs the same build.
-  wrapper = command: gated: ''
-    #!${pkgs.runtimeShell}
-    set -eu
-  ''
-  # cgate and ccred come from the sandbox image, not from the skill: they talk to this Carapace. Assignment
-  # and eval apart: `eval "$(…)"` would hide a failing cgate from `set -e`.
-  + lib.optionalString gated ''
-    gate="$(cgate request --store-path "@out@" --command ${lib.escapeShellArg command.name})"
-    eval "$gate"
-  ''
-  + ''
-    exec ${command.exec} "$@"
-  '';
-
+  wrapper =
+    command: gated:
+    ''
+      #!${pkgs.runtimeShell}
+      set -eu
+    ''
+    # cgate and ccred come from the sandbox image, not from the skill: they talk to this Carapace. Assignment
+    # and eval apart: `eval "$(…)"` would hide a failing cgate from `set -e`.
+    + lib.optionalString gated ''
+      gate="$(cgate request --store-path "@out@" --command ${lib.escapeShellArg command.name})"
+      eval "$gate"
+    ''
+    + ''
+      exec ${command.exec} "$@"
+    '';
 
   # Only the named files of the skill directory, so a derivation built from them survives code edits.
   lockFiles =
