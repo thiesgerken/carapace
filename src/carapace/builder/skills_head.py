@@ -37,7 +37,8 @@ async def skills_flake_at_head(repo_dir: Path) -> SkillsFlakeAtHead | None:
 
 async def archive_skills(repo_dir: Path, tree: str, *paths: str) -> bytes:
     """The skills/ tree *tree*, or only *paths* of it, as the tar archive the builder takes."""
-    return await _git(repo_dir, "archive", tree, "--", *paths)
+    # Literal: a directory name like `*` would otherwise glob in more than the key covers.
+    return await _git(repo_dir, "--literal-pathspecs", "archive", tree, "--", *paths)
 
 
 async def object_id(repo_dir: Path, spec: str) -> str:

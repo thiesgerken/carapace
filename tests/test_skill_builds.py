@@ -339,7 +339,7 @@ async def test_a_skill_that_cannot_be_archived_fails(repo: Path, monkeypatch: py
     real_git = skills_head._git
 
     async def git(repo_dir: Path, *args: str) -> bytes:
-        if args[0] == "archive":
+        if "archive" in args:
             raise RuntimeError("git archive failed: fatal: not a tree object")
         return await real_git(repo_dir, *args)
 
@@ -762,3 +762,19 @@ async def test_a_new_skills_tree_at_head_gets_an_update_check(repo: Path, monkey
     await builds.ensure_built(repo)
 
     assert started == [repo, repo]
+
+
+@pytest.mark.anyio
+async def test_a_skill_directory_name_is_no_pattern(repo: Path) -> None:
+    (repo / "skills" / "w*").mkdir()
+    (repo / "skills" / "w*" / "SKILL.md").write_text("---\nname: w\ndescription: d\n---\n")
+    write_skills_flake(repo / "skills", {"w": "w*"})
+    _commit(repo, "a skill directory named like a glob")
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    assert [{name.rstrip("/") for name in files} for _, _, files in builder.built] == [
+        {"flake.nix", "flake.lock", "w*", "w*/SKILL.md"}
+    ]

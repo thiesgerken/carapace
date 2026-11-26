@@ -46,7 +46,7 @@ For skill `<name>` of a `skills/` directory with `flake.nix` and `flake.lock`, o
 - **Locks:** a missing `flake.lock` is a failed build, and so is one that lacks an input (`--no-update-lock-file`). The builder never writes lock files.
 - **Evaluation:** import-from-derivation is off, and a flake's `nixConfig` is ignored.
 
-An update check (`POST /updates`) fetches each input's upstream with `nix flake update <name>`, which evaluates the inputs' `flake.nix` but builds nothing. Only that input moves, so `nixpkgs` and `carapace` stay as locked, and one input that cannot be fetched does not hide the others.
+An update check (`POST /updates`) fetches each input's upstream with `nix flake update <name>`, which evaluates the inputs' `flake.nix` but builds nothing. Only that input moves, so `nixpkgs` and `carapace` stay as locked, and one input that cannot be fetched does not hide the others. It fetches into a throwaway store under the work directory, not the daemon's: an update locks whatever a local skill's `flake.nix` names, an unlocked `path:/…` input included, and the daemon's store is what the [binary cache](#binary-cache) serves to every sandbox. Builds don't need this, since `--no-update-lock-file` never fetches an input the lock lacks.
 
 ### Architecture
 

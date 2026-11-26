@@ -397,7 +397,7 @@ async def _skills_at_head(repo_dir: Path) -> list[_HeadSkill]:
     skills: list[_HeadSkill] = []
     for skill in head.skills:
         # A missing directory keys as empty; archiving it then fails and says why.
-        directory = await object_id(repo_dir, f"HEAD:skills/{skill.directory}") if skill.directory else ""
+        directory = await object_id(repo_dir, f"{head.tree}:{skill.directory}") if skill.directory else ""
         key = build_key(skill.name, head.flake, head.lock, directory)
         local = str(skill.directory) if skill.directory is not None else None
         skills.append(_HeadSkill(name=skill.name, key=key, skills_tree=head.tree, directory=local))

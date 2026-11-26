@@ -86,6 +86,23 @@ def test_an_input_on_the_builders_disk_is_refused(locked: dict[str, str]) -> Non
         parse_skills_lock(json.dumps(lock))
 
 
+@pytest.mark.parametrize("node_id", ["nixpkgs", "nested"])
+def test_a_shared_or_nested_input_on_the_builders_disk_is_refused(node_id: str) -> None:
+    nodes = {
+        "root": {"inputs": {"nixpkgs": "nixpkgs", "tracker": "tracker"}},
+        "nixpkgs": {"locked": {"type": "github", "owner": "NixOS", "repo": "nixpkgs", "rev": "0" * 40}},
+        "tracker": {
+            "inputs": {"nested": "nested"},
+            "locked": {"type": "github", "owner": "someone", "repo": "tracker", "rev": "2" * 40},
+        },
+        "nested": {"locked": {"type": "github", "owner": "someone", "repo": "nested", "rev": "3" * 40}},
+    }
+    nodes[node_id]["locked"] = {"type": "path", "path": "/etc", "narHash": "sha256-x"}
+
+    with pytest.raises(SkillsFlakeError, match=f"input {node_id}: .*reads the builder's disk"):
+        parse_skills_lock(json.dumps({"nodes": nodes, "root": "root", "version": 7}))
+
+
 @pytest.mark.parametrize("text", ["not json", "[]", '{"nodes": {}}', '{"nodes": {"root": {}}, "root": "elsewhere"}'])
 def test_a_broken_lock_is_reported(text: str) -> None:
     with pytest.raises(SkillsFlakeError, match="not a flake lock file"):

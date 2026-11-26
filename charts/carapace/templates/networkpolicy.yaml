@@ -113,9 +113,16 @@ spec:
         - ipBlock:
             cidr: ::/0
             except:
-              - ::1/128
+              # Loopback and IPv4-compatible; then forms that embed an IPv4 address (mapped, NAT64,
+              # 6to4), which a policy cannot look into.
+              - ::/96
+              - ::ffff:0:0/96
+              - 64:ff9b::/96
+              - 64:ff9b:1::/48
+              - 2002::/16
               - fc00::/7
               - fe80::/10
+              - fec0::/10
               - ff00::/8
         {{- range .Values.builder.egress.allowedCidrs }}
         - ipBlock:
