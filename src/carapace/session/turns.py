@@ -296,7 +296,9 @@ class SessionTurnMixin(SessionTurnHost):
                 approval_explanation=approval_explanation,
                 approval_comment=approval_comment,
             )
-            if tool_call_id is not None:
+            # A denied call never returns: its entry would outlive it and catch the result of a later
+            # unrecorded call under a reused id such as `call_0`.
+            if tool_call_id is not None and approval_verdict != "deny":
                 active.tool_ids[tool_call_id] = tool_id
             logger.info(
                 f"Tool call session={session_id} tool={tool} "

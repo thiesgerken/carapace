@@ -16,6 +16,7 @@ def test_overlapping_calls_keep_their_own_tool_ids(tmp_path: Path, db_factory: A
     async def _run() -> None:
         engine = _make_engine(tmp_path, session_factory=db_factory)
         sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
         sub = _FakeSubscriber()
         engine.subscribe(sid, sub)
 
@@ -34,7 +35,9 @@ def test_overlapping_calls_keep_their_own_tool_ids(tmp_path: Path, db_factory: A
 
         with patch("carapace.session.engine.run_agent_turn", new=_parallel_turn):
             await engine.submit_message(sid, "hello")
-            await asyncio.sleep(0.1)
+            async with asyncio.timeout(5):
+                while active.agent_task is not None:
+                    await asyncio.sleep(0.01)
 
         events = engine.session_mgr.load_events(sid)
         call_ids = {e["tool"]: e["tool_id"] for e in events if e["role"] == "tool_call"}
