@@ -258,6 +258,8 @@ export function SandboxGitControls({
  */
 export const KNOWLEDGE_GIT_CHANGED_EVENT = "carapace:knowledge-git-changed";
 
+const GLOBAL_GIT_ACTIONS = { pull: globalGitPull, push: globalGitPush } as const;
+
 export interface GlobalGit {
   configured: boolean | null;
   counts: AheadBehindCounts | null;
@@ -279,6 +281,9 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
   const [head, setHead] = useState<{ hash: string; subject: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<"pull" | "push" | null>(null);
+  // Kept apart from the action outcome: a re-read clears its own failure, but never a
+  // failed pull or push, which stays until the next action.
+  const [statusFailed, setStatusFailed] = useState(false);
   const [outcome, setOutcome] = useState<ActionOutcome | null>(null);
 
   const refresh = useCallback(async () => {
@@ -288,15 +293,15 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
       setConfigured(status.remote_configured);
       setCounts(status.remote_configured ? { ahead: status.ahead, behind: status.behind } : null);
       setHead(status.head ? { hash: status.head, subject: status.head_subject ?? "" } : null);
-      setOutcome((prev) => (prev && !prev.ok ? null : prev));
+      setStatusFailed(false);
     } catch {
       setCounts(null);
       setHead(null);
-      setOutcome({ ok: false, errorLabel: t("errors.status"), detail: "" });
+      setStatusFailed(true);
     } finally {
       setLoading(false);
     }
-  }, [server, token, t]);
+  }, [server, token]);
 
   useEffect(() => {
     const id = setTimeout(() => void refresh(), 0);
@@ -312,26 +317,28 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
     return () => window.removeEventListener(KNOWLEDGE_GIT_CHANGED_EVENT, onChanged);
   }, [refresh]);
 
-  const runAction = useCallback(
-    async (action: "pull" | "push", fn: () => Promise<GitActionResult>): Promise<boolean> => {
-      setBusy(action);
+  // Runs the actions in order and stops at the first failure. `busy` stays set throughout,
+  // and status is re-read once at the end: a re-read between steps would race the next one.
+  const runActions = useCallback(
+    async (actions: readonly (keyof typeof GLOBAL_GIT_ACTIONS)[]) => {
       setOutcome(null);
+      let moved = false;
       try {
-        const result = await fn();
-        setOutcome({ ok: result.ok, errorLabel: t(`errors.${action}`), detail: result.message });
-        // Every mounted panel re-reads status off this, the acting one included, so
-        // there is no refresh() call here — it would fetch the same status twice.
-        // A failed action moved nothing, and the re-read would clear its error.
-        if (result.ok) window.dispatchEvent(new Event(KNOWLEDGE_GIT_CHANGED_EVENT));
-        return result.ok;
-      } catch {
-        setOutcome({ ok: false, errorLabel: t(`errors.${action}`), detail: "" });
-        return false;
+        for (const action of actions) {
+          setBusy(action);
+          const result = await GLOBAL_GIT_ACTIONS[action](server, token).catch(() => null);
+          setOutcome({ ok: result?.ok ?? false, errorLabel: t(`errors.${action}`), detail: result?.message ?? "" });
+          if (!result?.ok) return;
+          moved = true;
+        }
       } finally {
         setBusy(null);
+        // Every mounted panel re-reads status off this, the acting one included, so
+        // there is no refresh() call here — it would fetch the same status twice.
+        if (moved) window.dispatchEvent(new Event(KNOWLEDGE_GIT_CHANGED_EVENT));
       }
     },
-    [t],
+    [server, token, t],
   );
 
   return {
@@ -340,17 +347,12 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
     head,
     loading,
     busy,
-    outcome,
+    outcome: outcome && !outcome.ok ? outcome : statusFailed ? { ok: false, errorLabel: t("errors.status"), detail: "" } : outcome,
     // Through the event, like pull and push: the acting instance re-reads via its own listener.
     refresh: () => { window.dispatchEvent(new Event(KNOWLEDGE_GIT_CHANGED_EVENT)); },
-    pull: () => void runAction("pull", () => globalGitPull(server, token)),
-    push: () => void runAction("push", () => globalGitPush(server, token)),
-    sync: () =>
-      void (async () => {
-        if (await runAction("pull", () => globalGitPull(server, token))) {
-          await runAction("push", () => globalGitPush(server, token));
-        }
-      })(),
+    pull: () => void runActions(["pull"]),
+    push: () => void runActions(["push"]),
+    sync: () => void runActions(["pull", "push"]),
   };
 }
 

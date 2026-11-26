@@ -146,3 +146,49 @@ test("the knowledge sync row skips the push when the pull fails and shows the er
     restore();
   }
 });
+
+test("a sync holds the button busy across pull and push, and re-reads status only after the push", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  const pending = new Map<string, (body: object) => void>();
+  // Every request after the first status read waits until the test answers it.
+  const respond = async (path: string, body: object) => {
+    await runInAct(() => pending.get(path)!(body));
+    pending.delete(path);
+  };
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = String(input);
+    calls.push(path);
+    if (calls.length === 1) {
+      return new Response(JSON.stringify({ remote_configured: true, ahead: 1, behind: 2, head: null, head_subject: null }));
+    }
+    return new Promise<Response>((resolve) => {
+      pending.set(path, (body) => resolve(new Response(JSON.stringify(body))));
+    });
+  }) as typeof fetch;
+  try {
+    const view = await renderFooter();
+    await settle();
+    const button = () => view.container.querySelector<HTMLButtonElement>('button[aria-label^="Sync"]')!;
+
+    await click(button());
+    assert.equal(button().disabled, true);
+    await respond("/api/git/pull", { ok: true, message: "Merged", denied: false });
+    assert.equal(button().disabled, true);
+    assert.deepEqual(calls.slice(1), ["/api/git/pull", "/api/git/push"]);
+
+    await respond("/api/git/push", { ok: false, message: "rejected: non-fast-forward", denied: false });
+    assert.deepEqual(calls.slice(1), ["/api/git/pull", "/api/git/push", "/api/git/status"]);
+    // The re-read lands after the push failed and must not clear its error.
+    await respond("/api/git/status", { remote_configured: true, ahead: 2, behind: 0, head: null, head_subject: null });
+    const row = view.container.querySelector('a[href="/knowledge"]');
+    assert.equal(row?.textContent, "KnowledgePush failed");
+    assert.equal(row?.getAttribute("title"), "rejected: non-fast-forward");
+    assert.equal(button().disabled, false);
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
