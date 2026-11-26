@@ -46,7 +46,7 @@ For skill `<name>` of a `skills/` directory with `flake.nix` and `flake.lock`, o
 - **Locks:** a missing `flake.lock` is a failed build, and so is one that lacks an input (`--no-update-lock-file`). The builder never writes lock files.
 - **Evaluation:** import-from-derivation is off, and a flake's `nixConfig` is ignored.
 
-An update check (`POST /updates`) fetches each input's upstream with `nix flake update <name>`, which evaluates the inputs' `flake.nix` but builds nothing. Only that input moves, so `nixpkgs` and `carapace` stay as locked, and one input that cannot be fetched does not hide the others.
+An update check (`POST /updates`) fetches each input's upstream with `nix flake update <name>`, which evaluates the inputs' `flake.nix` but builds nothing. Only that input moves, so `nixpkgs` and `carapace` stay as locked, and one input that cannot be fetched does not hide the others. It fetches into a throwaway store under the work directory, not the daemon's: an update locks whatever a local skill's `flake.nix` names, an unlocked `path:/…` input included, and the daemon's store is what the [binary cache](#binary-cache) serves to every sandbox. Builds don't need this, since `--no-update-lock-file` never fetches an input the lock lacks.
 
 ### Architecture
 
@@ -108,7 +108,7 @@ The server builds a skill after a push that changes its key and otherwise on fir
 
 ### Docker Compose
 
-`docker-compose.yml` runs `builder-init` and `builder` with a named volume `builder-nix`, and points the server at `http://builder:8330` and `http://builder:8331`. Set `CARAPACE_BUILDER_TOKEN` in `.env`. The builder is on the default network only, so sandboxes, which sit on the internal `carapace-sandbox-<instance>` network ([instances](sandbox.md#instances)), cannot reach it.
+`docker-compose.yml` runs `builder-init` and `builder` with a named volume `builder-nix`, and points the server at `http://builder:8330` and `http://builder:8331`. Set `CARAPACE_BUILDER_TOKEN` in `.env`. The builder is on the default network only, so sandboxes, which sit on the internal `carapace-sandbox-<instance>` network ([instances](sandbox.md#instances)), cannot reach it. Compose has no egress rules: the builder, and so every skill flake it evaluates, reaches whatever the host reaches, your LAN included. To limit that, firewall the container on the host or run the builder on Kubernetes.
 
 The Nix build sandbox needs `security_opt: [seccomp=unconfined, apparmor=unconfined, systempaths=unconfined]`: unshare must be allowed and `/proc` unmasked so that Nix can mount its own. Without all three the builder refuses to start.
 
@@ -123,11 +123,11 @@ This switches the restriction off for the whole host, not only for the builder. 
 
 ### Dev stack
 
-The [dev stack](development.md#dev-stack) runs the builder as a container too, from the `builder-image` built from the checkout: `builder-init` and `builder` with the volume `carapace-builder-nix-<instance>`, ports published on loopback at the stack's builder ports (`7506` and `7507` for stack 0). The server reaches it there, sandboxes reach the cache through the session proxy. Stopping the stack removes the container; the volume keeps the store. Set `CARAPACE_BUILDER_TOKEN` in `.env`.
+The [dev stack](development.md#dev-stack) runs the builder as a container too, from the `builder-image` built from the checkout: `builder-init` and `builder` with the volume `carapace-builder-nix-<instance>`, ports published on loopback at the stack's builder ports (`7506` and `7507` for stack 0). The server reaches it there, sandboxes reach the cache through the session proxy. Stopping the stack removes the container; the volume keeps the store. Set `CARAPACE_BUILDER_TOKEN` in `.env`. As under Compose, nothing limits where the builder connects to.
 
 ### Kubernetes
 
-The chart deploys the builder by default (`builder.enabled`). That covers a Deployment with an init container, a PVC (`builder.persistence.size`, default 20Gi), a Service, a NetworkPolicy that admits only the server on ports 8330 and 8331, and a generated token Secret. The pod runs with `hostUsers: false` (root in the pod is an unprivileged host user), `procMount: Unmasked`, and `Unconfined` seccomp and AppArmor profiles. It gets no added capabilities.
+The chart deploys the builder by default (`builder.enabled`). That covers a Deployment with an init container, a PVC (`builder.persistence.size`, default 20Gi), a Service, two NetworkPolicies, and a generated token Secret. One admits only the server on ports 8330 and 8331. The other limits the builder's egress (see [egress](#egress-on-kubernetes)). The pod runs with `hostUsers: false` (root in the pod is an unprivileged host user), `procMount: Unmasked`, and `Unconfined` seccomp and AppArmor profiles. It gets no added capabilities.
 
 The cluster has to support user namespaces for pods. That means a recent kernel and container runtime, plus the `UserNamespacesSupport` and `ProcMountType` features. The settings were verified on k3s 1.37 with containerd 2.3 and kernel 7.3. If the builder logs that the Nix build sandbox is not effective, the node or its runtime lacks one of these. Pod Security Admission levels `restricted` and `baseline` reject the pod (unconfined seccomp, unmasked `/proc`), so the builder needs `privileged`. `hostUsers: false` keeps that from meaning root on the node.
 
@@ -136,6 +136,21 @@ A Pod Security label covers every pod in its namespace, and the server creates s
 The chart puts the builder's Deployment, PVC, Service and NetworkPolicy into the builder namespace, writes the token Secret into both namespaces, and points the server at `http://<release>-builder.<builder namespace>:8330` (and `:8331`). The NetworkPolicy admits only server pods from the release namespace. With `builder.auth.existingSecret`, create that Secret in both namespaces.
 
 The chart only ships the ingress side and adds no egress policy for the server. If the release namespace denies egress by default, or only allows it within the namespace, allow server pods egress to cluster DNS, the API server (it manages sandboxes through it) and the builder namespace on ports 8330 and 8331, on top of its outbound traffic to model providers and the domains it proxies for sandboxes. Without the builder rule, every sandbox start fails with `The skill builder is configured but unreachable`.
+
+#### Egress on Kubernetes
+
+The builder evaluates agent-authored flakes and fetches whatever their locks name, so its egress policy (`<release>-builder-egress`) lets it reach the internet but nothing that isn't globally routable: private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`), carrier-grade NAT (`100.64.0.0/10`), loopback, link-local (`169.254.0.0/16`, `fe80::/10`, cloud metadata endpoints included), multicast and reserved ranges. That matches the sandbox proxy's [private-address rule](sandbox.md). DNS to `kube-dns` in `kube-system` stays allowed.
+
+**A binary cache or other substituter in your own network is blocked by default.** List it in `builder.egress.allowedCidrs`, as must anything else private the builder needs: an upstream cache from `builder.upstreamCaches` on a LAN address, a Git server that skill flakes fetch from, or NodeLocal DNSCache (`169.254.20.10/32`):
+
+```yaml
+builder:
+  egress:
+    allowedCidrs:
+      - 192.168.10.5/32  # the LAN's binary cache
+```
+
+Pod and service ranges outside these private ranges are not covered; most clusters use private ones. Whether `ipBlock` rules apply to traffic to other pods at all depends on the network plugin (Cilium never matches pods by `ipBlock`, so they stay unreachable either way).
 
 When namespaces are managed elsewhere (GitOps), set `builder.createNamespace: false` and create the namespace with the label yourself:
 
