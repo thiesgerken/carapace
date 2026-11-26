@@ -1158,7 +1158,7 @@ async def list_credentials(request: Request, q: str = "") -> Response:
         return denial
 
     try:
-        items = await credential_registry.list(q)
+        items = await credential_registry.search(q)
     except CredentialBackendError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return JSONResponse([i.model_dump() for i in items])

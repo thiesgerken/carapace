@@ -50,7 +50,7 @@ class VaultBackend(Protocol):
         """
         ...
 
-    async def list(self, query: str = "") -> list[CredentialMetadata]:
+    async def search(self, query: str = "") -> list[CredentialMetadata]:
         """Return metadata for all credentials matching *query*.
 
         An empty *query* returns everything the backend exposes.
