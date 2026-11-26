@@ -105,7 +105,7 @@ class SkillProfileSync:
                 self._installing.add(session_id)
                 try:
                     # The session env carries NIX_CONFIG (the builder cache as substituter) and the proxy.
-                    # A claimed warm or re-attached sandbox has neither in its container env, only here.
+                    # A sandbox claimed from the warm pool has neither in its pod spec, only here.
                     result = await self._runtime.exec(
                         sc.container_id,
                         ["/bin/bash", "-c", script],
