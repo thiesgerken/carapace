@@ -3,8 +3,8 @@
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, Bot, Brain, Check, Copy, ExternalLink, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Archive, Bot, Brain, ExternalLink, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, PanelRightClose, PanelRightOpen, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
 import { ChatMemorySection } from "@/components/chat-memory-section";
 import { ChatUsageSection, useSessionUsage } from "@/components/chat-usage-section";
@@ -12,11 +12,13 @@ import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { SandboxGitControls } from "@/components/git-sync";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
 import { SessionBudgetSection, type SessionBudgetField } from "@/components/session-budget-section";
-import { SessionOptionTiles } from "@/components/session-option-tiles";
+import { InspectorTabs } from "@/components/inspector-tabs";
+import { SessionOptionSwitches } from "@/components/session-option-tiles";
 import { WaitingIndicator } from "@/components/waiting-indicator";
 import { useAppLocale } from "@/components/locale-provider";
 import { useAppShell } from "@/components/app-shell-context";
 import { useSessionPresence } from "@/hooks/use-session-presence";
+import { useNow } from "@/hooks/use-now";
 import { useWebSocket, useWebSocketTicket } from "@/hooks/use-websocket";
 import {
   type AvailableModelInfo,
@@ -54,7 +56,9 @@ import type {
 import { isRecord } from "@/lib/decoding";
 import { knowledgeBrowseHref } from "@/lib/knowledge-links";
 import { artifactReferences } from "@/lib/artifacts";
-import { getPresenceClientId } from "@/lib/storage";
+import { formatRelativeTime } from "@/lib/format-time";
+import type { InspectorTab } from "@/lib/inspector-tabs";
+import { getInspectorOpen, getInspectorTab, getPresenceClientId, saveInspectorOpen, saveInspectorTab } from "@/lib/storage";
 import {
   canArchiveSession,
   cn,
@@ -1109,7 +1113,10 @@ export function ChatView({
   const [deletingSession, setDeletingSession] = useState(false);
   const [savingKnowledge, setSavingKnowledge] = useState(false);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
-  const [sessionIdCopied, setSessionIdCopied] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(getInspectorOpen);
+  const [inspectorTab, setInspectorTab] = useState(getInspectorTab);
+  // Fixed at mount: the meta line only needs "how long ago" roughly, not a ticking clock.
+  const now = useNow(false);
   const [updatingSessionAttribute, setUpdatingSessionAttribute] = useState<"archived" | "private" | "pinned" | "favorite" | "mode" | null>(null);
   const [showDelayedSessionAttributeStatus, setShowDelayedSessionAttributeStatus] = useState(false);
   const [updatingSessionModel, setUpdatingSessionModel] = useState<"agent" | "sentinel" | null>(null);
@@ -1129,16 +1136,18 @@ export function ChatView({
   const memoryState = useMemorySessionDetail(server, sessionId);
   const hasMemory = memoryState.detail?.current != null;
   const [memoryOpen, setMemoryOpen] = useState(false);
-  const [usageOpen, setUsageOpen] = useState(false);
   // The open usage breakdown refetches on every live usage update, and mid-turn whenever an LLM
   // request starts or ends (turn usage only arrives with the turn's end).
   const llmRequestId = llmActivity?.request_id ?? null;
   const usageRefreshKey = useMemo(() => ({ usage, llmRequestId }), [usage, llmRequestId]);
-  const usageState = useSessionUsage(server, token, sessionId, usageOpen, usageRefreshKey);
+  // Fetched only while the Usage tab shows. On a phone, a panel left open on desktop also counts, although
+  // its column is hidden there; one extra fetch is cheaper than tracking the breakpoint.
+  const usageVisible = inspectorTab === "usage" && (inspectorOpen || mobileInspectorOpen);
+  const usageState = useSessionUsage(server, token, sessionId, usageVisible, usageRefreshKey);
   // The open usage card refetches mid-turn while turn usage only arrives at turn ends: show its
   // newer gauges, so the Budget and Usage cards never disagree. Only while open, since a closed
   // card's last fetch goes stale.
-  const budgetGauges = (usageOpen ? usageState.data?.budget_gauges : undefined) ?? usage?.budget_gauges ?? [];
+  const budgetGauges = (usageVisible ? usageState.data?.budget_gauges : undefined) ?? usage?.budget_gauges ?? [];
   const lastThinkingStartedAtRef = useRef<string | null>(null);
   const queueRef = useRef<string | null>(null);
   const queuedAttachmentsRef = useRef<Attachment[]>([]);
@@ -1801,24 +1810,30 @@ export function ChatView({
   const streamingCall = waiting ? streamingCallIndex(messages, llmActivity) : -1;
   const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
 
-  function showInspectorSection(selector: string, block: ScrollLogicalPosition): void {
-    if (!window.matchMedia("(min-width: 64rem)").matches) setMobileInspectorOpen(true);
-    // The section renders in the desktop column and in the mobile sheet; scroll to the visible one once open.
-    requestAnimationFrame(() => {
-      const sections = Array.from(document.querySelectorAll<HTMLElement>(selector));
-      sections.find((section) => section.offsetParent !== null)?.scrollIntoView({ block, behavior: "smooth" });
-    });
+  function showInspector(open: boolean): void {
+    setInspectorOpen(open);
+    saveInspectorOpen(open);
+  }
+
+  function selectInspectorTab(tab: InspectorTab): void {
+    setInspectorTab(tab);
+    saveInspectorTab(tab);
+  }
+
+  /** Opens the inspector on *tab*: the desktop column, or the sheet on narrow screens. */
+  function showInspectorTab(tab: InspectorTab): void {
+    selectInspectorTab(tab);
+    if (window.matchMedia("(min-width: 64rem)").matches) showInspector(true);
+    else setMobileInspectorOpen(true);
   }
 
   function showMemorySection(): void {
     setMemoryOpen(true);
-    showInspectorSection("[data-memory-section]", "nearest");
+    showInspectorTab("content");
   }
 
   function showUsageSection(): void {
-    setUsageOpen(true);
-    // To the top: the breakdown loads after the scroll and grows downward.
-    showInspectorSection("[data-usage-section]", "start");
+    showInspectorTab("usage");
   }
 
   // Deep link (?event=<seq>) from memory fact sources and push notifications. Not every event
@@ -2306,16 +2321,6 @@ export function ChatView({
     send({ type: "cancel" });
   }
 
-  async function handleCopySessionId(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(sessionId);
-      setSessionIdCopied(true);
-      window.setTimeout(() => setSessionIdCopied(false), 1200);
-    } catch {
-      /* clipboard may be denied; avoid throwing in UI */
-    }
-  }
-
   const connected = status === "connected";
   const hasKnowledgeContent = messages.length > 0;
   const hasKnowledgeChanges = sessionHasKnowledgeChanges(session);
@@ -2427,391 +2432,378 @@ export function ChatView({
   ].filter((value): value is { label: string; icon: typeof Archive } => value !== null);
   const inspectorBadgeClass = "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium";
   const inspectorActionClass = "rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50";
-  const inspectorContent = (
-    <div className="divide-y divide-border">
-      <section className="py-4">
-        <div className="text-xs font-medium text-muted-foreground">
-          {t("inspector.session")}
-        </div>
-
-        <dl className="mt-3 grid grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 text-sm">
-          <dt className="text-muted-foreground">{t("session.title")}</dt>
-          <dd className="break-words font-semibold text-foreground">
-            {session?.title?.trim() ? <EmojiText text={sessionDisplayTitle} /> : sessionDisplayTitle}
-          </dd>
-
-          <dt className="text-muted-foreground">{t("session.id")}</dt>
-          <dd className="flex items-center gap-2">
-            <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">{sessionId}</span>
-            <button
-              type="button"
-              onClick={() => void handleCopySessionId()}
-              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label={sessionIdCopied ? t("session.idCopied") : t("session.copyId")}
-              title={sessionIdCopied ? t("session.idCopiedShort") : t("session.copyId")}
-            >
-              {sessionIdCopied ? (
-                <Check className="h-3 w-3" strokeWidth={2} />
-              ) : (
-                <Copy className="h-3 w-3" strokeWidth={2} />
-              )}
-            </button>
-          </dd>
-
-          <dt className="text-muted-foreground">{t("session.source")}</dt>
-          <dd className="inline-flex items-center gap-2 font-medium text-foreground">
-            <source.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span>{source.label}</span>
-          </dd>
-
-          <dt className="text-muted-foreground">{t("session.created")}</dt>
-          <dd className="text-foreground">{formatSessionTimestamp(session?.created_at, locale, t)}</dd>
-
-          <dt className="text-muted-foreground">{t("session.lastActive")}</dt>
-          <dd className="text-foreground">{formatSessionTimestamp(session?.last_active, locale, t)}</dd>
-
-          <dt className="text-muted-foreground">{t("session.messages")}</dt>
-          <dd className="text-foreground">{session?.message_count ?? 0}</dd>
-
-          {totalCostUsd > 0 ? (
-            <>
-              <dt className="text-muted-foreground">{t("session.totalCost")}</dt>
-              <dd className="text-foreground">{formatUsd(totalCostUsd, locale)}</dd>
-            </>
-          ) : null}
-
-          {showEquivalentCost && totalEquivalentCostUsd > 0 ? (
-            <>
-              <dt className="text-muted-foreground" title={t("budget.equivalentCostHint")}>
-                {t("session.totalEquivalentCost")}
-              </dt>
-              <dd className="text-foreground">≈ {formatUsd(totalEquivalentCostUsd, locale)}</dd>
-            </>
-          ) : null}
-
-          {fallbackSourceJobId ? (
-            <>
-              <dt className="text-muted-foreground">{t("session.job")}</dt>
-              <dd className="break-all">{renderJobSettingsLink(fallbackSourceJobId)}</dd>
-            </>
-          ) : null}
-
-          {session?.channel_ref && !fallbackSourceJobId ? (
-            <>
-              <dt className="text-muted-foreground">{t("session.reference")}</dt>
-              <dd className="break-all">
-                {sourceJobId ? renderJobSettingsLink(sourceJobId) : session.channel_ref}
-              </dd>
-            </>
-          ) : null}
-
-        </dl>
-
-        <div className="mt-4">
-          <SessionOptionTiles
-            items={[
-              {
-                key: "private",
-                active: sessionPrivate,
-                disabled: !session || deletingSession || updatingSessionAttribute !== null,
-                onClick: () => void handleTogglePrivacy(),
-              },
-              {
-                key: "ask_mode",
-                active: sessionAskMode,
-                disabled: !session || deletingSession || !onUpdateSessionAttributes || updatingSessionAttribute !== null,
-                onClick: () => void handleToggleSessionMode("ask"),
-              },
-              {
-                key: "yolo_mode",
-                active: sessionYoloMode,
-                disabled: !session || deletingSession || !onUpdateSessionAttributes || updatingSessionAttribute !== null,
-                onClick: () => void handleToggleSessionMode("yolo"),
-              },
-              {
-                key: "unattended",
-                active: sessionUnattended,
-                disabled: !session || deletingSession || !onUpdateSessionAttributes || updatingSessionAttribute !== null,
-                onClick: () => void handleToggleSessionMode("unattended"),
-              },
-            ]}
-          />
-
-          {showDelayedSessionAttributeStatus && updatingSessionAttribute === "private" ? (
-            <div className="inline-flex items-center gap-2 pt-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>{t("session.savingPrivate")}</span>
-            </div>
-          ) : null}
-
-          {showDelayedSessionAttributeStatus && updatingSessionAttribute === "mode" ? (
-            <div className="inline-flex items-center gap-2 pt-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>{t("session.updatingMode")}</span>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          {sessionDetailBadges.map((badge) => (
-            <span
-              key={badge.label}
-              className={cn(inspectorBadgeClass, "gap-1 bg-muted text-muted-foreground")}
-            >
-              <badge.icon className="h-3 w-3 shrink-0" />
-              {badge.label}
-            </span>
-          ))}
-        </div>
-      </section>
-
-      <ChatMemorySection
-        sessionId={sessionId}
-        state={memoryState}
-        open={memoryOpen}
-        onOpenChange={setMemoryOpen}
-        onSourceNavigate={() => setMobileInspectorOpen(false)}
-      />
-
-      <section className="py-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-xs font-medium text-muted-foreground">
-            {tRoot("jobs.fields.models")}
-          </div>
-          <button
-            type="button"
-            onClick={() => setModelsUnlocked((current) => !current)}
-            aria-pressed={!modelsUnlocked}
-            aria-label={modelsUnlocked ? tRoot("jobs.fields.modelsUnlinked") : tRoot("jobs.fields.modelsLinked")}
-            title={modelsUnlocked ? tRoot("jobs.fields.modelsUnlinkedHelp") : tRoot("jobs.fields.modelsLinkedHelp")}
-            className={cn(
-              "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-              !modelsUnlocked && "text-primary",
-            )}
-          >
-            {modelsUnlocked ? <Link2Off className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-
-        <div className="mt-3 space-y-3">
-          <label className="space-y-1.5">
-            <span className="text-xs font-medium text-muted-foreground">{tRoot("jobs.fields.agentModel")}</span>
-            <ModelPicker
-              value={session?.agent_model_name}
-              entries={agentModelOptions}
-              onChange={(value) => void handleUpdateSessionModel("agent", value)}
-              disabled={!session || waiting || deletingSession || sessionArchived || updatingSessionModel !== null}
-              defaultLabel={defaultModelLabel}
-            />
-          </label>
-
-          <label className="space-y-1.5">
-            <span className="text-xs font-medium text-muted-foreground">{tRoot("jobs.fields.sentinelModel")}</span>
-            <ModelPicker
-              value={session?.sentinel_model_name}
-              entries={sentinelModelOptions}
-              onChange={(value) => void handleUpdateSessionModel("sentinel", value)}
-              disabled={!session || waiting || deletingSession || sessionArchived || updatingSessionModel !== null}
-              defaultLabel={defaultModelLabel}
-            />
-          </label>
-        </div>
-
-        {modelUpdateError ? (
-          <div className="mt-3 text-xs text-destructive">{modelUpdateError}</div>
-        ) : null}
-      </section>
-
-      <ChatUsageSection
-        state={usageState}
-        open={usageOpen}
-        onOpenChange={setUsageOpen}
-        compaction={{
-          server,
-          token,
-          sessionId,
-          disabled: !connected || waiting || sessionArchived,
-          onCompact: (focus) => handleSend(focus ? `/compact ${focus}` : "/compact"),
-          onUncompact: () => handleSend("/uncompact"),
-        }}
-      />
-
-      {session ? (
-        <SessionBudgetSection
-          budget={session.budget}
-          gauges={budgetGauges}
-          disabled={deletingSession || sessionArchived}
-          onSave={handleUpdateSessionBudget}
-        />
-      ) : null}
-
-      {latestJobRun ? (
+  const inspectorPanels: Record<InspectorTab, ReactNode> = {
+    session: (
+      <>
         <section className="py-4">
-          <div className="text-xs font-medium text-muted-foreground">
-            {t("jobRun.title")}
-          </div>
+          {session ? (
+            <p
+              title={`${t("session.created")}: ${formatSessionTimestamp(session.created_at, locale, t)}\n${t("session.lastActive")}: ${formatSessionTimestamp(session.last_active, locale, t)}`}
+              className="truncate text-xs leading-5 text-muted-foreground"
+            >
+              <source.icon className="mr-1 inline h-3.5 w-3.5 align-[-0.2em]" />
+              {source.label} · {t("session.meta", {
+                created: formatRelativeTime(session.created_at, locale, now, tRoot("sidebar.time.justNow")),
+                count: session.message_count,
+              })}
+            </p>
+          ) : null}
 
-          <dl className="mt-3 grid grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 text-sm">
-            <dt className="text-muted-foreground">{t("jobRun.job")}</dt>
-            <dd className="break-all">{renderJobSettingsLink(latestJobRun.job_id)}</dd>
-
-            <dt className="text-muted-foreground">{t("jobRun.trigger.label")}</dt>
-            <dd className="text-foreground">{formatJobTriggerKind(latestJobRun.trigger_kind, t)}</dd>
-
-            <dt className="text-muted-foreground">{t("jobRun.ranAt")}</dt>
-            <dd className="text-foreground">{formatSessionTimestamp(latestJobRun.triggered_at, locale, t)}</dd>
-
-            {latestJobRun.cron_expression ? (
+          {/* Only the facts a session has; with none, the empty list takes no room. */}
+          <dl className="mt-3 grid grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 text-sm empty:hidden">
+            {totalCostUsd > 0 ? (
               <>
-                <dt className="text-muted-foreground">{t("jobRun.schedule")}</dt>
-                <dd className="break-all font-mono text-xs text-foreground">{latestJobRun.cron_expression}</dd>
+                <dt className="text-muted-foreground">{t("session.totalCost")}</dt>
+                <dd className="text-foreground">{formatUsd(totalCostUsd, locale)}</dd>
               </>
             ) : null}
+
+            {showEquivalentCost && totalEquivalentCostUsd > 0 ? (
+              <>
+                <dt className="text-muted-foreground" title={t("budget.equivalentCostHint")}>
+                  {t("session.totalEquivalentCost")}
+                </dt>
+                <dd className="text-foreground">≈ {formatUsd(totalEquivalentCostUsd, locale)}</dd>
+              </>
+            ) : null}
+
+            {fallbackSourceJobId ? (
+              <>
+                <dt className="text-muted-foreground">{t("session.job")}</dt>
+                <dd className="break-all">{renderJobSettingsLink(fallbackSourceJobId)}</dd>
+              </>
+            ) : null}
+
+            {session?.channel_ref && !fallbackSourceJobId ? (
+              <>
+                <dt className="text-muted-foreground">{t("session.reference")}</dt>
+                <dd className="break-all">
+                  {sourceJobId ? renderJobSettingsLink(sourceJobId) : session.channel_ref}
+                </dd>
+              </>
+            ) : null}
+
           </dl>
 
-          {latestJobData ? (
-            <div className="mt-3 space-y-1.5">
-              <div className="text-xs font-medium text-muted-foreground">
-                {t("jobRun.data")}
+          <div className="mt-4">
+            <SessionOptionSwitches
+              items={[
+                {
+                  key: "private",
+                  active: sessionPrivate,
+                  disabled: !session || deletingSession || updatingSessionAttribute !== null,
+                  onClick: () => void handleTogglePrivacy(),
+                },
+                {
+                  key: "ask_mode",
+                  active: sessionAskMode,
+                  disabled: !session || deletingSession || !onUpdateSessionAttributes || updatingSessionAttribute !== null,
+                  onClick: () => void handleToggleSessionMode("ask"),
+                },
+                {
+                  key: "yolo_mode",
+                  active: sessionYoloMode,
+                  disabled: !session || deletingSession || !onUpdateSessionAttributes || updatingSessionAttribute !== null,
+                  onClick: () => void handleToggleSessionMode("yolo"),
+                },
+                {
+                  key: "unattended",
+                  active: sessionUnattended,
+                  disabled: !session || deletingSession || !onUpdateSessionAttributes || updatingSessionAttribute !== null,
+                  onClick: () => void handleToggleSessionMode("unattended"),
+                },
+              ]}
+            />
+
+            {showDelayedSessionAttributeStatus && updatingSessionAttribute === "private" ? (
+              <div className="inline-flex items-center gap-2 pt-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>{t("session.savingPrivate")}</span>
               </div>
-              <pre className="overflow-x-auto rounded-lg bg-inset px-3 py-2 font-mono text-xs leading-5 text-foreground whitespace-pre-wrap break-words">
-                {latestJobData.value}
-              </pre>
+            ) : null}
+
+            {showDelayedSessionAttributeStatus && updatingSessionAttribute === "mode" ? (
+              <div className="inline-flex items-center gap-2 pt-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>{t("session.updatingMode")}</span>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2 empty:hidden">
+            {sessionDetailBadges.map((badge) => (
+              <span
+                key={badge.label}
+                className={cn(inspectorBadgeClass, "gap-1 bg-muted text-muted-foreground")}
+              >
+                <badge.icon className="h-3 w-3 shrink-0" />
+                {badge.label}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        <section className="py-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs font-medium text-muted-foreground">
+              {tRoot("jobs.fields.models")}
+            </div>
+            <button
+              type="button"
+              onClick={() => setModelsUnlocked((current) => !current)}
+              aria-pressed={!modelsUnlocked}
+              aria-label={modelsUnlocked ? tRoot("jobs.fields.modelsUnlinked") : tRoot("jobs.fields.modelsLinked")}
+              title={modelsUnlocked ? tRoot("jobs.fields.modelsUnlinkedHelp") : tRoot("jobs.fields.modelsLinkedHelp")}
+              className={cn(
+                "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                !modelsUnlocked && "text-primary",
+              )}
+            >
+              {modelsUnlocked ? <Link2Off className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+
+          <div className="mt-3 space-y-3">
+            <label className="space-y-1.5">
+              <span className="text-xs font-medium text-muted-foreground">{tRoot("jobs.fields.agentModel")}</span>
+              <ModelPicker
+                value={session?.agent_model_name}
+                entries={agentModelOptions}
+                onChange={(value) => void handleUpdateSessionModel("agent", value)}
+                disabled={!session || waiting || deletingSession || sessionArchived || updatingSessionModel !== null}
+                defaultLabel={defaultModelLabel}
+              />
+            </label>
+
+            <label className="space-y-1.5">
+              <span className="text-xs font-medium text-muted-foreground">{tRoot("jobs.fields.sentinelModel")}</span>
+              <ModelPicker
+                value={session?.sentinel_model_name}
+                entries={sentinelModelOptions}
+                onChange={(value) => void handleUpdateSessionModel("sentinel", value)}
+                disabled={!session || waiting || deletingSession || sessionArchived || updatingSessionModel !== null}
+                defaultLabel={defaultModelLabel}
+              />
+            </label>
+          </div>
+
+          {modelUpdateError ? (
+            <div className="mt-3 text-xs text-destructive">{modelUpdateError}</div>
+          ) : null}
+        </section>
+
+        {latestJobRun ? (
+          <section className="py-4">
+            <div className="text-xs font-medium text-muted-foreground">
+              {t("jobRun.title")}
+            </div>
+
+            <dl className="mt-3 grid grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 text-sm">
+              <dt className="text-muted-foreground">{t("jobRun.job")}</dt>
+              <dd className="break-all">{renderJobSettingsLink(latestJobRun.job_id)}</dd>
+
+              <dt className="text-muted-foreground">{t("jobRun.trigger.label")}</dt>
+              <dd className="text-foreground">{formatJobTriggerKind(latestJobRun.trigger_kind, t)}</dd>
+
+              <dt className="text-muted-foreground">{t("jobRun.ranAt")}</dt>
+              <dd className="text-foreground">{formatSessionTimestamp(latestJobRun.triggered_at, locale, t)}</dd>
+
+              {latestJobRun.cron_expression ? (
+                <>
+                  <dt className="text-muted-foreground">{t("jobRun.schedule")}</dt>
+                  <dd className="break-all font-mono text-xs text-foreground">{latestJobRun.cron_expression}</dd>
+                </>
+              ) : null}
+            </dl>
+
+            {latestJobData ? (
+              <div className="mt-3 space-y-1.5">
+                <div className="text-xs font-medium text-muted-foreground">
+                  {t("jobRun.data")}
+                </div>
+                <pre className="overflow-x-auto rounded-lg bg-inset px-3 py-2 font-mono text-xs leading-5 text-foreground whitespace-pre-wrap break-words">
+                  {latestJobData.value}
+                </pre>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+      </>
+    ),
+    usage: (
+      <>
+        <ChatUsageSection
+          state={usageState}
+          compaction={{
+            server,
+            token,
+            sessionId,
+            disabled: !connected || waiting || sessionArchived,
+            onCompact: (focus) => handleSend(focus ? `/compact ${focus}` : "/compact"),
+            onUncompact: () => handleSend("/uncompact"),
+          }}
+        />
+
+        {session ? (
+          <SessionBudgetSection
+            budget={session.budget}
+            gauges={budgetGauges}
+            disabled={deletingSession || sessionArchived}
+            onSave={handleUpdateSessionBudget}
+          />
+        ) : null}
+      </>
+    ),
+    environment: (
+      <>
+        <section className="py-4">
+          <div className="flex items-start justify-between gap-2">
+            <div className="text-xs font-medium text-muted-foreground">
+              {t("sandbox.title")}
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                onClick={() => void handleSandboxPowerAction()}
+                disabled={sandboxActionDisabled || sessionArchived}
+                title={sandboxPowerButtonLabel}
+                className={inspectorActionClass}
+              >
+                {sandboxPowerAction ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : showsStartSandbox ? (
+                  <Play className="h-3.5 w-3.5" />
+                ) : (
+                  <Square className="h-3.5 w-3.5" />
+                )}
+              </button>
+              <button
+                onClick={() => void handleWipeSandbox()}
+                disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || sessionArchived}
+                title={t("sandbox.actions.reset")}
+                className={inspectorActionClass}
+              >
+                {wipingSandbox ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </div>
+          </div>
+          <div className="mt-2 space-y-1">
+            <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+              <span
+                className={cn(
+                  "h-2 w-2 shrink-0 rounded-full",
+                  sandboxLoading
+                    ? "animate-pulse bg-warning"
+                    : sandbox
+                      ? sandboxStatusIndicatorClass(sandbox.status)
+                      : "bg-muted-foreground/40",
+                )}
+              />
+              <span className="truncate">
+                {sandboxLoading
+                  ? t("sandbox.refreshing")
+                  : sandbox
+                    ? t(`sandbox.status.${sandboxStatusKey(sandbox.status)}`)
+                    : t("sandbox.checking")}
+              </span>
+            </div>
+            <div className="text-xs text-muted-foreground">{sandboxStorageLabel(sandbox, t)}</div>
+            {sandboxIdentifier(sandbox) ? (
+              <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                <span>{t("sandbox.fields.id")}</span>
+                <span className="break-all font-mono text-foreground">{sandboxIdentifier(sandbox)}</span>
+              </div>
+            ) : null}
+          </div>
+          <div className="mt-4">
+            <SandboxGitControls
+              server={server}
+              token={token}
+              sessionId={sessionId}
+              disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession}
+              refreshKey={sandbox?.status}
+            />
+          </div>
+        </section>
+
+        <section className="py-4">
+          <div className="flex items-start justify-between gap-2">
+            <div className="text-xs font-medium text-muted-foreground">
+              {t("knowledge.title")}
+            </div>
+            <button
+              onClick={() => void handleCommitKnowledge()}
+              disabled={archiveButtonDisabled}
+              title={commitButtonTitle ?? t("knowledge.commit")}
+              className={inspectorActionClass}
+            >
+              {savingKnowledge ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span
+              className={cn(
+                inspectorBadgeClass,
+                "gap-1",
+                knowledgeBadge.className,
+              )}
+            >
+              <knowledgeBadge.icon className="h-3 w-3 shrink-0" />
+              {knowledgeBadge.label}
+            </span>
+            <span className="truncate">{archiveStatusLabel}</span>
+          </div>
+          {session?.knowledge_last_archive_path ? (
+            <Link
+              href={knowledgeBrowseHref(session.knowledge_last_archive_path)}
+              title={t("knowledge.openInBrowser")}
+              className="mt-2 block break-all rounded-sm font-mono text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {session.knowledge_last_archive_path}
+            </Link>
+          ) : null}
+          {knowledgeNotice ? (
+            <div
+              className={cn(
+                "mt-2 text-xs",
+                knowledgeNotice.tone === "error"
+                  ? "text-destructive"
+                  : knowledgeNotice.tone === "success"
+                    ? "text-success"
+                    : "text-muted-foreground",
+              )}
+            >
+              {knowledgeNotice.message}
             </div>
           ) : null}
         </section>
-      ) : null}
+      </>
+    ),
+    content: (
+      <>
+        <ChatMemorySection
+          sessionId={sessionId}
+          state={memoryState}
+          open={memoryOpen}
+          onOpenChange={setMemoryOpen}
+          onSourceNavigate={() => setMobileInspectorOpen(false)}
+        />
 
-      <section className="py-4">
-        <div className="flex items-start justify-between gap-2">
-          <div className="text-xs font-medium text-muted-foreground">
-            {t("sandbox.title")}
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              onClick={() => void handleSandboxPowerAction()}
-              disabled={sandboxActionDisabled || sessionArchived}
-              title={sandboxPowerButtonLabel}
-              className={inspectorActionClass}
-            >
-              {sandboxPowerAction ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : showsStartSandbox ? (
-                <Play className="h-3.5 w-3.5" />
-              ) : (
-                <Square className="h-3.5 w-3.5" />
-              )}
-            </button>
-            <button
-              onClick={() => void handleWipeSandbox()}
-              disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || sessionArchived}
-              title={t("sandbox.actions.reset")}
-              className={inspectorActionClass}
-            >
-              {wipingSandbox ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RotateCcw className="h-3.5 w-3.5" />
-              )}
-            </button>
-          </div>
-        </div>
-        <div className="mt-2 space-y-1">
-          <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
-            <span
-              className={cn(
-                "h-2 w-2 shrink-0 rounded-full",
-                sandboxLoading
-                  ? "animate-pulse bg-warning"
-                  : sandbox
-                    ? sandboxStatusIndicatorClass(sandbox.status)
-                    : "bg-muted-foreground/40",
-              )}
-            />
-            <span className="truncate">
-              {sandboxLoading
-                ? t("sandbox.refreshing")
-                : sandbox
-                  ? t(`sandbox.status.${sandboxStatusKey(sandbox.status)}`)
-                  : t("sandbox.checking")}
-            </span>
-          </div>
-          <div className="text-xs text-muted-foreground">{sandboxStorageLabel(sandbox, t)}</div>
-          {sandboxIdentifier(sandbox) ? (
-            <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-              <span>{t("sandbox.fields.id")}</span>
-              <span className="break-all font-mono text-foreground">{sandboxIdentifier(sandbox)}</span>
-            </div>
-          ) : null}
-        </div>
-        <div className="mt-4">
-          <SandboxGitControls
-            server={server}
-            token={token}
-            sessionId={sessionId}
-            disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession}
-            refreshKey={sandbox?.status}
-          />
-        </div>
-      </section>
-
-      <section className="py-4">
-        <div className="flex items-start justify-between gap-2">
-          <div className="text-xs font-medium text-muted-foreground">
-            {t("knowledge.title")}
-          </div>
-          <button
-            onClick={() => void handleCommitKnowledge()}
-            disabled={archiveButtonDisabled}
-            title={commitButtonTitle ?? t("knowledge.commit")}
-            className={inspectorActionClass}
-          >
-            {savingKnowledge ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Save className="h-3.5 w-3.5" />
-            )}
-          </button>
-        </div>
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span
-            className={cn(
-              inspectorBadgeClass,
-              "gap-1",
-              knowledgeBadge.className,
-            )}
-          >
-            <knowledgeBadge.icon className="h-3 w-3 shrink-0" />
-            {knowledgeBadge.label}
-          </span>
-          <span className="truncate">{archiveStatusLabel}</span>
-        </div>
-        {session?.knowledge_last_archive_path ? (
-          <Link
-            href={knowledgeBrowseHref(session.knowledge_last_archive_path)}
-            title={t("knowledge.openInBrowser")}
-            className="mt-2 block break-all rounded-sm font-mono text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {session.knowledge_last_archive_path}
-          </Link>
-        ) : null}
-        {knowledgeNotice ? (
-          <div
-            className={cn(
-              "mt-2 text-xs",
-              knowledgeNotice.tone === "error"
-                ? "text-destructive"
-                : knowledgeNotice.tone === "success"
-                  ? "text-success"
-                  : "text-muted-foreground",
-            )}
-          >
-            {knowledgeNotice.message}
-          </div>
-        ) : null}
-      </section>
-
-      <SessionArtifactsSection server={server} sessionId={sessionId} refreshKey={latestTerminalIndex} />
+        <SessionArtifactsSection server={server} sessionId={sessionId} refreshKey={latestTerminalIndex} />
+      </>
+    ),
+  };
+  const inspectorTabs = <InspectorTabs value={inspectorTab} onChange={selectInspectorTab} />;
+  const inspectorPanel = (
+    <div role="tabpanel" aria-label={t(`inspector.tabs.${inspectorTab}`)} className="divide-y divide-border">
+      {inspectorPanels[inspectorTab]}
     </div>
   );
 
@@ -2827,7 +2819,7 @@ export function ChatView({
         </div>
       )}
 
-      <div className="min-h-0 flex flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className={cn("min-h-0 flex flex-1 flex-col", inspectorOpen && "lg:grid lg:grid-cols-[minmax(0,1fr)_22rem]")}>
         <div className="min-h-0 flex flex-1 flex-col">
           <SessionHeader
             sessionId={sessionId}
@@ -2857,6 +2849,19 @@ export function ChatView({
               onToggleArchived={() => void handleToggleArchived()}
               onDelete={() => void handleDeleteSession()}
             />
+            <button
+              type="button"
+              onClick={() => showInspector(!inspectorOpen)}
+              aria-pressed={inspectorOpen}
+              aria-label={inspectorOpen ? t("inspector.hide") : t("inspector.show")}
+              title={inspectorOpen ? t("inspector.hide") : t("inspector.show")}
+              className={cn(
+                "hidden h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex",
+                inspectorOpen && "text-primary",
+              )}
+            >
+              {inspectorOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+            </button>
             <button
               type="button"
               onClick={() => setMobileInspectorOpen(true)}
@@ -2973,9 +2978,13 @@ export function ChatView({
           />
         </div>
 
-        <aside className="hidden min-h-0 bg-surface lg:block">
-          <div className="h-full overflow-y-auto px-4">{inspectorContent}</div>
-        </aside>
+        {inspectorOpen ? (
+          <aside className="hidden min-h-0 flex-col bg-surface lg:flex">
+            <div className="px-4 pt-3">{inspectorTabs}</div>
+            {/* Keyed by tab, so a new tab (or a jump to one) starts at its top. */}
+            <div key={inspectorTab} className="min-h-0 flex-1 overflow-y-auto px-4">{inspectorPanel}</div>
+          </aside>
+        ) : null}
       </div>
 
       {mobileInspectorOpen ? (
@@ -3009,8 +3018,9 @@ export function ChatView({
                 </button>
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(1.5rem,calc(env(safe-area-inset-bottom)+0.75rem))]">
-              {inspectorContent}
+            <div className="px-4 pt-3">{inspectorTabs}</div>
+            <div key={inspectorTab} className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(1.5rem,calc(env(safe-area-inset-bottom)+0.75rem))]">
+              {inspectorPanel}
             </div>
           </div>
         </div>

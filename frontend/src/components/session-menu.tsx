@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { Archive, ArchiveRestore, Bug, Ellipsis, Loader2, Pin, PinOff, Star, StarOff, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Bug, Copy, Ellipsis, Loader2, Pin, PinOff, Star, StarOff, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useDismiss } from "@/hooks/use-dismiss";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,11 @@ export function SessionMenu({
   const [open, setOpen] = useState(false);
   const closeMenu = useCallback(() => setOpen(false), []);
   useDismiss(menuRef, open, closeMenu);
+
+  const copySessionId = () => {
+    // Clipboard access can be denied; there is nothing useful to show for that in a closing menu.
+    navigator.clipboard?.writeText(sessionId).catch(() => {});
+  };
 
   /** Closes the menu before the action, so a confirm dialog it opens doesn't sit on top of the open menu. */
   const select = (action: () => void) => () => {
@@ -90,6 +95,10 @@ export function SessionMenu({
             <Bug className="h-4 w-4 shrink-0 text-muted-foreground" />
             {t("sessionView.debug")}
           </Link>
+          {/* The header shows the id only from sm up, so this is the way to get at it on a phone. */}
+          <MenuButton icon={<Copy />} disabled={false} onClick={select(copySessionId)}>
+            {t("sessionView.copyId")}
+          </MenuButton>
           <div role="separator" className="my-1 h-px bg-border" />
           <MenuButton icon={<Trash2 />} disabled={deleteDisabled} onClick={select(onDelete)} destructive>
             {t("chatView.actions.delete")}

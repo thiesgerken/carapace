@@ -3,6 +3,7 @@
 import { BookOpen, Bot, Eye, Lock, MessageSquare, PencilLine, ShieldCheck, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { SwitchTrack } from "@/components/switch-row";
 import { cn } from "@/lib/utils";
 
 export type SessionOptionKey = "private" | "ask_mode" | "yolo_mode" | "unattended";
@@ -83,6 +84,12 @@ function getOptionIcon(key: SessionOptionKey, active: boolean): LucideIcon {
   }
 }
 
+/** Whether *key* switched on lowers a safeguard, which the active state then shows as a warning. */
+function lowersSafeguard(key: SessionOptionKey): boolean {
+  // YOLO switches off the sentinel review; an unattended session has nobody to ask for approval.
+  return key === "yolo_mode" || key === "unattended";
+}
+
 function getOptionClasses(key: SessionOptionKey, active: boolean, disabled: boolean): string {
   if (disabled) {
     return active ? "border-border bg-muted text-foreground/70" : "border-border/60 text-muted-foreground";
@@ -92,8 +99,7 @@ function getOptionClasses(key: SessionOptionKey, active: boolean, disabled: bool
     return "border-border text-foreground hover:bg-muted";
   }
 
-  // YOLO switches off the sentinel review, so its active state warns instead of reading as a plain selection.
-  return key === "yolo_mode"
+  return lowersSafeguard(key)
     ? "border-warning/50 bg-warning/10 text-foreground hover:bg-warning/15"
     : "border-primary/50 bg-primary/10 text-foreground hover:bg-primary/15";
 }
@@ -140,6 +146,48 @@ export function SessionOptionTiles({ items, className }: SessionOptionTilesProps
             >
               {copy.description}
             </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The same options as a compact settings list for the chat inspector: one line per option, named by what it
+ * turns on, with what it does in the tooltip. Only an active option that lowers a safeguard spells that out.
+ */
+export function SessionOptionSwitches({ items }: { items: SessionOptionTileItem[] }) {
+  const t = useTranslations("newSessionButton");
+
+  return (
+    <div className="space-y-0.5">
+      {items.map((item) => {
+        const { title, description } = getOptionCopy(t, item.key, true);
+        const Icon = getOptionIcon(item.key, true);
+        const warning = lowersSafeguard(item.key);
+        return (
+          <button
+            key={item.key}
+            type="button"
+            role="switch"
+            aria-checked={item.active}
+            disabled={item.disabled}
+            title={description}
+            onClick={item.onClick}
+            className="flex min-h-8 w-full items-center justify-between gap-3 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="flex min-w-0 items-start gap-2">
+              <Icon
+                aria-hidden="true"
+                className={cn("mt-0.5 h-4 w-4 shrink-0", !item.active ? "text-muted-foreground" : warning ? "text-warning" : "text-primary")}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-foreground">{title}</span>
+                {item.active && warning ? <span className="block text-xs text-warning">{description}</span> : null}
+              </span>
+            </span>
+            <SwitchTrack checked={item.active} warning={warning} small />
           </button>
         );
       })}

@@ -1259,18 +1259,19 @@
             "interactive": "Interaktiv"
         },
         "inspector": {
-            "session": "Sitzung"
+            "tabsLabel": "Sitzungsdetails",
+            "tabs": {
+                "session": "Sitzung",
+                "usage": "Nutzung",
+                "environment": "Umgebung",
+                "content": "Inhalte"
+            },
+            "show": "Details einblenden",
+            "hide": "Details ausblenden"
         },
         "session": {
-            "title": "Titel",
-            "id": "ID",
-            "copyId": "Sitzungs-ID kopieren",
-            "idCopied": "Sitzungs-ID kopiert",
-            "idCopiedShort": "Kopiert",
-            "source": "Quelle",
             "created": "Erstellt",
             "lastActive": "Zuletzt aktiv",
-            "messages": "Nachrichten",
             "totalCost": "Kosten",
             "totalEquivalentCost": "Äquivalente Kosten",
             "job": "Job",
@@ -1281,7 +1282,8 @@
             "yoloMode": "YOLO-Modus",
             "yoloModeHelp": "Sentinel-Freigaben umgehen und Aktionen sofort erlauben.",
             "savingPrivate": "Wird gespeichert…",
-            "updatingMode": "Modus wird aktualisiert…"
+            "updatingMode": "Modus wird aktualisiert…",
+            "meta": "Erstellt {created} · {count, plural, one {# Nachricht} other {# Nachrichten}}"
         },
         "budget": {
             "title": "Budget",
@@ -1756,7 +1758,8 @@
     },
     "sessionView": {
         "menu": "Sitzungsaktionen",
-        "debug": "Debug-Ansicht"
+        "debug": "Debug-Ansicht",
+        "copyId": "Sitzungs-ID kopieren"
     },
     "debugView": {
         "backToChat": "Zurück zum Chat",

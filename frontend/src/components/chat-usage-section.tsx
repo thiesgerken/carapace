@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, Ellipsis, Loader2, Shrink } from "lucide-react";
+import { Ellipsis, Loader2, Shrink } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
@@ -60,55 +60,36 @@ export interface CompactionControls {
 }
 
 /**
- * The usage breakdown in the chat inspector, collapsed by default, with the compaction controls in
- * its header. Rendered twice (desktop column and mobile sheet), so the open state and the fetched
- * data live in the caller. The budget gauges are left to the budget section next to it.
+ * The usage breakdown in the chat inspector's Usage tab, with the compaction controls in its header.
+ * Rendered twice (desktop column and mobile sheet), so the fetched data lives in the caller. The
+ * budget gauges are left to the budget section next to it.
  */
-export function ChatUsageSection({ state, open, onOpenChange, compaction }: {
-  state: SessionUsageState;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  compaction: CompactionControls;
-}) {
+export function ChatUsageSection({ state, compaction }: { state: SessionUsageState; compaction: CompactionControls }) {
   const t = useTranslations("chatView.usage");
   const tCompaction = useTranslations("chatView.compaction");
   const { data, error } = state;
   const [dialogOpen, setDialogOpen] = useState(false);
-  // Buttons inside <summary> would toggle the section as well.
-  const inSummary = (action: () => void) => (event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    action();
-  };
 
   return (
-    <>
-    <details
-      data-usage-section
-      open={open}
-      onToggle={(event) => onOpenChange(event.currentTarget.open)}
-      className="group/card py-4"
-    >
-      <summary className="flex cursor-pointer list-none items-start justify-between gap-2 [&::-webkit-details-marker]:hidden">
+    <section className="py-4">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 space-y-1">
           <div className="text-xs font-medium text-muted-foreground">{t("title")}</div>
-          {open ? (
-            error ? (
-              <div className="text-xs text-destructive">{error}</div>
-            ) : data === undefined ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-            ) : (
-              <div className="text-xs text-muted-foreground">
-                <UsageSummary data={data} />
-              </div>
-            )
-          ) : null}
+          {error ? (
+            <div className="text-xs text-destructive">{error}</div>
+          ) : data === undefined ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+          ) : (
+            <div className="text-xs text-muted-foreground">
+              <UsageSummary data={data} />
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
             disabled={compaction.disabled}
-            onClick={inSummary(() => compaction.onCompact(""))}
+            onClick={() => compaction.onCompact("")}
             className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Shrink className="h-3.5 w-3.5" />
@@ -117,36 +98,31 @@ export function ChatUsageSection({ state, open, onOpenChange, compaction }: {
           <button
             type="button"
             disabled={compaction.disabled}
-            onClick={inSummary(() => setDialogOpen(true))}
+            onClick={() => setDialogOpen(true)}
             title={tCompaction("more")}
             aria-label={tCompaction("more")}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Ellipsis className="h-3.5 w-3.5" />
           </button>
-          <ChevronRight
-            aria-hidden="true"
-            className="ml-1 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-open/card:rotate-90"
-          />
         </div>
-      </summary>
+      </div>
 
       {data ? (
         <div className="mt-2">
           <UsageDetails data={data} showBudget={false} />
         </div>
       ) : null}
-    </details>
-    {dialogOpen ? (
-      <CompactionDialog
-        server={compaction.server}
-        token={compaction.token}
-        sessionId={compaction.sessionId}
-        onClose={() => setDialogOpen(false)}
-        onCompact={compaction.onCompact}
-        onUncompact={compaction.onUncompact}
-      />
-    ) : null}
-    </>
+      {dialogOpen ? (
+        <CompactionDialog
+          server={compaction.server}
+          token={compaction.token}
+          sessionId={compaction.sessionId}
+          onClose={() => setDialogOpen(false)}
+          onCompact={compaction.onCompact}
+          onUncompact={compaction.onUncompact}
+        />
+      ) : null}
+    </section>
   );
 }

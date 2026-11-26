@@ -16,6 +16,7 @@ import {
 } from "@/lib/api";
 import type { SessionBudgetSettings } from "@/lib/types";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
+import { SwitchTrack } from "@/components/switch-row";
 import { cn } from "@/lib/utils";
 
 type SecretSource = "none" | "raw" | "env" | "file";
@@ -833,9 +834,7 @@ export function ModelRow({ model, disabled, defaultOpen = false, onChange, onRem
             onClick={() => onChange({ vision: !model.vision })}
             className="flex h-9 items-center gap-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span aria-hidden="true" className={cn("relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors", model.vision ? "border-primary bg-primary" : "border-border bg-muted")}>
-              <span className={cn("inline-block h-5 w-5 rounded-full bg-background shadow-sm transition-transform", model.vision ? "translate-x-6" : "translate-x-1")} />
-            </span>
+            <SwitchTrack checked={model.vision} />
             <span className="text-muted-foreground">{t("fields.visionHint")}</span>
           </button>
         </div>
@@ -849,9 +848,7 @@ export function ModelRow({ model, disabled, defaultOpen = false, onChange, onRem
             onClick={() => onChange({ enabled: !model.enabled })}
             className="flex h-9 items-center gap-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span aria-hidden="true" className={cn("relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors", model.enabled ? "border-primary bg-primary" : "border-border bg-muted")}>
-              <span className={cn("inline-block h-5 w-5 rounded-full bg-background shadow-sm transition-transform", model.enabled ? "translate-x-6" : "translate-x-1")} />
-            </span>
+            <SwitchTrack checked={model.enabled} />
             <span className="text-muted-foreground">{t("fields.enabledHint")}</span>
           </button>
         </div>
