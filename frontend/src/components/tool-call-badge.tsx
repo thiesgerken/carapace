@@ -872,8 +872,10 @@ export function ToolCallBadge({
             <div role="status" className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <BrailleSpinner className="text-xs" />
               <span className="min-w-0 truncate">{stepLabel(step, t)}</span>
-              <span aria-hidden>·</span>
-              <Elapsed since={step.startedAt} />
+              {/* The status is a live region: a ticking counter would be announced every second. */}
+              <span aria-hidden>
+                · <Elapsed since={step.startedAt} />
+              </span>
             </div>
           )}
           {compaction?.model_text && (

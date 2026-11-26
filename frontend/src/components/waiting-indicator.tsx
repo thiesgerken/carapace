@@ -38,7 +38,7 @@ const PLENTY_OF_TIME: Phrase = { key: "plentyOfTime", pose: "hourglass" };
 // Each phrase names the pose that acts it out. To add one: an entry here and its text under
 // `chatView.waiting.phrases` in both message files. Besides the model's phases, the buckets are the
 // steps a tool call waits on between model requests; "sentinel" is both, as its requests are its steps.
-export const PHRASES: Record<"processing_prompt" | "thinking" | StepTopic, readonly Phrase[]> = {
+export const PHRASES: Record<"processing_prompt" | "thinking" | Exclude<StepTopic, "domain">, readonly Phrase[]> = {
   processing_prompt: [
     { key: "nibble", pose: "munch" },
     { key: "digest", pose: "munch" },
@@ -63,7 +63,6 @@ export const PHRASES: Record<"processing_prompt" | "thinking" | StepTopic, reado
   ],
   // The sentinel's own requests: it is reviewing something that crosses the sandbox boundary.
   sentinel: [KNOCKING, PEEKS_OUT],
-  domain: [KNOCKING, PEEKS_OUT],
   credential: [
     { key: "rummagesForKey", pose: "glass" },
     PEEKS_OUT,
@@ -94,12 +93,18 @@ export const GENERATING_POSES: readonly TortoisePose[] = ["walk", "scribble", "w
  * phrase that goes with it, if any. One pick per turn and bucket.
  */
 function act(activity: LlmActivity | null, step: RunningStep | null, turnSeed: number): { pose: TortoisePose; phrase?: string } {
-  const bucket = activity ? (activity.source === "sentinel" ? "sentinel" : activity.phase) : step ? stepTopic(step) : null;
+  const bucket = activity ? (activity.source === "sentinel" ? "sentinel" : activity.phase) : step ? stepBucket(step) : null;
   if (bucket === null) return { pose: "pulse" };
   if (bucket === "generating" || bucket === "tool_call") return { pose: pick(GENERATING_POSES, turnSeed, "generating") };
   const { key, pose } = pick(PHRASES[bucket], turnSeed, bucket);
   return { pose, phrase: key };
 }
+
+// A domain check is the sentinel's review of it: one bucket, so its requests during the step keep the phrase.
+const stepBucket = (step: RunningStep) => {
+  const topic = stepTopic(step);
+  return topic === "domain" ? "sentinel" : topic;
+};
 
 const pick = <T,>(items: readonly T[], turnSeed: number, bucket: string): T => items[fnv1a(`${turnSeed}:${bucket}`) % items.length];
 
@@ -179,7 +184,7 @@ export function WaitingIndicator({
           {t(`phrases.${phrase}`)}
         </span>
       )}
-      {agent ? <ActivityCounter activity={agent} /> : !activity && step && <Elapsed since={step.startedAt} />}
+      {agent ? <ActivityCounter activity={agent} /> : step && <Elapsed since={step.startedAt} />}
     </div>
   );
 }

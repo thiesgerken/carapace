@@ -162,6 +162,13 @@ test("between requests WaitingIndicator acts out the step a tool call waits on a
     assert.ok(lock.text.endsWith("1 min 35 s"), lock.text);
     assert.equal(lock.pose, "hourglass");
 
+    // A domain check and the sentinel request reviewing it are one bucket, and the step's counter stays.
+    const domain: RunningStep = { ...BUILD, kind: "domain", name: "pypi.org" };
+    const check = await shown(null, "en", domain);
+    const review = await shown({ ...GENERATING, source: "sentinel" }, "en", domain);
+    assert.equal(review.text, check.text);
+    assert.ok(check.text.endsWith("1 min 35 s"), check.text);
+
     // A running request is what the line is about, even while a step runs.
     const thinking = await shown(THINKING, "en", BUILD);
     assert.equal(thinking.pose, phraseIn(thinking.text, "thinking").pose);

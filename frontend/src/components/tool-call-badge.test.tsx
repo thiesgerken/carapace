@@ -264,7 +264,7 @@ test("an open running card shows the step it waits for and how long it has run",
       </NextIntlClientProvider>,
     );
     await click(view.container.querySelector("button")!);
-    assert.equal(view.container.querySelector(".tool-row-details")?.textContent, "Waiting for the skill build…·1 min 35 s");
+    assert.equal(view.container.querySelector(".tool-row-details")?.textContent, "Waiting for the skill build…· 1 min 35 s");
     await view.unmount();
   } finally {
     restore();
