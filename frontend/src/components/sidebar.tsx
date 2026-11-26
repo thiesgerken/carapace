@@ -588,7 +588,7 @@ export function Sidebar({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+      <div className="flex items-center gap-2 px-4 py-3">
         <Link
           href="/"
           onClick={onNavigate}
@@ -600,7 +600,7 @@ export function Sidebar({
       </div>
 
       {/* New session button */}
-      <div className="px-3 pt-3 pb-1">
+      <div className="px-3 pt-1 pb-1">
         <NewSessionButton
           onCreate={(options) => {
             onNavigate();
