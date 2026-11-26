@@ -43,7 +43,7 @@ def test_config_defaults():
     assert cfg.notifications.presence_ttl_seconds == 60
     assert cfg.sandbox.network_name == "carapace-sandbox"
     ids = {e.model_id for e in cfg.agent.available_models}
-    assert ids == {"anthropic:claude-sonnet-4-6", "anthropic:claude-haiku-4-5"}
+    assert ids == {"anthropic:claude-sonnet-4-6", "anthropic:claude-haiku-5-5"}
 
 
 def test_notification_subscription_rejects_non_normalized_user() -> None:
