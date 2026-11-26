@@ -4,13 +4,35 @@ import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.share
 import { NextIntlClientProvider } from "next-intl";
 
 import english from "../../messages/en.json";
-import { click, installDom, renderReact } from "../../test/react-test-utils";
+import { click, installDom, renderReact, runInAct } from "../../test/react-test-utils";
 import { SidebarFooter } from "./sidebar-footer";
+
+function renderFooter(pathname = "/") {
+  return renderReact(
+    <PathnameContext.Provider value={pathname}>
+      <NextIntlClientProvider locale="en" messages={english} timeZone="UTC">
+        <SidebarFooter
+          server=""
+          token="demo"
+          currentUser={{ username: "demo", display_name: "Demo User" } as never}
+          frontendVersion="1.0.0"
+          backendVersion="1.0.0"
+          githubUrl="https://github.com/thiesgerken/carapace"
+          onNavigate={() => {}}
+          onDisconnect={() => {}}
+        />
+      </NextIntlClientProvider>
+    </PathnameContext.Provider>,
+  );
+}
+
+/** Lets the git status fetches and the re-reads they trigger settle. */
+const settle = () => runInAct(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 test("the account menu holds the navigation, marks the current route and closes on navigation", async () => {
   const restore = installDom();
   const originalFetch = globalThis.fetch;
-  // No knowledge remote: the git indicator stays hidden.
+  // No knowledge remote: the sync row stays hidden.
   globalThis.fetch = (async () => new Response(JSON.stringify({ configured: false }))) as typeof fetch;
   try {
     const navigated: string[] = [];
@@ -41,6 +63,83 @@ test("the account menu holds the navigation, marks the current route and closes 
     await click(items()[0]);
     assert.deepEqual(navigated, ["nav"]);
     assert.deepEqual(items(), []);
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
+
+test("the knowledge sync row stays hidden while the repo is in sync with its remote", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ remote_configured: true, ahead: 0, behind: 0, head: null, head_subject: null }))) as typeof fetch;
+  try {
+    const view = await renderFooter();
+    await settle();
+    assert.equal(view.container.querySelector('a[href="/knowledge"]'), null);
+    assert.equal(view.container.querySelector('button[aria-label^="Sync"]'), null);
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
+
+test("the knowledge sync row shows behind/ahead and syncs by pulling, then pushing", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  let counts = { ahead: 1, behind: 2 };
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith("/api/git/status")) {
+      return new Response(JSON.stringify({ remote_configured: true, ...counts, head: null, head_subject: null }));
+    }
+    calls.push(path);
+    if (path.endsWith("/api/git/push")) counts = { ahead: 0, behind: 0 };
+    return new Response(JSON.stringify({ ok: true, message: "", denied: false }));
+  }) as typeof fetch;
+  try {
+    const view = await renderFooter();
+    await settle();
+    const row = view.container.querySelector('a[href="/knowledge"]');
+    assert.equal(row?.textContent, "Knowledge21");
+    assert.equal(row?.getAttribute("title"), "Not in sync with the knowledge remote: 2 to pull, 1 to push");
+
+    await click(view.container.querySelector('button[aria-label^="Sync"]')!);
+    await settle();
+    assert.deepEqual(calls, ["/api/git/pull", "/api/git/push"]);
+    assert.equal(view.container.querySelector('a[href="/knowledge"]'), null);
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
+
+test("the knowledge sync row skips the push when the pull fails and shows the error", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith("/api/git/status")) {
+      return new Response(JSON.stringify({ remote_configured: true, ahead: 1, behind: 1, head: null, head_subject: null }));
+    }
+    calls.push(path);
+    return new Response(JSON.stringify({ ok: false, message: "Merge conflict in knowledge repo", denied: false }));
+  }) as typeof fetch;
+  try {
+    const view = await renderFooter();
+    await settle();
+    await click(view.container.querySelector('button[aria-label^="Sync"]')!);
+    await settle();
+    assert.deepEqual(calls, ["/api/git/pull"]);
+    const row = view.container.querySelector('a[href="/knowledge"]');
+    assert.equal(row?.textContent, "KnowledgePull failed");
+    assert.equal(row?.getAttribute("title"), "Merge conflict in knowledge repo");
     await view.unmount();
   } finally {
     globalThis.fetch = originalFetch;

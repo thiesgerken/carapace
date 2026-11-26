@@ -1659,7 +1659,8 @@
         "global": {
             "label": "Wissens-Remote",
             "help": "Synchronisiert dein Wissens-Repository auf dem Server mit seinem externen Git-Remote. Die Zähler zeigen, um wie viele Commits das Server-Repo dem Remote voraus (↑) bzw. hinterher (↓) ist.",
-            "indicatorOutOfSync": "Nicht synchron mit dem Wissens-Remote: {behind} zu holen, {ahead} zu pushen",
+            "outOfSync": "Nicht synchron mit dem Wissens-Remote: {behind} zu holen, {ahead} zu pushen",
+            "sync": "Mit dem Wissens-Remote synchronisieren (erst holen, dann pushen)",
             "refresh": "Server-Repository erneut mit dem Remote abgleichen (holt zuerst neue Commits)",
             "pull": "Commits vom externen Remote ins Server-Repository holen",
             "push": "Commits des Server-Repositorys ins externe Remote übertragen"

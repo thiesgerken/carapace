@@ -28,7 +28,7 @@ interface ActionOutcome {
   detail: string;
 }
 
-function AheadBehind({
+export function AheadBehind({
   counts,
   upToDateLabel,
 }: {
@@ -249,8 +249,8 @@ export function SandboxGitControls({
   );
 }
 
-// B2: backend per-user repo ↔ external remote. Shared between the account-menu
-// indicator dot and the panel inside that menu, so status is fetched once.
+// B2: backend per-user repo ↔ external remote. Shown by the sidebar's sync row and
+// the knowledge browser's panel.
 
 /**
  * Fired after a pull or push moves the knowledge repo. Listened to by every
@@ -268,6 +268,8 @@ export interface GlobalGit {
   refresh: () => void;
   pull: () => void;
   push: () => void;
+  /** Pull, then push if the pull went through: brings a diverged repo back in sync in one step. */
+  sync: () => void;
 }
 
 export function useGlobalGit(server: string, token: string): GlobalGit {
@@ -301,7 +303,7 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
     return () => clearTimeout(id);
   }, [refresh]);
 
-  // Several of these hooks are mounted at once (the Knowledge nav dot, the knowledge
+  // Several of these hooks are mounted at once (the sidebar sync row, the knowledge
   // browser). A refresh, pull or push from any of them changes what all of them should
   // show, so they re-read status together instead of the others going stale until remount.
   useEffect(() => {
@@ -311,7 +313,7 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
   }, [refresh]);
 
   const runAction = useCallback(
-    async (action: "pull" | "push", fn: () => Promise<GitActionResult>) => {
+    async (action: "pull" | "push", fn: () => Promise<GitActionResult>): Promise<boolean> => {
       setBusy(action);
       setOutcome(null);
       try {
@@ -319,9 +321,12 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
         setOutcome({ ok: result.ok, errorLabel: t(`errors.${action}`), detail: result.message });
         // Every mounted panel re-reads status off this, the acting one included, so
         // there is no refresh() call here — it would fetch the same status twice.
-        window.dispatchEvent(new Event(KNOWLEDGE_GIT_CHANGED_EVENT));
+        // A failed action moved nothing, and the re-read would clear its error.
+        if (result.ok) window.dispatchEvent(new Event(KNOWLEDGE_GIT_CHANGED_EVENT));
+        return result.ok;
       } catch {
         setOutcome({ ok: false, errorLabel: t(`errors.${action}`), detail: "" });
+        return false;
       } finally {
         setBusy(null);
       }
@@ -340,20 +345,13 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
     refresh: () => { window.dispatchEvent(new Event(KNOWLEDGE_GIT_CHANGED_EVENT)); },
     pull: () => void runAction("pull", () => globalGitPull(server, token)),
     push: () => void runAction("push", () => globalGitPush(server, token)),
+    sync: () =>
+      void (async () => {
+        if (await runAction("pull", () => globalGitPull(server, token))) {
+          await runAction("push", () => globalGitPush(server, token));
+        }
+      })(),
   };
-}
-
-/** Status dot for the Knowledge nav entry — shown while the server repo and its remote differ. */
-export function GlobalGitIndicator({ git }: { git: GlobalGit }) {
-  const t = useTranslations("git");
-  const behind = git.counts?.behind ?? 0;
-  const ahead = git.counts?.ahead ?? 0;
-  if (git.configured !== true || (behind === 0 && ahead === 0)) return null;
-  return (
-    <span title={t("global.indicatorOutOfSync", { behind, ahead })} className="h-2 w-2 shrink-0 rounded-full bg-info">
-      <span className="sr-only">{t("global.indicatorOutOfSync", { behind, ahead })}</span>
-    </span>
-  );
 }
 
 /** Full git panel for the knowledge browser, shown even without a remote so the refresh control stays reachable. */
