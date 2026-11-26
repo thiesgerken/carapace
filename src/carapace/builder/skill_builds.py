@@ -160,7 +160,9 @@ class SkillBuilds:
         the one with a command named *command*. None when no installable build has that command.
 
         A package built in the workspace (`nix shell path:./skills/<name>`) is not installed; command names are
-        unique on PATH, so it gets the settings and needs of the committed version of its command.
+        unique on PATH, so it gets the settings and needs of the committed version of its command. That grants
+        nothing new: the sandbox can run the installed command anyway, and whatever leaves the sandbox still goes
+        through the review of those needs. The same holds for anything else the answer carries (credentials).
         """
         builds = [build for build in await self.installable(repo_dir) if command in build.commands]
         return next((build for build in builds if store_path in build.store_paths), builds[0] if builds else None)
