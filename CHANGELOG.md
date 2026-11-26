@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.198.0 (2026-11-26)
+
+### ✨ Introduce new features
+
+- feat: knowledge sync row above the account row
+
+### 🐛 Fix a bug
+
+- fix: let a late sentinel verdict finish its pending card
+- fix: run the knowledge sync's pull and push as one action
+
 ## v0.197.0 (2026-11-26)
 
 ### ✨ Introduce new features
