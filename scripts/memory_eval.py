@@ -11,7 +11,7 @@ the call path against pydantic-ai's TestModel instead, for CI smoke tests.
 
     uv run python scripts/memory_eval.py data/sessions                     # dry run
     uv run python scripts/memory_eval.py --test-model path/to/conversation.json
-    uv run python scripts/memory_eval.py --call --model anthropic:claude-haiku-4-5 --limit 3 data/
+    uv run python scripts/memory_eval.py --call --model anthropic:claude-haiku-5-5 --limit 3 data/
 
 ``--knowledge-dir`` puts that repo's shared prompt prefix (AGENTS.md, SOUL.md, USER.md, skill
 catalog) ahead of the instructions, as the handler does with the user's knowledge repo; without it
@@ -47,7 +47,7 @@ from carapace.memory.prompts import SESSION_EXTRACT, system_prompt
 from carapace.prompt_prefix import shared_prompt_prefix
 from carapace.skills import SkillRegistry
 
-DEFAULT_MODEL = "anthropic:claude-haiku-4-5"
+DEFAULT_MODEL = "anthropic:claude-haiku-5-5"
 
 # Minimal output for --test-model; TestModel's generated data would fail the handlers' fact checks.
 _TEST_OUTPUT = SessionExtractionOutput(

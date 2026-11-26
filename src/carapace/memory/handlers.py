@@ -89,12 +89,13 @@ class TaskRunError(Exception):
         self.provenance = provenance
 
 
-# Upper bound for one extraction's output; abstract, lists and facts of a long session fit well below.
-SESSION_EXTRACT_OUTPUT_CAP = 4000
-# Digest caps are passed as `max_tokens`, and reasoning models (OpenAI, Codex, Anthropic with
-# thinking) spend part of it on reasoning tokens. Synthesizing many sources takes far more reasoning
-# than the visible digest, so the caps are well above its size. Estimates reserve the whole cap,
-# so they are an upper bound far above typical spend.
+# The caps are passed as `max_tokens`, and reasoning models (OpenAI, Codex, Anthropic with thinking,
+# Haiku 5.5 even without a thinking setting) spend part of it on reasoning tokens, so each cap is well
+# above the visible output. Estimates reserve the whole cap, so they are an upper bound far above
+# typical spend.
+# An extraction's abstract, lists and facts of a long session take a few thousand tokens.
+SESSION_EXTRACT_OUTPUT_CAP = 16_000
+# Synthesizing many sources takes far more reasoning than the visible digest.
 # A week digest restates themes, highlights and deduplicated facts of one week's sessions.
 WEEK_DIGEST_OUTPUT_CAP = 20_000
 # A month digest merges up to five week digests.
