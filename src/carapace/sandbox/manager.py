@@ -275,7 +275,7 @@ class SandboxManager:
 
         if needs_startup or recreated:
             # A sandbox that just started or came back has no profile, or an old one; nothing waits for it.
-            self._profile_sync.start(session_id, ensured_sc.container_id, marker=None)
+            self._profile_sync.start(ensured_sc, marker=None)
         if needs_startup:
             try:
                 await self.refresh_sandbox_snapshot(session_id, container_id=ensured_sc.container_id)
