@@ -124,6 +124,8 @@ class SkillBuilds:
         whose key did not change since its last build already has a result, so a push builds only what it touched.
         """
         heads = await self._skills_at_head(repo_dir)
+        if heads:
+            self.updates.check_if_stale(repo_dir, heads[0].skills_tree)
         builds = [_build(skill, self._outcome(repo_dir, skill)) for skill in heads]
         self._remember_succeeded(repo_dir, builds)
         return builds

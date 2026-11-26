@@ -20,7 +20,7 @@ from pydantic import TypeAdapter
 
 from . import nix
 from .cache import create_cache_app
-from .models import BuilderInfo, BuildKey, BuildResult, GcResult, Roots, SkillName, UpdateCheck, UpstreamCache
+from .models import BuilderInfo, BuildKey, BuildResult, GcResult, Roots, SkillName, UpdatedLocks, UpstreamCache
 from .skill_dir import SkillFileError, read_file
 from .store import SkillStore
 
@@ -105,7 +105,7 @@ def create_app(token: str, store: SkillStore, system: str, cache_public_keys: li
             return result
 
     @app.post("/updates", dependencies=authorized)
-    async def check_updates(request: Request, inputs: Annotated[list[SkillName], Query(alias="input")]) -> UpdateCheck:
+    async def check_updates(request: Request, inputs: Annotated[list[SkillName], Query(alias="input")]) -> UpdatedLocks:
         """The lock each of *inputs* of the skills directory archive in the body would get from an update.
 
         Nothing is stored: upstreams move, so every call asks them again.
@@ -119,7 +119,7 @@ def create_app(token: str, store: SkillStore, system: str, cache_public_keys: li
             source.mkdir()
             _extract(archive, source)
             logger.info(f"Checking skill inputs for updates: {', '.join(inputs)}")
-            return UpdateCheck(
+            return UpdatedLocks(
                 inputs={name: await nix.update_input(source, name, Path(work) / f"{name}.lock") for name in inputs}
             )
 

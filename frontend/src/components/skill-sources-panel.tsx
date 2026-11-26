@@ -15,12 +15,12 @@ function formatDate(iso: string | null, locale: string): string {
   return iso ? new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(Date.parse(iso)) : "";
 }
 
+/** A tarball or file input has no rev, only the time it was locked. */
 function Rev({ rev, at, locale }: { rev: string | null; at: string | null; locale: string }) {
-  if (!rev) return null;
   return (
     <span className="whitespace-nowrap">
-      <code className="font-mono" title={rev}>{rev.slice(0, 7)}</code>
-      {at ? <span className="ml-1.5">{formatDate(at, locale)}</span> : null}
+      {rev ? <code className="mr-1.5 font-mono" title={rev}>{rev.slice(0, 7)}</code> : null}
+      {at ? <span>{formatDate(at, locale)}</span> : null}
     </span>
   );
 }
@@ -47,11 +47,7 @@ function UpdateCell({ skill, locale }: { skill: KnowledgeSkillSource; locale: st
           <Rev rev={update.available_rev} at={update.available_at} locale={locale} />
         </div>
       ) : null}
-      {update?.state === "outdated" ? (
-        <code className="mt-0.5 block break-all font-mono text-muted-foreground">
-          nix flake update {skill.name} --flake ./skills
-        </code>
-      ) : null}
+      {update?.state === "outdated" ? <p className="mt-0.5 break-words text-muted-foreground">{update.detail}</p> : null}
     </div>
   );
 }
@@ -143,7 +139,7 @@ export function SkillSourcesPanel({ server }: { server: string }) {
                   {skill.origin}
                 </code>
                 <div className="mt-0.5 text-muted-foreground" title={t("columns.locked")}>
-                  {skill.locked_rev ? <Rev rev={skill.locked_rev} at={skill.locked_at} locale={locale} /> : t("local")}
+                  {skill.path ? t("local") : <Rev rev={skill.locked_rev} at={skill.locked_at} locale={locale} />}
                 </div>
               </td>
               <td className="py-2">

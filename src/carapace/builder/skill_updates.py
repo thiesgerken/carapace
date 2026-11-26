@@ -105,8 +105,11 @@ def describe_source(skill: ListedSkill, update: SkillUpdate | None) -> str:
 
 
 def _rev(rev: str | None, at: datetime | None) -> str:
-    when = f" ({at:%Y-%m-%d})" if at is not None else ""
-    return f"{rev[:7] if rev else 'an unknown rev'}{when}"
+    """A tarball or file input has no rev, only the time it was locked."""
+    when = f"{at:%Y-%m-%d}" if at is not None else ""
+    if rev is None:
+        return when or "an unknown version"
+    return f"{rev[:7]} ({when})" if when else rev[:7]
 
 
 class SkillUpdates:
@@ -128,6 +131,16 @@ class SkillUpdates:
         task = asyncio.create_task(self._check(repo_dir))
         task.add_done_callback(lambda done: _log_crash(done, repo_dir))
         self._running[repo_dir] = task
+
+    def check_if_stale(self, repo_dir: Path, skills_tree: str) -> None:
+        """Check *repo_dir* unless the last check covered *skills_tree*.
+
+        Whatever changed skills/ (a push, a pull, a new lock) gets a fresh verdict; session and memory
+        commits, which leave it alone, cost nothing.
+        """
+        latest = self._checks.get(repo_dir)
+        if latest is None or latest.skills_tree != skills_tree:
+            self.start(repo_dir)
 
     async def wait(self, repo_dir: Path) -> None:
         if (task := self._running.get(repo_dir)) is not None:

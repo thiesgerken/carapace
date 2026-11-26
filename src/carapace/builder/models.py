@@ -61,7 +61,7 @@ class InputUpdate(BaseModel):
     log_tail: str = ""
 
 
-class UpdateCheck(BaseModel):
+class UpdatedLocks(BaseModel):
     # Per input of skills/flake.nix that was asked about.
     inputs: dict[SkillName, InputUpdate]
 

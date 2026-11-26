@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from carapace.builder.client import BuilderClient
-from carapace.builder.models import InputUpdate, UpdateCheck
+from carapace.builder.models import InputUpdate, UpdatedLocks
 from carapace.builder.skill_updates import SkillUpdate, SkillUpdates, compare, describe_source
 from carapace.skills import ListedSkill
 from tests.skills_flake import write_skills_flake
@@ -126,11 +126,11 @@ class FakeBuilder:
         self.answer = answer
         self.asked: list[list[str]] = []
 
-    async def check_updates(self, archive: bytes, inputs: list[str]) -> UpdateCheck:
+    async def check_updates(self, archive: bytes, inputs: list[str]) -> UpdatedLocks:
         self.asked.append(inputs)
         if isinstance(self.answer, Exception):
             raise self.answer
-        return UpdateCheck(inputs=self.answer)
+        return UpdatedLocks(inputs=self.answer)
 
 
 def _git(repo: Path, *args: str) -> str:

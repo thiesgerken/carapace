@@ -228,10 +228,7 @@ async def _connect_builder(config: BuilderConfig) -> BuilderClient | None:
 async def _after_push(owner: str) -> None:
     """A sandbox push was accepted: build the skills it changed ahead of use, then mirror it upstream."""
     try:
-        repo_dir = _knowledge_repo_registry.get_for_user(owner).knowledge_dir
-        await _skill_builds.ensure_built(repo_dir)
-        # The push may have changed skills/flake.lock or a local skill's inputs.
-        _skill_builds.updates.start(repo_dir)
+        await _skill_builds.ensure_built(_knowledge_repo_registry.get_for_user(owner).knowledge_dir)
         # The replaced trees start their grace period now rather than at the next hourly sync.
         await _skill_builds.sync_roots(repo.knowledge_dir for repo in _knowledge_repo_registry.existing())
     finally:

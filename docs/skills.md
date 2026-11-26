@@ -116,7 +116,7 @@ Every listed skill has an origin (`./<dir>` for a local skill, its flake referen
 - An input pinned to a rev or a tag never moves, so it never reports an update.
 - `nixpkgs` and `carapace` are not checked: they are not skills.
 
-The check runs after every accepted push, once a day, and on demand: the Knowledge view of `skills/` lists every skill with its origin, locked rev and the last check's verdict, and has a "Check for updates" button (`POST /api/knowledge/skills/updates/check`, then `GET /api/knowledge/skills`). Results live in the server's memory; a restart checks again. The agent sees the same in `read_skill` and `list_skills`, never in the skill catalog: the catalog is part of the cached prompt prefix, and a daily check must not change it.
+The check runs whenever the `skills/` tree at `HEAD` differs from the one the last check covered (a push, a pull or a new lock; session and memory commits leave it alone), once a day, and on demand: the Knowledge view of `skills/` lists every skill with its origin, locked rev and the last check's verdict, and has a "Check for updates" button (`POST /api/knowledge/skills/updates/check`, then `GET /api/knowledge/skills`). Results live in the server's memory; a restart checks again. The agent sees the same in `read_skill` and `list_skills`, never in the skill catalog: the catalog is part of the cached prompt prefix, and a daily check must not change it.
 
 ## Reading a skill as a security event
 
