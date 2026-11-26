@@ -67,11 +67,11 @@ export function PreferencesView({
           "p-5 sm:p-6",
           embedded
             ? "rounded-none border-0 bg-transparent p-0 shadow-none"
-            : "rounded-3xl border border-border bg-background/90 shadow-sm",
+            : "rounded-3xl bg-surface",
         )}>
           {!embedded ? (
             <div className="flex items-start gap-3">
-              <div className="rounded-2xl border border-border bg-muted/40 p-2.5 text-muted-foreground">
+              <div className="rounded-2xl bg-muted p-2.5 text-muted-foreground">
                 <Globe2 className="h-5 w-5" />
               </div>
               <div className="min-w-0">
@@ -86,11 +86,11 @@ export function PreferencesView({
           ) : null}
 
           <div className={cn(
-            "rounded-2xl border border-border p-4",
-            embedded ? "bg-background/88 shadow-sm" : "mt-6 bg-muted/25",
+            "rounded-2xl p-4",
+            embedded ? "bg-surface" : "mt-6 bg-inset",
           )}>
             <label className="block space-y-1.5">
-              <span className="block text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              <span className="block text-xs font-medium text-muted-foreground">
                 {t("language.label")}
               </span>
               <select
@@ -106,11 +106,11 @@ export function PreferencesView({
           </div>
 
           <div className={cn(
-            "rounded-2xl border border-border p-4",
-            embedded ? "mt-4 bg-background/88 shadow-sm" : "mt-4 bg-muted/25",
+            "mt-4 rounded-2xl p-4",
+            embedded ? "bg-surface" : "bg-inset",
           )}>
             <label className="block space-y-1.5">
-              <span className="block text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              <span className="block text-xs font-medium text-muted-foreground">
                 {t("theme.label")}
               </span>
               <select
@@ -126,11 +126,11 @@ export function PreferencesView({
           </div>
 
           <div className={cn(
-            "rounded-2xl border border-border p-4",
-            embedded ? "mt-4 bg-background/88 shadow-sm" : "mt-4 bg-muted/25",
+            "mt-4 rounded-2xl p-4",
+            embedded ? "bg-surface" : "bg-inset",
           )}>
             <div className="space-y-3">
-              <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              <div className="text-xs font-medium text-muted-foreground">
                 {t("chatList.label")}
               </div>
               <SwitchRow

@@ -39,7 +39,7 @@ function AheadBehind({
   const behind = counts.behind ?? 0;
   if (ahead === 0 && behind === 0) {
     return (
-      <span className="inline-flex items-center gap-1 text-emerald-700">
+      <span className="inline-flex items-center gap-1 text-success">
         <Check className="h-3 w-3 shrink-0" />
         {upToDateLabel}
       </span>
@@ -48,11 +48,11 @@ function AheadBehind({
   // Order matches the button row (pull ↓behind, then push ↑ahead).
   return (
     <span className="inline-flex items-center gap-2 font-mono text-foreground">
-      <span className={cn("inline-flex items-center gap-0.5", behind > 0 ? "text-sky-700" : "text-muted-foreground")}>
+      <span className={cn("inline-flex items-center gap-0.5", behind > 0 ? "text-info" : "text-muted-foreground")}>
         <ArrowDown className="h-3 w-3 shrink-0" />
         {behind}
       </span>
-      <span className={cn("inline-flex items-center gap-0.5", ahead > 0 ? "text-amber-700" : "text-muted-foreground")}>
+      <span className={cn("inline-flex items-center gap-0.5", ahead > 0 ? "text-warning" : "text-muted-foreground")}>
         <ArrowUp className="h-3 w-3 shrink-0" />
         {ahead}
       </span>
@@ -115,7 +115,7 @@ function GitSyncControls({
             onClick={onRefresh}
             disabled={disabled || anyBusy}
             title={refreshTitle}
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
           </button>
@@ -124,7 +124,7 @@ function GitSyncControls({
             onClick={onPull}
             disabled={disabled || anyBusy || pullDisabled}
             title={pullTitle}
-            className="rounded-md p-1 text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy === "pull" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
           </button>
@@ -133,7 +133,7 @@ function GitSyncControls({
             onClick={onPush}
             disabled={disabled || anyBusy || pushDisabled}
             title={pushTitle}
-            className="rounded-md p-1 text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy === "push" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
           </button>
@@ -301,9 +301,9 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
     return () => clearTimeout(id);
   }, [refresh]);
 
-  // Several of these hooks are mounted at once (sidebar indicator, account menu,
-  // knowledge browser). A pull or push from any of them moves the repo for all, so
-  // they re-read status together instead of the others going stale until remount.
+  // Several of these hooks are mounted at once (the Knowledge nav dot, the knowledge
+  // browser). A refresh, pull or push from any of them changes what all of them should
+  // show, so they re-read status together instead of the others going stale until remount.
   useEffect(() => {
     const onChanged = () => void refresh();
     window.addEventListener(KNOWLEDGE_GIT_CHANGED_EVENT, onChanged);
@@ -336,40 +336,29 @@ export function useGlobalGit(server: string, token: string): GlobalGit {
     loading,
     busy,
     outcome,
-    refresh: () => void refresh(),
+    // Through the event, like pull and push: the acting instance re-reads via its own listener.
+    refresh: () => { window.dispatchEvent(new Event(KNOWLEDGE_GIT_CHANGED_EVENT)); },
     pull: () => void runAction("pull", () => globalGitPull(server, token)),
     push: () => void runAction("push", () => globalGitPush(server, token)),
   };
 }
 
-/** Status dot for the account button — shown only when there are upstream changes to pull. */
-export function GlobalGitIndicator({ git, className }: { git: GlobalGit; className?: string }) {
+/** Status dot for the Knowledge nav entry — shown while the server repo and its remote differ. */
+export function GlobalGitIndicator({ git }: { git: GlobalGit }) {
   const t = useTranslations("git");
   const behind = git.counts?.behind ?? 0;
-  if (git.configured !== true || behind <= 0) return null;
+  const ahead = git.counts?.ahead ?? 0;
+  if (git.configured !== true || (behind === 0 && ahead === 0)) return null;
   return (
-    <span
-      title={t("global.indicatorBehind", { count: behind })}
-      className={cn("h-2.5 w-2.5 rounded-full border-2 border-background bg-sky-500", className)}
-    />
+    <span title={t("global.indicatorOutOfSync", { behind, ahead })} className="h-2 w-2 shrink-0 rounded-full bg-info">
+      <span className="sr-only">{t("global.indicatorOutOfSync", { behind, ahead })}</span>
+    </span>
   );
 }
 
-/**
- * Full git panel for inside the account menu — hidden when no remote is configured,
- * unless `alwaysShow` is set (the knowledge browser shows the refresh control regardless).
- */
-export function GlobalGitPanel({
-  git,
-  className,
-  alwaysShow = false,
-}: {
-  git: GlobalGit;
-  className?: string;
-  alwaysShow?: boolean;
-}) {
+/** Full git panel for the knowledge browser, shown even without a remote so the refresh control stays reachable. */
+export function GlobalGitPanel({ git, className }: { git: GlobalGit; className?: string }) {
   const t = useTranslations("git");
-  if (git.configured === false && !alwaysShow) return null;
   return (
     <div className={className}>
       <GitSyncControls

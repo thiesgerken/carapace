@@ -16,6 +16,7 @@ import {
 } from "@/lib/api";
 import type { SessionBudgetSettings } from "@/lib/types";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
+import { SwitchTrack } from "@/components/switch-row";
 import { cn } from "@/lib/utils";
 
 type SecretSource = "none" | "raw" | "env" | "file";
@@ -68,24 +69,8 @@ const inputClassName = cn(
   "outline-none transition-colors placeholder:text-muted-foreground/50",
   "focus:border-ring focus:ring-2 focus:ring-ring/30",
 );
-const disabledBadgeClassName = "rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200";
-const neutralBadgeClassName = "rounded-md border border-border bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground";
-const providerBadgeClassNames = [
-  "rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-200",
-  "rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200",
-  "rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200",
-  "rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200",
-  "rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs text-violet-800 dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-200",
-  "rounded-md border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-xs text-cyan-800 dark:border-cyan-900/60 dark:bg-cyan-950/40 dark:text-cyan-200",
-];
-const modelBadgeClassNames = [
-  "rounded-md border border-lime-200 bg-lime-50 px-2 py-0.5 text-xs text-lime-800 dark:border-lime-900/60 dark:bg-lime-950/40 dark:text-lime-200",
-  "rounded-md border border-fuchsia-200 bg-fuchsia-50 px-2 py-0.5 text-xs text-fuchsia-800 dark:border-fuchsia-900/60 dark:bg-fuchsia-950/40 dark:text-fuchsia-200",
-  "rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 text-xs text-teal-800 dark:border-teal-900/60 dark:bg-teal-950/40 dark:text-teal-200",
-  "rounded-md border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs text-orange-800 dark:border-orange-900/60 dark:bg-orange-950/40 dark:text-orange-200",
-  "rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs text-indigo-800 dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-200",
-  "rounded-md border border-pink-200 bg-pink-50 px-2 py-0.5 text-xs text-pink-800 dark:border-pink-900/60 dark:bg-pink-950/40 dark:text-pink-200",
-];
+const disabledBadgeClassName = "rounded-md bg-warning/10 px-2 py-0.5 text-xs text-warning";
+const neutralBadgeClassName = "rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground";
 
 let modelDraftId = 0;
 
@@ -108,40 +93,10 @@ function baseUrlHost(baseUrl: string): string {
   }
 }
 
-function providerKey(provider: string, baseUrl: string): string {
-  const providerName = provider.trim().toLowerCase();
-  const host = baseUrlHost(baseUrl).toLowerCase();
-  return host ? `${providerName}@${host}` : providerName;
-}
-
 function providerBadgeLabel(provider: string, baseUrl: string): string {
   const providerName = provider.trim();
   const host = baseUrlHost(baseUrl);
   return host ? `${providerName} @ ${host}` : providerName;
-}
-
-function modelNameKey(name: string): string {
-  return name.trim().toLowerCase();
-}
-
-function badgeClassNameFromHash(key: string, classNames: readonly string[]): string {
-  let hash = 0;
-  for (let index = 0; index < key.length; index += 1) {
-    hash = (hash * 31 + key.charCodeAt(index)) >>> 0;
-  }
-  return classNames[hash % classNames.length];
-}
-
-function providerBadgeClassName(provider: string, baseUrl: string): string {
-  const normalized = providerKey(provider, baseUrl);
-  if (!normalized) return neutralBadgeClassName;
-  return badgeClassNameFromHash(normalized, providerBadgeClassNames);
-}
-
-function modelNameBadgeClassName(name: string): string {
-  const normalized = modelNameKey(name);
-  if (!normalized) return neutralBadgeClassName;
-  return badgeClassNameFromHash(normalized, modelBadgeClassNames);
 }
 
 function compactTokenCount(value: string): string {
@@ -597,7 +552,7 @@ export function PlatformSettingsView({ server, token }: { server: string; token:
           <button
             type="submit"
             disabled={saving || !changed || !configWritable}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? t("actions.saving") : t("actions.save")}
@@ -681,9 +636,9 @@ export function PlatformSettingsView({ server, token }: { server: string; token:
 
 function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-border bg-background/88 p-4 shadow-sm sm:p-5">
+    <section className="rounded-2xl bg-surface p-4 sm:p-5">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h2>
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
         {action ? <div className="shrink-0">{action}</div> : null}
       </div>
       {children}
@@ -806,8 +761,8 @@ export function ModelRow({ model, disabled, defaultOpen = false, onChange, onRem
   const apiKeyFieldsDisabled = disabled || !modelApiKeySupported;
   const providerLabel = providerBadgeLabel(provider, openAICompatible ? model.baseUrl : "");
   const summaryBadges: SummaryBadge[] = [];
-  if (provider) summaryBadges.push({ label: providerLabel, className: providerBadgeClassName(provider, openAICompatible ? model.baseUrl : ""), icon: Cloud });
-  if (model.name.trim()) summaryBadges.push({ label: model.name.trim(), className: modelNameBadgeClassName(model.name), icon: BrainCircuit });
+  if (provider) summaryBadges.push({ label: providerLabel, className: neutralBadgeClassName, icon: Cloud });
+  if (model.name.trim()) summaryBadges.push({ label: model.name.trim(), className: neutralBadgeClassName, icon: BrainCircuit });
   if (model.maxInputTokens.trim()) summaryBadges.push({ label: tokenLabel(compactTokenCount(model.maxInputTokens), t), className: neutralBadgeClassName, icon: StretchHorizontal });
   if (model.thinking || (openAICompatible && model.thinkingBudgetTokens.trim())) summaryBadges.push({ label: thinkingBadgeLabel(model.thinking, openAICompatible ? model.thinkingBudgetTokens : "", t), className: neutralBadgeClassName, icon: Brain });
   if (model.vision) summaryBadges.push({ label: t("fields.vision"), className: neutralBadgeClassName, icon: Eye });
@@ -815,7 +770,7 @@ export function ModelRow({ model, disabled, defaultOpen = false, onChange, onRem
   const rawSecretConfigured = model.apiKeySource === "raw" && hasReusableRawSecret(model);
   return (
     <details
-      className="group rounded-lg border border-border bg-background/70"
+      className="group rounded-lg border border-border bg-background"
       open={open}
       onToggle={(event) => {
         const nextOpen = event.currentTarget.open;
@@ -827,7 +782,7 @@ export function ModelRow({ model, disabled, defaultOpen = false, onChange, onRem
         setExpanded(nextOpen);
       }}
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 outline-none transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/30 [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 [&::-webkit-details-marker]:hidden">
         <div className="min-w-0 space-y-2">
           <div className="break-all font-mono text-sm font-medium">{summaryId}</div>
           {summaryBadges.length ? (
@@ -879,9 +834,7 @@ export function ModelRow({ model, disabled, defaultOpen = false, onChange, onRem
             onClick={() => onChange({ vision: !model.vision })}
             className="flex h-9 items-center gap-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span aria-hidden="true" className={cn("relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors", model.vision ? "border-[#236b86] bg-[#236b86]" : "border-border bg-muted")}>
-              <span className={cn("inline-block h-5 w-5 rounded-full bg-background shadow-sm transition-transform", model.vision ? "translate-x-6" : "translate-x-1")} />
-            </span>
+            <SwitchTrack checked={model.vision} />
             <span className="text-muted-foreground">{t("fields.visionHint")}</span>
           </button>
         </div>
@@ -895,9 +848,7 @@ export function ModelRow({ model, disabled, defaultOpen = false, onChange, onRem
             onClick={() => onChange({ enabled: !model.enabled })}
             className="flex h-9 items-center gap-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span aria-hidden="true" className={cn("relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors", model.enabled ? "border-[#236b86] bg-[#236b86]" : "border-border bg-muted")}>
-              <span className={cn("inline-block h-5 w-5 rounded-full bg-background shadow-sm transition-transform", model.enabled ? "translate-x-6" : "translate-x-1")} />
-            </span>
+            <SwitchTrack checked={model.enabled} />
             <span className="text-muted-foreground">{t("fields.enabledHint")}</span>
           </button>
         </div>

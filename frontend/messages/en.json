@@ -1070,7 +1070,9 @@
             "replacement": "Replacement",
             "diff": "Diff",
             "arguments": "Arguments",
-            "result": "Result"
+            "result": "Result",
+            "command": "Command",
+            "output": "Output"
         }
     },
     "toolCallGroup": {
@@ -1182,10 +1184,32 @@
             "unattended": "This session is unattended. Fork it first to continue here."
         },
         "waiting": {
-            "processingPrompt": "Processing prompt...",
-            "thinking": "Thinking...",
-            "generating": "Generating...",
-            "working": "Working...",
+            "phrases": {
+                "nibble": "Nibbles on the prompt…",
+                "finePrint": "Reads the fine print…",
+                "digest": "Digests it first…",
+                "ponder": "Ponders…",
+                "hunch": "Has a hunch…",
+                "inShell": "Thinks it over in the shell…",
+                "chewTwice": "Chews every word twice…",
+                "eatThrough": "Eats its way through the context…",
+                "betweenLines": "Reads between the lines…",
+                "history": "Leafs through the history…",
+                "plentyOfTime": "Has time. Lots of it…",
+                "experience": "Draws on 150 years of experience…",
+                "unhurried": "Refuses to be rushed…",
+                "stepByStep": "Thinks step by step…",
+                "turbo": "Turbo on. Almost brisk…",
+                "overtaken": "Gets overtaken by a snail…",
+                "knocking": "Checks who's knocking…",
+                "peeksOut": "Peeks out carefully…",
+                "creep": "Creeps toward an answer…",
+                "fullThrottle": "Full throttle. Relatively speaking…",
+                "wordByWord": "Puts one word in front of the other…",
+                "writes": "Writes…",
+                "keepsShort": "Keeps it short. Tries to…",
+                "tinker": "Tinkers with the answer…"
+            },
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",
             "tokens": "{count} tokens"
@@ -1235,19 +1259,19 @@
             "interactive": "Interactive"
         },
         "inspector": {
-            "actions": "Actions",
-            "session": "Session"
+            "tabsLabel": "Session details",
+            "tabs": {
+                "session": "Session",
+                "usage": "Usage",
+                "environment": "Environment",
+                "content": "Content"
+            },
+            "show": "Show details",
+            "hide": "Hide details"
         },
         "session": {
-            "title": "Title",
-            "id": "ID",
-            "copyId": "Copy session id",
-            "idCopied": "Copied session id",
-            "idCopiedShort": "Copied",
-            "source": "Source",
             "created": "Created",
             "lastActive": "Last active",
-            "messages": "Messages",
             "totalCost": "Cost",
             "totalEquivalentCost": "Equivalent cost",
             "job": "Job",
@@ -1258,7 +1282,8 @@
             "yoloMode": "YOLO Mode",
             "yoloModeHelp": "Bypass sentinel approval and allow actions immediately.",
             "savingPrivate": "Saving…",
-            "updatingMode": "Updating mode…"
+            "updatingMode": "Updating mode…",
+            "meta": "Created {created} · {count, plural, one {# message} other {# messages}}"
         },
         "budget": {
             "title": "Budget",
@@ -1283,7 +1308,7 @@
             "cli": "CLI"
         },
         "jobRun": {
-            "title": "Latest Job Run",
+            "title": "Latest job run",
             "job": "Job",
             "ranAt": "Ran at",
             "schedule": "Schedule",
@@ -1623,7 +1648,7 @@
         "global": {
             "label": "Knowledge remote",
             "help": "Sync between your knowledge repository on the server and its external git remote. Counts show commits the server repo is ahead (↑) and behind (↓) the remote.",
-            "indicatorBehind": "{count, plural, one {# commit} other {# commits}} to pull from the knowledge remote",
+            "indicatorOutOfSync": "Not in sync with the knowledge remote: {behind} to pull, {ahead} to push",
             "refresh": "Re-check the server repository against the remote (fetches first)",
             "pull": "Pull commits from the external remote into the server repository",
             "push": "Push the server repository's commits to the external remote"
@@ -1732,11 +1757,12 @@
         }
     },
     "sessionView": {
-        "label": "Session view",
-        "chat": "Chat",
-        "debug": "Debug"
+        "menu": "Session actions",
+        "debug": "Debug view",
+        "copyId": "Copy session ID"
     },
     "debugView": {
+        "backToChat": "Back to chat",
         "usage": {
             "input": "Input tokens",
             "output": "Output tokens",

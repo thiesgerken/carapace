@@ -3,14 +3,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Bot, BookOpen, Brain, Loader2, Lock, LogOut, Mail, MessageSquare, Pin, Save, Search, Settings2, Star, Trash2, X } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, Loader2, Lock, Mail, MessageSquare, Pin, Save, Search, Star, Trash2, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { EmojiText } from "@/components/emoji-text";
 import { useAppLocale } from "@/components/locale-provider";
 import { NewSessionButton, type NewSessionOptions } from "@/components/new-session-button";
 import { SandboxUsageBanner } from "@/components/sandbox-usage-banner";
-import { GlobalGitIndicator, GlobalGitPanel, useGlobalGit } from "@/components/git-sync";
-import { VersionBadge } from "@/components/version-badge";
+import { SidebarFooter } from "@/components/sidebar-footer";
 import { agentIcon } from "@/hooks/use-brand";
 import { useSessionSearch, type SessionSearchMode } from "@/hooks/use-session-search";
 import type { AuthUserInfo } from "@/lib/api";
@@ -38,8 +37,6 @@ interface SidebarProps {
   currentUser?: AuthUserInfo | null;
   onSelect: (sessionId: string) => void;
   onNew: (options?: NewSessionOptions) => void;
-  onGoHome: () => void;
-  onOpenSettings: () => void;
   /** Called before every action that navigates, e.g. to close the mobile drawer. */
   onNavigate: () => void;
   onUpdateAttributes: (sessionId: string, attributes: SessionAttributesPatch) => Promise<SessionInfo>;
@@ -87,31 +84,13 @@ const SEARCH_MODES: readonly SessionSearchMode[] = ["title", "fulltext"];
 function HighlightedText({ text, query }: { text: string; query: string }) {
   return splitOnMatches(text, query).map((part, index) => (
     part.match ? (
-      <mark key={index} className="rounded-sm bg-amber-200 px-0.5 text-foreground dark:bg-amber-500/40">
+      <mark key={index} className="rounded-sm bg-primary/20 px-0.5 text-foreground">
         {part.text}
       </mark>
     ) : (
       <span key={index}>{part.text}</span>
     )
   ));
-}
-
-function accountInitial(user: AuthUserInfo | null | undefined): string {
-  const label = user?.display_name?.trim() || user?.username.trim() || "?";
-  return label.slice(0, 1).toLocaleUpperCase();
-}
-
-function GitHubIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className={className}
-      fill="currentColor"
-    >
-      <path d="M12 1.5C6.201 1.5 1.5 6.201 1.5 12c0 4.64 3.01 8.577 7.184 9.966.525.097.716-.228.716-.507 0-.25-.009-.913-.015-1.792-2.922.635-3.538-1.409-3.538-1.409-.478-1.213-1.168-1.536-1.168-1.536-.955-.652.072-.639.072-.639 1.056.074 1.611 1.084 1.611 1.084.939 1.608 2.463 1.144 3.063.875.095-.68.368-1.144.668-1.407-2.333-.265-4.785-1.166-4.785-5.192 0-1.147.41-2.085 1.082-2.82-.108-.266-.469-1.336.102-2.786 0 0 .882-.282 2.89 1.077A10.048 10.048 0 0 1 12 6.59c.892.004 1.79.121 2.629.355 2.006-1.359 2.887-1.077 2.887-1.077.573 1.45.212 2.52.104 2.786.674.735 1.08 1.673 1.08 2.82 0 4.036-2.456 4.924-4.797 5.184.378.325.714.965.714 1.946 0 1.406-.013 2.54-.013 2.886 0 .282.189.609.723.506A10.503 10.503 0 0 0 22.5 12c0-5.799-4.701-10.5-10.5-10.5Z" />
-    </svg>
-  );
 }
 
 export function Sidebar({
@@ -126,8 +105,6 @@ export function Sidebar({
   currentUser = null,
   onSelect,
   onNew,
-  onGoHome,
-  onOpenSettings,
   onNavigate,
   onUpdateAttributes,
   onDelete,
@@ -143,10 +120,7 @@ export function Sidebar({
   const { locale } = useAppLocale();
   const scrollRootRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const accountMenuRef = useRef<HTMLDivElement | null>(null);
-  const globalGit = useGlobalGit(server, token);
   const [referenceTime, setReferenceTime] = useState<number>(() => Date.now());
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SessionSearchMode>("title");
   const [searchRevision, setSearchRevision] = useState(0);
@@ -157,8 +131,6 @@ export function Sidebar({
   const archivedSessions = showArchivedSessions
     ? sessions.filter((session) => session.attributes.archived)
     : [];
-  const accountName = currentUser?.display_name?.trim() || currentUser?.username || t("account.unknown");
-  const accountUsername = currentUser?.username ?? t("account.unknown");
 
   /** Row actions change hits the parent's session list may not hold (archived ones), so the search re-runs. */
   function refreshSearch(): void {
@@ -167,12 +139,6 @@ export function Sidebar({
 
   function updateAttributes(sessionId: string, attributes: SessionAttributesPatch): void {
     runSidebarAttributeUpdate(onUpdateAttributes(sessionId, attributes).then(refreshSearch));
-  }
-
-  function handleOpenSettings(): void {
-    setAccountMenuOpen(false);
-    onNavigate();
-    onOpenSettings();
   }
 
   useEffect(() => {
@@ -186,31 +152,6 @@ export function Sidebar({
       window.clearInterval(intervalId);
     };
   }, []);
-
-  useEffect(() => {
-    if (!accountMenuOpen) return;
-
-    function handlePointerDown(event: MouseEvent): void {
-      const target = event.target;
-      if (!(target instanceof Node) || accountMenuRef.current?.contains(target)) {
-        return;
-      }
-      setAccountMenuOpen(false);
-    }
-
-    function handleKeyDown(event: KeyboardEvent): void {
-      if (event.key === "Escape") {
-        setAccountMenuOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [accountMenuOpen]);
 
   function calendarDayNumber(date: Date): number {
     return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000);
@@ -394,7 +335,7 @@ export function Sidebar({
       ) : null,
       ...groupSessionsByAge(unpinnedSessions).map((group) => (
       <div key={group.key}>
-        <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="px-3 pb-1 text-xs font-medium text-muted-foreground">
           {group.label}
         </div>
         {renderSessionSection(group.sessions)}
@@ -457,12 +398,12 @@ export function Sidebar({
         className={cn(
           "group cursor-pointer rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           session.session_id === activeSessionId
-            ? "bg-accent text-accent-foreground"
+            ? "bg-primary/10 text-foreground"
             : "text-foreground/80 hover:bg-muted",
         )}
       >
         <div className="flex w-full min-w-0 items-start gap-2.5 px-3 pt-2 pb-1 text-left">
-          <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <MessageSquare className={cn("mt-0.5 h-4 w-4 shrink-0", session.session_id === activeSessionId ? "text-primary" : "text-muted-foreground")} />
           <div className="min-w-0 flex-1 truncate text-sm font-medium" title={session.title || session.session_id}>
               {session.title ? (
                 <EmojiText text={session.title} />
@@ -472,7 +413,7 @@ export function Sidebar({
           </div>
           {showUnattendedIcon ? (
             <span
-              className="mt-0.5 inline-flex shrink-0 items-center text-emerald-700"
+              className="mt-0.5 inline-flex shrink-0 items-center text-muted-foreground"
               title={tSidebar("unattendedSession")}
             >
               <Bot className="h-3.5 w-3.5" />
@@ -564,7 +505,7 @@ export function Sidebar({
               "session-row-action-button rounded-md p-1.5 transition-colors",
               session.attributes.pinned && "session-row-action-active",
               session.attributes.pinned
-                ? "text-sky-700 hover:bg-sky-100"
+                ? "text-primary hover:bg-muted"
                 : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
@@ -580,7 +521,7 @@ export function Sidebar({
               "session-row-action-button rounded-md p-1.5 transition-colors",
               session.attributes.favorite && "session-row-action-active",
               session.attributes.favorite
-                ? "text-amber-700 hover:bg-amber-100"
+                ? "text-primary hover:bg-muted"
                 : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
@@ -608,7 +549,7 @@ export function Sidebar({
                 "session-row-action-button rounded-md p-1.5 transition-colors",
                 session.attributes.archived && "session-row-action-active",
                 session.attributes.archived
-                  ? "text-violet-700 group-hover:text-emerald-900 hover:bg-emerald-100"
+                  ? "text-muted-foreground hover:bg-muted hover:text-foreground"
                   : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
@@ -647,143 +588,19 @@ export function Sidebar({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <div className="flex shrink-0 items-center gap-1.5 leading-none">
-            <Image src={agentIcon(currentUser?.agentIcon)} alt="" width={18} height={18} aria-hidden="true" className="shrink-0" />
-            <button
-              type="button"
-              onClick={() => {
-                onNavigate();
-                onGoHome();
-              }}
-              title={t("navigation.home")}
-              aria-label={t("navigation.home")}
-              className="cursor-pointer rounded-sm text-sm font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              {currentUser?.agentName?.trim() || t("app.name")}
-            </button>
-          </div>
-          <VersionBadge frontendVersion={frontendVersion} backendVersion={backendVersion} />
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <Link
-            href="/knowledge"
-            onClick={onNavigate}
-            title={t("navigation.knowledge")}
-            aria-label={t("navigation.knowledge")}
-            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <BookOpen className="h-4 w-4" />
-          </Link>
-          <Link
-            href="/memory"
-            onClick={onNavigate}
-            title={t("navigation.memory")}
-            aria-label={t("navigation.memory")}
-            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <Brain className="h-4 w-4" />
-          </Link>
-          <button
-            type="button"
-            onClick={handleOpenSettings}
-            title={t("navigation.settings")}
-            aria-label={t("navigation.settings")}
-            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <Settings2 className="h-4 w-4" />
-          </button>
-          <div ref={accountMenuRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setAccountMenuOpen((open) => !open)}
-              title={t("account.openMenu")}
-              aria-label={t("account.openMenu")}
-              aria-haspopup="menu"
-              aria-expanded={accountMenuOpen}
-              className="inline-flex h-8 max-w-[9.5rem] cursor-pointer items-center gap-2 rounded-sm text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              <span
-                className={cn(
-                  "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border text-[11px] font-semibold transition-colors",
-                  accountMenuOpen
-                    ? "bg-accent text-accent-foreground"
-                    : "bg-background text-muted-foreground",
-                )}
-              >
-                {accountInitial(currentUser)}
-              </span>
-              <span className="hidden truncate md:inline">{accountName}</span>
-            </button>
-            <GlobalGitIndicator git={globalGit} className="pointer-events-none absolute -right-0.5 -top-0.5" />
-
-            {accountMenuOpen ? (
-              <div
-                role="menu"
-                aria-label={t("account.menu")}
-                className="absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-lg"
-              >
-                <div className="border-b border-border/80 px-3 py-3">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-accent-foreground">
-                      {accountInitial(currentUser)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium" title={accountName}>{accountName}</div>
-                      <div className="truncate text-xs text-muted-foreground" title={accountUsername}>
-                        {accountUsername}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      title={t("account.logout")}
-                      aria-label={t("account.logout")}
-                      onClick={() => {
-                        setAccountMenuOpen(false);
-                        onDisconnect();
-                      }}
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      <LogOut className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-                {globalGit.configured !== false ? (
-                  <GlobalGitPanel git={globalGit} className="border-b border-border/80 px-3 py-2.5" />
-                ) : null}
-                <div className="p-1">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={handleOpenSettings}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
-                  >
-                    <Settings2 className="h-4 w-4 text-muted-foreground" />
-                    {t("navigation.settings")}
-                  </button>
-                  <a
-                    role="menuitem"
-                    href={githubUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={() => setAccountMenuOpen(false)}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
-                  >
-                    <GitHubIcon className="h-4 w-4 text-muted-foreground" />
-                    {t("navigation.github")}
-                  </a>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
+      <div className="flex items-center gap-2 px-4 py-3">
+        <Link
+          href="/"
+          onClick={onNavigate}
+          className="flex min-w-0 items-center gap-1.5 rounded-sm text-sm font-semibold leading-none tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <Image src={agentIcon(currentUser?.agentIcon)} alt="" width={18} height={18} aria-hidden="true" className="shrink-0" />
+          <span className="truncate">{currentUser?.agentName?.trim() || t("app.name")}</span>
+        </Link>
       </div>
 
       {/* New session button */}
-      <div className="px-3 pt-3 pb-1">
+      <div className="px-3 pt-1 pb-1">
         <NewSessionButton
           onCreate={(options) => {
             onNavigate();
@@ -864,7 +681,7 @@ export function Sidebar({
               {renderSessionGroups(activeSessions)}
               {archivedSessions.length > 0 ? (
                 <div className="space-y-4">
-                  <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                  <div className="px-3 pb-1 text-xs font-medium text-muted-foreground">
                     {tSidebar("sections.archived")}
                   </div>
                   {renderSessionGroups(archivedSessions)}
@@ -891,6 +708,17 @@ export function Sidebar({
           )}
         </div>
       </div>
+
+      <SidebarFooter
+        server={server}
+        token={token}
+        currentUser={currentUser}
+        frontendVersion={frontendVersion}
+        backendVersion={backendVersion}
+        githubUrl={githubUrl}
+        onNavigate={onNavigate}
+        onDisconnect={onDisconnect}
+      />
     </div>
   );
 }

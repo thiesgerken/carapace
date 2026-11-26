@@ -1070,7 +1070,9 @@
             "replacement": "Ersetzung",
             "diff": "Diff",
             "arguments": "Argumente",
-            "result": "Ergebnis"
+            "result": "Ergebnis",
+            "command": "Befehl",
+            "output": "Ausgabe"
         }
     },
     "toolCallGroup": {
@@ -1182,10 +1184,32 @@
             "unattended": "Diese Sitzung ist unbeaufsichtigt. Forke sie zuerst, um hier weiterzumachen."
         },
         "waiting": {
-            "processingPrompt": "Prompt wird verarbeitet...",
-            "thinking": "Denke nach...",
-            "generating": "Generiere...",
-            "working": "Arbeite...",
+            "phrases": {
+                "nibble": "Knabbert am Prompt…",
+                "finePrint": "Liest das Kleingedruckte…",
+                "digest": "Verdaut erst mal…",
+                "ponder": "Grübelt…",
+                "hunch": "Hat da so eine Idee…",
+                "inShell": "Denkt im Panzer nach…",
+                "chewTwice": "Kaut jedes Wort zweimal…",
+                "eatThrough": "Frisst sich durch den Kontext…",
+                "betweenLines": "Liest zwischen den Zeilen…",
+                "history": "Blättert im Verlauf…",
+                "plentyOfTime": "Hat Zeit. Viel Zeit…",
+                "experience": "Schöpft aus 150 Jahren Erfahrung…",
+                "unhurried": "Lässt sich nicht hetzen…",
+                "stepByStep": "Denkt Schritt für Schritt…",
+                "turbo": "Turbo an. Fast schon zügig…",
+                "overtaken": "Wird von einer Schnecke überholt…",
+                "knocking": "Prüft, wer da klopft…",
+                "peeksOut": "Schaut vorsichtig raus…",
+                "creep": "Schleicht zur Antwort…",
+                "fullThrottle": "Gibt Vollgas. Relativ gesehen…",
+                "wordByWord": "Setzt ein Wort vors andere…",
+                "writes": "Schreibt…",
+                "keepsShort": "Hält sich kurz. Versucht es…",
+                "tinker": "Schraubt an der Antwort…"
+            },
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",
             "tokens": "{count} Tokens"
@@ -1235,19 +1259,19 @@
             "interactive": "Interaktiv"
         },
         "inspector": {
-            "actions": "Aktionen",
-            "session": "Sitzung"
+            "tabsLabel": "Sitzungsdetails",
+            "tabs": {
+                "session": "Sitzung",
+                "usage": "Nutzung",
+                "environment": "Umgebung",
+                "content": "Inhalte"
+            },
+            "show": "Details einblenden",
+            "hide": "Details ausblenden"
         },
         "session": {
-            "title": "Titel",
-            "id": "ID",
-            "copyId": "Sitzungs-ID kopieren",
-            "idCopied": "Sitzungs-ID kopiert",
-            "idCopiedShort": "Kopiert",
-            "source": "Quelle",
             "created": "Erstellt",
             "lastActive": "Zuletzt aktiv",
-            "messages": "Nachrichten",
             "totalCost": "Kosten",
             "totalEquivalentCost": "Äquivalente Kosten",
             "job": "Job",
@@ -1258,7 +1282,8 @@
             "yoloMode": "YOLO-Modus",
             "yoloModeHelp": "Sentinel-Freigaben umgehen und Aktionen sofort erlauben.",
             "savingPrivate": "Wird gespeichert…",
-            "updatingMode": "Modus wird aktualisiert…"
+            "updatingMode": "Modus wird aktualisiert…",
+            "meta": "Erstellt {created} · {count, plural, one {# Nachricht} other {# Nachrichten}}"
         },
         "budget": {
             "title": "Budget",
@@ -1623,7 +1648,7 @@
         "global": {
             "label": "Wissens-Remote",
             "help": "Synchronisiert dein Wissens-Repository auf dem Server mit seinem externen Git-Remote. Die Zähler zeigen, um wie viele Commits das Server-Repo dem Remote voraus (↑) bzw. hinterher (↓) ist.",
-            "indicatorBehind": "{count, plural, one {# Commit} other {# Commits}} vom Wissens-Remote zu holen",
+            "indicatorOutOfSync": "Nicht synchron mit dem Wissens-Remote: {behind} zu holen, {ahead} zu pushen",
             "refresh": "Server-Repository erneut mit dem Remote abgleichen (holt zuerst neue Commits)",
             "pull": "Commits vom externen Remote ins Server-Repository holen",
             "push": "Commits des Server-Repositorys ins externe Remote übertragen"
@@ -1732,11 +1757,12 @@
         }
     },
     "sessionView": {
-        "label": "Sitzungsansicht",
-        "chat": "Chat",
-        "debug": "Debug"
+        "menu": "Sitzungsaktionen",
+        "debug": "Debug-Ansicht",
+        "copyId": "Sitzungs-ID kopieren"
     },
     "debugView": {
+        "backToChat": "Zurück zum Chat",
         "usage": {
             "input": "Eingabe-Tokens",
             "output": "Ausgabe-Tokens",

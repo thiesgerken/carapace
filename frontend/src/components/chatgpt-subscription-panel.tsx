@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 
 const buttonClassName = cn(
   "inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2",
-  "text-sm font-medium transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50",
+  "text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50",
 );
 
 const inputClassName = cn(
@@ -118,7 +118,7 @@ export function ChatGptSubscriptionPanel({ server, token }: { server: string; to
       </div>
 
       {authorizeUrl ? (
-        <ol className="list-decimal space-y-3 rounded-lg border border-border bg-muted/20 p-4 pl-8 text-sm">
+        <ol className="list-decimal space-y-3 rounded-lg bg-inset p-4 pl-8 text-sm">
           <li>
             <a
               href={authorizeUrl}

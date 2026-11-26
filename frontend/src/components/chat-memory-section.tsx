@@ -32,14 +32,13 @@ export function ChatMemorySection({ sessionId, state, open, onOpenChange, onSour
 
   return (
     <details
-      data-memory-section
       open={open}
       onToggle={(event) => onOpenChange(event.currentTarget.open)}
-      className="group/card rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm"
+      className="group/card py-4"
     >
       <summary className="flex cursor-pointer list-none items-start justify-between gap-2 [&::-webkit-details-marker]:hidden">
         <div className="min-w-0 space-y-1">
-          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{t("title")}</div>
+          <div className="text-xs font-medium text-muted-foreground">{t("title")}</div>
           {error ? (
             <div className="text-xs text-destructive">{error}</div>
           ) : detail === undefined ? (
@@ -52,7 +51,7 @@ export function ChatMemorySection({ sessionId, state, open, onOpenChange, onSour
       </summary>
 
       {detail ? (
-        <div className="mt-3 space-y-3 border-t border-border/60 pt-3 text-sm">
+        <div className="mt-3 space-y-3 text-sm">
           {extraction ? <p className="leading-relaxed">{extraction.abstract}</p> : null}
           {extraction ? FACT_CATEGORIES.map((category) => {
             const facts = extraction.facts.filter((fact) => fact.category === category);
@@ -92,7 +91,7 @@ function StatusLine({ detail }: { detail: MemorySessionDetail }) {
 
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
-      <span className={cn(summary === null ? "text-muted-foreground" : outdated ? "text-amber-700 dark:text-amber-400" : "text-[#236b86] dark:text-sky-400")}>
+      <span className={cn(summary === null ? "text-muted-foreground" : outdated ? "text-warning" : "text-primary")}>
         {tStates(summary === null ? "missing" : outdated ? "outdated" : "current")}
         {outdated ? ` · ${summary.outdated.map((reason) => tReasons(reason)).join(", ")}` : null}
       </span>

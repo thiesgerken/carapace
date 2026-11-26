@@ -87,7 +87,7 @@ test("the collapsed section shows the status, outdated reason and task badge", a
   Object.defineProperty(globalThis, "self", { configurable: true, writable: true, value: window });
   try {
     const view = await render({ detail: DETAIL, error: null }, false);
-    const section = view.container.querySelector("details[data-memory-section]");
+    const section = view.container.querySelector("details");
     assert.ok(section);
     assert.equal((section as HTMLDetailsElement).open, false);
     assert.match(section.querySelector("summary")?.textContent ?? "", /outdated · prompt changed.*queued/);

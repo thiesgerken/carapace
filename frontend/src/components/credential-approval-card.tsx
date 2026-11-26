@@ -33,11 +33,11 @@ export function CredentialApprovalCard({
       className={cn(
         "my-2 rounded-lg border-2 p-3 text-sm",
         resolved
-          ? "border-border bg-muted/30 opacity-60"
+          ? "border-border bg-inset opacity-60"
           : "border-warning/60 bg-warning/5",
       )}
     >
-      <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-warning-foreground/70">
+      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-warning">
         <KeyRound className="h-3.5 w-3.5" />
         {hasDomains ? t("accessTitle") : t("title")}
       </div>

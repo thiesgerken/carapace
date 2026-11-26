@@ -170,7 +170,7 @@ function EntryRow({
       >
         {entry.name}
       </Link>
-      {entry.kind === "artifact" && entry.shared && <span className="shrink-0 rounded border border-teal-600/30 px-1.5 py-0.5 text-xs text-teal-600 dark:text-teal-400">{tArtifacts("shared")}</span>}
+      {entry.kind === "artifact" && entry.shared && <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">{tArtifacts("shared")}</span>}
       {/* Flexible middle column, the first thing to go as the row narrows: the session
           title where there is one, the commit otherwise. A session's commit subject
           only ever restates the archiving, so the title is the better use of it. */}
@@ -217,7 +217,7 @@ function SkillSection({ icon, label, children }: { icon: ReactNode; label: strin
     <div className="flex flex-col gap-1 sm:flex-row sm:gap-3">
       {/* self-start: the label row must not stretch, or items-center drifts it to the
           vertical middle of a multi-line value list. */}
-      <div className="flex shrink-0 items-center gap-1.5 self-start pt-0.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground sm:w-32">
+      <div className="flex shrink-0 items-center gap-1.5 self-start pt-0.5 text-xs font-medium text-muted-foreground sm:w-32">
         {icon}
         {label}
       </div>
@@ -235,7 +235,7 @@ function SkillCard({ skill }: { skill: KnowledgeSkill }) {
   const hints = Object.entries(carapace?.hints ?? {});
 
   return (
-    <section className="rounded-lg border border-border bg-muted/30 p-4">
+    <section className="rounded-lg bg-surface p-4">
       <div className="flex items-baseline gap-2">
         <Puzzle className="h-4 w-4 shrink-0 self-center text-accent-foreground/70" />
         <h2 className="min-w-0 break-all font-mono text-sm font-semibold">{skill.name}</h2>
@@ -311,7 +311,7 @@ function FileContent({
       return (
         <div className="flex flex-col gap-2">
           <p className="text-xs text-muted-foreground">{largeFileLabel}</p>
-          <pre className="overflow-x-auto rounded-lg border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
+          <pre className="overflow-x-auto rounded-lg border border-border bg-inset p-3 font-mono text-xs leading-relaxed">
             {file.content}
           </pre>
         </div>
@@ -390,7 +390,7 @@ export function KnowledgeView() {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-5 py-5 sm:px-6">
         <div className="pb-4">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
               {git.head ? (
@@ -401,7 +401,7 @@ export function KnowledgeView() {
                 </div>
               ) : null}
             </div>
-            <GlobalGitPanel git={git} alwaysShow className="w-56 shrink-0" />
+            <GlobalGitPanel git={git} className="shrink-0 sm:w-56" />
           </div>
 
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-border/70 pt-3">
@@ -471,7 +471,7 @@ export function KnowledgeView() {
             ) : null}
             {result.doc ? (
               <section className="mt-6">
-                <h2 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                <h2 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                   <BookText className="h-3.5 w-3.5" />
                   {result.doc_name}
                 </h2>

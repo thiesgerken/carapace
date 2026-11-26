@@ -68,17 +68,17 @@ export function sandboxStatusKey(status: SandboxStatus): SandboxStatus {
 export function sandboxStatusIndicatorClass(status: SandboxStatus): string {
   switch (status) {
     case "running":
-      return "bg-emerald-500";
+      return "bg-success";
     case "pending":
-      return "bg-amber-500 animate-pulse";
+      return "bg-warning animate-pulse";
     case "scaled_down":
-      return "bg-sky-500";
+      return "bg-info";
     case "stopped":
-      return "bg-slate-400";
+      return "bg-muted-foreground";
     case "error":
       return "bg-destructive";
     case "missing":
-      return "bg-slate-300";
+      return "bg-muted-foreground/40";
   }
 }
 

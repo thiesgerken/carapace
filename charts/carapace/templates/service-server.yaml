@@ -6,6 +6,9 @@ metadata:
     {{- include "carapace.labels" . | nindent 4 }}
     app.kubernetes.io/component: server
 spec:
+  # The start-up egress self-test reaches the proxy through this Service before the api port
+  # listens, so before the pod is Ready. Recreate rollouts never have a ready pod to protect.
+  publishNotReadyAddresses: true
   selector:
     app.kubernetes.io/name: carapace
     app.kubernetes.io/instance: {{ .Release.Name }}

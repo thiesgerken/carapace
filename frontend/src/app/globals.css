@@ -3,46 +3,67 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Petrol accent from the logo and the artifacts skill palette. Neutrals carry the same hue at very low
+   chroma so the greys sit with the accent instead of against it. Status colors are tuned to read as
+   text on every surface level; tint them (e.g. bg-success/10) for badges and fills. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0.014 285.82);
-  --muted: oklch(0.967 0.003 264.54);
-  --muted-foreground: oklch(0.553 0.013 264.36);
-  --border: oklch(0.922 0.004 264.54);
-  --ring: oklch(0.708 0.013 264.54);
-  --accent: oklch(0.967 0.003 264.54);
-  --accent-foreground: oklch(0.21 0.012 264.54);
-  --destructive: oklch(0.577 0.245 27.33);
-  --warning: oklch(0.769 0.189 70.08);
-  --warning-foreground: oklch(0.21 0.012 264.54);
+  --background: oklch(0.995 0.002 220);
+  --foreground: oklch(0.21 0.018 225);
+  --surface: oklch(0.975 0.005 220);
+  --inset: oklch(0.958 0.007 220);
+  --muted: oklch(0.948 0.009 220);
+  --muted-foreground: oklch(0.51 0.02 220);
+  --border: oklch(0.905 0.009 220);
+  --ring: oklch(0.625 0.097 216);
+  --accent: oklch(0.945 0.012 220);
+  --accent-foreground: oklch(0.25 0.03 225);
+  --primary: oklch(0.496 0.081 227.2);
+  --primary-foreground: oklch(1 0 0);
+  --success: oklch(0.52 0.11 160);
+  --info: oklch(0.53 0.14 250);
+  --warning: oklch(0.535 0.145 61);
+  --destructive: oklch(0.55 0.23 27.33);
+  --destructive-foreground: oklch(0.985 0 0);
 }
 
 .dark {
-  --background: oklch(0.141 0.005 285.82);
-  --foreground: oklch(0.985 0.002 264.54);
-  --muted: oklch(0.21 0.012 264.54);
-  --muted-foreground: oklch(0.553 0.013 264.36);
-  --border: oklch(0.274 0.011 264.54);
-  --ring: oklch(0.442 0.011 264.54);
-  --accent: oklch(0.274 0.011 264.54);
-  --accent-foreground: oklch(0.985 0.002 264.54);
-  --destructive: oklch(0.577 0.245 27.33);
-  --warning: oklch(0.769 0.189 70.08);
-  --warning-foreground: oklch(0.985 0.002 264.54);
+  --background: oklch(0.2 0.013 222);
+  --foreground: oklch(0.96 0.006 210);
+  --surface: oklch(0.232 0.015 222);
+  --inset: oklch(0.262 0.016 222);
+  --muted: oklch(0.285 0.017 222);
+  --muted-foreground: oklch(0.7 0.02 215);
+  --border: oklch(0.32 0.017 222);
+  --ring: oklch(0.729 0.096 209.3);
+  --accent: oklch(0.3 0.02 222);
+  --accent-foreground: oklch(0.96 0.006 210);
+  --primary: oklch(0.791 0.082 200.6);
+  --primary-foreground: oklch(0.24 0.025 191.3);
+  --success: oklch(0.77 0.13 160);
+  --info: oklch(0.75 0.11 248);
+  --warning: oklch(0.8 0.14 78);
+  --destructive: oklch(0.69 0.18 24);
+  --destructive-foreground: oklch(0.2 0.013 222);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-inset: var(--inset);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
   --color-ring: var(--ring);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-success: var(--success);
+  --color-info: var(--info);
   --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -122,7 +143,7 @@ body {
   margin: 0 0.05em 0 0.1em;
 }
 .prose pre {
-  background: var(--muted);
+  background: var(--inset);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
@@ -149,7 +170,7 @@ body {
   gap: 0.35rem;
   padding: 0.2rem 0.4rem 0.2rem 0.5rem;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in oklch, var(--muted) 65%, transparent);
+  background: var(--inset);
   min-height: 1.75rem;
 }
 .prose .md-code-block-lang {
@@ -252,6 +273,55 @@ body {
   color: var(--shiki-dark) !important;
   background-color: transparent !important;
 }
+/* Code blocks shown as fragments of one labelled block (an exec command split around its heredoc bodies):
+   no frame, toolbar or scrolling of their own, and line numbers running on across them. */
+.code-fragments {
+  counter-reset: line;
+}
+.code-fragments .prose figure[data-rehype-pretty-code-figure],
+.code-fragments .prose .md-code-block-shell {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+.code-fragments .prose .md-code-block-toolbar {
+  display: none;
+}
+.code-fragments .prose .md-code-block-shell > pre {
+  padding-block: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+.code-fragments .prose .md-code-block-shell > pre code[data-line-numbers] {
+  counter-reset: none;
+}
+.exec-block {
+  max-height: 20rem;
+  overflow-y: auto;
+}
+.exec-block > .prose > :first-child .md-code-block-shell > pre {
+  padding-top: 0.75rem !important;
+}
+.exec-block > .prose > :last-child .md-code-block-shell > pre {
+  padding-bottom: 0.75rem !important;
+}
+/* The streaming preview keeps its compact plain-text look, only coloured. */
+.streaming-code > .prose {
+  font-size: inherit;
+  line-height: inherit;
+}
+.streaming-code .prose .md-code-block-shell > pre {
+  padding: 0 !important;
+  background: transparent !important;
+  font-size: inherit !important;
+  line-height: inherit;
+}
+.streaming-code .prose .md-code-block-shell code {
+  font-size: inherit;
+}
+.streaming-code [data-line]::before {
+  content: none !important;
+}
 .font-mono {
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
@@ -268,7 +338,7 @@ body {
   font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
 }
 .prose :not(pre) > code {
-  background: var(--muted);
+  background: var(--inset);
   border-radius: 0.25rem;
   padding: 0.15em 0.35em;
 }
@@ -309,6 +379,7 @@ body {
   margin: 0.5em 0;
 }
 .prose a {
+  color: var(--primary);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -323,7 +394,7 @@ body {
   text-align: left;
 }
 .prose th {
-  background: var(--muted);
+  background: var(--inset);
   font-weight: 600;
 }
 
@@ -332,7 +403,7 @@ body {
   display: flex;
   justify-content: center;
   padding: 0.75rem 1rem;
-  background: var(--muted);
+  background: var(--inset);
   overflow-x: auto;
 }
 .prose .mermaid-diagram svg {
@@ -381,3 +452,121 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .braille-spinner::before { content: "⠋"; }
 }
+
+/* The waiting tortoise (tortoise.tsx). Every pose reads as a still frame (head tucked in, bubble,
+   book, half-drained hourglass), so reduced motion only drops the animations below. */
+.tortoise { --tortoise-plate: #2f96ad; --tortoise-glow: #a6eaf2; overflow: visible; }
+.tortoise * { transform-box: fill-box; }
+.tortoise .plate { fill: var(--tortoise-plate); }
+.tortoise .head { transform-origin: 0% 100%; }
+.tortoise-think .head { transform: rotate(-8deg); }
+.tortoise-glass .lens { fill: color-mix(in oklch, var(--tortoise-glow) 75%, transparent); }
+.tortoise-book .head { transform: rotate(5deg); }
+.tortoise-hourglass .head { transform: rotate(7deg); }
+.tortoise-hourglass .bulb { fill: color-mix(in oklch, var(--tortoise-glow) 45%, transparent); }
+.tortoise-hourglass .sand-top { transform-origin: 50% 100%; transform: scaleY(0.35); }
+.tortoise-hourglass .sand-bottom { transform-origin: 50% 100%; transform: scaleY(0.75); }
+.tortoise-scribble .ink { stroke-dasharray: 1; }
+.tortoise-scribble .pencil { transform-origin: 0% 100%; }
+.tortoise-snail .snail { transform: translateX(128px); }
+.tortoise-peek .head { transform: translate(-14px, 3px); }
+.tortoise-sleep .head { transform: translate(-30px, 6px); }
+.tortoise-sleep .plate { fill: color-mix(in oklch, var(--tortoise-plate) 75%, var(--background)); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .tortoise-pulse .plate { animation: tortoise-plate 1.4s ease-in-out infinite; animation-delay: calc(var(--plate) * 350ms); }
+
+  .tortoise-munch .head { animation: tortoise-chew 0.5s ease-in-out infinite alternate; }
+  .tortoise-munch .leaf { transform-origin: 0% 50%; animation: tortoise-leaf 3s steps(6, end) infinite; }
+
+  .tortoise-glass .glass { transform-origin: 0% 100%; animation: tortoise-sweep 2.2s ease-in-out infinite; }
+  .tortoise-glass .head { animation: tortoise-peer 2.2s ease-in-out infinite; }
+
+  .tortoise-book .head { animation: tortoise-read 2.4s ease-in-out infinite; }
+  .tortoise-book .turning-page { transform-origin: 0% 50%; animation: tortoise-page 2.4s ease-in-out infinite; }
+
+  /* The glass flips over in the last 18 %, while the sand is already all at the bottom, so the loop has no seam. */
+  .tortoise-hourglass .hourglass { transform-origin: 50% 50%; animation: tortoise-flip 4s ease-in-out infinite; }
+  .tortoise-hourglass .sand-top { animation: tortoise-drain 4s linear infinite; }
+  .tortoise-hourglass .sand-bottom { animation: tortoise-fill 4s linear infinite; }
+  .tortoise-hourglass .stream { animation: tortoise-stream 4s steps(1, end) infinite; }
+  .tortoise-hourglass .head { animation: tortoise-sigh 4s ease-in-out infinite; }
+
+  .tortoise-think .dot { animation: tortoise-dot 1.2s infinite; }
+  .tortoise-think .dot:nth-of-type(2) { animation-delay: 0.2s; }
+  .tortoise-think .dot:nth-of-type(3) { animation-delay: 0.4s; }
+  .tortoise-think .puff { transform-origin: 50% 50%; animation: tortoise-puff 2.4s ease-in-out infinite; }
+
+  .tortoise-walking .ground { animation: tortoise-ground 0.6s linear infinite; }
+  .tortoise-walking .leg { transform-origin: 50% 0%; animation: tortoise-step 0.3s ease-in-out infinite alternate; }
+  .tortoise-walking .leg-b { animation-delay: -0.3s; }
+  .tortoise-walking .body { animation: tortoise-bob 0.15s ease-in-out infinite alternate; }
+  .tortoise-walking .head { animation: tortoise-nod 0.3s ease-in-out infinite alternate; }
+
+  .tortoise-turbo .ground { animation-duration: 0.3s; }
+  .tortoise-turbo .leg { animation-duration: 0.15s; }
+  .tortoise-turbo .leg-b { animation-delay: -0.15s; }
+  .tortoise-turbo .flame { transform-origin: 100% 50%; animation: tortoise-flame 0.12s ease-in-out infinite alternate; }
+  .tortoise-turbo .speed-lines { animation: tortoise-speed 0.4s linear infinite; }
+
+  .tortoise-snail .snail { animation: tortoise-overtake 9s linear infinite; }
+
+  .tortoise-scribble .pencil { animation: tortoise-pencil 3.6s linear infinite; }
+  .tortoise-scribble .head { animation: tortoise-reach 3.6s linear infinite; }
+  .tortoise-scribble .ink:nth-of-type(1) { animation: tortoise-ink1 3.6s linear infinite; }
+  .tortoise-scribble .ink:nth-of-type(2) { animation: tortoise-ink2 3.6s linear infinite; }
+  .tortoise-scribble .ink:nth-of-type(3) { animation: tortoise-ink3 3.6s linear infinite; }
+
+  .tortoise-wrench .wrench { transform-origin: 0% 100%; animation: tortoise-crank 0.7s ease-in-out infinite alternate; }
+  .tortoise-wrench .head { animation: tortoise-strain 0.7s ease-in-out infinite alternate; }
+  .tortoise-wrench .clank { animation: tortoise-clank 1.4s steps(1, end) infinite; }
+
+  .tortoise-peek .head { animation: tortoise-peek 3.2s ease-in-out infinite; }
+
+  .tortoise-sleep .body { transform-origin: 50% 100%; animation: tortoise-breathe 3s ease-in-out infinite; }
+  .tortoise-sleep .z { opacity: 0; animation: tortoise-z 3s ease-out infinite; }
+  .tortoise-sleep .z:nth-of-type(2) { animation-delay: 1s; }
+  .tortoise-sleep .z:nth-of-type(3) { animation-delay: 2s; }
+}
+@keyframes tortoise-plate { 0%, 55%, 100% { fill: var(--tortoise-plate); } 18% { fill: var(--tortoise-glow); } }
+@keyframes tortoise-chew { to { transform: rotate(9deg); } }
+@keyframes tortoise-leaf { from { transform: scale(1); } to { transform: scale(0.15); } }
+@keyframes tortoise-sweep { 0%, 100% { transform: rotate(-12deg) translateX(-2px); } 50% { transform: rotate(10deg) translateX(3px); } }
+@keyframes tortoise-peer { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(4deg); } }
+@keyframes tortoise-read { 0%, 100% { transform: rotate(5deg); } 50% { transform: rotate(8deg); } }
+@keyframes tortoise-page { 0%, 45% { transform: scaleX(1); } 75%, 100% { transform: scaleX(-1); } }
+@keyframes tortoise-flip { 0%, 82% { transform: rotate(0deg); } 100% { transform: rotate(180deg); } }
+@keyframes tortoise-drain { 0% { transform: scaleY(1); } 80%, 100% { transform: scaleY(0); } }
+@keyframes tortoise-fill { 0% { transform: scaleY(0); } 80%, 100% { transform: scaleY(1); } }
+@keyframes tortoise-stream { 0% { opacity: 1; } 80% { opacity: 0; } }
+@keyframes tortoise-sigh { 0%, 85%, 100% { transform: rotate(7deg); } 92% { transform: rotate(2deg); } }
+@keyframes tortoise-dot { 0%, 60%, 100% { opacity: 0.2; } 25% { opacity: 1; } }
+@keyframes tortoise-puff { 50% { transform: scale(1.06); } }
+@keyframes tortoise-ground { to { stroke-dashoffset: -24; } }
+@keyframes tortoise-step { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
+@keyframes tortoise-bob { to { transform: translateY(-2px); } }
+@keyframes tortoise-nod { to { transform: rotate(-4deg); } }
+@keyframes tortoise-flame { from { transform: scaleX(1); } to { transform: scaleX(0.55); } }
+@keyframes tortoise-speed { from { transform: translateX(4px); opacity: 1; } to { transform: translateX(-6px); opacity: 0; } }
+@keyframes tortoise-overtake { 0% { transform: translateX(-12px); opacity: 0; } 6%, 92% { opacity: 1; } 100% { transform: translateX(150px); opacity: 0; } }
+@keyframes tortoise-pencil {
+  0% { transform: translateX(0) rotate(0deg); } 30% { transform: translateX(8px) rotate(0deg); }
+  33.3% { transform: translateX(0) rotate(25deg); } 63% { transform: translateX(8px) rotate(25deg); }
+  66.6% { transform: translateX(0) rotate(50deg); } 96% { transform: translateX(8px) rotate(50deg); }
+  100% { transform: translateX(0) rotate(0deg); }
+}
+@keyframes tortoise-reach { 0%, 33.3%, 66.6%, 100% { transform: translateX(0); } 30%, 63%, 96% { transform: translateX(6px); } }
+@keyframes tortoise-ink1 { 0% { stroke-dashoffset: 1; } 30%, 96% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 1; } }
+@keyframes tortoise-ink2 { 0%, 33.3% { stroke-dashoffset: 1; } 63%, 96% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 1; } }
+@keyframes tortoise-ink3 { 0%, 66.6% { stroke-dashoffset: 1; } 96% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 1; } }
+@keyframes tortoise-crank { from { transform: rotate(-16deg); } to { transform: rotate(12deg); } }
+@keyframes tortoise-strain { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+@keyframes tortoise-clank { 0% { opacity: 0; } 50% { opacity: 1; } }
+@keyframes tortoise-peek {
+  0%, 12%, 80%, 100% { transform: translate(-30px, 6px); }
+  28%, 70% { transform: translate(-14px, 3px) rotate(0deg); }
+  42% { transform: translate(-14px, 3px) rotate(-6deg); }
+  58% { transform: translate(-14px, 3px) rotate(4deg); }
+}
+@keyframes tortoise-breathe { 50% { transform: scaleY(1.035); } }
+@keyframes tortoise-z { 0% { opacity: 0; transform: translate(0, 4px) scale(0.6); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(10px, -14px) scale(1.2); } }

@@ -70,7 +70,7 @@ export function MemoryExtractionDetail({ sessionId, state }: { sessionId: string
       )}
       {detail.history.length > 0 ? (
         <section className="space-y-2">
-          <h3 className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{t("history")}</h3>
+          <h3 className="text-xs font-medium text-muted-foreground">{t("history")}</h3>
           {detail.history.map((record) => (
             <HistoryEntry key={record.id} record={record} sessionId={sessionId} />
           ))}

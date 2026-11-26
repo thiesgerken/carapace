@@ -12,7 +12,7 @@ import { PromptPreviewView } from "@/components/prompt-preview-view";
 import { UserSettingsView } from "@/components/user-settings-view";
 import { ADMIN_SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 
-const panelClassName = "flex min-h-0 flex-1 flex-col overflow-clip bg-background/65";
+const panelClassName = "flex min-h-0 flex-1 flex-col overflow-clip";
 
 export function SettingsTabPanel({ tab }: { tab: SettingsTab }) {
   const router = useRouter();

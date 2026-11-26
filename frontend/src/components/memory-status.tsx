@@ -101,7 +101,7 @@ function BudgetMeter({ label, gauge }: { label: string; gauge: BudgetGauge }) {
           className="h-1.5 w-20 overflow-hidden rounded-full bg-muted"
         >
           <span
-            className={cn("block h-full rounded-full", ratio >= 1 ? "bg-destructive" : "bg-[#236b86]")}
+            className={cn("block h-full rounded-full", ratio >= 1 ? "bg-destructive" : "bg-primary")}
             style={{ width: `${ratio * 100}%` }}
           />
         </span>
@@ -183,7 +183,7 @@ export function MemoryStatusStrip({ server }: { server: string }) {
 
   if (status === null) {
     return (
-      <div className={cn("mb-4 rounded-lg border border-border/80 bg-background/80 px-4 py-3 text-xs", error ? "text-destructive" : "text-muted-foreground")}>
+      <div className={cn("mb-4 rounded-lg bg-surface px-4 py-3 text-xs", error ? "text-destructive" : "text-muted-foreground")}>
         {error ?? t("loading")}
       </div>
     );
@@ -193,14 +193,14 @@ export function MemoryStatusStrip({ server }: { server: string }) {
   const queue = (["pending", "queued", "running", "failed"] as const).map((key) => `${status.queue[key].toLocaleString(locale)} ${tStatuses(key)}`);
 
   return (
-    <div className="mb-4 space-y-2 rounded-lg border border-border/80 bg-background/80 px-4 py-3 text-xs">
+    <div className="mb-4 space-y-2 rounded-lg bg-surface px-4 py-3 text-xs">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <Link
           href="/settings/account#memory"
           title={t("autoModeHint")}
           className={cn(
             "rounded-full px-2.5 py-0.5 font-medium transition-colors hover:ring-2 hover:ring-ring/30",
-            status.auto_mode ? "bg-[#236b86] text-white" : "bg-muted text-muted-foreground",
+            status.auto_mode ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
           )}
         >
           {t(status.auto_mode ? "autoModeOn" : "autoModeOff")}

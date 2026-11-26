@@ -1,10 +1,22 @@
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { createRequire, isBuiltin } from "node:module";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 const [source, destination] = process.argv.slice(2).map((path) => resolve(path));
 const copied = new Set();
 const externals = new Set();
+
+// cpSync gives copied directories the read-only mode of their store originals before
+// filling them, which fails as soon as a directory has children. Fresh directories stay writable.
+function copyTree(from, to, skip = () => false) {
+  mkdirSync(to, { recursive: true });
+  for (const entry of readdirSync(from)) {
+    if (skip(entry)) continue;
+    const [fromEntry, toEntry] = [join(from, entry), join(to, entry)];
+    if (statSync(fromEntry).isDirectory()) copyTree(fromEntry, toEntry, skip);
+    else copyFileSync(fromEntry, toEntry);
+  }
+}
 
 function copyPackage(name, parent, optional = false) {
   const search = createRequire(join(parent, "package.json")).resolve.paths(`${name}/`);
@@ -17,16 +29,8 @@ function copyPackage(name, parent, optional = false) {
   const path = relative(source, directory);
   if (path.startsWith("../")) throw new Error(`Package ${name} resolved outside ${source}: ${directory}`);
   copied.add(directory);
-  const target = join(destination, path);
-  mkdirSync(dirname(target), { recursive: true });
-  cpSync(directory, target, {
-    recursive: true,
-    dereference: true,
-    // Nested dependencies are copied separately, preserving Node's lookup layout.
-    filter: (entry) => basename(entry) !== "node_modules",
-  });
-  // Store inputs are read-only; nested node_modules must remain creatable.
-  chmodSync(target, 0o755);
+  // Nested dependencies are copied separately, preserving Node's lookup layout.
+  copyTree(directory, join(destination, path), (entry) => entry === "node_modules");
   const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
   const dependencies = new Set([
     ...Object.keys(manifest.dependencies ?? {}),
@@ -41,13 +45,8 @@ function copyPackage(name, parent, optional = false) {
 }
 
 mkdirSync(destination, { recursive: true });
-cpSync(join(source, "package.json"), join(destination, "package.json"));
-cpSync(join(source, "build"), join(destination, "build"), {
-  recursive: true,
-  // Without a filter, Node 24 copies natively and applies the read-only store mode to a
-  // directory before filling it (EACCES); the JS path sets directory modes afterwards.
-  filter: () => true,
-});
+copyFileSync(join(source, "package.json"), join(destination, "package.json"));
+copyTree(join(source, "build"), join(destination, "build"));
 for (const file of readdirSync(join(source, "build"), { recursive: true }).filter((file) => file.endsWith(".js"))) {
   const bundle = readFileSync(join(source, "build", file), "utf8");
   for (const [, specifier] of bundle.matchAll(/\brequire\s*\(\s*["']([^"']+)["']\s*\)/g)) {

@@ -1,43 +1,138 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import { NextIntlClientProvider } from "next-intl";
 
 import de from "../../messages/de.json";
 import en from "../../messages/en.json";
-import { installDom, renderReact } from "../../test/react-test-utils";
+import { installDom, renderReact, runInAct } from "../../test/react-test-utils";
 import type { LlmActivity } from "@/lib/types";
 
-import { WaitingIndicator } from "./waiting-indicator";
+import { GENERATING_POSES, PHRASES, STALL_MS, WaitingIndicator } from "./waiting-indicator";
 
 // The clock is frozen at NOW, so the elapsed time does not depend on how long the test runs.
 const NOW = Date.parse("2026-01-01T12:00:00Z");
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
 
-async function text(activity: LlmActivity | null, locale: "en" | "de" = "en"): Promise<string> {
-  const view = await renderReact(
-    <NextIntlClientProvider locale={locale} messages={locale === "en" ? en : de} timeZone="UTC">
-      <WaitingIndicator activity={activity} />
-    </NextIntlClientProvider>,
-  );
-  const content = view.container.textContent ?? "";
+const MESSAGES = { en, de };
+type Locale = keyof typeof MESSAGES;
+const GENERATING: LlmActivity = { request_id: "r1", source: "agent", phase: "generating", started_at: ago(78_500), streamed_chars: 7_300 };
+const THINKING: LlmActivity = { ...GENERATING, phase: "thinking" };
+
+const node = (activity: LlmActivity | null, { locale = "en", hidden }: { locale?: Locale; hidden?: boolean } = {}) => (
+  <NextIntlClientProvider locale={locale} messages={MESSAGES[locale]} timeZone="UTC">
+    <WaitingIndicator activity={activity} hidden={hidden} />
+  </NextIntlClientProvider>
+);
+
+async function shown(activity: LlmActivity | null, locale: Locale = "en"): Promise<{ text: string; pose: string | null }> {
+  const view = await renderReact(node(activity, { locale }));
+  const result = { text: view.container.textContent ?? "", pose: view.container.querySelector("svg")?.getAttribute("data-pose") ?? null };
   await view.unmount();
-  return content;
+  return result;
 }
 
-test("WaitingIndicator names the phase and counts time and approximate tokens", async (t) => {
-  t.mock.timers.enable({ apis: ["Date"], now: NOW });
-  const restore = installDom();
+/** The phrase of *bucket* that *text* opens with; which one is up to the turn's seed, so tests don't pin it. */
+function phraseIn(text: string, bucket: keyof typeof PHRASES) {
+  const texts: Record<string, string> = en.chatView.waiting.phrases;
+  const phrase = PHRASES[bucket].find(({ key }) => text.startsWith(texts[key]));
+  assert.ok(phrase, `"${text}" opens with none of the ${bucket} phrases`);
+  return phrase;
+}
+
+function setUp(t: TestContext, apis: ("Date" | "setInterval")[] = ["Date"]): () => void {
+  t.mock.timers.enable({ apis, now: NOW });
+  t.mock.method(Math, "random", () => 0.42);
+  return installDom();
+}
+
+test("every phrase has its text in both languages, and every text a phrase", () => {
+  const keys = [...new Set(Object.values(PHRASES).flatMap((phrases) => phrases.map(({ key }) => key)))].sort();
+  assert.deepEqual(Object.keys(en.chatView.waiting.phrases).sort(), keys);
+  assert.deepEqual(Object.keys(de.chatView.waiting.phrases).sort(), keys);
+});
+
+test("WaitingIndicator acts out the phase and counts time and approximate tokens", async (t) => {
+  const restore = setUp(t);
   try {
-    const activity: LlmActivity = { request_id: "r1", source: "agent", phase: "generating", started_at: ago(78_500), streamed_chars: 7_300 };
-    assert.equal(await text(activity), "Generating...1 min 18 s · 1.8k tokens");
-    assert.equal(await text(activity, "de"), "Generiere...1 min 18 s · 1,8k Tokens");
-    // A tool call whose live card hasn't arrived yet is plain generating.
-    assert.equal(await text({ ...activity, phase: "tool_call", tool_name: "exec" }), "Generating...1 min 18 s · 1.8k tokens");
     // Before the first token only the clock runs.
-    assert.equal(await text({ ...activity, phase: "processing_prompt", started_at: ago(3_200), streamed_chars: 0 }), "Processing prompt...3 s");
-    // Other roles' requests (the sentinel's) leave the agent's waiting label generic.
-    assert.equal(await text({ ...activity, source: "sentinel" }), "Working...");
-    assert.equal(await text(null), "Working...");
+    const prompt = await shown({ ...GENERATING, phase: "processing_prompt", started_at: ago(3_200), streamed_chars: 0 });
+    assert.ok(prompt.text.endsWith("3 s"), prompt.text);
+    assert.equal(prompt.pose, phraseIn(prompt.text, "processing_prompt").pose);
+
+    const thinking = await shown(THINKING);
+    assert.ok(thinking.text.endsWith("1 min 18 s · 1.8k tokens"), thinking.text);
+    assert.equal(thinking.pose, phraseIn(thinking.text, "thinking").pose);
+    assert.ok((await shown(THINKING, "de")).text.endsWith("1 min 18 s · 1,8k Tokens"));
+
+    // While the answer streams, the tortoise works without a phrase; a tool call being written is the same.
+    const generating = await shown(GENERATING);
+    assert.equal(generating.text, "1 min 18 s · 1.8k tokens");
+    assert.ok(GENERATING_POSES.includes(generating.pose as (typeof GENERATING_POSES)[number]), String(generating.pose));
+    assert.deepEqual(await shown({ ...GENERATING, phase: "tool_call", tool_name: "exec" }), generating);
+
+    // The sentinel's requests get their own phrases and no counter.
+    const sentinel = await shown({ ...GENERATING, source: "sentinel" });
+    assert.equal(sentinel.pose, phraseIn(sentinel.text, "sentinel").pose);
+    assert.ok(!sentinel.text.includes("tokens"), sentinel.text);
+
+    // Between requests only the tortoise shows that the turn is still going.
+    assert.deepEqual(await shown(null), { text: "", pose: "pulse" });
+  } finally {
+    restore();
+  }
+});
+
+test("WaitingIndicator keeps its phrases for the whole turn, across requests and while hidden", async (t) => {
+  const restore = setUp(t);
+  try {
+    const view = await renderReact(node(THINKING));
+    const label = () => view.container.querySelector(".text-shimmer")?.textContent;
+    const first = label();
+
+    t.mock.method(Math, "random", () => 0.99);
+    await view.rerender(node(null, { hidden: true }));
+    assert.equal(view.container.firstElementChild?.hasAttribute("hidden"), true);
+    await view.rerender(node({ ...THINKING, request_id: "r2" }));
+    assert.equal(label(), first);
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("WaitingIndicator dozes off without progress and wakes on the next token", async (t) => {
+  const restore = setUp(t, ["Date", "setInterval"]);
+  try {
+    const view = await renderReact(node(THINKING));
+    const pose = () => view.container.querySelector("svg")?.getAttribute("data-pose");
+    const label = () => view.container.querySelector(".text-shimmer")?.textContent;
+    const awake = pose();
+    const phrase = label();
+
+    await runInAct(async () => t.mock.timers.tick(STALL_MS - 1_000));
+    assert.equal(pose(), awake);
+    await runInAct(async () => t.mock.timers.tick(1_000));
+    assert.equal(pose(), "sleep");
+    assert.equal(label(), phrase);
+
+    await view.rerender(node({ ...THINKING, streamed_chars: 7_400 }));
+    assert.equal(pose(), awake);
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("WaitingIndicator starts a request awake after a long gap between requests", async (t) => {
+  const restore = setUp(t, ["Date", "setInterval"]);
+  try {
+    // Between requests (a long tool run) the activity is null while the line stays up.
+    const view = await renderReact(node(null));
+    await runInAct(async () => t.mock.timers.tick(STALL_MS + 5_000));
+    await view.rerender(node({ ...GENERATING, request_id: "r2", phase: "processing_prompt", streamed_chars: 0 }));
+    await runInAct(async () => t.mock.timers.tick(1_000));
+    assert.notEqual(view.container.querySelector("svg")?.getAttribute("data-pose"), "sleep");
+    await view.unmount();
   } finally {
     restore();
   }
