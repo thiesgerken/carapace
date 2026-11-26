@@ -1,4 +1,4 @@
-"""The builder's HTTP API: the skills directory as an archive and a skill name in, store paths and metadata out."""
+"""The builder's HTTP API: the skills directory as an archive in; builds, and which inputs have updates, out."""
 
 from __future__ import annotations
 
@@ -13,14 +13,14 @@ from pathlib import Path
 from typing import Annotated
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 from pydantic import TypeAdapter
 
 from . import nix
 from .cache import create_cache_app
-from .models import BuilderInfo, BuildKey, BuildResult, GcResult, Roots, SkillName, UpstreamCache
+from .models import BuilderInfo, BuildKey, BuildResult, GcResult, Roots, SkillName, UpdateCheck, UpstreamCache
 from .store import SkillStore
 
 PORT = 8330
@@ -88,6 +88,25 @@ def create_app(token: str, store: SkillStore, system: str, cache_public_keys: li
             logger.info(f"Skill {skill} ({key}): {result.state}")
             store.save(result)
             return result
+
+    @app.post("/updates", dependencies=authorized)
+    async def check_updates(request: Request, inputs: Annotated[list[SkillName], Query(alias="input")]) -> UpdateCheck:
+        """The lock each of *inputs* of the skills directory archive in the body would get from an update.
+
+        Nothing is stored: upstreams move, so every call asks them again.
+        """
+        archive = await request.body()
+        if len(archive) > MAX_ARCHIVE_BYTES:
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Skill archive too large")
+        with tempfile.TemporaryDirectory(dir=store.work) as work:
+            # Next to the lock files the updates write, never into the flake they read.
+            source = Path(work) / "skills"
+            source.mkdir()
+            _extract(archive, source)
+            logger.info(f"Checking skill inputs for updates: {', '.join(inputs)}")
+            return UpdateCheck(
+                inputs={name: await nix.update_input(source, name, Path(work) / f"{name}.lock") for name in inputs}
+            )
 
     @app.put("/roots", status_code=status.HTTP_204_NO_CONTENT, dependencies=authorized)
     async def put_roots(roots: Roots) -> None:

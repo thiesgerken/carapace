@@ -228,7 +228,10 @@ async def _connect_builder(config: BuilderConfig) -> BuilderClient | None:
 async def _after_push(owner: str) -> None:
     """A sandbox push was accepted: build the skills it changed ahead of use, then mirror it upstream."""
     try:
-        await _skill_builds.ensure_built(_knowledge_repo_registry.get_for_user(owner).knowledge_dir)
+        repo_dir = _knowledge_repo_registry.get_for_user(owner).knowledge_dir
+        await _skill_builds.ensure_built(repo_dir)
+        # The push may have changed skills/flake.lock or a local skill's inputs.
+        _skill_builds.updates.start(repo_dir)
         # The replaced trees start their grace period now rather than at the next hourly sync.
         await _skill_builds.sync_roots(repo.knowledge_dir for repo in _knowledge_repo_registry.existing())
     finally:
@@ -773,6 +776,13 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     memory_task = asyncio.create_task(_memory_service.run())
     roots_task = asyncio.create_task(_builder_roots_loop(), name="builder roots")
     roots_task.add_done_callback(_log_loop_crash)
+    updates_task = asyncio.create_task(
+        _skill_builds.updates.check_every(
+            timedelta(days=1), lambda: [repo.knowledge_dir for repo in _knowledge_repo_registry.existing()]
+        ),
+        name="skill updates",
+    )
+    updates_task.add_done_callback(_log_loop_crash)
 
     def matrix_channel_factory(username: str, user_config: UserConfig) -> MatrixChannelHandle:
         from ..channels.matrix import MatrixChannel
@@ -811,6 +821,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     jobs_task.cancel()
     memory_task.cancel()
     roots_task.cancel()
+    updates_task.cancel()
     await _matrix_channel_manager.stop_all()
     sandbox_server.should_exit = True
     internal_server.should_exit = True

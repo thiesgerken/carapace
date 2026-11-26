@@ -18,10 +18,11 @@ import httpx
 from loguru import logger
 from pydantic import BaseModel, ValidationError
 
-from ..skills import SkillsFlakeError, parse_skills_lock
 from ..spans import span
 from .client import BuilderClient, BuilderSystemMismatchError
 from .models import BuildResult
+from .skill_updates import SkillUpdates
+from .skills_head import archive_skills, object_id, skills_flake_at_head
 
 
 class SkillNeeds(BaseModel):
@@ -90,6 +91,8 @@ class RetryRefusedError(Exception):
 class SkillBuilds:
     def __init__(self, builder: BuilderClient | None) -> None:
         self._builder = builder
+        # Whether the skills have something newer: the same builder and repos, a separate question.
+        self.updates = SkillUpdates(builder)
         self._results: dict[str, _Outcome] = {}
         self._running: dict[str, asyncio.Task[None]] = {}
 
@@ -191,7 +194,7 @@ async def _build_outcome(builder: BuilderClient, repo_dir: Path, skill: _HeadSki
         result = None if retry else await builder.get(skill.key)
         if result is None:
             try:
-                archive = await _git(repo_dir, "archive", skill.skills_tree)
+                archive = await archive_skills(repo_dir, skill.skills_tree)
             except RuntimeError as exc:
                 return _Outcome(state="failed", detail=str(exc))
             result = await builder.build(skill.key, skill.name, archive, retry=retry)
@@ -231,27 +234,16 @@ def _read_result(result: BuildResult) -> _Outcome:
 
 
 async def _skills_at_head(repo_dir: Path) -> list[_HeadSkill]:
-    """The skills skills/flake.nix lists at HEAD, read from Git objects.
-
-    Git and not the working tree: the keys and the archive the builder gets all describe HEAD. Without a
-    usable flake there are no skills to build; the knowledge view says why.
-    """
-    skills_tree = await _object_id(repo_dir, "HEAD:skills")
-    flake = await _object_id(repo_dir, "HEAD:skills/flake.nix")
-    lock = await _object_id(repo_dir, "HEAD:skills/flake.lock")
-    if not (skills_tree and flake and lock):
-        return []
-    try:
-        listed = parse_skills_lock((await _git(repo_dir, "cat-file", "blob", lock)).decode())
-    except (SkillsFlakeError, UnicodeDecodeError):
+    """The skills skills/flake.nix lists at HEAD, each with its build key."""
+    head = await skills_flake_at_head(repo_dir)
+    if head is None:
         return []
     skills: list[_HeadSkill] = []
-    for skill in listed:
+    for skill in head.skills:
         # A missing directory keys as empty; the builder then reports what Nix says about it.
-        directory = await _object_id(repo_dir, f"HEAD:skills/{skill.directory}") if skill.directory else ""
-        skills.append(
-            _HeadSkill(name=skill.name, key=build_key(skill.name, flake, lock, directory), skills_tree=skills_tree)
-        )
+        directory = await object_id(repo_dir, f"HEAD:skills/{skill.directory}") if skill.directory else ""
+        key = build_key(skill.name, head.flake, head.lock, directory)
+        skills.append(_HeadSkill(name=skill.name, key=key, skills_tree=head.tree))
     return skills
 
 
@@ -264,30 +256,3 @@ def build_key(skill: str, flake: str, lock: str, directory: str) -> str:
     # ponytail: a local skill that reads files outside its own directory is not re-keyed when they change;
     # key on the whole skills/ tree if that ever matters.
     return hashlib.sha256("\0".join([skill, flake, lock, directory]).encode()).hexdigest()
-
-
-async def _object_id(repo_dir: Path, spec: str) -> str:
-    """The Git object *spec* names, or empty when it does not exist."""
-    process = await asyncio.create_subprocess_exec(
-        "git",
-        "-C",
-        str(repo_dir),
-        "rev-parse",
-        "--verify",
-        "--quiet",
-        spec,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    stdout, _ = await process.communicate()
-    return stdout.decode().strip() if process.returncode == 0 else ""
-
-
-async def _git(repo_dir: Path, *args: str) -> bytes:
-    process = await asyncio.create_subprocess_exec(
-        "git", "-C", str(repo_dir), *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await process.communicate()
-    if process.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)} failed in {repo_dir}: {stderr.decode(errors='replace').strip()}")
-    return stdout

@@ -12,7 +12,7 @@ import json
 import time
 from pathlib import Path
 
-from .models import BuildResult
+from .models import BuildResult, InputUpdate
 
 LOG_TAIL_CHARS = 16_000
 
@@ -116,3 +116,17 @@ async def build_skill(source: Path, key: str, skill: str, system: str, roots: Pa
     return BuildResult(
         key=key, skill=skill, state="succeeded", store_paths=store_paths, metadata=metadata, log_tail=_tail(build_log)
     )
+
+
+async def update_input(source: Path, name: str, out: Path) -> InputUpdate:
+    """The lock of the skills flake in *source* after `nix flake update <name>`, written to *out*, not *source*.
+
+    Only that input moves, so nixpkgs and carapace stay as locked, and one input that cannot be fetched
+    does not hide the others' updates. An input pinned to a rev or tag never moves.
+    """
+    code, _, log = await _run(
+        "nix", "flake", "update", name, "--flake", f"path:{source}", "--output-lock-file", str(out)
+    )
+    if code != 0:
+        return InputUpdate(log_tail=_tail(log))
+    return InputUpdate(lock=out.read_text(), log_tail=_tail(log))

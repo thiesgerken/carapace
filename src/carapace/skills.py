@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import posixpath
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlencode
 
 import yaml
 from loguru import logger
@@ -33,6 +35,11 @@ class ListedSkill:
     name: str
     # Below skills/, for a `path:` input; None for a flake from elsewhere.
     directory: PurePosixPath | None
+    # Where it comes from: `./<dir>` for a local skill, the flake reference it was written as otherwise.
+    origin: str
+    # The commit and its time the lock pins; None for a local skill, which the lock does not pin.
+    locked_rev: str | None
+    locked_at: datetime | None
 
 
 def parse_skills_lock(text: str) -> list[ListedSkill]:
@@ -45,13 +52,45 @@ def parse_skills_lock(text: str) -> list[ListedSkill]:
         nodes = lock["nodes"]
         inputs = nodes[lock["root"]].get("inputs", {})
         skills = [
-            ListedSkill(name=name, directory=_local_directory(name, nodes[node]))
-            for name, node in sorted(inputs.items())
-            if name not in _SHARED_INPUTS
+            _listed_skill(name, nodes[node]) for name, node in sorted(inputs.items()) if name not in _SHARED_INPUTS
         ]
     except (ValueError, KeyError, TypeError, AttributeError) as exc:
         raise SkillsFlakeError(f"skills/flake.lock is not a flake lock file ({exc}). {_FIX}") from exc
     return skills
+
+
+def _listed_skill(name: str, node: dict[str, Any]) -> ListedSkill:
+    locked = node["locked"]
+    directory = _local_directory(name, node)
+    modified = locked.get("lastModified")
+    return ListedSkill(
+        name=name,
+        directory=directory,
+        origin=f"./{directory}" if directory is not None else flake_ref(node.get("original", locked)),
+        locked_rev=locked.get("rev"),
+        locked_at=datetime.fromtimestamp(modified, UTC) if modified is not None else None,
+    )
+
+
+def flake_ref(attributes: dict[str, Any]) -> str:
+    """The flake reference a lock entry's attributes stand for, e.g. `github:owner/repo/ref?dir=sub`."""
+    kind = attributes["type"]
+    query = {key: attributes[key] for key in ("dir",) if key in attributes}
+    match kind:
+        case "github" | "gitlab" | "sourcehut":
+            ref = attributes.get("ref") or attributes.get("rev")
+            base = f"{kind}:{attributes['owner']}/{attributes['repo']}" + (f"/{ref}" if ref else "")
+        case "git":
+            base = f"git+{attributes['url']}"
+            query = {key: attributes[key] for key in ("ref", "rev") if key in attributes} | query
+        case "path":
+            base = f"path:{attributes['path']}"
+        case "indirect":
+            base = attributes["id"]
+        case _:
+            # tarball, file, mercurial: their URL says it.
+            base = attributes.get("url", kind)
+    return f"{base}?{urlencode(query)}" if query else base
 
 
 def _local_directory(name: str, node: dict[str, Any]) -> PurePosixPath | None:

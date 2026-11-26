@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 import carapace.server as srv
-from carapace.builder import skill_builds
+from carapace.builder import skill_builds, skills_head
 from carapace.builder.client import BuilderClient
 from carapace.builder.models import BuildResult
 from carapace.builder.skill_builds import SkillBuilds
@@ -312,14 +312,14 @@ async def test_a_push_is_mirrored_even_when_its_builds_cannot_start(monkeypatch:
 
 @pytest.mark.anyio
 async def test_a_skill_that_cannot_be_archived_fails(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    real_git = skill_builds._git
+    real_git = skills_head._git
 
     async def git(repo_dir: Path, *args: str) -> bytes:
         if args[0] == "archive":
             raise RuntimeError("git archive failed: fatal: not a tree object")
         return await real_git(repo_dir, *args)
 
-    monkeypatch.setattr(skill_builds, "_git", git)
+    monkeypatch.setattr(skills_head, "_git", git)
     builder = FakeBuilder()
     builds = SkillBuilds(cast(BuilderClient, builder))
     await builds.ensure_built(repo)

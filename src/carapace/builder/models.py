@@ -48,6 +48,18 @@ class BuildResult(BaseModel):
     log_tail: str = ""
 
 
+class InputUpdate(BaseModel):
+    # The lock `nix flake update <input>` writes for the skills flake; None when that failed.
+    lock: str | None = None
+    # The end of its output, for showing why it failed.
+    log_tail: str = ""
+
+
+class UpdateCheck(BaseModel):
+    # Per input of skills/flake.nix that was asked about.
+    inputs: dict[SkillName, InputUpdate]
+
+
 class Roots(BaseModel):
     # The build keys of the skills at the current heads of all knowledge repos.
     keys: list[BuildKey]
