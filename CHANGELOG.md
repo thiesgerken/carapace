@@ -1,6 +1,12 @@
 # CHANGELOG
 
 
+## v0.193.6 (2026-11-26)
+
+### 🐛 Fix a bug
+
+- fix: copy the Bitwarden bundle without read-only directory modes
+
 ## v0.193.5 (2026-11-26)
 
 ### 💄 Add or update the UI and style files
