@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createTranslator } from "next-intl";
+import { renderToStaticMarkup } from "react-dom/server";
 
+import english from "../../messages/en.json";
 import {
+  SandboxHeaderStatus,
   appendEscalationCard,
   countSubmittedUserMessages,
   isTurnActionMessage,
@@ -166,4 +170,20 @@ test("only the bubble that ended a turn carries its turn id", () => {
 
 test("the debug link opens the timeline tab on the turn", () => {
   assert.equal(turnTimelineHref("s 1", "9c1e0a7f"), "/?session=s%201&view=debug&tab=timeline&turn=9c1e0a7f");
+});
+
+test("the header's sandbox status shows liveness with details as tooltip, and nothing without a sandbox", () => {
+  const t = createTranslator({ locale: "en", messages: english, namespace: "chatView" }) as never;
+  const running = renderToStaticMarkup(
+    <SandboxHeaderStatus
+      sandbox={{ exists: true, status: "running", storage_present: true, sandbox_id: "sbx-1", last_measured_used_bytes: 5 * 1024 * 1024 }}
+      t={t}
+    />,
+  );
+  assert.match(running, /title="Running\n5\.0 MB used\nSandbox ID: sbx-1"/);
+  assert.match(running, /bg-success/);
+  assert.match(running, />Running<\/span>$/);
+
+  assert.equal(renderToStaticMarkup(<SandboxHeaderStatus sandbox={{ exists: false, status: "missing", storage_present: false }} t={t} />), "");
+  assert.equal(renderToStaticMarkup(<SandboxHeaderStatus sandbox={null} t={t} />), "");
 });
