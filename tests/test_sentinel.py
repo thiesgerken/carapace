@@ -9,13 +9,14 @@ from pydantic_ai.models.test import TestModel
 
 from carapace.security.context import AgentResponseEntry, ApprovalEntry, SentinelVerdict, SessionSecurity, ToolCallEntry
 from carapace.security.sentinel import Sentinel, _format_entry
+from tests.skills_flake import write_skills_flake
 
 
 def _make_sentinel(tmp_path: Path, *, timeout: timedelta | None = None) -> tuple[Sentinel, Path]:
     knowledge_dir = tmp_path / "knowledge"
     skills_dir = tmp_path / "skills"
     knowledge_dir.mkdir()
-    skills_dir.mkdir()
+    write_skills_flake(skills_dir, ["moneydb"])
     sentinel = Sentinel(
         model="test:model",
         user="thies",
