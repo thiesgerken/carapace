@@ -2,17 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
 
 from loguru import logger
 
 from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
+from ..spans import span
 from .exec_scope import RunningExec
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult
 from .session_lifecycle import SessionContainer
 from .skill_profile import KILLER_MARKER, KILLER_SYNC_PID, SkillProfileSync
 from .tunnels import ExecEndedError, Tunnel, close_script, listen_addresses, open_script
+
+# The name of the span a call waits in while another exec holds the session's exec lock; the UI names it.
+EXEC_LOCK_WAIT_SPAN = "exec lock"
 
 type DomainApprovalCallback = Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]
 type DomainNotifyCallback = Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None]
@@ -84,6 +89,20 @@ class SandboxExecCoordinator:
             self._state.exec_locks[session_id] = asyncio.Lock()
         return self._state.exec_locks[session_id]
 
+    @asynccontextmanager
+    async def hold_exec_lock(self, session_id: str) -> AsyncGenerator[None]:
+        """Hold the session's exec lock; waiting for it is a `wait` span, so a call queued behind another says so.
+
+        An uncontended acquire records nothing: the timeline gets no zero-length span per call.
+        """
+        lock = self.get_exec_lock(session_id)
+        with span("wait", EXEC_LOCK_WAIT_SPAN) if lock.locked() else nullcontext():
+            await lock.acquire()
+        try:
+            yield
+        finally:
+            lock.release()
+
     async def exec_in_container(
         self,
         sc: SessionContainer,
@@ -131,7 +150,7 @@ class SandboxExecCoordinator:
             result = self._profile_sync.with_hint(session_id, result)
             return result.model_copy(update={"leftover_processes_killed": leftover_processes_killed})
 
-        async with self.get_exec_lock(session_id):
+        async with self.hold_exec_lock(session_id):
             try:
                 sc = await ensure_session(session_id)
                 sc.last_used = time.time()
@@ -198,9 +217,9 @@ class SandboxExecCoordinator:
 
         Under the exec lock, so no exec's killer ends the sync halfway.
         """
-        async with self.get_exec_lock(session_id):
+        async with self.hold_exec_lock(session_id):
             sc = await ensure_session(session_id)
-            return await self._profile_sync.sync(session_id, sc.container_id)
+            return await self._profile_sync.sync(sc)
 
     async def kill_leftover_processes(self, sc: SessionContainer) -> int:
         """Kill every process in *sc* except PID 1 and return how many the agent left behind.
@@ -222,7 +241,7 @@ class SandboxExecCoordinator:
         """Start the profile sync the killer interrupted."""
         marker = self._profile_markers.pop(sc.session_id, None)
         if marker is not None:
-            self._profile_sync.start(sc.session_id, sc.container_id, marker=marker)
+            self._profile_sync.start(sc, marker=marker)
 
     def _grant_exec_scope(self, session_id: str, command: str, *, tool_call_id: str | None) -> None:
         self._state.session_current_command[session_id] = command

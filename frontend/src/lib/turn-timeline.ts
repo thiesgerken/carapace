@@ -1,3 +1,4 @@
+import { EXEC_LOCK_SPAN } from "@/lib/tool-call-status";
 import type { LlmPhases, LlmRequestRecord, Span } from "@/lib/types";
 
 /** Where a turn's time went. `llm*` are the agent's own requests; sentinel requests count as `sentinel`. */
@@ -111,7 +112,7 @@ export function timelineRows(spans: Span[], turnEnd: number): TimelineRow[] {
  * Attributes every instant of the turn to the sequential main path, so parallel work never counts twice:
  * from the root, step into the earliest started active child, level by level; the instant belongs to
  * where that stops. Instants that stop at the root are "not covered", and instants inside a wait span
- * are user wait, whatever else runs then.
+ * for the user (any but the exec lock's) are user wait, whatever else runs then.
  */
 export function summarizeTurn(rows: TimelineRow[], turnStart: number, turnEnd: number): TimeBreakdown {
   const byCategory = Object.fromEntries(TIME_CATEGORIES.map((category) => [category, 0])) as Record<TimeCategory, number>;
@@ -123,7 +124,8 @@ export function summarizeTurn(rows: TimelineRow[], turnStart: number, turnEnd: n
   for (let index = 0; index + 1 < boundaries.length; index++) {
     const [start, end] = [boundaries[index], boundaries[index + 1]];
     const active = rows.filter((row) => row.start <= start && row.end >= end);
-    if (active.some(({ span }) => span.kind === "wait")) {
+    // A call queued behind another command waits for the sandbox, not for the user.
+    if (active.some(({ span }) => span.kind === "wait" && span.name !== EXEC_LOCK_SPAN)) {
       byCategory.userWait += end - start;
       continue;
     }

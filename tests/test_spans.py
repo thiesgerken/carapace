@@ -444,3 +444,21 @@ async def test_a_failed_request_is_an_error_bar(tmp_path: Path, db_factory, mode
     last = sub.span_updates[-1]
     assert (last.turn_id, last.span_id, last.kind, last.status) == ("t1", record.request_id, "llm", "error")
     assert active.llm_requests_in_flight == {}
+
+
+def test_running_notices_skip_a_span_that_ends_while_they_are_sent() -> None:
+    trace = TurnTrace("t1", on_change=lambda _notice: None)
+    root = trace.start("turn", "turn", parent_id=None, attrs={})
+    ended = trace.start("sandbox", "ensure", parent_id=root.span_id, attrs={})
+    trace.end(ended, "ok")
+    first = trace.start("tool", "exec", parent_id=root.span_id, attrs={"tool_call_id": "call_1"})
+    second = trace.start("wait", "exec lock", parent_id=first.span_id, attrs={})
+
+    sent = []
+    for notice in trace.running_notices():
+        sent.append(notice.span_id)
+        if notice.span_id == first.span_id:
+            # Its end notice is already out: announcing it as running now would leave it running for good.
+            trace.end(second, "ok")
+
+    assert sent == [root.span_id, first.span_id]

@@ -263,6 +263,8 @@ export interface HistoryMessage {
   descriptions?: string[];
   domains?: string[];
   tool_id?: string;
+  /** On a `tool_call` or `tool_result` event: the provider's id of the call, which span notices name it by. */
+  model_tool_call_id?: string;
   parent_tool_id?: string;
   compaction?: CompactionAnnotation;
   /** On a `compaction` event: the provider that compacted the context server-side. */
@@ -351,8 +353,12 @@ export interface SpanUpdate {
   kind: string;
   name: string;
   status: SpanStatus;
+  /** ISO timestamp on the server's clock, also when the span is replayed to a client that (re)connects mid-turn. */
+  started_at: string;
   /** The provider id of the tool call whose span this is or nests under. */
   tool_call_id?: string | null;
+  /** Sent again on (re)connect because the span still runs, not because it just started. */
+  replayed: boolean;
 }
 
 /** A step of a tool call that is still running, as far as its card needs it. */
@@ -360,6 +366,8 @@ export interface RunningSpan {
   spanId: string;
   kind: string;
   name: string;
+  /** When the step started on the server's clock (ms since the epoch), also for a step replayed after a reconnect. */
+  startedAt: number;
 }
 
 export interface ToolCallInfo {

@@ -381,6 +381,12 @@ async def chat_ws(
             ),
         )
 
+    # The steps the running turn is in, so a client that joins mid-turn names them on their tool cards.
+    if agent_running and (trace := active.turn_trace) is not None:
+        for notice in trace.running_notices():
+            with contextlib.suppress(Exception):
+                await _send(websocket, SpanUpdate(**notice.model_dump(), replayed=True))
+
     for pa in list(active.pending_approval_requests):
         with contextlib.suppress(Exception):
             await _send(

@@ -203,8 +203,8 @@ npm --prefix frontend run lint
 To run carapace from the checkout, start the dev stack in the dev shell. It runs the server and frontend from source and only the sandboxes, the skill builder and a small relay in Docker. Every checkout or worktree gets its own ports (`CARAPACE_DEV_STACK` in `.env`), and stacks run side by side next to a Compose deployment:
 
 ```bash
-process-compose up          # frontend on http://127.0.0.1:7300 for stack 0
-uv run carapace --server http://127.0.0.1:7301
+process-compose up          # frontend on http://127.0.0.1:7500 for stack 0
+uv run carapace --server http://127.0.0.1:7501
 ```
 
 The dev shell supplies Python 3.14, uv, Node.js 24 (with npm), Helm, Skopeo, process-compose, Redis, and socat. See [docs/development.md](docs/development.md) for the dev stack, demo data, sandboxed checks, image builds, and dependency refreshes.
