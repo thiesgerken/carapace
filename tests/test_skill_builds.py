@@ -52,7 +52,8 @@ class FakeBuilder:
             skill=skill,
             state="succeeded",
             store_paths=[f"/nix/store/{key[:32]}-skill"],
-            metadata=_METADATA,
+            # One command per skill, named after it, as command names are unique on PATH.
+            metadata=_METADATA | {"commands": {skill: _METADATA["commands"]["weather"]}},
             skill_dir=f"/nix/store/{key[32:64]}-skill-src",
             skill_md=self.files["SKILL.md"].decode(),
             skill_files=sorted(self.files),
@@ -825,17 +826,20 @@ async def test_a_skill_turned_off_counts_as_not_listed(repo: Path) -> None:
     assert [build.skill for build in await builds.installable(repo)] == ["notes"]
     assert [info.name for info in builds.catalog(repo)] == ["notes"]
     assert builds.readable(repo, "weather") is None
-    assert await builds.installed(repo, weather.store_paths[0]) is None
+    assert await builds.command_build(repo, weather.store_paths[0], "weather") is None
     off = await builds.wait_built(repo, "weather")
     assert off is not None and not off.enabled and off.detail == "Turned off in skills/config.json."
 
 
 @pytest.mark.anyio
-async def test_a_wrapper_finds_its_build_by_store_path(repo: Path) -> None:
+async def test_a_wrapper_finds_its_build_by_store_path_then_by_command(repo: Path) -> None:
     builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
     await builds.ensure_built(repo)
     await _settled(builds, repo)
     weather = next(build for build in await builds.installable(repo) if build.skill == "weather")
+    workspace = f"/nix/store/{'z' * 32}-skill-weather"
 
-    assert await builds.installed(repo, weather.store_paths[0]) == weather
-    assert await builds.installed(repo, f"/nix/store/{'z' * 32}-other") is None
+    assert await builds.command_build(repo, weather.store_paths[0], "weather") == weather
+    # A package built in the workspace gets the committed version of its command.
+    assert await builds.command_build(repo, workspace, "weather") == weather
+    assert await builds.command_build(repo, weather.store_paths[0], "unknown") is None

@@ -155,9 +155,15 @@ class SkillBuilds:
         usable = [self._usable(repo_dir, build) for build in await self.ensure_built(repo_dir)]
         return [build for build in usable if build.enabled]
 
-    async def installed(self, repo_dir: Path, store_path: str) -> SkillBuild | None:
-        """The installable build whose package is *store_path*, the wrapper's own `@out@`; None for any other."""
-        return next((build for build in await self.installable(repo_dir) if store_path in build.store_paths), None)
+    async def command_build(self, repo_dir: Path, store_path: str, command: str) -> SkillBuild | None:
+        """The installable build a wrapper belongs to: the one whose package is *store_path* (its `@out@`), else
+        the one with a command named *command*. None when no installable build has that command.
+
+        A package built in the workspace (`nix shell path:./skills/<name>`) is not installed; command names are
+        unique on PATH, so it gets the settings and needs of the committed version of its command.
+        """
+        builds = [build for build in await self.installable(repo_dir) if command in build.commands]
+        return next((build for build in builds if store_path in build.store_paths), builds[0] if builds else None)
 
     async def refresh(self, repo_dir: Path) -> None:
         """`ensure_built`, then wait briefly until the builder said which of the new keys it built before.

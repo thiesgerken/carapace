@@ -1235,11 +1235,14 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
             status_code=400, content="--command takes --store-path and nothing else", media_type="text/plain"
         )
 
-    build = await _skill_builds.installed(_engine._knowledge_dir_for_session(session_id), body.store_path)
-    command = build.commands.get(body.command) if build else None
-    if build is None or command is None:
-        return _boundary_denied(f"{body.command} is not a command of a skill built for this knowledge repo")
-    needs = command.needs
+    knowledge_dir = _engine._knowledge_dir_for_session(session_id)
+    build = await _skill_builds.command_build(knowledge_dir, body.store_path, body.command)
+    if build is None:
+        return _boundary_denied(
+            f"{body.command} is not a command of a skill built for this knowledge repo, so its settings and needs "
+            "are unknown: push the skill, and run it once the builder has built it"
+        )
+    needs = build.commands[body.command].needs
     if needs.domains or needs.credentials or needs.oauth or needs.tunnels:
         declared = UpfrontRequestBody(
             domains=needs.domains,

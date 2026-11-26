@@ -3905,7 +3905,7 @@ def _skill_with(monkeypatch, commands: dict[str, SkillCommand]) -> None:
         settings={"CITY": "Berlin", "PORT": 443},
     )
     builds = MagicMock()
-    builds.installed = AsyncMock(side_effect=lambda _repo, path: build if path == _STORE_PATH else None)
+    builds.command_build = AsyncMock(side_effect=lambda _repo, _path, command: build if command in commands else None)
     monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
 
 
@@ -3948,7 +3948,6 @@ def test_gate_answers_a_command_without_needs_without_a_review(client, auth_head
     ("body", "status"),
     [
         ({"store_path": _STORE_PATH, "command": "other"}, 403),
-        ({"store_path": "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-elsewhere", "command": "weather"}, 403),
         ({"command": "weather"}, 400),
         ({"store_path": _STORE_PATH, "command": "weather", "domains": ["evil.example.com"]}, 400),
     ],

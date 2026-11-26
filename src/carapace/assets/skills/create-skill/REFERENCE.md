@@ -235,6 +235,8 @@ The Carapace builder builds the flake whenever the skill changes on the server, 
 - `name` matches the skill directory. Command names are what the agent types; keep them unique across skills.
 - `exec` is what the wrapper runs, with the agent's arguments appended. It is shell words: a store path may carry fixed arguments.
 - `needs` declares what a command will ask for from outside the sandbox: `domains`, `credentials` (environment variable to vault path), `oauth` (vault paths of OAuth entries the command reads itself). It is the skill-wide default; a command's own `needs` overrides it per kind. The wrapper asks for everything declared at once before the command starts, and exports the credentials. Undeclared requests still work and are reviewed when they happen.
+- `needs` may also be a function of the skill's settings: `needs = settings: { domains = [ "${settings.CITY}.weather.example" ]; };`.
+- `settings` declares what an instance configures: `settings.CITY = { type = "str"; description = "…"; default = "Berlin"; };`, with type `str`, `int` or `bool`, required without a default. The values live in `skills/config.json` (`{"<skill>": {"settings": {"CITY": "Hamburg"}}}`), and every command gets each setting as an environment variable of the same name. Use a setting for a server URL, a city or a default, never for a secret: those are `needs.credentials`. Never write an instance's values into the flake, so the skill stays usable anywhere.
 - `description` is one short line the agent sees.
 - The wrapper keeps the caller's working directory. Commands take paths as arguments rather than assuming a directory.
 

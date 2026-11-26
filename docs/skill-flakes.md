@@ -89,98 +89,122 @@ The functions below come from the skills subflake of the Carapace repo, `github:
     };
   };
 
+  # Every input but nixpkgs and carapace is a skill; config.json holds the values of their settings.
   outputs =
     { carapace, ... }@inputs:
-    let
-      skills = removeAttrs inputs [
-        "self"
-        "nixpkgs"
-        "carapace"
-      ];
-    in
-    {
-      packages = carapace.lib.forSkillSystems (
-        system: builtins.mapAttrs (_name: skill: skill.packages.${system}.default) skills
-      );
+    carapace.lib.skillsFlake {
+      inherit inputs;
+      config = ./config.json;
     };
 }
 ```
 
 - A local skill is a `path:./<dir>` input, a skill from elsewhere any flake reference (e.g. `github:someone/skill-weather`). Every skill follows `nixpkgs` and `carapace`, so the lock holds one of each, and `nix flake update carapace --flake ./skills` moves the helpers of every skill at once.
 - The bundled skills that need no setup (`artifacts`, `create-skill`, `credentials`, `mermaid`, `wikipedia`) come from Carapace's `main` branch, without a tag: every push to `main` is a release. The lock pins the commit they were last updated to; `nix flake update <name> --flake ./skills` brings one to the latest.
-- `outputs` exposes each skill's package as `packages.<system>.<name>`. The builder builds every attribute on its own, from the whole `skills/` directory at `HEAD` (relative `path:` inputs resolve inside it), so one broken skill leaves the others built and usable.
+- `skillsFlake` exposes each skill's package as `packages.<system>.<name>` and its [manifest](#the-manifest) as `manifests.<system>.<name>`. The builder evaluates and builds every attribute on its own, from `skills/flake.nix`, its lock, `config.json` and the skill's own directory at `HEAD`, so one broken skill leaves the others built and usable.
 - The server reads the list from `skills/flake.lock` (the root's inputs), never by evaluating Nix. Without `skills/flake.nix` or its lock the repo has no skills, and the Knowledge view says so.
 - `carapace` is the helpers' attribute, so the bundled skill in `skills/carapace` is listed as `carapace-cli`.
 
 To add a skill, add its input and lock: `nix flake lock ./skills`. A new skill directory must be tracked by Git first (`git add`), because `./skills` is a Git flake. After changing a local skill's inputs or its own `flake.lock`, run `nix flake update <name> --flake ./skills`: the top-level lock copies a local skill's inputs once and does not notice later changes. Editing a local skill's code or `SKILL.md` needs no new lock. Commit `skills/flake.lock` together with the change.
 
-To turn a skill off, remove its input and lock again.
+To turn a skill off, remove its input and lock again, or set `"enable": false` for it in `skills/config.json`.
+
+### `skills/config.json`
+
+The values of the skills' [settings](#settings), per skill attribute, as JSON with sorted keys. A new knowledge repo gets `{}`; without the file every skill takes its defaults.
+
+```json
+{
+  "weather": { "settings": { "CITY": "Berlin" } },
+  "web": { "enable": false }
+}
+```
+
+`skillsFlake` reads it into the Nix module system: each skill has the options `enable` (default `true`) and `settings.<NAME>` with the declared type. A value of the wrong type, a setting the skill does not declare or a skill the flake does not list fails the evaluation of every skill, with the module system's message naming the option. A required setting without a value fails only that skill's manifest: `skill weather: no value for its setting CITY; set it in skills/config.json`. A skill that is off needs no values.
+
+A change to `config.json` re-evaluates every skill's manifest but builds nothing: the packages do not depend on it, so every instance of a skill runs the same build.
 
 ## Commands and what they need
 
-`mkSkill { name, src, commands ? { }, needs ? { } }` builds the package. `src` is the skill directory, normally `./.`: it becomes a store path of its own, referenced by the package, so the sandbox gets `SKILL.md`, scripts and references together with the commands. Each command has:
+`mkSkill { name, src, commands ? { }, needs ? { }, settings ? { } }` builds the package. `src` is the skill directory, normally `./.`: it becomes a store path of its own, referenced by the package, so the sandbox gets `SKILL.md`, scripts and references together with the commands. Each command has:
 
 - `exec`: what the wrapper runs, with the wrapper's arguments appended. It is shell words, not quoted for you: it gets word-split and expanded, which is what lets a store path carry fixed arguments (`"${pkgs.nodejs}/bin/node ${app}/src/main.mjs"`). A path with spaces needs its own quoting.
 - `description`: one short line, shown to the agent.
 - `needs` (optional): overrides the skill-wide `needs`, per kind. A command that sets `domains = [ ]` asks for no domains, whatever the default says.
 
-`needs` declares what a command will want from outside the sandbox. Any other key, an invalid variable name or a malformed tunnel fails the evaluation, also of the metadata below:
+`needs` declares what a command will want from outside the sandbox, skill-wide or per command, as an attribute set or as a function of the [settings](#settings) (`settings: { domains = [ "${settings.CITY}.weather.example" ]; }`). Any other key, an invalid variable name or a malformed tunnel fails the evaluation of the manifest:
 
 - `domains`: host names, or `*.` plus a name of at least two labels.
 - `credentials`: environment variable to vault path. The wrapper exports each one before the command starts. Variable names must be shell identifiers.
 - `oauth`: vault paths of OAuth entries whose access token the command fetches itself with `ccred get --access-token`, as the MCP bridge does. Declared up front, exported nothing.
 - `tunnels`: `"host:port"` with an exact host name (not an IP address) and a port from 1 to 65535, for clients that do not speak HTTP. Requested with `cgate request --tunnel` and open when the command starts; see [sandbox.md](sandbox.md#tunnels).
 
-A command that declares something gets a wrapper that first asks for all of it at once, then fetches the credentials, then runs the command:
+A command with needs or a skill with settings gets a wrapper that first asks Carapace for itself by name, then runs the command:
 
 ```sh
-cgate request --store-path "/nix/store/…-skill-weather" --domain api.example.com --credential personal/weather-token
-WEATHER_TOKEN="$(ccred get personal/weather-token)"
-export WEATHER_TOKEN
+gate="$(cgate request --store-path "/nix/store/…-skill-weather" --command weather)"
+eval "$gate"
 exec /nix/store/…-skill-env/bin/weather "$@"
 ```
 
-The sentinel decides once, with the whole `exec` in view. A denial or a failing `ccred` stops the wrapper before the command runs, with the reason on stderr. Declarations are a batching hint and carry no trust; what a command was not declared to need still works and is reviewed when it is requested (see [Declaring needs up front](sandbox.md#declaring-needs-up-front-cgate)). A command with no needs gets a plain `exec` wrapper.
+The wrapper names no domain or credential: Carapace looks the command up in the [manifest](#the-manifest) of the installed build whose package is that store path, or else of the installed build that has a command of that name (so a package built in the workspace with `nix shell path:./skills/<name>` runs with the settings and needs of the committed version), has its needs reviewed and answers with the settings and credentials, which `cgate` prints as `export` lines (fetching the credentials with `ccred get`). So the package is the same for every instance, and only the manifest carries this instance's values. The sentinel decides once, with the whole `exec` in view. A denial, a failing `ccred` or a command that no built skill of this knowledge repo has (a new skill before its first push) stops the wrapper before the command runs, with the reason on stderr. Declarations are a batching hint and carry no trust; what a command was not declared to need still works and is reviewed when it is requested (see [Declaring needs up front](sandbox.md#declaring-needs-up-front-cgate)). A command without needs in a skill without settings gets a plain `exec` wrapper.
 
 `cgate` and `ccred` come from the sandbox image, not from the skill. Their contract is documented in [sandbox.md](sandbox.md#cli-contract), and it is what keeps wrappers built against an older Carapace working.
 
-## Metadata for the builder: `passthru.carapace`
+### Settings
 
-The package carries what the builder and the session need to know about the commands, readable without building anything:
+A skill declares the settings an instance gives it, each with a type (`str`, `int` or `bool`), a description and optionally a default:
+
+```nix
+mkSkill {
+  name = "weather";
+  src = ./.;
+  settings = {
+    CITY = { type = "str"; description = "The city to report on"; };
+    UNITS = { type = "str"; description = "metric or imperial"; default = "metric"; };
+  };
+  needs = settings: { domains = [ "${settings.CITY}.weather.example" ]; };
+  commands.weather = { exec = "${env}/bin/weather --units $UNITS"; description = "Current weather"; };
+}
+```
+
+The values come from [`skills/config.json`](#skillsconfigjson). A setting without a default is required. Every command of the skill gets each setting as an environment variable of the same name, so names must be shell identifiers; numbers and booleans arrive in their JSON spelling (`443`, `true`). Settings are no secrets: a password or token belongs in `needs.credentials`.
+
+## The manifest
+
+The builder evaluates each skill's manifest before it builds anything, and the server reads only that, never Nix:
 
 ```sh
-nix eval --json 'path:<skill dir>#packages.x86_64-linux.default.carapace'
+nix eval --json 'path:skills#manifests.x86_64-linux.weather'
 ```
 
 ```json
 {
+  "enable": true,
   "name": "weather",
   "skillDir": "/nix/store/…-skill-weather-src",
+  "settings": { "CITY": "Berlin", "UNITS": "metric" },
   "commands": {
     "weather": {
       "description": "Current weather for a city",
       "needs": {
-        "domains": ["api.example.com"],
+        "domains": ["berlin.weather.example"],
         "credentials": { "WEATHER_TOKEN": "personal/weather-token" },
         "oauth": [],
         "tunnels": []
       },
-      "mcp": false
-    },
-    "weather-units": {
-      "description": "List the supported units, offline",
-      "needs": { "domains": [], "credentials": {}, "oauth": [], "tunnels": [] },
       "mcp": false
     }
   }
 }
 ```
 
-- `skillDir` is the store path of `src`. The evaluation already copies it into the store, so the builder can read `SKILL.md` from it before the commands are built.
-- `commands` has one entry per wrapper in `bin/`, under the same name.
-- `needs` is already resolved: the skill-wide default with the command's override applied, every kind present.
-- `mcp` is `true` for a command made by `mcpCommands`; `read_skill` lists its tools. Packages built with an older `mkSkill` have no `mcp`, which counts as `false`.
-- The builder passes this on as opaque JSON; the server reads it. Fields are only ever added.
+- `settings` are this instance's values, from `skills/config.json` or the declared defaults.
+- `needs` is resolved for those values: the skill-wide default with the command's override applied, every kind present.
+- `skillDir` is the store path of `src`. The evaluation already copies it into the store, so the builder reads `SKILL.md` from it before the commands are built.
+- `commands` has one entry per wrapper in `bin/`, under the same name. `mcp` is `true` for a command made by `mcpCommands`; `read_skill` lists its tools.
+- A skill that `config.json` turns off has the manifest `{ "enable": false }`. It is not built, and Carapace treats it like a skill that is not listed.
+- `skillsFlake` writes the manifest from what `mkSkill` declares in `passthru.carapace` (the settings, the commands) and `passthru.carapaceNeeds` (the needs for given setting values). Fields are only ever added.
 
 ## Skills with only instructions
 

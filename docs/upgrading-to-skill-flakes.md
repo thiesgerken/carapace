@@ -109,7 +109,7 @@ git push
 - A skill without a `flake.nix` gets a flake of a few lines ([Skills with only instructions](skill-flakes.md#skills-with-only-instructions)).
 - `mkSkill` now takes the skill directory as `src`. The script adds `src = ./.;` to each local flake that lacks it, right after `mkSkill`'s `name`, and names any flake where it could not.
 - `web` and `ferret` as bootstrap seeded them are written as commented-out inputs, since they need setting up first. So is a skill whose `SKILL.md` still sets `metadata.carapace.disabled`. `disabled` is gone: a skill is off when it is not listed, and one that still sets the field shows up as broken once listed, so delete the field before you uncomment it.
-- Every input follows the repo's `nixpkgs` and `carapace`. The script then runs `nix flake lock ./skills` and stages everything, but commits nothing.
+- Every input follows the repo's `nixpkgs` and `carapace`, and the outputs come from `carapace.lib.skillsFlake`. The script writes an empty `skills/config.json` for the skills' [settings](skill-flakes.md#skillsconfigjson), then runs `nix flake lock ./skills` and stages everything, but commits nothing.
 
 It needs Git and Nix and runs anywhere in a clone of the repo. The agent can run it in its sandbox too; fetching the script is a domain request like any other:
 
