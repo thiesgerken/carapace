@@ -79,16 +79,6 @@ body {
   overflow-wrap: anywhere;
 }
 
-@media (hover: none), (pointer: coarse) {
-  .session-row-actions .session-row-action-button {
-    display: none;
-  }
-
-  .session-row-actions .session-row-action-active {
-    display: inline-flex;
-  }
-}
-
 /* Markdown prose styling */
 .prose {
   max-width: none;

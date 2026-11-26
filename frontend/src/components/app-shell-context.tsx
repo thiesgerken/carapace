@@ -17,6 +17,7 @@ import {
   type AuthUserInfo,
 } from "@/lib/api";
 import { type NewSessionOptions } from "@/components/new-session-button";
+import { useDelayedArchive, type DelayedArchive } from "@/hooks/use-delayed-archive";
 import {
   clearChatDraft,
   clearConnection,
@@ -111,6 +112,10 @@ export interface AppShell {
     id: string,
     attributes: NonNullable<Parameters<typeof updateSession>[3]["attributes"]>,
   ) => Promise<SessionInfo>;
+  /** Archiving waits for an undo first (see `pendingArchive`); settles once the change reached the server or was undone. */
+  onSetSessionArchived: (id: string, archived: boolean) => Promise<void>;
+  /** The archive waiting for an undo, if any. Its session already shows as archived. */
+  pendingArchive: Pick<DelayedArchive, "undo" | "commitNow"> | null;
   onDeleteSession: (id: string, options?: { skipUnpushedWarning?: boolean }) => Promise<void>;
   onForkSession: (session: SessionInfo) => void;
   onLoadMore: () => void;
@@ -171,7 +176,6 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
   const loading = creatingSession || refreshingSessions;
   const hasActiveSessionLoaded = activeSessionId != null
     && sessions.some((session) => session.session_id === activeSessionId);
-  const activeSession = sessions.find((session) => session.session_id === activeSessionId) ?? null;
 
   useEffect(() => {
     // Defer to avoid synchronous setState in effect body.
@@ -504,6 +508,33 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     return updated;
   }, [activeSessionId, refreshSandboxUsage, router, server, token]);
 
+  const {
+    pendingSessionId: pendingArchiveId,
+    archivingSessionIds,
+    schedule: scheduleArchive,
+    undo: undoArchive,
+    commitNow: commitArchiveNow,
+  } = useDelayedArchive((id) => onUpdateSessionAttributes(id, { archived: true }));
+  const listedSessions = useMemo(
+    () => sessions.map((session) => (
+      archivingSessionIds.includes(session.session_id)
+        ? { ...session, attributes: { ...session.attributes, archived: true } }
+        : session
+    )),
+    [archivingSessionIds, sessions],
+  );
+  const activeSession = listedSessions.find((session) => session.session_id === activeSessionId) ?? null;
+  const pendingArchive = useMemo(
+    () => (pendingArchiveId ? { undo: undoArchive, commitNow: commitArchiveNow } : null),
+    [commitArchiveNow, pendingArchiveId, undoArchive],
+  );
+
+  const onSetSessionArchived = useCallback(async (id: string, archived: boolean) => {
+    if (archived) return scheduleArchive(id);
+    if (id === pendingArchiveId) return undoArchive();
+    await onUpdateSessionAttributes(id, { archived: false });
+  }, [onUpdateSessionAttributes, pendingArchiveId, scheduleArchive, undoArchive]);
+
   const onSessionUpdate = useCallback((session: SessionInfo) => {
     setSessions((prev) => {
       const next = prev.map((entry) =>
@@ -558,7 +589,7 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onRefreshCurrentUser,
     isAdmin,
     serverVersion,
-    sessions,
+    sessions: listedSessions,
     sandboxUsage,
     activeSessionId,
     activeSession,
@@ -573,6 +604,8 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onOpenJobSettings,
     onShowArchivedSessionsChange,
     onUpdateSessionAttributes,
+    onSetSessionArchived,
+    pendingArchive,
     onDeleteSession,
     onForkSession,
     onLoadMore,
@@ -603,10 +636,12 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onShowArchivedSessionsChange,
     onTitleUpdate,
     onUpdateSessionAttributes,
+    onSetSessionArchived,
+    pendingArchive,
     server,
     serverVersion,
     sandboxUsage,
-    sessions,
+    listedSessions,
     sessionListHasMore,
     showArchivedSessions,
     token,

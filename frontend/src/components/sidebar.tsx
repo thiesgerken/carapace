@@ -2,13 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Bot, Loader2, Lock, Mail, MessageSquare, Pin, Save, Search, Star, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Bot, Loader2, Lock, Mail, MessageSquare, Pin, Save, Search, Star, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { EmojiText } from "@/components/emoji-text";
 import { useAppLocale } from "@/components/locale-provider";
 import { NewSessionButton, type NewSessionOptions } from "@/components/new-session-button";
 import { SandboxUsageBanner } from "@/components/sandbox-usage-banner";
+import { SessionRowMenu } from "@/components/session-menu";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { agentIcon } from "@/hooks/use-brand";
 import { useSessionSearch, type SessionSearchMode } from "@/hooks/use-session-search";
@@ -20,7 +21,6 @@ import {
   formatBytes,
   sandboxStatusIndicatorClass,
   sandboxStatusKey,
-  shouldConfirmArchiveSession,
   sessionHasKnowledgeChanges,
   splitOnMatches,
 } from "@/lib/utils";
@@ -40,6 +40,8 @@ interface SidebarProps {
   /** Called before every action that navigates, e.g. to close the mobile drawer. */
   onNavigate: () => void;
   onUpdateAttributes: (sessionId: string, attributes: SessionAttributesPatch) => Promise<SessionInfo>;
+  /** Archiving waits for an undo first, see `AppShell.onSetSessionArchived`. */
+  onSetArchived: (sessionId: string, archived: boolean) => Promise<void>;
   onDelete: (sessionId: string, options?: { skipUnpushedWarning?: boolean }) => Promise<void>;
   onDisconnect: () => void;
   githubUrl: string;
@@ -79,6 +81,15 @@ function runSidebarAttributeUpdate(promise: Promise<unknown>): void {
   });
 }
 
+function RowIndicator({ label, className, children }: { label: string; className: string; children: ReactNode }) {
+  return (
+    <span className={cn("inline-flex shrink-0 [&>svg]:h-3.5 [&>svg]:w-3.5", className)} title={label}>
+      {children}
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
 const SEARCH_MODES: readonly SessionSearchMode[] = ["title", "fulltext"];
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
@@ -107,6 +118,7 @@ export function Sidebar({
   onNew,
   onNavigate,
   onUpdateAttributes,
+  onSetArchived,
   onDelete,
   onDisconnect,
   githubUrl,
@@ -360,27 +372,46 @@ export function Sidebar({
 
   /** `snippet` is the match excerpt of a fulltext search hit, shown under the title. */
   function renderSessionRow(session: SessionInfo, snippet?: string | null) {
+    const active = session.session_id === activeSessionId;
     const sandbox = sandboxSummary(session);
     const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
-    const sessionCanArchive = canArchiveSession(session);
     const showPrivateIcon = session.attributes.private;
     const showSavedIcon = !session.attributes.private
       && !!session.knowledge_last_committed_at
       && !sessionHasKnowledgeChanges(session);
-    const showKnowledgeIndicator = showPrivateIcon || showSavedIcon;
-    const showUnattendedIcon = session.attributes.unattended;
+    const knowledgeLabel = showPrivateIcon ? tSidebar("privateSession") : tSidebar("knowledgeCommitted");
     const channelLabel = session.channel_type !== "web" && session.channel_type !== "cli"
       ? session.channel_type
       : null;
-    const lastActiveLabel = formatTime(session.last_active);
     const messageCountLabel = tSidebar("messageCount", { count: session.message_count });
-    const hasSandboxInfo = !!sandbox;
+    // Only the time gives way (min-w-0) when the line is too long: the other pieces keep their content width.
+    const metaItems = [
+      sandboxLabel ? <span key="size">{sandboxLabel}</span> : null,
+      <span key="messages" className="inline-flex items-center gap-1" title={messageCountLabel}>
+        <span>{session.message_count}</span>
+        <Mail className="mt-px h-3 w-3 shrink-0" />
+        <span className="sr-only">{messageCountLabel}</span>
+      </span>,
+      <span key="time" className="min-w-0 truncate">{formatTime(session.last_active)}</span>,
+      channelLabel ? <span key="channel">{channelLabel}</span> : null,
+      showPrivateIcon || showSavedIcon ? (
+        <span
+          key="knowledge"
+          className="inline-flex items-center"
+          title={showPrivateIcon ? knowledgeLabel : (session.knowledge_last_archive_path ?? knowledgeLabel)}
+        >
+          {showPrivateIcon ? <Lock className="mt-px h-3 w-3 shrink-0" /> : <Save className="mt-px h-3 w-3 shrink-0" />}
+          <span className="sr-only">{knowledgeLabel}</span>
+        </span>
+      ) : null,
+    ].filter((item) => item !== null);
     const selectSession = (): void => {
       onNavigate();
       onSelect(session.session_id);
     };
     const handleRowKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-      if (event.key !== "Enter" && event.key !== " ") {
+      // Keys on the row's menu belong to the menu.
+      if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) {
         return;
       }
       event.preventDefault();
@@ -394,194 +425,66 @@ export function Sidebar({
         tabIndex={0}
         onClick={selectSession}
         onKeyDown={handleRowKeyDown}
-        aria-pressed={session.session_id === activeSessionId}
+        aria-pressed={active}
         className={cn(
-          "group cursor-pointer rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-          session.session_id === activeSessionId
-            ? "bg-primary/10 text-foreground"
-            : "text-foreground/80 hover:bg-muted",
+          "group relative cursor-pointer rounded-lg px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          // Room for the ⋯ menu wherever it shows; touch screens have no hover, so there it always shows.
+          "hover:pr-10 focus-visible:pr-10 has-focus-visible:pr-10 has-data-open:pr-10 pointer-coarse:pr-10",
+          // Lifts the open menu over the rows below it, which are positioned too.
+          "has-data-open:z-10",
+          active ? "bg-primary/10 text-foreground" : "text-foreground/80 hover:bg-muted",
         )}
       >
-        <div className="flex w-full min-w-0 items-start gap-2.5 px-3 pt-2 pb-1 text-left">
-          <MessageSquare className={cn("mt-0.5 h-4 w-4 shrink-0", session.session_id === activeSessionId ? "text-primary" : "text-muted-foreground")} />
+        <div className="flex min-w-0 items-center gap-2.5">
+          <MessageSquare className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
           <div className="min-w-0 flex-1 truncate text-sm font-medium" title={session.title || session.session_id}>
-              {session.title ? (
-                <EmojiText text={session.title} />
-              ) : (
-                <span className="font-mono break-all">{session.session_id}</span>
-              )}
+            {session.title ? (
+              <EmojiText text={session.title} />
+            ) : (
+              <span className="font-mono">{session.session_id}</span>
+            )}
           </div>
-          {showUnattendedIcon ? (
-            <span
-              className="mt-0.5 inline-flex shrink-0 items-center text-muted-foreground"
-              title={tSidebar("unattendedSession")}
-            >
-              <Bot className="h-3.5 w-3.5" />
-              <span className="sr-only">{tSidebar("unattendedSession")}</span>
-            </span>
+          {session.attributes.unattended ? (
+            <RowIndicator label={tSidebar("unattendedSession")} className="text-muted-foreground"><Bot /></RowIndicator>
+          ) : null}
+          {session.attributes.favorite ? (
+            <RowIndicator label={tSidebar("favoriteSession")} className="text-primary"><Star /></RowIndicator>
+          ) : null}
+          {session.attributes.pinned ? (
+            <RowIndicator label={tSidebar("pinnedSession")} className="text-primary"><Pin /></RowIndicator>
           ) : null}
         </div>
         {snippet ? (
-          <div className="line-clamp-2 break-words px-3 pb-1 text-xs text-muted-foreground">
+          <div className="mt-0.5 line-clamp-2 break-words text-xs text-muted-foreground">
             <HighlightedText text={snippet} query={search.hitsQuery} />
           </div>
         ) : null}
-        <div className="flex items-start gap-2 px-3 pb-2">
-          <div className="min-w-0 flex-1 text-left">
-            {hasSandboxInfo ? (
-              <div className="space-y-0.5 text-xs text-muted-foreground">
-                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span
-                      title={t(`chatView.sandbox.status.${sandboxStatusKey(sandbox.status)}`)}
-                      className={cn(
-                        "h-1.5 w-1.5 shrink-0 rounded-full",
-                        sandboxStatusIndicatorClass(sandbox.status),
-                      )}
-                    />
-                    {sandboxLabel ? <span>{sandboxLabel}</span> : null}
-                  </span>
-                  {sandboxLabel ? <span aria-hidden="true">·</span> : null}
-                  <span
-                    className="inline-flex items-center gap-1"
-                    title={messageCountLabel}
-                  >
-                    <span>{session.message_count}</span>
-                    <Mail className="mt-px h-3 w-3 shrink-0" />
-                    <span className="sr-only">{messageCountLabel}</span>
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                  <span>{lastActiveLabel}</span>
-                  {channelLabel ? <span aria-hidden="true">·</span> : null}
-                  {channelLabel ? <span>{channelLabel}</span> : null}
-                  {showKnowledgeIndicator ? <span aria-hidden="true">·</span> : null}
-                  {showKnowledgeIndicator ? (
-                    <span
-                      className="inline-flex items-center"
-                      title={showPrivateIcon ? tSidebar("privateSession") : (session.knowledge_last_archive_path ?? tSidebar("knowledgeCommitted"))}
-                    >
-                      {showPrivateIcon ? <Lock className="mt-px h-3 w-3 shrink-0" /> : <Save className="mt-px h-3 w-3 shrink-0" />}
-                      <span className="sr-only">{showPrivateIcon ? tSidebar("privateSession") : tSidebar("knowledgeCommitted")}</span>
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
-                <span
-                  className="inline-flex items-center gap-1"
-                  title={messageCountLabel}
-                >
-                  <span>{session.message_count}</span>
-                  <Mail className="mt-px h-3 w-3 shrink-0" />
-                  <span className="sr-only">{messageCountLabel}</span>
-                </span>
-                <span aria-hidden="true">·</span>
-                <span>{lastActiveLabel}</span>
-                {channelLabel ? <span aria-hidden="true">·</span> : null}
-                {channelLabel ? <span>{channelLabel}</span> : null}
-                {showKnowledgeIndicator ? <span aria-hidden="true">·</span> : null}
-                {showKnowledgeIndicator ? (
-                  <span
-                    className="inline-flex items-center"
-                    title={showPrivateIcon ? tSidebar("privateSession") : (session.knowledge_last_archive_path ?? tSidebar("knowledgeCommitted"))}
-                  >
-                    {showPrivateIcon ? <Lock className="mt-px h-3 w-3 shrink-0" /> : <Save className="mt-px h-3 w-3 shrink-0" />}
-                    <span className="sr-only">{showPrivateIcon ? tSidebar("privateSession") : tSidebar("knowledgeCommitted")}</span>
-                  </span>
-                ) : null}
-              </div>
-            )}
-          </div>
-          <div className="session-row-actions flex shrink-0 items-center gap-1 self-start">
-          <button
-            onClick={(event) => {
-              event.stopPropagation();
-              updateAttributes(session.session_id, { pinned: !session.attributes.pinned });
-            }}
-            title={session.attributes.pinned ? tSidebar("actions.unpin") : tSidebar("actions.pin")}
-            className={cn(
-              "session-row-action-button rounded-md p-1.5 transition-colors",
-              session.attributes.pinned && "session-row-action-active",
-              session.attributes.pinned
-                ? "text-primary hover:bg-muted"
-                : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <Pin className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={(event) => {
-              event.stopPropagation();
-              updateAttributes(session.session_id, { favorite: !session.attributes.favorite });
-            }}
-            title={session.attributes.favorite ? tSidebar("actions.unfavorite") : tSidebar("actions.favorite")}
-            className={cn(
-              "session-row-action-button rounded-md p-1.5 transition-colors",
-              session.attributes.favorite && "session-row-action-active",
-              session.attributes.favorite
-                ? "text-primary hover:bg-muted"
-                : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <Star className="h-3.5 w-3.5" />
-          </button>
-          {session.attributes.archived || sessionCanArchive ? (
-            <button
-              onClick={(event) => {
-                event.stopPropagation();
-                const nextArchived = !session.attributes.archived;
-                if (
-                  nextArchived
-                  && shouldConfirmArchiveSession(session)
-                  && !shouldConfirmDestructiveAction(
-                    event,
-                    tSidebar("confirm.archiveSession"),
-                  )
-                ) {
-                  return;
-                }
-                updateAttributes(session.session_id, { archived: nextArchived });
-              }}
-              title={session.attributes.archived ? tSidebar("actions.unarchive") : [tSidebar("actions.archive"), tSidebar("actions.shiftSkip")].join("\n")}
-              className={cn(
-                "session-row-action-button rounded-md p-1.5 transition-colors",
-                session.attributes.archived && "session-row-action-active",
-                session.attributes.archived
-                  ? "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              {session.attributes.archived ? (
-                <>
-                  <Archive className="h-3.5 w-3.5 group-hover:hidden" />
-                  <ArchiveRestore className="hidden h-3.5 w-3.5 group-hover:block" />
-                </>
-              ) : <Archive className="h-3.5 w-3.5" />}
-            </button>
+        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+          {sandbox ? (
+            <span
+              title={t(`chatView.sandbox.status.${sandboxStatusKey(sandbox.status)}`)}
+              className={cn("h-1.5 w-1.5 shrink-0 rounded-full", sandboxStatusIndicatorClass(sandbox.status))}
+            />
           ) : null}
-          <button
-            onClick={(event) => {
-              event.stopPropagation();
-              if (!shouldConfirmSessionDeletion(session, event)) {
-                return;
-              }
-              void onDelete(session.session_id, { skipUnpushedWarning: event.shiftKey }).then(refreshSearch);
-            }}
-            title={session.message_count === 0
-              ? tSidebar("actions.deleteEmpty")
-              : [tSidebar("actions.delete"), tSidebar("actions.shiftSkip")].join("\n")}
-            className={cn(
-              "session-row-action-button rounded-md p-1.5 transition-colors",
-              "text-muted-foreground/0 group-hover:text-muted-foreground",
-              "hover:!text-destructive hover:bg-destructive/10",
-            )}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-          </div>
+          {metaItems.flatMap((item, index) => (
+            index === 0 ? [item] : [<span key={`separator-${index}`} aria-hidden="true">·</span>, item]
+          ))}
         </div>
+        <SessionRowMenu
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 has-focus-visible:opacity-100 data-open:opacity-100 pointer-coarse:opacity-100"
+          pinned={session.attributes.pinned}
+          favorite={session.attributes.favorite}
+          archived={session.attributes.archived}
+          canArchive={canArchiveSession(session)}
+          attributesDisabled={false}
+          onTogglePinned={() => updateAttributes(session.session_id, { pinned: !session.attributes.pinned })}
+          onToggleFavorite={() => updateAttributes(session.session_id, { favorite: !session.attributes.favorite })}
+          onToggleArchived={() => runSidebarAttributeUpdate(onSetArchived(session.session_id, !session.attributes.archived).then(refreshSearch))}
+          onDelete={(event) => {
+            if (!shouldConfirmSessionDeletion(session, event)) return;
+            void onDelete(session.session_id, { skipUnpushedWarning: event.shiftKey }).then(refreshSearch);
+          }}
+        />
       </div>
     );
   }

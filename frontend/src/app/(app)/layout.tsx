@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { AppShellProvider, useAppShell } from "@/components/app-shell-context";
 import { ConnectForm } from "@/components/connect-form";
 import { Sidebar } from "@/components/sidebar";
+import { Toast } from "@/components/toast";
 import { VersionBadge } from "@/components/version-badge";
 import { cn } from "@/lib/utils";
 import { useBrand } from "@/hooks/use-brand";
@@ -83,6 +84,7 @@ function AppChrome({ children }: { children: ReactNode }) {
           onNew={shell.onNewSession}
           onNavigate={() => setSidebarOpen(false)}
           onUpdateAttributes={shell.onUpdateSessionAttributes}
+          onSetArchived={shell.onSetSessionArchived}
           onDelete={shell.onDeleteSession}
           onDisconnect={shell.onDisconnect}
           githubUrl={GITHUB_REPO_URL}
@@ -115,6 +117,15 @@ function AppChrome({ children }: { children: ReactNode }) {
 
         {children}
       </main>
+
+      {shell.pendingArchive ? (
+        <Toast
+          message={t("toast.archived")}
+          actionLabel={t("toast.undo")}
+          onAction={shell.pendingArchive.undo}
+          onClose={shell.pendingArchive.commitNow}
+        />
+      ) : null}
     </div>
   );
 }

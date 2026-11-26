@@ -1244,8 +1244,6 @@
             "wipeSandbox": "Sandbox und ihren Speicher für diese Sitzung löschen? Der Chatverlauf bleibt erhalten.",
             "scaleDownSandbox": "Sandbox für diese Sitzung herunterfahren? Der Speicher bleibt erhalten.",
             "deleteSession": "Diese Sitzung löschen? Chatverlauf und Sandbox-Status werden entfernt.",
-            "archiveSession": "Diese Sitzung archivieren? Sie verschwindet aus der Standardliste, setzt ihre Sandbox zurück und bleibt im Wissens-Repository erhalten.",
-            "unarchiveSession": "Diese Sitzung aus dem Archiv holen? Sie kehrt in die aktive Sitzungsliste zurück.",
             "makePrivate": "Diese Sitzung als privat markieren? Bereits vorhandene Commits im Wissens-Repository bleiben in der Git-Historie bestehen."
         },
         "actions": {
@@ -1600,22 +1598,12 @@
         "messageCount": "{count, plural, one {# Nachricht} other {# Nachrichten}}",
         "unattendedSession": "Unbeaufsichtigte Sitzung",
         "privateSession": "Private Sitzung",
+        "pinnedSession": "Angeheftete Sitzung",
+        "favoriteSession": "Favorisierte Sitzung",
         "knowledgeCommitted": "Alle Änderungen ins Wissens-Repository übernommen",
-        "actions": {
-            "pin": "Sitzung anheften",
-            "unpin": "Sitzung lösen",
-            "favorite": "Sitzung favorisieren",
-            "unfavorite": "Favorit entfernen",
-            "archive": "Sitzung archivieren",
-            "unarchive": "Sitzung aus dem Archiv holen",
-            "delete": "Sitzung löschen",
-            "deleteEmpty": "Leere Sitzung löschen",
-            "shiftSkip": "Shift+Klick überspringt die Bestätigung"
-        },
         "confirm": {
             "deleteSession": "Diese Sitzung löschen? Chatverlauf und Sandbox-Status werden entfernt.",
-            "deleteUnpushed": "Diese Sitzung hat {count, plural, one {# Commit} other {# Commits}}, die noch nicht ins Wissens-Repository gepusht wurden. Beim Löschen gehen sie verloren. Trotzdem löschen?",
-            "archiveSession": "Diese Sitzung archivieren? Sie verschwindet aus der Standardliste, setzt ihre Sandbox zurück und bleibt im Wissens-Repository erhalten."
+            "deleteUnpushed": "Diese Sitzung hat {count, plural, one {# Commit} other {# Commits}}, die noch nicht ins Wissens-Repository gepusht wurden. Beim Löschen gehen sie verloren. Trotzdem löschen?"
         },
         "search": {
             "placeholder": "Sitzungen durchsuchen",
@@ -1929,5 +1917,10 @@
         },
         "showAllLines": "{count, plural, one {Ganze Zeile zeigen} other {Alle # Zeilen zeigen}}",
         "showLess": "Weniger zeigen"
+    },
+    "toast": {
+        "archived": "Archiviert",
+        "undo": "Rückgängig",
+        "close": "Schließen"
     }
 }

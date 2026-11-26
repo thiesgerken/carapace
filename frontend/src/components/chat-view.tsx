@@ -66,7 +66,6 @@ import {
   formatBytes,
   sandboxStatusIndicatorClass,
   sandboxStatusKey,
-  shouldConfirmArchiveSession,
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
 import { applySpanToToolCall, applySpansToToolCalls, dropRunningSpans, runningStep, trackRunningSpan } from "@/lib/tool-call-status";
@@ -91,6 +90,8 @@ interface ChatViewProps {
   onForkSession?: (session: SessionInfo) => void;
   onOpenJobSettings?: (jobId: string) => void;
   onUpdateSessionAttributes?: (sessionId: string, attributes: SessionAttributesPatch) => Promise<SessionInfo>;
+  /** Archiving goes through the shell's undo window, see `AppShell.onSetSessionArchived`. */
+  onSetSessionArchived?: (sessionId: string, archived: boolean) => Promise<void>;
   onDeleteSession?: () => Promise<void>;
   /** Sent once the session is connected and its history loaded, e.g. typed into the home composer. */
   initialMessage?: string;
@@ -1088,6 +1089,7 @@ export function ChatView({
   onForkSession,
   onOpenJobSettings,
   onUpdateSessionAttributes,
+  onSetSessionArchived,
   onDeleteSession,
   initialMessage,
   onInitialMessageSent,
@@ -2081,24 +2083,17 @@ export function ChatView({
   }
 
   async function handleToggleArchived() {
-    if (!session || updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes) return;
+    if (!session || updatingSessionAttribute || deletingSession || !onSetSessionArchived) return;
 
-    const nextArchived = !session.attributes.archived;
-    if (nextArchived && !canArchiveSession(session)) {
-      return;
-    }
-    if (nextArchived) {
-      if (shouldConfirmArchiveSession(session) && !window.confirm(t("confirm.archiveSession"))) {
-        return;
-      }
-    } else if (!window.confirm(t("confirm.unarchiveSession"))) {
+    if (!session.attributes.archived) {
+      // Settles only after the undo window, so it doesn't hold the menu's spinner.
+      if (canArchiveSession(session)) void onSetSessionArchived(sessionId, true);
       return;
     }
 
     setUpdatingSessionAttribute("archived");
     try {
-      const updated = await onUpdateSessionAttributes(sessionId, { archived: nextArchived });
-      onSessionUpdate?.(updated);
+      await onSetSessionArchived(sessionId, false);
     } finally {
       setUpdatingSessionAttribute(null);
     }
@@ -2888,7 +2883,7 @@ export function ChatView({
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+            className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-6"
           >
             <div className="session-chat-content mx-auto max-w-3xl space-y-3">
               {loadingHistory && (

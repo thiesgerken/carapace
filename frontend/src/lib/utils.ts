@@ -33,14 +33,6 @@ export function canArchiveSession(
   return (session?.message_count ?? 0) > 0;
 }
 
-export function shouldConfirmArchiveSession(
-  session: Pick<SessionInfo, "sandbox"> | null | undefined,
-): boolean {
-  const sandbox = session?.sandbox;
-  if (!sandbox) return false;
-  return sandbox.status !== "missing" || sandbox.storage_present;
-}
-
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];

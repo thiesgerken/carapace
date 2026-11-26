@@ -1244,8 +1244,6 @@
             "wipeSandbox": "Wipe the sandbox and its storage for this session? Chat history will stay.",
             "scaleDownSandbox": "Scale down the sandbox for this session? Storage will be kept.",
             "deleteSession": "Delete this session? Chat history and sandbox state will be removed.",
-            "archiveSession": "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo.",
-            "unarchiveSession": "Unarchive this session? It will return to the active session list.",
             "makePrivate": "Mark this session private? Existing knowledge commits will remain in git history."
         },
         "actions": {
@@ -1600,22 +1598,12 @@
         "messageCount": "{count, plural, one {# message} other {# messages}}",
         "unattendedSession": "Unattended session",
         "privateSession": "Private session",
+        "pinnedSession": "Pinned session",
+        "favoriteSession": "Favorite session",
         "knowledgeCommitted": "All changes committed to knowledge",
-        "actions": {
-            "pin": "Pin session",
-            "unpin": "Unpin session",
-            "favorite": "Favorite session",
-            "unfavorite": "Remove favorite",
-            "archive": "Archive session",
-            "unarchive": "Unarchive session",
-            "delete": "Delete session",
-            "deleteEmpty": "Delete empty session",
-            "shiftSkip": "Shift+click to skip confirmation"
-        },
         "confirm": {
             "deleteSession": "Delete this session? Chat history and sandbox state will be removed.",
-            "deleteUnpushed": "This session has {count, plural, one {# commit} other {# commits}} not yet pushed to your knowledge repo. Deleting it will discard them. Delete anyway?",
-            "archiveSession": "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo."
+            "deleteUnpushed": "This session has {count, plural, one {# commit} other {# commits}} not yet pushed to your knowledge repo. Deleting it will discard them. Delete anyway?"
         },
         "search": {
             "placeholder": "Search sessions",
@@ -1929,5 +1917,10 @@
         },
         "showAllLines": "{count, plural, one {Show the whole line} other {Show all # lines}}",
         "showLess": "Show less"
+    },
+    "toast": {
+        "archived": "Archived",
+        "undo": "Undo",
+        "close": "Close"
     }
 }
