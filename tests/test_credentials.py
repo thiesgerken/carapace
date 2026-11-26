@@ -174,7 +174,7 @@ async def test_file_fetch_metadata(file_backend: FileVaultBackend) -> None:
 
 @pytest.mark.asyncio
 async def test_file_list_all(file_backend: FileVaultBackend) -> None:
-    items = await file_backend.list()
+    items = await file_backend.search()
     assert len(items) == 3
     paths = {i.vault_path for i in items}
     assert paths == {"dev/gmail", "dev/github-token", "dev/ssh-key"}
@@ -182,14 +182,14 @@ async def test_file_list_all(file_backend: FileVaultBackend) -> None:
 
 @pytest.mark.asyncio
 async def test_file_list_with_query(file_backend: FileVaultBackend) -> None:
-    items = await file_backend.list("git")
+    items = await file_backend.search("git")
     assert len(items) == 1
     assert items[0].vault_path == "dev/github-token"
 
 
 @pytest.mark.asyncio
 async def test_file_list_case_insensitive(file_backend: FileVaultBackend) -> None:
-    items = await file_backend.list("GMAIL")
+    items = await file_backend.search("GMAIL")
     assert len(items) == 1
 
 
@@ -197,7 +197,7 @@ async def test_file_list_case_insensitive(file_backend: FileVaultBackend) -> Non
 async def test_file_exposure_filter_hides_from_list(tmp_path: Path) -> None:
     env = _write_env(tmp_path, "gmail=pw\nbanking=secret\n")
     backend = FileVaultBackend(name="dev", path=env, cfg=FileCredentialBackendConfig(hide=["banking"]))
-    items = await backend.list()
+    items = await backend.search()
     assert len(items) == 1
     assert items[0].name == "gmail"
 
@@ -214,7 +214,7 @@ async def test_file_exposure_filter_hides_from_fetch(tmp_path: Path) -> None:
 async def test_file_allowlist_restricts_list(tmp_path: Path) -> None:
     env = _write_env(tmp_path, "gmail=pw\nbanking=secret\nssh=key\n")
     backend = FileVaultBackend(name="dev", path=env, cfg=FileCredentialBackendConfig(expose=["gmail"]))
-    items = await backend.list()
+    items = await backend.search()
     assert len(items) == 1
     assert items[0].name == "gmail"
 
@@ -281,7 +281,7 @@ async def test_yaml_fetch_metadata_without_name(yaml_backend: FileVaultBackend) 
 
 @pytest.mark.asyncio
 async def test_yaml_list_all(yaml_backend: FileVaultBackend) -> None:
-    items = await yaml_backend.list()
+    items = await yaml_backend.search()
     assert len(items) == 3
     paths = {i.vault_path for i in items}
     assert paths == {"dev/gmail", "dev/github-token", "dev/ssh-key"}
@@ -292,14 +292,14 @@ async def test_yaml_list_all(yaml_backend: FileVaultBackend) -> None:
 
 @pytest.mark.asyncio
 async def test_yaml_list_query_matches_name(yaml_backend: FileVaultBackend) -> None:
-    items = await yaml_backend.list("Gmail")
+    items = await yaml_backend.search("Gmail")
     assert len(items) == 1
     assert items[0].name == "Gmail App Password"
 
 
 @pytest.mark.asyncio
 async def test_yaml_list_query_matches_id(yaml_backend: FileVaultBackend) -> None:
-    items = await yaml_backend.list("github")
+    items = await yaml_backend.search("github")
     assert len(items) == 1
     assert items[0].name == "GitHub API Token"
 
@@ -311,7 +311,7 @@ async def test_yaml_exposure_filter(tmp_path: Path) -> None:
         "- id: gmail\n  name: Gmail\n  value: pw\n- id: banking\n  name: Banking Secret\n  value: secret\n",
     )
     backend = FileVaultBackend(name="dev", path=path, cfg=FileCredentialBackendConfig(hide=["banking"]))
-    items = await backend.list()
+    items = await backend.search()
     assert len(items) == 1
     assert items[0].name == "Gmail"
 
@@ -367,7 +367,7 @@ async def test_registry_fetch_no_slash() -> None:
 async def test_registry_list_all(file_backend: FileVaultBackend) -> None:
     reg = CredentialRegistry()
     reg.register("dev", file_backend)
-    items = await reg.list()
+    items = await reg.search()
     assert len(items) == 3
 
 
@@ -375,7 +375,7 @@ async def test_registry_list_all(file_backend: FileVaultBackend) -> None:
 async def test_registry_list_with_query(file_backend: FileVaultBackend) -> None:
     reg = CredentialRegistry()
     reg.register("dev", file_backend)
-    items = await reg.list("gmail")
+    items = await reg.search("gmail")
     assert len(items) == 1
 
 
@@ -392,7 +392,7 @@ async def test_registry_list_multiple_backends(tmp_path: Path) -> None:
     reg = CredentialRegistry()
     reg.register("a", b1)
     reg.register("b", b2)
-    items = await reg.list()
+    items = await reg.search()
     assert len(items) == 2
     paths = {i.vault_path for i in items}
     assert paths == {"a/k1", "b/k2"}
@@ -635,7 +635,7 @@ async def test_bitwarden_list_filters_hidden_and_passes_query() -> None:
     )
     backend._client = fake_client  # type: ignore[assignment]
 
-    items = await backend.list("git")
+    items = await backend.search("git")
     assert [item.vault_path for item in items] == ["bw/visible-id"]
     assert fake_client.calls == [("/list/object/items", {"search": "git"})]
 

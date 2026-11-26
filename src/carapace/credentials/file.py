@@ -153,7 +153,7 @@ class FileVaultBackend:
         secret = self._secrets[identifier]
         return CredentialMetadata(vault_path=self._vault_path(identifier), name=secret.name)
 
-    async def list(self, query: str = "") -> list[CredentialMetadata]:
+    async def search(self, query: str = "") -> list[CredentialMetadata]:
         results: list[CredentialMetadata] = []
         for key in sorted(self._secrets):
             if not is_exposed(key, self._cfg):

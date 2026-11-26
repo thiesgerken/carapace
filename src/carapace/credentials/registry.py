@@ -89,10 +89,10 @@ class CredentialRegistry:
     def backend_names(self) -> list[str]:
         return list(self._backends)
 
-    async def list(self, query: str = "") -> list[CredentialMetadata]:
+    async def search(self, query: str = "") -> list[CredentialMetadata]:
         results: list[CredentialMetadata] = []
         for backend in self._backends.values():
-            results.extend(await backend.list(query))
+            results.extend(await backend.search(query))
         return results
 
     async def close(self) -> None:
@@ -128,8 +128,8 @@ class SessionCredentialRegistry:
         with span("credential", vault_path, fetch="metadata"):
             return await (await self._registry()).fetch_metadata(vault_path)
 
-    async def list(self, query: str = "") -> list[CredentialMetadata]:
-        return await (await self._registry()).list(query)
+    async def search(self, query: str = "") -> list[CredentialMetadata]:
+        return await (await self._registry()).search(query)
 
 
 async def build_credential_registry(

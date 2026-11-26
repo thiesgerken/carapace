@@ -3593,7 +3593,7 @@ def test_sandbox_list_credentials_is_reviewed_by_the_sentinel(client, auth_heade
     )
 
     mock_reg = MagicMock()
-    mock_reg.list = AsyncMock(return_value=[CredentialMetadata(vault_path="dev/key", name="key", description="test")])
+    mock_reg.search = AsyncMock(return_value=[CredentialMetadata(vault_path="dev/key", name="key", description="test")])
     monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
     running = _running_exec("ccred search dev")
     headers = _sandbox_basic_auth(sid)
@@ -3623,7 +3623,7 @@ def test_sandbox_list_credentials_denial_carries_the_explanation(client, auth_he
         return_value=SentinelVerdict(decision="deny", explanation="No credential needed for this task.")
     )
     mock_reg = MagicMock()
-    mock_reg.list = AsyncMock()
+    mock_reg.search = AsyncMock()
     monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
     running = _running_exec("ccred list")
 
@@ -3631,7 +3631,7 @@ def test_sandbox_list_credentials_denial_carries_the_explanation(client, auth_he
 
     assert resp.status_code == 403
     assert resp.text == "Sentinel denied this operation. No credential needed for this task."
-    mock_reg.list.assert_not_awaited()
+    mock_reg.search.assert_not_awaited()
     assert running is not None and running.credentials == set()
 
 
@@ -3640,7 +3640,7 @@ def test_sandbox_list_credentials_backend_error_returns_503(client, auth_headers
     sid = create_resp.json()["session_id"]
 
     mock_reg = MagicMock()
-    mock_reg.list = AsyncMock(side_effect=CredentialBackendError("Bitwarden backend unavailable"))
+    mock_reg.search = AsyncMock(side_effect=CredentialBackendError("Bitwarden backend unavailable"))
     monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
     _running_exec("ccred list", approved={("<list>", None)})
 

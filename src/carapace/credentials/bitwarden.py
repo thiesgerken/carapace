@@ -120,7 +120,7 @@ class BitwardenBackend:
             name=item.get("name", identifier),
         )
 
-    async def list(self, query: str = "") -> list[CredentialMetadata]:
+    async def search(self, query: str = "") -> list[CredentialMetadata]:
         """List items, optionally filtered by search query."""
         params: dict[str, str] | None = {"search": query} if query else None
         resp = await self._get("/list/object/items", operation="list items", params=params)

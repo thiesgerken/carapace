@@ -187,7 +187,7 @@ Manages the knowledge directory as a Git repository. Initialises the repo on sta
 
 ### Credential Registry
 
-Routes `vault_path` identifiers (`<backend>/<id>`) to named credential backends and provides three operations: `list(query)`, `fetch_metadata(vault_path)`, and `fetch(vault_path)`. Backends implement a small protocol (`file` and Bitwarden via `bw serve` are built in), including per-backend exposure rules (`expose` allowlist / `hide` blocklist).
+Routes `vault_path` identifiers (`<backend>/<id>`) to named credential backends and provides three operations: `search(query)`, `fetch_metadata(vault_path)`, and `fetch(vault_path)`. Backends implement a small protocol (`file` and Bitwarden via `bw serve` are built in), including per-backend exposure rules (`expose` allowlist / `hide` blocklist).
 
 Credential reads are sandbox-only: containers call `GET /credentials` and `GET /credentials/{vault_path}` on the sandbox API using their session token. Each fetch is reviewed by the sentinel for the `exec` it comes from (escalated to the user if needed); an approval holds until that exec ends, and every access is appended to the action log as a `credential_access` entry.
 
