@@ -296,7 +296,9 @@ async def _sandbox_facing_host(runtime: ContainerRuntime, config: SandboxConfig,
     if host is None:
         logger.error(
             f"No address at which sandboxes reach this server: it is not a container on the network '{network}'. "
-            "A server outside a container must set CARAPACE_SANDBOX_SERVER_HOST (see docs/sandbox.md)."
+            f"Attach the server container to '{network}' (Compose: the network key "
+            f"'carapace-sandbox-{config.instance}'), or set CARAPACE_SANDBOX_SERVER_HOST, which a server outside a "
+            "container always needs (see docs/sandbox.md#server-address)."
         )
         raise SystemExit(1)
     return host
@@ -535,17 +537,19 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if _config.sandbox.runtime == "docker":
         # Resolve the actual Docker network name once at startup.
         # Docker Compose prefixes networks with the project name, so the logical
-        # name "carapace-sandbox" may be "carapace_carapace-sandbox" in Docker.
+        # name "carapace-sandbox-default" may be "carapace_carapace-sandbox-default" in Docker.
         sandbox_network = await runtime.resolve_self_network_name(sandbox_network)
         if sandbox_network != _config.sandbox.network_name:
             logger.info(f"Resolved sandbox network '{_config.sandbox.network_name}' → '{sandbox_network}'")
 
+    # Before the network is created, so a server without an address exits without leaving one behind.
+    server_host = await _sandbox_facing_host(runtime, _config.sandbox, sandbox_network)
+    logger.info(f"Sandboxes reach this server at {server_host}")
+
+    if _config.sandbox.runtime == "docker":
         # Pre-create the network when not already managed by docker-compose,
         # always as internal so sandbox containers have no direct internet egress.
         await runtime.ensure_network(sandbox_network, internal=True)
-
-    server_host = await _sandbox_facing_host(runtime, _config.sandbox, sandbox_network)
-    logger.info(f"Sandboxes reach this server at {server_host}")
     proxy_port = _config.sandbox.proxy_port
 
     def resolve_session_owner(session_id: str) -> str:

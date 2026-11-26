@@ -448,7 +448,7 @@ sequenceDiagram
 
 carapace runs as a Docker container with the Docker socket mounted (to orchestrate sandbox containers), alongside a Next.js web frontend.
 
-[`docker-compose.yml`](../docker-compose.yml) runs the server, frontend, Postgres, Redis, the Bitwarden CLI and the [skill builder](builder.md) (`builder-init` and `builder`); the server orchestrates sandbox containers on the internal `carapace-sandbox` network.
+[`docker-compose.yml`](../docker-compose.yml) runs the server, frontend, Postgres, Redis, the Bitwarden CLI and the [skill builder](builder.md) (`builder-init` and `builder`); the server orchestrates sandbox containers on the internal `carapace-sandbox-<instance>` network (see [instances](sandbox.md#instances)).
 
 For Kubernetes deployments, the Docker socket is replaced by in-cluster Kubernetes API access — see [kubernetes.md](kubernetes.md).
 

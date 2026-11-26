@@ -74,7 +74,7 @@ class DockerRuntime(ContainerRuntime):
         self._network_name = network_name
         # Maps logical network name → actual Docker network name.
         # Docker Compose prefixes networks with the project name, so
-        # "carapace-sandbox" becomes "carapace_carapace-sandbox".  We resolve
+        # "carapace-sandbox-default" becomes "carapace_carapace-sandbox-default".  We resolve
         # this once and reuse the actual name for all container operations.
         self._network_name_cache: dict[str, str] = {}
         logger.info("Docker runtime connected")
@@ -117,7 +117,7 @@ class DockerRuntime(ContainerRuntime):
     def _ensure_network(self, name: str, *, internal: bool = False) -> str:
         """Ensure the network exists and return its actual Docker name.
 
-        Docker Compose adds a project-name prefix (e.g. ``carapace_carapace-sandbox``).
+        Docker Compose adds a project-name prefix (e.g. ``carapace_carapace-sandbox-default``).
         When the server container is already on that net, we prefer it over
         ``docker network list`` by short name (which can miss the prefixed net).
         """
@@ -579,7 +579,7 @@ class DockerRuntime(ContainerRuntime):
         """Return the actual Docker network name this container is attached to.
 
         Docker Compose prefixes network names with the project name, so the
-        logical name ``carapace-sandbox`` becomes ``carapace_carapace-sandbox``.
+        logical name ``carapace-sandbox-default`` becomes ``carapace_carapace-sandbox-default``.
         This method inspects the current container's ``NetworkSettings`` to find
         the real name, falling back to ``logical_name`` when not running inside
         Docker or no match is found.

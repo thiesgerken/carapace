@@ -840,6 +840,21 @@ async def test_sandbox_facing_host_refuses_to_start_a_server_outside_a_container
 
 
 @pytest.mark.anyio
+async def test_lifespan_without_a_sandbox_address_exits_before_creating_the_network(tmp_path, monkeypatch):
+    _patch_lifespan_dependencies(tmp_path, monkeypatch)
+    runtime = srv._create_sandbox_runtime(srv.build_config(), tmp_path)
+    runtime.get_host_ip = AsyncMock(return_value=None)
+    runtime.ensure_network = AsyncMock()
+    monkeypatch.setattr(srv, "_create_sandbox_runtime", lambda _config, _data_dir: runtime)
+
+    with pytest.raises(SystemExit):
+        async with srv._lifespan(app):
+            pass
+
+    runtime.ensure_network.assert_not_awaited()
+
+
+@pytest.mark.anyio
 async def test_lifespan_refuses_to_start_when_a_sandbox_has_direct_egress(tmp_path, monkeypatch):
     sandbox_mgr = _patch_lifespan_dependencies(tmp_path, monkeypatch)
     sandbox_mgr.verify_no_direct_egress.side_effect = EgressCheckError(["DNS lookup of example.com succeeded"])
