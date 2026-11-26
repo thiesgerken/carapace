@@ -172,14 +172,27 @@ async def build_skill(source: Path, key: str, skill: str, system: str, roots: Pa
     )
 
 
-async def update_input(source: Path, name: str, out: Path) -> InputUpdate:
+async def update_input(source: Path, name: str, out: Path, store: Path) -> InputUpdate:
     """The lock of the skills flake in *source* after `nix flake update <name>`, written to *out*, not *source*.
 
     Only that input moves, so nixpkgs and carapace stay as locked, and one input that cannot be fetched
     does not hide the others' updates. An input pinned to a rev or tag never moves.
+
+    Fetches go to the throwaway *store*, not the daemon's: an update locks whatever a local skill's
+    flake.nix names, unlocked `path:/…` inputs included, and the shared store is what the binary cache
+    serves. Builds never fetch those, since they refuse to change the lock.
     """
     code, _, log = await _run(
-        "nix", "flake", "update", name, "--flake", f"path:{source}", "--output-lock-file", str(out)
+        "nix",
+        "flake",
+        "update",
+        name,
+        "--flake",
+        f"path:{source}",
+        "--output-lock-file",
+        str(out),
+        "--store",
+        str(store),
     )
     if code != 0:
         return InputUpdate(log_tail=_tail(log))

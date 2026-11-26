@@ -120,7 +120,10 @@ def create_app(token: str, store: SkillStore, system: str, cache_public_keys: li
             _extract(archive, source)
             logger.info(f"Checking skill inputs for updates: {', '.join(inputs)}")
             return UpdatedLocks(
-                inputs={name: await nix.update_input(source, name, Path(work) / f"{name}.lock") for name in inputs}
+                inputs={
+                    name: await nix.update_input(source, name, Path(work) / f"{name}.lock", Path(work) / "store")
+                    for name in inputs
+                }
             )
 
     @app.put("/roots", status_code=status.HTTP_204_NO_CONTENT, dependencies=authorized)

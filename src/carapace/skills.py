@@ -50,6 +50,9 @@ def parse_skills_lock(text: str) -> list[ListedSkill]:
         lock = json.loads(text)
         nodes = lock["nodes"]
         inputs = nodes[lock["root"]].get("inputs", {})
+        for node_id, node in nodes.items():
+            if node_id != lock["root"]:
+                _refuse_builder_local(node_id, node)
         skills = [
             _listed_skill(name, nodes[node]) for name, node in sorted(inputs.items()) if name not in _SHARED_INPUTS
         ]
@@ -92,9 +95,24 @@ def flake_ref(attributes: dict[str, Any]) -> str:
     return f"{base}?{urlencode(query, safe='/')}" if query else base
 
 
+def _refuse_builder_local(node_id: str, node: dict[str, Any]) -> None:
+    """Any node, nested ones and nixpkgs included: a path on the builder's own disk would read the builder,
+    not this repo, and land in the shared store the binary cache serves."""
+    for attributes in (node["locked"], node.get("original") or {}):
+        if (
+            (attributes.get("type") == "path" and str(attributes.get("path", "")).startswith("/"))
+            or attributes.get("type") == "file"
+            or str(attributes.get("url", "")).startswith("file:")
+        ):
+            raise SkillsFlakeError(
+                f"input {node_id}: an absolute path, file: or git+file: input reads the builder's disk; "
+                "use path:./<dir> for a skill in this repo or a remote flake reference"
+            )
+
+
 def _local_directory(name: str, node: dict[str, Any]) -> PurePosixPath | None:
     locked = node["locked"]
-    if locked["type"] != "path" or locked["path"].startswith("/"):
+    if locked["type"] != "path":
         return None
     directory = posixpath.normpath(locked["path"])
     if directory == "." or directory.startswith(".."):

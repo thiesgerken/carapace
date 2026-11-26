@@ -100,8 +100,12 @@ class _HeadSkill:
 
     name: str
     key: str
-    # The skills/ tree at HEAD, which the builder gets as an archive.
+    # The skills/ tree at HEAD, which the builder gets part of as an archive.
     skills_tree: str
+    # The skill's directory below skills/; None for a flake from elsewhere.
+    directory: str | None
+    # Whether skills/ has a config.json, which the builder gets along for the manifest.
+    config: bool
 
 
 _BUILDING = _Outcome(state="building")
@@ -312,7 +316,15 @@ async def _build_outcome(
             looked_up.set()
         if result is None:
             try:
-                archive = await archive_skills(repo_dir, skill.skills_tree)
+                # Only what the key covers: results are shared between users with the same key, so a skill
+                # that reads another directory of skills/ must fail rather than build from someone's tree.
+                paths = [
+                    "flake.nix",
+                    "flake.lock",
+                    *(["config.json"] if skill.config else []),
+                    *([skill.directory] if skill.directory else []),
+                ]
+                archive = await archive_skills(repo_dir, skill.skills_tree, *paths)
             except RuntimeError as exc:
                 return _Outcome(state="failed", detail=str(exc))
             result = await builder.build(skill.key, skill.name, archive, retry=retry)
@@ -413,10 +425,13 @@ async def _skills_at_head(repo_dir: Path) -> list[_HeadSkill]:
         return []
     skills: list[_HeadSkill] = []
     for skill in head.skills:
-        # A missing directory keys as empty; the builder then reports what Nix says about it.
-        directory = await object_id(repo_dir, f"HEAD:skills/{skill.directory}") if skill.directory else ""
+        # A missing directory keys as empty; archiving it then fails and says why.
+        directory = await object_id(repo_dir, f"{head.tree}:{skill.directory}") if skill.directory else ""
         key = build_key(skill.name, head.flake, head.lock, head.config, directory)
-        skills.append(_HeadSkill(name=skill.name, key=key, skills_tree=head.tree))
+        local = str(skill.directory) if skill.directory is not None else None
+        skills.append(
+            _HeadSkill(name=skill.name, key=key, skills_tree=head.tree, directory=local, config=bool(head.config))
+        )
     return skills
 
 
@@ -429,7 +444,6 @@ def build_key(skill: str, flake: str, lock: str, config: str, directory: str) ->
     A change to config.json re-keys every skill, but builds nothing new: the packages do not depend on it,
     only the manifests the builder evaluates again.
     """
-    # ponytail: a local skill that reads files outside its own directory is not re-keyed when they change;
-    # key on the whole skills/ tree if that ever matters. Same for config.json: key on each skill's entry
-    # if re-evaluating every manifest on a settings change gets slow.
+    # Exactly what the builder gets (`_build_outcome` archives these paths), so a key cannot hide a change.
+    # A config.json change re-evaluates every manifest; key on each skill's entry if that ever gets slow.
     return hashlib.sha256("\0".join([skill, flake, lock, config, directory]).encode()).hexdigest()

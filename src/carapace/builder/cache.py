@@ -33,8 +33,8 @@ class _UpstreamError(Exception):
 async def _refuse_internal_redirect(response: httpx.Response) -> None:
     """Follow an upstream's redirect only to a public https host.
 
-    The builder has unrestricted egress, so a redirect to an internal address would stream that
-    response into a sandbox. The target is resolved here and again when httpx connects, so a DNS
+    Only the Kubernetes chart limits the builder's egress, so a redirect to an internal address would
+    stream that response into a sandbox. The target is resolved here and again when httpx connects, so a DNS
     answer that changes in between still gets through; this needs a malicious upstream to begin with.
     """
     if not response.has_redirect_location:

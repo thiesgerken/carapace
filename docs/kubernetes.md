@@ -345,7 +345,7 @@ The included `networkpolicy.yaml` restricts sandbox pods:
 
 This mirrors the Docker setup where sandbox containers are on an internal network with no direct internet access.
 
-A second policy, in the builder namespace, covers the [skill builder](builder.md#kubernetes): ingress only from the server pod, on ports 8330 (build API) and 8331 (binary cache). Sandboxes reach the cache only through the server's session proxy, never directly. If the release namespace restricts egress, the server needs egress rules to the API server and the builder namespace (see [builder](builder.md#kubernetes)).
+Two more policies, in the builder namespace, cover the [skill builder](builder.md#kubernetes). The first allows ingress only from the server pod, on ports 8330 (build API) and 8331 (binary cache); sandboxes reach the cache only through the server's session proxy, never directly. The second allows the builder's egress to DNS and the internet, but not to private, cluster-internal or link-local addresses. A binary cache or other substituter in your own network has to be listed in `builder.egress.allowedCidrs` ([egress](builder.md#egress-on-kubernetes)). If the release namespace restricts egress, the server needs egress rules to the API server and the builder namespace (see [builder](builder.md#kubernetes)).
 
 > **⚠️ SECURITY WARNING — NetworkPolicy is critical to carapace's security model**
 >
