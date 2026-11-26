@@ -1,7 +1,7 @@
 # Functions a skill flake uses to package its commands. See docs/skill-flakes.md.
 #
-# Skills pin a released Carapace commit and keep using these functions after Carapace moves on, so
-# their arguments only grow, and the wrappers keep to the `cgate`/`ccred` contract in docs/sandbox.md.
+# Skills pin a Carapace commit and keep using these functions after Carapace moves on, so the wrappers
+# keep to the `cgate`/`ccred` contract in docs/sandbox.md.
 {
   pkgs,
   pyproject-nix,
@@ -103,12 +103,17 @@ let
     '';
 in
 {
-  # The skill's package: nothing but one wrapper per command in bin/, so skills never collide on
-  # interpreters or libraries in the session profile. The declarations travel as `passthru.carapace`,
-  # which the builder evaluates without building anything.
+  # The skill's package: one wrapper per command in bin/, so skills never collide on interpreters or
+  # libraries in the session profile, and a reference to the skill directory (SKILL.md, scripts,
+  # references), which brings it into every sandbox that installs the commands. The declarations travel as
+  # `passthru.carapace`, which the builder evaluates without building anything; its `skillDir` is
+  # already in the store after that evaluation, so SKILL.md can be read before the commands are built.
+  #
+  #   mkSkill { name = "notes"; src = ./.; }   # instructions only
   #
   #   mkSkill {
   #     name = "weather";
+  #     src = ./.;
   #     needs = { domains = [ "api.example.com" ]; credentials.WEATHER_TOKEN = "personal/weather"; };
   #     commands.weather = { exec = "${env}/bin/weather"; description = "Current weather"; };
   #     commands.weather-offline = { exec = "..."; description = "..."; needs = { domains = [ ]; }; };
@@ -116,10 +121,17 @@ in
   mkSkill =
     {
       name,
-      commands,
+      src,
+      commands ? { },
       needs ? { },
     }:
     let
+      # A store path of its own: with a `path:` input `src` lies inside the whole skills tree, which
+      # would otherwise come along and change with every other skill.
+      skillDir = builtins.path {
+        path = src;
+        name = "skill-${name}-src";
+      };
       declared = lib.mapAttrs (cmd: command: {
         inherit (command) description;
         needs = needsOf "skill ${name}, command ${cmd}" needs command;
@@ -131,12 +143,16 @@ in
       {
         passthru.carapace = {
           inherit name;
+          skillDir = "${skillDir}";
           commands = declared;
         };
       }
       (
         ''
-          mkdir -p $out/bin
+          mkdir -p $out/bin $out/share/carapace
+          # A file named after the package, not a link: the session profile merges linked directories
+          # and refuses two skills with a SKILL.md, even the same one.
+          echo ${skillDir} > "$out/share/carapace/skill-dir-$(basename $out)"
         ''
         + lib.concatStrings (
           lib.mapAttrsToList (cmd: command: ''

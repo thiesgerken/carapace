@@ -10,9 +10,11 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .models import BuildResult
+from .skill_dir import SkillFileError, checked_skill_dir, list_files, read_file
 
 LOG_TAIL_CHARS = 16_000
 
@@ -80,8 +82,38 @@ async def collect_garbage() -> str:
     return _tail(stdout + stderr)
 
 
-def _failed(key: str, skill: str, log: str) -> BuildResult:
-    return BuildResult(key=key, skill=skill, state="failed", log_tail=_tail(log))
+@dataclass(frozen=True, slots=True)
+class _SkillDocs:
+    skill_dir: str | None = None
+    skill_md: str | None = None
+    skill_files: list[str] = field(default_factory=list)
+
+
+_NO_DOCS = _SkillDocs()
+
+
+def _failed(key: str, skill: str, log: str, docs: _SkillDocs = _NO_DOCS) -> BuildResult:
+    return BuildResult(
+        key=key,
+        skill=skill,
+        state="failed",
+        log_tail=_tail(log),
+        skill_dir=docs.skill_dir,
+        skill_md=docs.skill_md,
+        skill_files=docs.skill_files,
+    )
+
+
+def _skill_docs(metadata: object) -> _SkillDocs:
+    """The skill directory the metadata names, its SKILL.md and its file list."""
+    skill_dir = checked_skill_dir(metadata)
+    if skill_dir is None:
+        return _SkillDocs()
+    try:
+        skill_md: str | None = read_file(skill_dir, "SKILL.md").decode()
+    except FileNotFoundError:
+        skill_md = None
+    return _SkillDocs(skill_dir=skill_dir, skill_md=skill_md, skill_files=list_files(skill_dir))
 
 
 async def build_skill(source: Path, key: str, skill: str, system: str, roots: Path) -> BuildResult:
@@ -99,6 +131,10 @@ async def build_skill(source: Path, key: str, skill: str, system: str, roots: Pa
     if code != 0:
         return _failed(key, skill, eval_log)
     metadata = json.loads(stdout)
+    try:
+        docs = _skill_docs(metadata)
+    except (SkillFileError, OSError, UnicodeDecodeError) as exc:
+        return _failed(key, skill, f"Cannot read the skill directory: {exc}")
     code, stdout, build_log = await _run(
         "nix",
         "build",
@@ -111,8 +147,16 @@ async def build_skill(source: Path, key: str, skill: str, system: str, roots: Pa
         package,
     )
     if code != 0:
-        return _failed(key, skill, build_log)
+        return _failed(key, skill, build_log, docs)
     store_paths = [path for built in json.loads(stdout) for path in built["outputs"].values()]
     return BuildResult(
-        key=key, skill=skill, state="succeeded", store_paths=store_paths, metadata=metadata, log_tail=_tail(build_log)
+        key=key,
+        skill=skill,
+        state="succeeded",
+        store_paths=store_paths,
+        metadata=metadata,
+        log_tail=_tail(build_log),
+        skill_dir=docs.skill_dir,
+        skill_md=docs.skill_md,
+        skill_files=docs.skill_files,
     )

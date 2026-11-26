@@ -2,7 +2,7 @@
 
 carapace uses the open [AgentSkills](https://agentskills.io/) format for skills. This makes skills portable to any AgentSkills-compatible agent (Claude Code, Cursor, Gemini CLI, etc.) while carapace adds its own security layer on top.
 
-A skill with commands is a Nix flake that the Carapace builder builds; [skill-flakes.md](skill-flakes.md) describes how to write one. Its commands are on the agent's `PATH` in every session, and they ask for what they need when they start.
+Every skill is a Nix flake that the Carapace builder builds; [skill-flakes.md](skill-flakes.md) describes how to write one. The server reads its `SKILL.md` from the build, its commands are on the agent's `PATH` in every session, and they ask for what they need when they start.
 
 ## Skill structure
 
@@ -64,20 +64,23 @@ The agent calls `read_skill(skill_name)` before it uses a skill. Nothing is acti
 
 `read_skill` returns:
 
-- the full `SKILL.md`,
+- the full `SKILL.md`, from the build,
 - the skill's commands with their descriptions and what each one asks for when it starts (domains, credentials, OAuth tokens), read from the build's `passthru.carapace`,
 - whether the commands are on `PATH`; if not, why: the build failed (with the end of its log), the builder is unavailable, two skills expose the same command name, or the profile sync failed,
+- where the skill's other files (scripts, references) are in the sandbox: the skill directory's store path, read-only, with the list of files,
 - for each MCP server among them, its tools: `read_skill` runs `<server> --list-tools` in the sandbox, every time (nothing is cached). That is an `exec` like any other: the command asks for the server's domain and credentials with `cgate`, and the sentinel decides. Like every `exec`, it first ends processes earlier commands left behind, and `read_skill` says so when it did. A denied listing or an unreachable server is reported with the reason, and the rest of the result still comes back (the `skill` span `list tools`).
 
 It waits until the commands are usable. While the skill builds, it waits for the build (a `skill` span `build wait` in the turn's timeline); then it brings the sandbox's [skill profile](sandbox.md#skill-commands-on-path) to the current head and waits for that too (the `skill` span `profile sync`). Both spans nest under the `read_skill` call, and the chat hears them start and end as [`span` messages](websocket-session.md#span).
 
-`read_skill` finds only skills that `skills/flake.nix` lists in the server's copy of the repo; for any other name it says how to list one.
+`read_skill` finds only skills that `skills/flake.nix` lists at the pushed `HEAD`; for any other name it says how to list one. A skill whose build ended before `SKILL.md` could be read (an evaluation error) returns the reason instead.
 
 Like every tool, the `read_skill` call itself is not reviewed, but it is in the action log, so the sentinel knows which skill the requests that follow belong to.
 
 ## Discovery (progressive disclosure)
 
-At startup, carapace loads only the `description` from the frontmatter of each skill `skills/flake.nix` lists (~100 tokens per skill). These are injected into the agent's system prompt as a skill catalog, each under the skill's attribute name. The agent sees what's available without the full instructions consuming context. The server reads the list from `skills/flake.lock`, not by evaluating Nix. A skill from another flake (not a `path:` input) has no `SKILL.md` in the repo, so it is not in the catalog yet.
+The agent's system prompt lists every skill `skills/flake.nix` lists, each under its attribute name with the `description` from its `SKILL.md` frontmatter (~100 tokens per skill). The agent sees what's available without the full instructions consuming context. The server reads the list from `skills/flake.lock`, not by evaluating Nix, and the descriptions from the builds: the builder reads `SKILL.md` from the skill directory right after evaluating the skill, before its commands build. Local skills and skills from other flakes take the same path.
+
+The server gets `SKILL.md` with the build result. While a changed skill builds, or after its rebuild failed before reading `SKILL.md`, the catalog keeps the description of its last succeeded build; only a skill that was never built says it is being built (or that the builder cannot be reached). Each session takes its catalog once, on its first turn, and keeps it like the memory block until `/compact` ([persistent-context.md](persistent-context.md#known-breaks)); `/skills` shows that same catalog. A skill pushed mid-session is not in the catalog until then, but `read_skill` finds it by name right away. After a server restart, taking a catalog waits briefly for the builder to say which results it already has.
 
 The full `SKILL.md` is loaded only when the agent decides a skill is relevant, with `read_skill`.
 
@@ -85,11 +88,11 @@ The full `SKILL.md` is loaded only when the agent decides a skill is relevant, w
 
 A `SKILL.md` without frontmatter is valid. A skill's name is always its attribute in `skills/flake.nix`, whatever `name` says. Frontmatter that cannot be read (invalid YAML such as an unquoted value containing a colon followed by a space, a missing closing `---`, a non-string `name` or `description`, a non-mapping `metadata`) or an invalid `metadata.carapace` makes the skill broken:
 
-- The catalog still lists it, with a description that says it is broken and why, so the agent can fix it. The server logs the error. A listed local skill without a `SKILL.md` is listed as broken too.
+- The catalog still lists it, with a description that says it is broken and why, so the agent can fix it. A skill whose build has no `SKILL.md` is listed as broken too.
 - `read_skill` returns the error together with the file's text.
 - The Knowledge UI shows the error on the skill card; for invalid YAML it renders the raw file.
 
-The build does not read `SKILL.md`, so a broken one does not stop the skill's commands.
+Nix does not read `SKILL.md`, so a broken one does not stop the skill's commands.
 
 ## Building skills
 
@@ -98,29 +101,29 @@ What is built ends up on the agent's `PATH`; see [sandbox.md](sandbox.md#skill-c
 Every skill `skills/flake.nix` lists is built by the [builder](builder.md), each attribute on its own, so a broken skill does not stop the others.
 
 - **When.** Every result belongs to a build key: a hash of the skill's attribute name, the Git ids of `skills/flake.nix` and `skills/flake.lock`, and the Git tree of the skill's own directory (none for a skill from another flake, which the lock pins). A skill is built once per key. After a sandbox push is accepted, the server builds the skills at the new head whose key has no result yet: editing one local skill rebuilds only that skill, a change to `skills/flake.nix` or its lock rebuilds every skill. Content that arrived another way (a pull from upstream, the Knowledge UI, bootstrap seeding) is built when something first asks for it. Nothing waits for a build: a push is never held up or rejected by one.
-- **What the server knows.** Per build key: building, built (store paths and the commands from `passthru.carapace`), failed (the end of the build log, or why the builder refused the skill or it could not be archived), or unavailable (no builder configured, or the builder unreachable, answering 5xx or rejecting the server's token; every request asks again). A failed build stays failed until it is retried. A package without valid `mkSkill` metadata counts as failed. Results are shared between users with the same key, and the builder keeps them across server restarts.
+- **What the server knows.** Per build key: building, built (store paths, the commands from `passthru.carapace`, and the skill directory's `SKILL.md` and file list), failed (the end of the build log, or why the builder refused the skill or it could not be archived), or unavailable (no builder configured, or the builder unreachable, answering 5xx or rejecting the server's token; every request asks again). A failed build stays failed until it is retried. A package without valid `mkSkill` metadata counts as failed, and so does one whose metadata names no skill directory (helpers whose `mkSkill` takes no `src`). A failed build keeps the `SKILL.md` it read, if it got that far. Results are shared between users with the same key, and the builder keeps them across server restarts.
 - **What it reads.** `skills/` at `HEAD`, from Git objects rather than the working tree, so the keys and the archive the builder gets (the whole `skills/` directory, which relative `path:` inputs need) describe the same content.
 - **Where users see it.** The Knowledge view of a listed skill's directory shows its build: state, the short build key, the built commands with the domains they declare, and for a failed or unavailable build the end of the log. Opening the view starts the build of a key that has none yet, and the view follows a running build. A failed build has a Retry button (`POST /api/knowledge/skills/<name>/build/retry`), which builds the same key again; anything but a failed build answers 409. Without a usable `skills/flake.nix` (missing, or its lock missing or unreadable) the Knowledge view says so on the repo root and on `skills/`, with the command that fixes it. Waiting for a build and syncing the session profile show up in the turn timeline as `skill` spans (`build wait`, `profile sync`).
-- **The catalog stays out of it.** The skill catalog is read from frontmatter only, never waits for the builder and never contains build state, because it is part of the cached prompt prefix ([persistent-context.md](persistent-context.md)).
+- **The catalog.** It never waits for a build, and it shows build state only for a skill that was never built, because it is part of the cached prompt prefix ([persistent-context.md](persistent-context.md#known-breaks)). A re-keyed skill keeps the description of its last succeeded build until the new one is done, and the session profile keeps its commands ([sandbox.md](sandbox.md#skill-commands-on-path)).
 
 ## Reading a skill as a security event
 
 A `read_skill` call is not reviewed and lands in the action log like any other tool call, so the sentinel knows which skill the agent has in mind when the next boundary request arrives. Reading grants nothing.
 
-The sentinel can also read skill files directly (via its `list_skill_files` and `read_skill_file` tools) to understand what a skill's command will actually do, and which other skills a skill builds on. A skill that relies on another one for access (e.g. repo access through a gitea skill) should say so in its `SKILL.md`, ideally already in the `description`.
+The sentinel can also read skill files directly (via its `list_skill_files` and `read_skill_file` tools, served by the builder from the skill directory of the build at `HEAD`, or of the skill's last succeeded build while the current one runs) to understand what a skill's command will actually do, and which other skills a skill builds on. A skill that relies on another one for access (e.g. repo access through a gitea skill) should say so in its `SKILL.md`, ideally already in the `description`.
 
 ## Self-improvement
 
-The agent can create new skills by writing files to `/workspace/skills/` in the sandbox (`SKILL.md`, and a flake with its sources for commands) and then committing and pushing them via Git.
+The agent can create new skills by writing files to `/workspace/skills/` in the sandbox (`SKILL.md`, a flake, and the sources of its commands), listing the skill in `skills/flake.nix`, and then committing and pushing them via Git.
 
 The workflow for the agent to create a skill via chat:
 
 1. User asks for a new skill (or the agent proposes one)
-2. Agent plans the skill (`SKILL.md`, and for commands a flake with its sources)
+2. Agent plans the skill (`SKILL.md`, a flake, and for commands their sources)
 3. Agent writes the files in the sandbox at `/workspace/skills/<skill-name>/`, adds the skill's input to `skills/flake.nix` and runs `nix flake lock ./skills`
 4. Agent tests the skill in the sandbox (`nix shell path:./skills/<name> -c <command>`)
 5. Agent commits and pushes via Git (the skill, `skills/flake.nix` and its lock); the sentinel evaluates the push via the pre-receive hook
-6. On approval, the skill is persisted in the workspace repository, the builder builds it, and its commands reach `PATH` in every session; new sessions also list it in their catalog
+6. On approval, the skill is persisted in the workspace repository, the builder builds it, and its commands reach `PATH` in every session, `read_skill` finds it at once, and new sessions list it in their catalog
 
 A built-in `create-skill` skill is seeded into every new knowledge repo to guide the agent through this process; like any skill, the agent can use it once `skills/flake.nix` lists it ([Bundled skills](#bundled-skills)).
 

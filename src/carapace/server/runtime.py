@@ -327,7 +327,6 @@ class KnowledgeGitRuntime:
             if not handle.git_store.remote_configured:
                 return False, "No external remote configured."
             summary = await handle.git_store.pull_from_remote()
-            handle.skill_registry.invalidate()
             return True, summary
 
     async def push_for_user(self, owner: str) -> tuple[bool, str]:

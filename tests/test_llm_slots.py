@@ -9,6 +9,7 @@ from pydantic_ai.messages import ModelRequest, TextPart, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.test import TestModel
 
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.config import build_config
 from carapace.llm import SlotLimitedModel
 from carapace.security.sentinel import Sentinel, SentinelDeps
@@ -80,6 +81,11 @@ def test_turns_waiting_outside_model_requests_do_not_block_other_sessions(tmp_pa
                 await asyncio.sleep(0.05)
 
         try:
+            # A turn start looks at the skills at head first (a few git calls), so give it time under load.
+            for _ in range(100):
+                if subscribers["answer me"].done_messages:
+                    break
+                await asyncio.sleep(0.05)
             assert [content for content, _usage in subscribers["answer me"].done_messages] == ["ok"]
         finally:
             parked.set()
@@ -96,15 +102,13 @@ def test_sentinel_requests_take_an_llm_slot(tmp_path: Path) -> None:
             model="test:model",
             user="thies",
             knowledge_dir=tmp_path,
-            skills_dir=tmp_path / "skills",
+            skill_builds=SkillBuilds(None),
             llm_slots=slots,
             model_factory=lambda _name, *, user: TestModel(),
         )
 
         await slots.acquire()
-        run = asyncio.create_task(
-            sentinel.agent.run("review", deps=SentinelDeps(tmp_path / "skills", agent_reads_verdict=True))
-        )
+        run = asyncio.create_task(sentinel.agent.run("review", deps=SentinelDeps(agent_reads_verdict=True)))
         await asyncio.sleep(0.01)
         assert not run.done()
 

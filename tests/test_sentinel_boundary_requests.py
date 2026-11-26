@@ -11,6 +11,7 @@ import pytest
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo
 
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.models.credentials import CredentialMetadata
 from carapace.security import evaluate_credential_listing_with, evaluate_upfront_request_with, record_tool_call
 from carapace.security.context import (
@@ -48,7 +49,7 @@ def _sentinel(tmp_path: Path, model: _AllowingModel) -> Sentinel:
         model="test:model",
         user="thies",
         knowledge_dir=tmp_path,
-        skills_dir=tmp_path / "skills",
+        skill_builds=SkillBuilds(None),
         llm_slots=None,
         model_factory=lambda _name, *, user: ReplayStreamModel(model),
     )

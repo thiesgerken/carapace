@@ -20,6 +20,7 @@
         {
           default = skill.mkSkill {
             name = "ferret";
+            src = ./.;
             commands = skill.mcpCommands {
               ferret = {
                 # Your deployment's HTTPS /mcp endpoint (SETUP.md).

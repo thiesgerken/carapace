@@ -20,7 +20,6 @@ def _repo_handle(knowledge_dir: Path, *, git_store: GitStore, owner: str = "thie
         owner=owner,
         knowledge_dir=knowledge_dir,
         git_store=git_store,
-        skill_registry=MagicMock(),
     )
 
 
@@ -127,7 +126,6 @@ async def test_archive_service_routes_snapshot_to_owner_specific_repo(tmp_path, 
         owner="ada",
         knowledge_dir=tmp_path / "knowledges" / "ada",
         git_store=owner_git_store,
-        skill_registry=MagicMock(),
     )
     service = _archive_service(
         mgr,

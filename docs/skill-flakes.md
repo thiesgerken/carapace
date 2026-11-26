@@ -1,6 +1,6 @@
 # Skill flakes
 
-A skill that has commands is a Nix flake: `flake.nix` and `flake.lock` live in the skill directory next to its `SKILL.md`. The flake's package holds one wrapper per command, nothing else. The Carapace builder builds it whenever the skill changes, and every session gets the commands on its `PATH`. The knowledge repo lists its skills in [`skills/flake.nix`](#the-skills-flake); a skill directory that is not listed there is not a skill.
+Every skill is a Nix flake: `flake.nix` and `flake.lock` live in the skill directory next to its `SKILL.md`. The flake's package holds one wrapper per command and a reference to the skill directory. The Carapace builder builds it whenever the skill changes; the server reads `SKILL.md` from the build, and every session gets the commands on its `PATH` and the skill directory in its store. The knowledge repo lists its skills in [`skills/flake.nix`](#the-skills-flake); a skill directory that is not listed there is not a skill. A skill that only carries instructions is a [flake of a few lines](#skills-with-only-instructions).
 
 The functions below come from the skills subflake of the Carapace repo, `github:thiesgerken/carapace?dir=nix/skills` ([`nix/skills/flake.nix`](../nix/skills/flake.nix)). It has only `nixpkgs` and the uv2nix stack as inputs, so a skill's `flake.lock` stays small. Three working examples live in [`nix/skills/examples`](../nix/skills/examples): uv, npm and plain nixpkgs. CI builds them against the helpers of the current checkout. The bundled skills with commands (`src/carapace/assets/skills`) are flakes too; CI builds them both against the commit their `flake.lock` pins and against the current helpers.
 
@@ -29,6 +29,7 @@ The functions below come from the skills subflake of the Carapace repo, `github:
         {
           default = skill.mkSkill {
             name = "weather";
+            src = ./.;
             needs = {
               domains = [ "api.example.com" ];
               credentials.WEATHER_TOKEN = "personal/weather-token";
@@ -55,7 +56,7 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 ```
 
 - Built standalone (`nix build path:<dir>`), a skill uses its own `flake.lock`. Built through [`skills/flake.nix`](#the-skills-flake), as the builder does, its `nixpkgs` and `carapace` follow the ones that file pins, so every skill of a repo shares them. `inputs.nixpkgs.follows` makes the Carapace helpers use the same `nixpkgs`.
-- `carapace` pins a released Carapace commit. The helpers keep working when Carapace moves on, because their arguments only grow.
+- `carapace` pins a Carapace commit. The wrappers keep working when Carapace moves on. Helpers whose `mkSkill` takes no `src` build packages without `skillDir`, which the server cannot read: such a skill shows as failed until the pin moves.
 - `flake.lock` must be committed and complete: the builder never writes locks. Run `nix flake lock` after changing inputs.
 - Evaluation runs with import-from-derivation off, which all helpers support.
 - `forSkillSystems` covers `x86_64-linux` and `aarch64-linux`, the architectures sandboxes run on.
@@ -114,7 +115,7 @@ To turn a skill off, remove its input and lock again.
 
 ## Commands and what they need
 
-`mkSkill { name, commands, needs ? { } }` builds the package. Each command has:
+`mkSkill { name, src, commands ? { }, needs ? { } }` builds the package. `src` is the skill directory, normally `./.`: it becomes a store path of its own, referenced by the package, so the sandbox gets `SKILL.md`, scripts and references together with the commands. Each command has:
 
 - `exec`: what the wrapper runs, with the wrapper's arguments appended. It is shell words, not quoted for you: it gets word-split and expanded, which is what lets a store path carry fixed arguments (`"${pkgs.nodejs}/bin/node ${app}/src/main.mjs"`). A path with spaces needs its own quoting.
 - `description`: one short line, shown to the agent.
@@ -151,6 +152,7 @@ nix eval --json 'path:<skill dir>#packages.x86_64-linux.default.carapace'
 ```json
 {
   "name": "weather",
+  "skillDir": "/nix/store/…-skill-weather-src",
   "commands": {
     "weather": {
       "description": "Current weather for a city",
@@ -171,10 +173,40 @@ nix eval --json 'path:<skill dir>#packages.x86_64-linux.default.carapace'
 }
 ```
 
+- `skillDir` is the store path of `src`. The evaluation already copies it into the store, so the builder can read `SKILL.md` from it before the commands are built.
 - `commands` has one entry per wrapper in `bin/`, under the same name.
 - `needs` is already resolved: the skill-wide default with the command's override applied, every kind present.
 - `mcp` is `true` for a command made by `mcpCommands`; `read_skill` lists its tools. Packages built with an older `mkSkill` have no `mcp`, which counts as `false`.
 - The builder passes this on as opaque JSON; the server reads it. Fields are only ever added.
+
+## Skills with only instructions
+
+A skill without commands still needs a flake, so that it is built and listed like any other:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+    carapace = {
+      url = "github:thiesgerken/carapace?dir=nix/skills";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs =
+    { nixpkgs, carapace, ... }:
+    {
+      packages = carapace.lib.forSkillSystems (system: {
+        default = (carapace.lib.skill nixpkgs.legacyPackages.${system}).mkSkill {
+          name = "notes";
+          src = ./.;
+        };
+      });
+    };
+}
+```
+
+Its package has an empty `bin/` and the reference to the skill directory. The bundled `artifacts`, `mermaid`, `create-skill` and `credentials` skills are built this way.
 
 ## MCP servers
 

@@ -82,10 +82,22 @@ These mistakes make skills harder to discover or use:
 
 ## Standard Skill Layout
 
-Skills live under `skills/` in the knowledge repo. A skill without commands is a directory with a `SKILL.md`. A skill with commands is also a Nix flake: `flake.nix` and `flake.lock` next to `SKILL.md`, plus the code and its lock files.
+Skills live under `skills/` in the knowledge repo. Every skill is a Nix flake: `flake.nix` and `flake.lock` next to `SKILL.md`, plus the code and its lock files if it has commands. A skill with only instructions needs just the flake of a few lines from docs/skill-flakes.md ("Skills with only instructions"): `mkSkill { name = "my-skill"; src = ./.; }`.
+
+Every skill is listed in `skills/flake.nix`, one input per skill, and its attribute name there is the skill's name:
+
+```nix
+inputs.my-skill = {
+  url = "path:./my-skill";
+  inputs.nixpkgs.follows = "nixpkgs";
+  inputs.carapace.follows = "carapace";
+};
+```
 
 ```text
 skills/
+  flake.nix          # lists every skill
+  flake.lock         # committed; update it with the skill
   my-skill/
     SKILL.md
     flake.nix        # commands, what they need, how they are built
@@ -113,7 +125,7 @@ description: What this skill does and when to use it. Be specific.
 
 `name` rules:
 
-- must match the parent directory name exactly
+- must match the parent directory name and the attribute name in `skills/flake.nix`
 - lowercase letters, numbers, and hyphens only
 - no consecutive hyphens, no leading or trailing hyphen
 - max 64 characters
@@ -190,6 +202,7 @@ The Carapace builder builds the flake whenever the skill changes on the server, 
         {
           default = skill.mkSkill {
             name = "my-skill";
+            src = ./.;
             needs = {
               domains = [ "api.example.com" ];
               credentials.EXAMPLE_TOKEN = "personal/example-token";
@@ -258,6 +271,7 @@ The builder builds what is committed and pushed. Before that, build and run from
 ```bash
 uv lock --directory skills/my-skill                       # after changing Python dependencies
 nix flake lock path:./skills/my-skill                     # after changing flake inputs; commit flake.lock
+nix flake update my-skill --flake ./skills                # then pick that up in skills/flake.lock; commit it too
 nix shell path:./skills/my-skill -c my-search "query"     # build the commands and run one
 ```
 
@@ -274,8 +288,9 @@ Recommended sequence:
 2. Draft the `description` next, because discovery quality matters more than polish in the long body.
 3. Write a `SKILL.md` that a runtime agent can follow without guessing or immediately loading sidecar files.
 4. Add sidecar docs only where complexity is real.
-5. For commands: add the code with its lock files, write `flake.nix`, lock it, and run every command with `nix shell path:./skills/<name> -c <command>`.
-6. Re-read the skill from the perspective of a fresh agent with no maintainer context.
+5. Write `flake.nix` and lock it: the mini-flake for instructions only, or for commands the code with its lock files, and run every command with `nix shell path:./skills/<name> -c <command>`.
+6. List it in `skills/flake.nix` (above), `git add skills/<name>`, and run `nix flake lock ./skills`.
+7. Re-read the skill from the perspective of a fresh agent with no maintainer context.
 
 ## Editing An Existing Skill
 

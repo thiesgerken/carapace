@@ -23,6 +23,7 @@ from carapace.session.timeline import session_turns, turn_timeline
 from carapace.spans import Span, SpanNotice, ToolSpanCapability, TurnTrace, attach, current_span_ref, span
 from carapace.usage import LlmRequestLogCapability, LlmRequestState
 from carapace.ws_models import ApprovalResponse
+from tests.fake_skill_builds import fake_skill_builds
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel
 from tests.streaming_model import ReplayStreamModel
 
@@ -278,8 +279,7 @@ async def test_sentinel_evaluation_parents_its_requests_and_skill_file_reads(tmp
     sid = engine.session_mgr.create_session(user="thies").session_id
     with _patch_sentinel():
         active = engine.get_or_activate(sid)
-    (tmp_path / "skills" / "demo").mkdir(parents=True)
-    (tmp_path / "skills" / "demo" / "SKILL.md").write_text("demo")
+    skill_builds, _fake = fake_skill_builds("demo", {"SKILL.md": "demo"})
 
     def _judge(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         if len(messages) == 1:
@@ -290,7 +290,7 @@ async def test_sentinel_evaluation_parents_its_requests_and_skill_file_reads(tmp
         model="test:model",
         user="thies",
         knowledge_dir=tmp_path,
-        skills_dir=tmp_path / "skills",
+        skill_builds=skill_builds,
         llm_slots=None,
         timeout=timedelta(seconds=5),
         model_factory=lambda _name, *, user: ReplayStreamModel(_judge),

@@ -10,8 +10,28 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    artifacts = {
+      url = "path:./artifacts";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.carapace.follows = "carapace";
+    };
     carapace-cli = {
       url = "path:./carapace";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.carapace.follows = "carapace";
+    };
+    create-skill = {
+      url = "path:./create-skill";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.carapace.follows = "carapace";
+    };
+    credentials = {
+      url = "path:./credentials";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.carapace.follows = "carapace";
+    };
+    mermaid = {
+      url = "path:./mermaid";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };

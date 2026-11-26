@@ -24,7 +24,6 @@ from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.runtime import ExecResult
 from carapace.security.context import SessionSecurity
 from carapace.session.manager import SessionManager, SessionMeta
-from carapace.skills import SkillRegistry
 from carapace.usage import UsageTracker
 from tests.runtime_mocks import make_runtime_mock
 
@@ -56,7 +55,6 @@ def _deps(tmp_path: Path, db_factory, processes: _ProcessTable) -> Deps:
         owner="thies",
         knowledge_dir=tmp_path,
         git_store=GitStore(tmp_path),
-        skill_registry=SkillRegistry(tmp_path / "skills"),
     )
     sandbox = SandboxManager(
         runtime=runtime,

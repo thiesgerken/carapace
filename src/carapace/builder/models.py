@@ -10,7 +10,8 @@ from pydantic import BaseModel, StringConstraints
 # A sha256 over everything a skill's build depends on, computed by the server (`skill_builds.build_key`).
 BuildKey = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 # An attribute of `packages.<system>` in skills/flake.nix. It ends up in a flake reference, so no dots or quotes.
-SkillName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_'-]*$")]
+SKILL_NAME_PATTERN = r"[A-Za-z_][A-Za-z0-9_'-]*"
+SkillName = Annotated[str, StringConstraints(pattern=f"^{SKILL_NAME_PATTERN}$")]
 
 # Sandboxes reach the builder's binary cache under this name through their session proxy, which
 # maps it to the cache listener (`.internal` is reserved for private use, so it never collides).
@@ -44,6 +45,11 @@ class BuildResult(BaseModel):
     store_paths: list[str] = []
     # `passthru.carapace` of that package as JSON, defined by `mkSkill`; None when absent.
     metadata: Any = None
+    # Its `skillDir`, the skill directory in the store, and what is in it, read right after the evaluation,
+    # so a failed build has them too. None and empty for a package from helpers without `src`.
+    skill_dir: str | None = None
+    skill_md: str | None = None
+    skill_files: list[str] = []
     # The end of the evaluation and build output, for showing why a build failed.
     log_tail: str = ""
 

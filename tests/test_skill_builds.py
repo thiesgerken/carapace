@@ -41,9 +41,18 @@ class FakeBuilder:
         self.unreachable = False
         self.reject_with: int | None = None
         self.retries = 0
+        self.files: dict[str, bytes] = {"SKILL.md": b"---\nname: weather\ndescription: Current weather\n---\n"}
         self.answer = lambda key, skill: BuildResult(
-            key=key, skill=skill, state="succeeded", store_paths=[f"/nix/store/{key[:32]}-skill"], metadata=_METADATA
+            key=key,
+            skill=skill,
+            state="succeeded",
+            store_paths=[f"/nix/store/{key[:32]}-skill"],
+            metadata=_METADATA,
+            skill_dir=f"/nix/store/{key[32:64]}-skill-src",
+            skill_md=self.files["SKILL.md"].decode(),
+            skill_files=sorted(self.files),
         )
+        self.file_reads: list[tuple[str, str]] = []
 
     async def get(self, key: str) -> BuildResult | None:
         if self.unreachable:
@@ -60,6 +69,10 @@ class FakeBuilder:
             raise httpx.HTTPStatusError("rejected", request=request, response=response)
         self.stored[key] = self.answer(key, skill)
         return self.stored[key]
+
+    async def skill_file(self, key: str, path: str) -> bytes | None:
+        self.file_reads.append((key, path))
+        return self.files.get(path)
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -354,10 +367,9 @@ async def test_waiting_for_a_build_returns_its_result_and_is_a_span(repo: Path) 
         await asyncio.sleep(0.05)
         assert not waiting.done()
         release.set()
-        weather, every = await waiting
+        weather = await waiting
 
     assert weather is not None and weather.state == "succeeded"
-    assert {build.skill for build in every} == {"notes", "weather"}
     [wait] = [span for span in trace.spans.values() if span.name == "build wait"]
     assert (wait.kind, wait.attrs, wait.status) == ("skill", {"skill": "weather"}, "ok")
 
@@ -366,7 +378,7 @@ async def test_waiting_for_a_build_returns_its_result_and_is_a_span(repo: Path) 
 async def test_waiting_for_an_unlisted_skill_returns_none_at_once(repo: Path) -> None:
     builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
 
-    unlisted, _ = await builds.wait_built(repo, "unlisted")
+    unlisted = await builds.wait_built(repo, "unlisted")
 
     assert unlisted is None
 
@@ -477,8 +489,219 @@ async def test_a_cancelled_waiter_leaves_the_build_running_for_the_others(repo: 
     stopped.cancel()
     await asyncio.sleep(0)
     release.set()
-    weather, _ = await waiting
+    weather = await waiting
 
     assert stopped.cancelled()
     assert weather is not None and weather.state == "succeeded"
     assert len(builder.built) == 2
+
+
+def _answer_with(skill_mds: dict[str, str | None], state: str = "succeeded"):
+    """Results whose SKILL.md is *skill_mds* by skill, the way the builder reads it from the skill directory."""
+
+    def answer(key: str, skill: str) -> BuildResult:
+        return BuildResult.model_validate(
+            {
+                "key": key,
+                "skill": skill,
+                "state": state,
+                "store_paths": [f"/nix/store/{key[:32]}-skill"] if state == "succeeded" else [],
+                "metadata": _METADATA,
+                "skill_dir": f"/nix/store/{key[32:64]}-skill-src",
+                "skill_md": skill_mds[skill],
+                "skill_files": ["SKILL.md"],
+                "log_tail": "error: builder ran out of disk" if state == "failed" else "",
+            }
+        )
+
+    return answer
+
+
+@pytest.mark.anyio
+async def test_the_catalog_names_each_skill_by_its_attribute_with_its_built_description(repo: Path) -> None:
+    # Two flakes whose frontmatter names collide coexist under their attributes, one of them from elsewhere.
+    _write_skills_flake(repo, ["weather"], external=("tracker",))
+    _commit(repo, "external tracker")
+    builder = FakeBuilder()
+    same = "---\nname: weather\ndescription: {}\n---\n"
+    builder.answer = _answer_with({"weather": same.format("Local weather"), "tracker": same.format("Remote weather")})
+    builds = SkillBuilds(cast(BuilderClient, builder))
+
+    assert builds.catalog(repo) == []
+    await builds.ensure_built(repo)
+    building = {info.name: info.description for info in builds.catalog(repo)}
+    await _settled(builds, repo)
+
+    assert set(building) == {"tracker", "weather"}
+    assert all(description.startswith("Being built") for description in building.values())
+    assert {info.name: info.description for info in builds.catalog(repo)} == {
+        "tracker": "Remote weather",
+        "weather": "Local weather",
+    }
+
+
+@pytest.mark.anyio
+async def test_a_failed_build_keeps_the_description_it_read(repo: Path) -> None:
+    builder = FakeBuilder()
+    builder.answer = _answer_with({"weather": "---\ndescription: Current weather\n---\n", "notes": None}, "failed")
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    catalog = {info.name: info.description for info in builds.catalog(repo)}
+
+    assert catalog["weather"] == "Current weather"
+    assert catalog["notes"] == "BROKEN, its build has no SKILL.md; read_skill shows why."
+
+
+@pytest.mark.anyio
+async def test_a_broken_frontmatter_is_listed_as_broken(repo: Path) -> None:
+    builder = FakeBuilder()
+    disabled = "---\ndescription: Private material\nmetadata:\n  carapace:\n    disabled: true\n---\n"
+    builder.answer = _answer_with({"weather": disabled, "notes": "Just a body.\n"})
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    catalog = {info.name: info.description for info in builds.catalog(repo)}
+
+    assert catalog["weather"].startswith("BROKEN") and "unlist it there" in catalog["weather"]
+    assert "Private material" not in catalog["weather"]
+    assert catalog["notes"] == ""
+
+
+@pytest.mark.anyio
+async def test_a_package_without_a_skill_directory_counts_as_failed(repo: Path) -> None:
+    builder = FakeBuilder()
+    builder.answer = lambda key, skill: BuildResult(
+        key=key, skill=skill, state="succeeded", store_paths=["/nix/store/x"], metadata=_METADATA
+    )
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    [weather] = [build for build in await builds.ensure_built(repo) if build.skill == "weather"]
+
+    assert weather.state == "failed"
+    assert "nix flake update carapace --flake ./skills" in weather.detail
+
+
+@pytest.mark.anyio
+async def test_an_unavailable_builder_has_a_fixed_catalog_text(repo: Path) -> None:
+    builder = FakeBuilder()
+    builder.unreachable = True
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    # The error text varies; the catalog is part of the cached prompt prefix.
+    assert {info.description for info in builds.catalog(repo)} == {
+        "Not available: the skill builder cannot be reached. read_skill shows why."
+    }
+
+
+@pytest.mark.anyio
+async def test_a_skill_file_is_read_from_the_builder_under_its_build_key(repo: Path) -> None:
+    builder = FakeBuilder()
+    builder.files["references/syntax.md"] = b"syntax"
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+    [weather] = [build for build in await builds.ensure_built(repo) if build.skill == "weather"]
+
+    assert weather.skill_files == ["SKILL.md", "references/syntax.md"]
+    assert await builds.skill_file(weather, "references/syntax.md") == b"syntax"
+    assert await builds.skill_file(weather, "missing.md") is None
+    assert builder.file_reads == [(weather.key, "references/syntax.md"), (weather.key, "missing.md")]
+
+
+@pytest.mark.anyio
+async def test_a_rekeyed_skill_keeps_its_description_and_files_while_it_builds(repo: Path) -> None:
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.refresh(repo)
+    await _settled(builds, repo)
+    await builds.ensure_built(repo)
+    before = builds.catalog(repo)
+    previous = builds.readable(repo, "weather")
+
+    _write_skills_flake(repo, ["weather", "notes"], external=("tracker",))
+    _commit(repo, "add tracker")
+    release = _held(builder)
+    await builds.ensure_built(repo)
+
+    # Every key changed and builds; the catalog and the sentinel keep what they had.
+    assert {info.name: info.description for info in builds.catalog(repo)} == {
+        **{info.name: info.description for info in before},
+        "tracker": "Being built; its description follows once it is. read_skill waits for the build.",
+    }
+    assert previous is not None and builds.readable(repo, "weather") == previous
+    assert builds.readable(repo, "tracker") is None
+    release.set()
+    await _settled(builds, repo)
+    weather = builds.readable(repo, "weather")
+    assert weather is not None and weather.key != previous.key
+
+
+@pytest.mark.anyio
+async def test_after_a_restart_the_refresh_waits_for_what_the_builder_already_has(repo: Path) -> None:
+    builder = FakeBuilder()
+    for name in ("weather", "notes"):
+        builder.stored[_key(repo, name)] = builder.answer(_key(repo, name), name)
+    builds = SkillBuilds(cast(BuilderClient, builder))
+
+    await builds.refresh(repo)
+
+    assert {info.name: info.description for info in builds.catalog(repo)} == {
+        "notes": "Current weather",
+        "weather": "Current weather",
+    }
+    assert builder.built == []
+
+
+@pytest.mark.anyio
+async def test_a_slow_lookup_does_not_hold_up_the_refresh(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    builder = FakeBuilder()
+    answered = asyncio.Event()
+
+    async def slow_get(_key: str) -> BuildResult | None:
+        await answered.wait()
+        return None
+
+    builder.get = slow_get  # type: ignore[method-assign]
+    monkeypatch.setattr(skill_builds, "_LOOKUP_WAIT_SECONDS", 0.01)
+    builds = SkillBuilds(cast(BuilderClient, builder))
+
+    await builds.refresh(repo)
+
+    assert {info.description for info in builds.catalog(repo)} == {
+        "Being built; its description follows once it is. read_skill waits for the build."
+    }
+    answered.set()
+    await _settled(builds, repo)
+
+
+@pytest.mark.anyio
+async def test_the_profile_keeps_the_last_succeeded_build_while_skills_rebuild_or_fail(repo: Path) -> None:
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+    before = {build.skill: build for build in await builds.installable(repo)}
+
+    _write_skills_flake(repo, ["weather", "notes"], external=("tracker",))
+    _commit(repo, "add tracker")
+    release = _held(builder)
+
+    # Every key builds: the old commands stay, the new skill has nothing to install yet.
+    during = {build.skill: build for build in await builds.installable(repo)}
+    assert during["weather"] == before["weather"] and during["notes"] == before["notes"]
+    assert during["tracker"].state == "building"
+
+    builder.answer = lambda key, skill: BuildResult(key=key, skill=skill, state="failed", log_tail="error: boom")
+    release.set()
+    await _settled(builds, repo)
+
+    after = {build.skill: build for build in await builds.installable(repo)}
+    assert after["weather"] == before["weather"]
+    assert after["tracker"].state == "failed"

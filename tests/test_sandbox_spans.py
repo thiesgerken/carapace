@@ -27,7 +27,6 @@ from carapace.sandbox.runtime import ExecResult
 from carapace.sandbox.skill_profile import SkillProfileSync
 from carapace.security.context import BoundaryEvaluation, SessionSecurity
 from carapace.session.manager import SessionManager, SessionMeta
-from carapace.skills import SkillRegistry
 from carapace.spans import Span, TurnTrace, attach, attach_sandbox_call, current_span_ref, span
 from carapace.usage import UsageTracker
 from carapace.ws_models import EscalationResponse
@@ -165,7 +164,6 @@ def _manager(tmp_path: Path, db_factory) -> SandboxManager:
         owner="thies",
         knowledge_dir=tmp_path,
         git_store=GitStore(tmp_path),
-        skill_registry=SkillRegistry(tmp_path / "skills"),
     )
     mgr = SandboxManager(
         runtime=runtime,

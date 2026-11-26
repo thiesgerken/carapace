@@ -41,7 +41,6 @@ from ..notifications.router import NotificationRouter
 from ..sandbox.manager import SandboxManager
 from ..security.context import RewindEntry, SessionSecurity, copy_sentinel_state
 from ..security.sentinel import Sentinel
-from ..skills import SkillRegistry
 from ..spans import attach_sandbox_call
 from ..usage import (
     LlmRequestLog,
@@ -214,11 +213,25 @@ class SessionEngine(
     def _git_store_for_session(self, session_id: str) -> GitStore:
         return self._repo_handle_for_session(session_id).git_store
 
-    def _skill_registry_for_session(self, session_id: str) -> SkillRegistry:
-        return self._repo_handle_for_session(session_id).skill_registry
-
     def _skill_catalog_for_session(self, session_id: str) -> list[SkillInfo]:
-        return self._repo_handle_for_session(session_id).skill_registry.scan()
+        """The catalog in the session's agent prompt; the current one before the session has a prompt."""
+        active = self._active.get(session_id)
+        if active is not None and active.state.skill_catalog is not None:
+            return active.state.skill_catalog
+        return self._skill_builds.catalog(self._knowledge_dir_for_session(session_id))
+
+    async def _ensure_skill_catalog(self, active: ActiveSession) -> None:
+        """Take the session's skill catalog from the builds once and keep it, like the memory block.
+
+        The catalog is in the cached prompt prefix, so a skill pushed mid-session shows up there only after
+        compaction; `read_skill` finds it by name right away.
+        """
+        if active.state.skill_catalog is not None:
+            return
+        knowledge_dir = self._knowledge_dir_for_session(active.state.session_id)
+        await self._skill_builds.refresh(knowledge_dir)
+        active.state.skill_catalog = self._skill_builds.catalog(knowledge_dir)
+        self._session_mgr.save_state(active.state)
 
     @property
     def sandbox_mgr(self) -> SandboxManager:
@@ -262,7 +275,7 @@ class SessionEngine(
             model=self._config.agent.sentinel_model,
             user=owner,
             knowledge_dir=knowledge_dir,
-            skills_dir=knowledge_dir / "skills",
+            skill_builds=self._skill_builds,
             llm_slots=self._llm_semaphore,
             unattended=state.attributes.unattended,
             ask_mode=state.attributes.ask_mode,

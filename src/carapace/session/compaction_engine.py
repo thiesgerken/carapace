@@ -184,9 +184,10 @@ class SessionCompactionMixin:
             if measured := newest_measured_response(history):
                 active.state.compacted_through = measured.timestamp
             # The rewritten history misses the conversation cache on the next turn anyway, so that turn
-            # refreshes the frozen memory block at no extra cost. Inside a run the miss happens right
+            # refreshes the frozen memory block and skill catalog at no extra cost. Inside a run the miss happens right
             # away, and a refresh on the next turn would cost a second one.
             active.state.memory = None
+            active.state.skill_catalog = None
             self._session_mgr.save_state(active.state)
             await self._broadcast(active, "on_compaction", report)
         logger.info(f"Compaction session={session_id} mode=manual focus={bool(focus)} {report.message}")

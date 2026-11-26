@@ -20,12 +20,15 @@ _Reader = Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.read))
 
 @router.get("/preview", response_model=PromptPreview)
 async def get_preview(role: PromptRole, user: _Reader) -> PromptPreview:
+    repo = server._knowledge_repo_registry.ensure_user_repo(user.username)
+    await server._skill_builds.refresh(repo.knowledge_dir)
     inputs = PreviewInputs(
         config=server._config,
         user=user.username,
         user_config=server._user_config(user.username),
         data_dir=server._data_dir,
-        repo=server._knowledge_repo_registry.ensure_user_repo(user.username),
+        repo=repo,
+        skill_catalog=server._skill_builds.catalog(repo.knowledge_dir),
         sandbox=server._engine.sandbox_mgr,
         memory_block=server._memory_service.prompt_block,
         now=datetime.now(tz=UTC),

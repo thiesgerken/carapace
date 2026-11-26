@@ -49,7 +49,7 @@ Every role that acts as the user's agent starts its system prompt with the same 
 1. `AGENTS.md`: behavioral guide
 2. `SOUL.md`: personality
 3. `USER.md`: context about the human
-4. Skill catalog: names and descriptions only
+4. Skill catalog: names and descriptions only, from the builds, frozen per session ([skills.md](skills.md#discovery-progressive-disclosure))
 
 Each file sits under a `# <file name>` heading (`# SOUL.md`), so role instructions can refer to the files by name whatever headings they contain. Missing or empty files are left out.
 
@@ -95,9 +95,10 @@ Each of these changes the agent's tools or instructions mid-session, so the next
 
 - **Mode changes**: the unattended and read-only (ask) blocks follow the session attributes. Toggling a mode re-writes the system prompt from the memory block on. Acceptable because it is rare and user-driven.
 - **Releases**: a release that changes a tool definition (its parameters, their order, a docstring, its strict flag) or the instructions makes each existing session's first request after the deploy miss on everything and write it anew. Acceptable because it happens once per session and release, never between two requests of the same server version.
+- **Skill catalog**: none within a session. The catalog is frozen per session like the memory block: taken from the builds on the session's first turn, kept in the session state, and taken anew only on the turn after `/compact`, which misses the cache anyway. A skill pushed mid-session is missing from the catalog until then; `read_skill` finds it by name right away. Across sessions an entry differs when the skill was added or removed or a finished build brought a different description. A re-keyed skill keeps the description of its last succeeded build until the new build is done; only a skill that was never built says it is being built. After a server restart, taking a catalog waits up to 5 seconds for the builder to say which results it already has.
 - **Date rollover**: the date sits in the dynamic instruction, behind the instructions breakpoint but still ahead of the messages. The first request after midnight re-writes the conversation. Acceptable because it happens at most once a day.
 
-- **Compaction**: a fold or a summarized tool output rewrites the conversation from that point on, so the next request writes it anew. `/compact` takes this miss on the next turn, which also refreshes the memory block. Automatic compaction takes it inside the run, right before the request that would otherwise cross the threshold, and leaves the memory block alone so the next turn does not miss a second time. Acceptable because it only happens once the conversation is large, and the shorter history is cheaper on every later request.
+- **Compaction**: a fold or a summarized tool output rewrites the conversation from that point on, so the next request writes it anew. `/compact` takes this miss on the next turn, which also refreshes the memory block and the skill catalog. Automatic compaction takes it inside the run, right before the request that would otherwise cross the threshold, and leaves the memory block alone so the next turn does not miss a second time. Acceptable because it only happens once the conversation is large, and the shorter history is cheaper on every later request.
 
 - **Provider-side compaction**: on a model that compacts server-side (see [compaction.md](compaction.md#provider-side-compaction)), the provider replaces the conversation behind its compaction point by design, so the request after it writes the shorter conversation anew. Acceptable for the same reason as carapace's own compaction.
 
