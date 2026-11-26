@@ -1,5 +1,24 @@
 {
   "nodes": {
+    "artifacts": {
+      "inputs": {
+        "carapace": [
+          "carapace"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "path": "./artifacts",
+        "type": "path"
+      },
+      "original": {
+        "path": "./artifacts",
+        "type": "path"
+      },
+      "parent": []
+    },
     "carapace": {
       "inputs": {
         "nixpkgs": [
@@ -11,11 +30,11 @@
       },
       "locked": {
         "dir": "nix/skills",
-        "lastModified": 1795727429,
-        "narHash": "sha256-TYJ8Pz6i7P0DJRrTiYPFEjnpx39UvGpL9JC6PcKrv+4=",
+        "lastModified": 1795729417,
+        "narHash": "sha256-5QqWxd5YJHUB75/MWH1Fc0Kw6ZGlt+7d4NwKPaqvx2Y=",
         "owner": "thiesgerken",
         "repo": "carapace",
-        "rev": "53ab2096ccb38c10e63f196f4082db3882a2c5bc",
+        "rev": "1bbd25926bb392dfe96b6362c217379b2235d2fc",
         "type": "github"
       },
       "original": {
@@ -40,6 +59,63 @@
       },
       "original": {
         "path": "./carapace",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "create-skill": {
+      "inputs": {
+        "carapace": [
+          "carapace"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "path": "./create-skill",
+        "type": "path"
+      },
+      "original": {
+        "path": "./create-skill",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "credentials": {
+      "inputs": {
+        "carapace": [
+          "carapace"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "path": "./credentials",
+        "type": "path"
+      },
+      "original": {
+        "path": "./credentials",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "mermaid": {
+      "inputs": {
+        "carapace": [
+          "carapace"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "path": "./mermaid",
+        "type": "path"
+      },
+      "original": {
+        "path": "./mermaid",
         "type": "path"
       },
       "parent": []
@@ -112,8 +188,12 @@
     },
     "root": {
       "inputs": {
+        "artifacts": "artifacts",
         "carapace": "carapace",
         "carapace-cli": "carapace-cli",
+        "create-skill": "create-skill",
+        "credentials": "credentials",
+        "mermaid": "mermaid",
         "nixpkgs": "nixpkgs",
         "wikipedia": "wikipedia"
       }
