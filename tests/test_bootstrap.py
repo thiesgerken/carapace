@@ -17,7 +17,11 @@ def test_a_new_repo_lists_its_bundled_skills_in_skills_flake(tmp_path: Path) -> 
 
     assert {"skills/flake.nix", "skills/flake.lock"} <= set(created)
     assert {(skill.name, skill.directory) for skill in listed} == {
+        ("artifacts", PurePosixPath("artifacts")),
         ("carapace-cli", PurePosixPath("carapace")),
+        ("create-skill", PurePosixPath("create-skill")),
+        ("credentials", PurePosixPath("credentials")),
+        ("mermaid", PurePosixPath("mermaid")),
         ("wikipedia", PurePosixPath("wikipedia")),
     }
     assert all((tmp_path / "skills" / str(skill.directory) / "flake.nix").is_file() for skill in listed)
