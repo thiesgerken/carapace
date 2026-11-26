@@ -218,7 +218,11 @@ class SessionEngine(
         return self._repo_handle_for_session(session_id).skill_registry
 
     def _skill_catalog_for_session(self, session_id: str) -> list[SkillInfo]:
-        return self._repo_handle_for_session(session_id).skill_registry.scan()
+        return self._skill_builds.catalog(self._knowledge_dir_for_session(session_id))
+
+    async def _refresh_skill_catalog(self, session_id: str) -> None:
+        """Look at the skills at head before a turn, so its catalog has the builds the last push started."""
+        await self._skill_builds.ensure_built(self._knowledge_dir_for_session(session_id))
 
     @property
     def sandbox_mgr(self) -> SandboxManager:

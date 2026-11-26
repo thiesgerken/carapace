@@ -37,6 +37,7 @@ from .memory.prompt_block import MemoryBlock
 from .memory.prompts import MONTH_DIGEST, SESSION_EXTRACT, WEEK_DIGEST, PromptTemplate, system_prompt
 from .models.config import Config
 from .models.session import MemorySnapshot, SessionState
+from .models.skills import SkillInfo
 from .models.user import UserConfig
 from .prompt_prefix import shared_prompt_prefix
 from .sandbox.manager import SandboxManager
@@ -91,6 +92,7 @@ class PreviewInputs:
     user_config: UserConfig
     data_dir: Path
     repo: KnowledgeRepoHandle
+    skill_catalog: list[SkillInfo]
     sandbox: SandboxManager
     # (user, session id) -> the memory block a session starting now gets.
     memory_block: Callable[[str, str], MemoryBlock]
@@ -127,7 +129,7 @@ async def _agent(inputs: PreviewInputs) -> PromptPreview:
         sandbox=inputs.sandbox,
         security=SessionSecurity(state.session_id),
         git_store=inputs.repo.git_store,
-        skill_catalog=inputs.repo.skill_registry.scan(),
+        skill_catalog=inputs.skill_catalog,
         # The preview records the first request and runs no tool.
         skill_builds=SkillBuilds(None),
         agent_model=_recording_model(),
@@ -278,7 +280,7 @@ def _sentinel_for(inputs: PreviewInputs, state: SessionState) -> Sentinel:
 
 
 def _prompt_prefix(inputs: PreviewInputs) -> str:
-    return shared_prompt_prefix(inputs.repo.knowledge_dir, inputs.repo.skill_registry.scan())
+    return shared_prompt_prefix(inputs.repo.knowledge_dir, inputs.skill_catalog)
 
 
 @dataclass(frozen=True)

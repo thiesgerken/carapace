@@ -44,6 +44,11 @@ class BuildResult(BaseModel):
     store_paths: list[str] = []
     # `passthru.carapace` of that package as JSON, defined by `mkSkill`; None when absent.
     metadata: Any = None
+    # Its `skillDir`, the skill directory in the store, and what is in it, read right after the evaluation,
+    # so a failed build has them too. None and empty for a package from helpers without `src`.
+    skill_dir: str | None = None
+    skill_md: str | None = None
+    skill_files: list[str] = []
     # The end of the evaluation and build output, for showing why a build failed.
     log_tail: str = ""
 
