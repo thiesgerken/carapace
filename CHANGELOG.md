@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.193.8 (2026-11-26)
+
+### 🐛 Fix a bug
+
+- fix: resolve the sandbox address before creating the network and name both fixes
+- fix: isolate sandbox instances and make the sandbox-facing address explicit
+
+### ♻️ Refactor code
+
+- refactor: require the sandbox network name in SandboxManager
+
 ## v0.193.7 (2026-11-26)
 
 ### ⬆️ Upgrade dependencies
