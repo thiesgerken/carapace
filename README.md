@@ -190,6 +190,8 @@ Use the included Helm chart in [charts/carapace](charts/carapace) and see [chart
 
 ## Development
 
+You need Nix with flakes (e.g. Determinate Nix) and Docker (Docker Desktop on macOS); on Apple Silicon also the Native Linux Builder, since the dev stack builds Linux images. See [prerequisites](docs/development.md#prerequisites).
+
 ```bash
 nix develop
 uv sync --dev

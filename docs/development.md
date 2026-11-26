@@ -6,6 +6,13 @@ The local Python package source includes only `pyproject.toml`, `README.md`, and
 
 The server image and Python checks use a Python 3.14 override with `stripConfig`, `stripIdlelib`, and `stripTests` enabled. This removes the static interpreter archive and development-only standard-library files without changing the wheel ABI. The customized interpreter builds from source on a cold store; trusted release CI caches Linux x64 builds in Cachix. The native developer shell keeps the cached `pkgs.python314` interpreter and uv manages its separate `.venv`.
 
+## Prerequisites
+
+- **Nix** with flakes enabled, e.g. [Determinate Nix](https://docs.determinate.systems/). The dev shell brings everything else.
+- **Docker** for sandboxes, the skill builder and the relay: Docker Engine on Linux, Docker Desktop on macOS.
+- **Apple Silicon**: Determinate's Native Linux Builder, because the [dev stack](#dev-stack) builds Linux sandbox and builder images (see [native Linux images](#native-linux-images-on-apple-silicon)).
+- Optional: [direnv](https://direnv.net/) with [nix-direnv](https://github.com/nix-community/nix-direnv), to enter the dev shell automatically.
+
 ## Native developer shell
 
 ```sh
