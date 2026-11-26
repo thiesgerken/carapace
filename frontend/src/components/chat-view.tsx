@@ -1352,6 +1352,8 @@ export function ChatView({
 
   // The turn is over: a streamed call that has not become a real one by now never ran.
   const endTurn = useCallback(() => {
+    // Nothing runs after the turn: a span whose end notice got lost must not revive a card on the next history load.
+    runningSpansRef.current.clear();
     setMessages(markUnrunCalls);
     finishWaiting();
   }, [finishWaiting]);
