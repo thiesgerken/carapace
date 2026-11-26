@@ -863,7 +863,8 @@
         }
     },
     "newSessionButton": {
-        "label": "New session",
+        "label": "New",
+        "title": "New session",
         "chooseOptions": "Choose session options",
         "private": {
             "enabledTitle": "Private",
@@ -1628,8 +1629,9 @@
         "empty": "No sessions yet",
         "loadingMore": "Loading more sessions",
         "sandboxUsage": {
-            "warning": "{count} sandboxes retained (warning at {warnAt}, max {max}). Delete old sessions to free storage.",
-            "warningUnlimited": "{count} sandboxes retained (warning at {warnAt}). Delete old sessions to free storage.",
+            "warning": "{count} of {max} sandboxes in use. Archive old sessions.",
+            "warningUnlimited": "{count} sandboxes in use. Archive old sessions.",
+            "warnAt": "Warning from {warnAt} sandboxes",
             "limitReached": "{count}/{max} sandboxes. New sessions can't start a sandbox until you delete old ones."
         }
     },

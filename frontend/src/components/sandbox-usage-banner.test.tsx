@@ -17,7 +17,8 @@ async function renderBanner(usage: SandboxUsage | null): Promise<string | null> 
       </NextIntlClientProvider>,
     );
     const banner = view.container.querySelector("[role]");
-    const result = banner ? `${banner.getAttribute("role")}: ${banner.textContent}` : null;
+    const title = banner?.getAttribute("title");
+    const result = banner ? `${banner.getAttribute("role")}: ${banner.textContent}${title ? ` [${title}]` : ""}` : null;
     await view.unmount();
     return result;
   } finally {
@@ -33,14 +34,14 @@ test("no banner below the warning threshold or without usage", async () => {
 test("warning banner from the warning threshold on", async () => {
   assert.equal(
     await renderBanner({ count: 23, warn_at: 20, max: 100 }),
-    "status: 23 sandboxes retained (warning at 20, max 100). Delete old sessions to free storage.",
+    "status: 23 of 100 sandboxes in use. Archive old sessions. [Warning from 20 sandboxes]",
   );
 });
 
 test("warning banner without a hard limit leaves the max out", async () => {
   assert.equal(
     await renderBanner({ count: 23, warn_at: 20, max: 0 }),
-    "status: 23 sandboxes retained (warning at 20). Delete old sessions to free storage.",
+    "status: 23 sandboxes in use. Archive old sessions. [Warning from 20 sandboxes]",
   );
 });
 
