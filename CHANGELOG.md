@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.193.9 (2026-11-26)
+
+### 🐛 Fix a bug
+
+- fix: leave room for Haiku 5.5's default thinking in the extraction cap
+- fix: default the sentinel and title models to claude-haiku-5-5
+- fix: keep denied tool calls out of the tool id map
+- fix: give parallel tool results and approvals their own call's tool id
+
+### ✅ Add, update, or pass tests
+
+- test: move fixtures that rely on the default models to claude-haiku-5-5
+
 ## v0.193.8 (2026-11-26)
 
 ### 🐛 Fix a bug
