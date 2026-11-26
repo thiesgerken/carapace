@@ -117,7 +117,7 @@ This switches the restriction off for the whole host, not only for the builder. 
 
 ### Dev stack
 
-The [dev stack](development.md#dev-stack) runs the builder as a container too, from the `builder-image` built from the checkout: `builder-init` and `builder` with the volume `carapace-builder-nix-<instance>`, ports published on loopback at the stack's builder ports (`7306` and `7307` for stack 0). The server reaches it there, sandboxes reach the cache through the session proxy. Stopping the stack removes the container; the volume keeps the store. Set `CARAPACE_BUILDER_TOKEN` in `.env`.
+The [dev stack](development.md#dev-stack) runs the builder as a container too, from the `builder-image` built from the checkout: `builder-init` and `builder` with the volume `carapace-builder-nix-<instance>`, ports published on loopback at the stack's builder ports (`7506` and `7507` for stack 0). The server reaches it there, sandboxes reach the cache through the session proxy. Stopping the stack removes the container; the volume keeps the store. Set `CARAPACE_BUILDER_TOKEN` in `.env`.
 
 ### Kubernetes
 
