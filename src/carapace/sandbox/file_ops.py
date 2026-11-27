@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import shlex
-from collections.abc import Awaitable, Callable
+from typing import Protocol
 
 from .container_scripts import SANDBOX_FILE_READ_BYTES_SCRIPT, build_file_read_script
 from .container_scripts import (
@@ -51,11 +51,23 @@ def _line_count(content: str) -> int:
     return content.count("\n") + 1
 
 
+class ExecInSession(Protocol):
+    async def __call__(
+        self,
+        session_id: str,
+        command: str,
+        timeout: int = ...,
+        *,
+        tool_call_id: str | None,
+        stdin: bytes | None = ...,
+    ) -> ExecResult: ...
+
+
 class SandboxFileOps:
     def __init__(
         self,
         *,
-        exec_in_session: Callable[..., Awaitable[ExecResult]],
+        exec_in_session: ExecInSession,
     ) -> None:
         self._exec_in_session = exec_in_session
 
@@ -63,7 +75,7 @@ class SandboxFileOps:
         """Read a text file (windowed), summarize a binary file, or list a directory inside the sandbox."""
         pq = shlex.quote(path)
         cmd = f"python3 -c {shlex.quote(FILE_READ_SCRIPT)} {pq} {int(offset)} {int(limit)} {MAX_READ_OUTPUT_CHARS}"
-        result = await self._exec_in_session(session_id, cmd, timeout=30)
+        result = await self._exec_in_session(session_id, cmd, timeout=30, tool_call_id=None)
         if result.exit_code != 0:
             return result.output or f"Error: cannot read {path}"
         output = result.output
@@ -81,7 +93,7 @@ class SandboxFileOps:
         """Return raw file bytes (base64 over the wire), or an error/too-big message string."""
         pq = shlex.quote(path)
         cmd = f"python3 -c {shlex.quote(SANDBOX_FILE_READ_BYTES_SCRIPT)} {pq} {int(max_bytes)}"
-        result = await self._exec_in_session(session_id, cmd, timeout=30)
+        result = await self._exec_in_session(session_id, cmd, timeout=30, tool_call_id=None)
         if result.exit_code != 0:
             return result.output or f"Error: cannot read {path}"
         output = result.output
@@ -97,7 +109,9 @@ class SandboxFileOps:
 
     async def file_write(self, session_id: str, path: str, content: str) -> ExecResult:
         """Write content to a file inside the sandbox."""
-        result = await self._exec_in_session(session_id, _file_write_command(path), timeout=10, stdin=content.encode())
+        result = await self._exec_in_session(
+            session_id, _file_write_command(path), timeout=10, tool_call_id=None, stdin=content.encode()
+        )
         if result.exit_code != 0:
             output = result.output or f"Error: cannot write {path} (exit {result.exit_code})."
             return ExecResult(stdout=result.stdout, exit_code=result.exit_code, output=output)
@@ -116,6 +130,6 @@ class SandboxFileOps:
         # The strings can be arbitrarily large, so they travel on stdin, not in the command.
         payload = json.dumps({"old": old_string, "new": new_string, "replace_all": replace_all})
         cmd = f"python3 -c {shlex.quote(_STR_REPLACE_SCRIPT)} {shlex.quote(path)}"
-        result = await self._exec_in_session(session_id, cmd, timeout=10, stdin=payload.encode())
+        result = await self._exec_in_session(session_id, cmd, timeout=10, tool_call_id=None, stdin=payload.encode())
         output = result.output or f"Error: cannot replace in {path}"
         return ExecResult(stdout=result.stdout, exit_code=result.exit_code, output=output)
