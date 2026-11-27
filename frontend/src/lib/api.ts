@@ -1858,7 +1858,8 @@ export interface SkillCommandNeeds {
   /** Credential slot (its environment variable) to the bound vault path; null while unbound. */
   credentials: Record<string, string | null>;
   tunnels: string[];
-  oauth: string[];
+  /** OAuth slot to the vault path of its entry; null while unbound. */
+  oauth: Record<string, string | null>;
 }
 
 /** How the skill is built at HEAD; uncommitted edits are not built. */

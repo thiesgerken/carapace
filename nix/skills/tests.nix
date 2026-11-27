@@ -31,6 +31,8 @@ let
     { credentials.TOKEN = "demo/token"; }
     { credentials = [ "UNDECLARED" ]; }
     { credentials."A=B" = "demo/token"; }
+    # An OAuth vault path, the form before OAuth slots.
+    { oauth = [ "demo/tracker-oauth" ]; }
     { credentials."TOKEN; rm -rf ~" = "demo/token"; }
     { tunnels = [ "imap.example.com" ]; }
     { tunnels = [ "*.example.com:993" ]; }
@@ -46,12 +48,18 @@ let
     credentials = {
       UNRELATED.type = "secret";
       NOTES_TOKEN.type = "secret";
+      TRACKER_OAUTH.type = "oauth";
     };
+    settings.SEARCH_URL.type = "str";
     commands = skillLib.mcpCommands {
       tracker = {
         url = "https://mcp.example.com/mcp";
-        oauth = "demo/tracker-oauth";
+        oauth = "TRACKER_OAUTH";
         description = "An OAuth HTTP server";
+      };
+      search = {
+        urlSetting = "SEARCH_URL";
+        description = "An HTTP server at an instance's URL";
       };
       notes = {
         url = "https://notes.example.com:8443/mcp";
@@ -69,7 +77,13 @@ let
     name = "notes";
     src = fixture;
   };
-  mcpNeeds = mcp.passthru.carapaceNeeds { };
+  mcpNeeds = mcp.passthru.carapaceNeeds { SEARCH_URL = "https://search.example.com:8443/mcp"; };
+  # The URL a setting gives is checked like a fixed one, when the manifest is evaluated.
+  badSearchUrl = map (url: fails (mcp.passthru.carapaceNeeds { SEARCH_URL = url; }).search) [
+    "http://search.example.com/mcp"
+    "https://10.0.0.1/mcp"
+    "https://user@search.example.com/mcp"
+  ];
   # Only MCP commands are marked, so `read_skill` lists tools for them and nothing else.
   marks = package: pkgs.lib.mapAttrs (_: command: command.mcp) package.passthru.carapace.commands;
   rejectsMcp =
@@ -93,6 +107,16 @@ let
     {
       url = "https://mcp.example.com/mcp";
       bearer = "demo/token";
+    }
+    {
+      url = "https://mcp.example.com/mcp";
+      oauth = "demo/tracker-oauth";
+    }
+    # A setting the skill does not declare.
+    { urlSetting = "MISSING_URL"; }
+    {
+      url = "https://mcp.example.com/mcp";
+      urlSetting = "SEARCH_URL";
     }
     { url = "http://mcp.example.com/mcp"; }
     { url = "https://user:secret@mcp.example.com/mcp"; }
@@ -189,7 +213,13 @@ assert pkgs.lib.assertMsg (
     tracker = {
       domains = [ "mcp.example.com" ];
       credentials = [ ];
-      oauth = [ "demo/tracker-oauth" ];
+      oauth = [ "TRACKER_OAUTH" ];
+      tunnels = [ ];
+    };
+    search = {
+      domains = [ "search.example.com" ];
+      credentials = [ ];
+      oauth = [ ];
       tunnels = [ ];
     };
     notes = {
@@ -210,6 +240,7 @@ assert pkgs.lib.assertMsg
   (
     marks mcp == {
       tracker = true;
+      search = true;
       notes = true;
       local = true;
     }
@@ -319,6 +350,40 @@ assert pkgs.lib.assertMsg (fails
     needs.credentials.TOKEN = "demo/token";
   }).passthru.carapace
 ) "mkSkill accepted a skill-wide vault path on a skill without commands";
+assert pkgs.lib.assertMsg (pkgs.lib.all (
+  x: x
+) badSearchUrl) "mcpCommands accepted an invalid URL from a setting";
+assert pkgs.lib.assertMsg (
+  let
+    server =
+      settings: extra:
+      skillLib.mkSkill {
+        src = fixture;
+        name = "url-checks";
+        inherit settings;
+        commands = skillLib.mcpCommands {
+          search = {
+            description = "A server whose needs override the derived domains";
+            needs.domains = [ "search.example.com" ];
+          }
+          // extra;
+        };
+      };
+    str.SEARCH_URL.type = "str";
+  in
+  # A fixed URL is checked although the needs override its domain.
+  fails (server { } { url = "http://search.example.com/mcp"; }).passthru.carapace.commands
+  # A setting's URL too, when the manifest resolves the needs.
+  && fails (
+    (server str { urlSetting = "SEARCH_URL"; }).passthru.carapaceNeeds {
+      SEARCH_URL = "http://search.example.com/mcp";
+    }
+  )
+  # The setting must exist and be a string, already for the package.
+  && fails (server { } { urlSetting = "SEARCH_URL"; }).drvPath
+  && fails (server { SEARCH_URL.type = "int"; } { urlSetting = "SEARCH_URL"; }).drvPath
+  && !fails (server str { urlSetting = "SEARCH_URL"; }).drvPath
+) "mcpCommands let a URL past its checks";
 pkgs.runCommand "skill-wrapper-contract" { } ''
   mkdir stubs
   # Carapace answers with the setting values and credentials as shell code; here a marker stands for them.
@@ -326,7 +391,7 @@ pkgs.runCommand "skill-wrapper-contract" { } ''
   #!${pkgs.runtimeShell}
   echo "cgate $*" >> "$CALLS"
   [ -z "''${CGATE_DENY:-}" ] || { echo "error: denied" >&2; exit 1; }
-  echo "export FROM_CGATE=$5"
+  echo "export FROM_CGATE=$5 TRACKER_OAUTH=demo/tracker-oauth SEARCH_URL=https://search.example.com:8443/mcp"
   STUB
   chmod +x stubs/*
   export PATH="$PWD/stubs:$PATH" CALLS="$PWD/calls"
@@ -352,7 +417,8 @@ pkgs.runCommand "skill-wrapper-contract" { } ''
   if CGATE_DENY=1 ${weather}/bin/show > out; then exit 1; fi
   [ ! -s out ]
 
-  # MCP commands ask like any other; the bridge gets its server's address.
+  # MCP commands ask like any other; the bridge gets its server's address. The skill has a setting, so
+  # even the stdio server without needs asks, for its value.
   cat > stubs/mcp <<'STUB'
   #!${pkgs.runtimeShell}
   echo "mcp $* FROM_CGATE=''${FROM_CGATE:-}" >> "$CALLS"
@@ -361,13 +427,17 @@ pkgs.runCommand "skill-wrapper-contract" { } ''
   rm calls
   ${mcp}/bin/tracker --list-tools
   ${mcp}/bin/notes search --query 'a b'
+  ${mcp}/bin/search --list-tools
   ${mcp}/bin/local --list-tools
   printf '%s\n' \
     "cgate request --store-path ${mcp} --command tracker" \
     "mcp --name tracker --url https://mcp.example.com/mcp --oauth demo/tracker-oauth --list-tools FROM_CGATE=tracker" \
     "cgate request --store-path ${mcp} --command notes" \
     "mcp --name notes --url https://notes.example.com:8443/mcp --bearer-env NOTES_TOKEN search --query a b FROM_CGATE=notes" \
-    "mcp --name local --stdio local-mcp --stdio --list-tools FROM_CGATE=" | diff - calls
+    "cgate request --store-path ${mcp} --command search" \
+    "mcp --name search --url https://search.example.com:8443/mcp --list-tools FROM_CGATE=search" \
+    "cgate request --store-path ${mcp} --command local" \
+    "mcp --name local --stdio local-mcp --stdio --list-tools FROM_CGATE=local" | diff - calls
 
   # The package holds the wrappers and a reference to the skill directory the metadata names.
   [ "$(ls -A ${skill} | tr '\n' ' ')" = "bin share " ]

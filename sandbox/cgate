@@ -75,6 +75,8 @@ def cmd_request(args: argparse.Namespace) -> None:
 def print_exports(answer: dict) -> None:
     """The skill's settings and credentials as shell, for the wrapper to eval; nothing reaches the terminal."""
     lines = [f"export {name}={shlex.quote(_env_value(value))}" for name, value in answer["settings"].items()]
+    # An OAuth slot is the entry's vault path; the command fetches its access token with ccred.
+    lines += [f"export {slot}={shlex.quote(vault_path)}" for slot, vault_path in answer["oauth"].items()]
     for var, vault_path in answer["credentials"].items():
         # ccred rather than the API here: one place fetches credentials, and it prints why one failed.
         fetched = subprocess.run(["ccred", "get", vault_path], stdout=subprocess.PIPE, text=True)

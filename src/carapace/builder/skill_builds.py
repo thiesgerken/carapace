@@ -35,7 +35,8 @@ class SkillNeeds(BaseModel):
     domains: list[str]
     # Credential slot (the environment variable) to the vault path skills/config.json binds; None while unbound.
     credentials: dict[str, str | None]
-    oauth: list[str]
+    # OAuth slot to the vault path of its entry, whose access token the command fetches; None while unbound.
+    oauth: dict[str, str | None]
     tunnels: list[str]
 
 
@@ -97,7 +98,8 @@ class SkillBuild:
 
     def unbound(self, command: str) -> list[str]:
         """The credential slots *command* needs that skills/config.json does not bind."""
-        return sorted(slot for slot, path in self.commands[command].needs.credentials.items() if path is None)
+        needs = self.commands[command].needs
+        return sorted(slot for slot, path in (needs.credentials | needs.oauth).items() if path is None)
 
 
 @dataclass(frozen=True, slots=True)

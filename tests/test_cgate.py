@@ -80,7 +80,11 @@ def test_a_skill_command_gets_its_settings_and_credentials_as_exports(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     sent: list[urllib.request.Request] = []
-    answer = {"settings": {"CITY": "Bad Homburg", "PORT": 443, "METRIC": True}, "credentials": {"TOKEN": "demo/t"}}
+    answer = {
+        "settings": {"CITY": "Bad Homburg", "PORT": 443, "METRIC": True},
+        "credentials": {"TOKEN": "demo/t"},
+        "oauth": {"CAL": "demo/cal"},
+    }
 
     class _Answer(io.BytesIO):
         def __enter__(self) -> _Answer:
@@ -105,6 +109,7 @@ def test_a_skill_command_gets_its_settings_and_credentials_as_exports(
         "export CITY='Bad Homburg'",
         "export PORT=443",
         "export METRIC=true",
+        "export CAL=demo/cal",
         "export TOKEN='it'\"'\"'s s3cret'",
     ]
 

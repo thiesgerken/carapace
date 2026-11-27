@@ -31,7 +31,7 @@ _METADATA = {
         "weather": {
             "description": "Current weather",
             "mcp": False,
-            "needs": {"domains": ["api.example.com"], "credentials": {}, "oauth": [], "tunnels": []},
+            "needs": {"domains": ["api.example.com"], "credentials": {}, "oauth": {}, "tunnels": []},
         }
     },
 }
