@@ -85,7 +85,7 @@ from ..security import (
     evaluate_push_with,
     evaluate_upfront_request_with,
 )
-from ..security.context import UpfrontRequest
+from ..security.context import SkillCommandOrigin, UpfrontRequest
 from ..security.sentinel import Sentinel
 from ..session import SessionEngine, SessionManager
 from ..session.archive import SessionArchiveService
@@ -1251,14 +1251,19 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
             tunnels=needs.tunnels,
             store_path=body.store_path,
         )
-        reviewed = await _review_upfront(session_id, declared)
+        origin = SkillCommandOrigin(
+            skill=build.skill, command=body.command, installed=body.store_path in build.store_paths
+        )
+        reviewed = await _review_upfront(session_id, declared, origin)
         if reviewed.status_code != 200:
             return reviewed
     # Settings are no secrets, but they only go to the wrapper, like the credentials it then fetches.
     return JSONResponse({"settings": build.settings, "credentials": needs.credentials})
 
 
-async def _review_upfront(session_id: str, body: UpfrontRequestBody) -> Response:
+async def _review_upfront(
+    session_id: str, body: UpfrontRequestBody, origin: SkillCommandOrigin | None = None
+) -> Response:
     domains = sorted({domain.strip().lower() for domain in body.domains})
     if invalid := [domain for domain in domains if not _DECLARABLE_DOMAIN.fullmatch(domain)]:
         return Response(status_code=400, content=f"not a domain: {invalid[0]}", media_type="text/plain")
@@ -1319,6 +1324,7 @@ async def _review_upfront(session_id: str, body: UpfrontRequestBody) -> Response
                     access_tokens=access_tokens,
                     tunnels=[str(tunnel) for tunnel in pending_tunnels],
                     store_path=body.store_path,
+                    origin=origin,
                 ),
                 running.command,
                 follow_up=running.boundary_reviewed,

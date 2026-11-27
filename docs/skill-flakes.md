@@ -107,7 +107,7 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 
 To add a skill, add its input and lock: `nix flake lock ./skills`. A new skill directory must be tracked by Git first (`git add`), because `./skills` is a Git flake. After changing a local skill's inputs or its own `flake.lock`, run `nix flake update <name> --flake ./skills`: the top-level lock copies a local skill's inputs once and does not notice later changes. Editing a local skill's code or `SKILL.md` needs no new lock. Commit `skills/flake.lock` together with the change.
 
-To turn a skill off, remove its input and lock again, or set `"enable": false` for it in `skills/config.json`.
+To turn a skill off, set `"enable": false` for it in `skills/config.json`, or remove its input and lock again. When you remove an input, remove the skill's entry from `config.json` too: an entry for a skill the flake does not list fails every skill.
 
 ### `skills/config.json`
 
@@ -120,7 +120,7 @@ The values of the skills' [settings](#settings), per skill attribute, as JSON wi
 }
 ```
 
-`skillsFlake` reads it into the Nix module system: each skill has the options `enable` (default `true`) and `settings.<NAME>` with the declared type. A value of the wrong type, a setting the skill does not declare or a skill the flake does not list fails the evaluation of every skill, with the module system's message naming the option. A required setting without a value fails only that skill's manifest: `skill weather: no value for its setting CITY; set it in skills/config.json`. A skill that is off needs no values.
+`skillsFlake` reads it into the Nix module system: each skill has the options `enable` (default `true`) and `settings.<NAME>` with the declared type. A setting the skill does not declare or a skill the flake does not list fails the evaluation of every skill, with the module system's message naming the option. A value of the wrong type fails only that skill's manifest, and so does a required setting without a value: `skill weather: no value for its setting CITY; set it in skills/config.json`. A skill that is off needs no values.
 
 A change to `config.json` re-evaluates every skill's manifest but builds nothing: the packages do not depend on it, so every instance of a skill runs the same build.
 

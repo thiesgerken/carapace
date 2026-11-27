@@ -830,6 +830,17 @@ async def test_a_skill_turned_off_counts_as_not_listed(repo: Path) -> None:
     off = await builds.wait_built(repo, "weather")
     assert off is not None and not off.enabled and off.detail == "Turned off in skills/config.json."
 
+    # Another config change re-keys it: while it builds, it stays off instead of showing up as broken.
+    (repo / "skills" / "config.json").write_text('{"notes": {"enable": true}, "weather": {"enable": false}}\n')
+    _commit(repo, "touch config")
+    release = _held(builder)
+    await builds.ensure_built(repo)
+    assert [info.name for info in builds.catalog(repo)] == ["notes"]
+    assert builds.readable(repo, "weather") is None
+    assert [build.skill for build in await builds.installable(repo)] == ["notes"]
+    release.set()
+    await _settled(builds, repo)
+
 
 @pytest.mark.anyio
 async def test_a_wrapper_finds_its_build_by_store_path_then_by_command(repo: Path) -> None:

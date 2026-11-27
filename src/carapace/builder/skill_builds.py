@@ -188,11 +188,7 @@ class SkillBuilds:
         memory and compaction build outside a turn. A turn refreshes it first (`refresh`).
         """
         heads = self._heads.get(repo_dir, [])
-        return [
-            _catalog_entry(skill.name, self.readable(repo_dir, skill.name) or _build(skill, self._known(skill)))
-            for skill in heads
-            if self._known(skill).enabled
-        ]
+        return [_catalog_entry(skill.name, shown) for skill in heads if (shown := self._shown(repo_dir, skill)).enabled]
 
     def readable(self, repo_dir: Path, name: str) -> SkillBuild | None:
         """The build of *name* whose skill directory the catalog and the sentinel read.
@@ -204,10 +200,19 @@ class SkillBuilds:
         skill = next((skill for skill in self._heads.get(repo_dir, []) if skill.name == name), None)
         if skill is None:
             return None
+        shown = self._shown(repo_dir, skill)
+        return shown if shown.enabled and shown.skill_dir is not None else None
+
+    def _shown(self, repo_dir: Path, skill: _HeadSkill) -> SkillBuild:
+        """The build at head once it has a skill directory or is off, until then the last succeeded build.
+
+        So a skill that is off stays off while a config change re-keys it, like a changed skill keeps its
+        description until the new one is read.
+        """
         build = _build(skill, self._known(skill))
-        if not build.enabled:
-            return None
-        return build if build.skill_dir is not None else self._last_succeeded.get((repo_dir, name))
+        if build.skill_dir is not None or not build.enabled:
+            return build
+        return self._last_succeeded.get((repo_dir, skill.name), build)
 
     async def skill_file(self, build: SkillBuild, path: str) -> bytes | None:
         """A file of *build*'s skill directory; None when it has no such file or no skill directory."""

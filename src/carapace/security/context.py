@@ -165,6 +165,16 @@ type FinalDecision = Literal["auto_allowed", "allowed", "escalated", "denied"]
 
 
 @dataclass(frozen=True, slots=True)
+class SkillCommandOrigin:
+    """Where the needs of a ``cgate request --command`` came from: an installed skill's manifest."""
+
+    skill: str
+    command: str
+    # Whether the caller's store path is that installed build, rather than e.g. a build from the workspace.
+    installed: bool
+
+
+@dataclass(frozen=True, slots=True)
 class UpfrontRequest:
     """What a command declared with ``cgate request`` before its work: a batching hint that carries no trust."""
 
@@ -176,6 +186,8 @@ class UpfrontRequest:
     tunnels: list[str]
     # The caller's own Nix store path, as a generated skill wrapper reports it; None for any other caller.
     store_path: str | None
+    # Set when a wrapper named its command and Carapace took the needs from the manifest.
+    origin: SkillCommandOrigin | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -240,9 +240,10 @@ assert pkgs.lib.assertMsg (fails
     };
   }).weather
 ) "skillsFlake accepted an undeclared setting";
-assert pkgs.lib.assertMsg (fails
-  (manifestsWith { weather.settings.CITY = 7; }).weather
-) "skillsFlake accepted a setting of the wrong type";
+assert pkgs.lib.assertMsg (
+  fails (manifestsWith { weather.settings.CITY = 7; }).weather
+  && !fails (manifestsWith { weather.settings.CITY = 7; }).notes
+) "skillsFlake accepted a setting of the wrong type, or failed another skill for it";
 assert pkgs.lib.assertMsg (fails
   (manifestsWith { typo.enable = false; }).notes
 ) "skillsFlake accepted a skill that is not listed";

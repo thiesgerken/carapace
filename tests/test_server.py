@@ -65,7 +65,7 @@ from carapace.sandbox.exec_scope import CredentialGrant, RunningExec
 from carapace.sandbox.manager import SandboxLimitError, SandboxManager
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.sandbox.tunnels import ExecEndedError, Tunnel
-from carapace.security.context import CredentialAccessEntry, SentinelVerdict, SessionSecurity
+from carapace.security.context import CredentialAccessEntry, SentinelVerdict, SessionSecurity, SkillCommandOrigin
 from carapace.server import app, sandbox_app
 from carapace.server.runtime import KnowledgeGitRuntime, MatrixChannelHandle, MatrixChannelManager
 from carapace.session import SessionEngine, SessionManager, sent_files
@@ -3928,6 +3928,7 @@ def test_gate_reviews_a_skill_commands_needs_and_answers_with_its_settings(clien
     request = sentinel.evaluate_upfront_request.await_args.args[1]
     assert (request.domains, [c.vault_path for c in request.credentials]) == (["berlin.example.com"], ["demo/t"])
     assert request.store_path == _STORE_PATH
+    assert request.origin == SkillCommandOrigin(skill="weather", command="weather", installed=True)
     assert running.credentials == {("demo/t", "password")}
 
 
