@@ -6,7 +6,6 @@ import { useState } from "react";
 import { Tortoise, type TortoisePose } from "@/components/tortoise";
 import { useNow } from "@/hooks/use-now";
 import { compactCount } from "@/lib/request-table";
-import { cn } from "@/lib/utils";
 import { stepBucket, type ExecStep, type RunningStep, type StepBucket } from "@/lib/tool-call-status";
 import type { LlmActivity } from "@/lib/types";
 
@@ -187,11 +186,7 @@ export function WaitingIndicator({
   const stalled = !awaitsUser && agent !== null && now - lastProgressAt >= STALL_MS;
 
   return (
-    // Hidden, it keeps its height: taking the tall line out of the layout and back would make the chat jump.
-    <div
-      aria-hidden={hidden || undefined}
-      className={cn("flex items-center gap-2.5 px-2 text-xs text-muted-foreground", hidden && "invisible")}
-    >
+    <div hidden={hidden} className="flex items-center gap-2.5 px-2 text-xs text-muted-foreground">
       {/* At 40 px the props (hourglass, glass, book) are big enough to read the pose. */}
       <Tortoise pose={stalled ? "sleep" : pose} className="h-10 w-auto shrink-0" />
       {phrase && (

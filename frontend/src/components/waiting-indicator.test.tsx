@@ -102,9 +102,7 @@ test("WaitingIndicator keeps its phrases for the whole turn, across requests and
 
     t.mock.method(Math, "random", () => 0.99);
     await view.rerender(node(null, { hidden: true }));
-    // Hidden, the line keeps its place, so the chat doesn't jump when it hides and comes back.
-    assert.equal(view.container.firstElementChild?.getAttribute("aria-hidden"), "true");
-    assert.match(view.container.firstElementChild?.className ?? "", /\binvisible\b/);
+    assert.equal(view.container.firstElementChild?.hasAttribute("hidden"), true);
     await view.rerender(node({ ...THINKING, request_id: "r2" }));
     assert.equal(label(), first);
     await view.unmount();

@@ -963,14 +963,10 @@ export function ToolCallBadge({
               </div>
             </>
           ) : isReadSkillTool ? (
-            skillResult ? (
+            skillResult && (
               <div className={cn("rounded-md border overflow-hidden", isError ? "border-destructive/30 bg-destructive/5" : "border-border/40")}>
                 <MarkdownContent content={skillResult} />
               </div>
-            ) : (
-              // Every read_skill returns text, but a session saved before results kept their own call's tool id
-              // can have handed this one's result to another card.
-              !loading && <div className="text-[11px] text-muted-foreground">{t("details.noResult")}</div>
             )
           ) : isReadTool && readSplit?.hasSplit ? (
             <>

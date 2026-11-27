@@ -253,22 +253,6 @@ test("read_skill names the skill, says what it waits for, and shows the skill on
   }
 });
 
-test("a finished read_skill without a result says so instead of opening an empty box", async () => {
-  const restore = installDom();
-  try {
-    const view = await renderReact(
-      <NextIntlClientProvider locale="en" messages={messages}>
-        <ToolCallBadge tool="read_skill" args={{ skill_name: "weather" }} detail="" />
-      </NextIntlClientProvider>,
-    );
-    await click(view.container.querySelector("button")!);
-    assert.equal(view.container.querySelector(".tool-row-details")?.textContent, "No result was recorded for this call.");
-    await view.unmount();
-  } finally {
-    restore();
-  }
-});
-
 test("an open running card shows the step it waits for and how long it has run", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-01-01T12:00:00Z") });
   const restore = installDom();
