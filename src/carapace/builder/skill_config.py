@@ -8,17 +8,20 @@ evaluation error.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .models import SettingDeclaration
+from .models import SkillDeclarations
 from .skills_head import _git, object_id
 
 type ConfigValue = str | int | bool
 
 # The Nix option types of skill settings (`settingTypes` in nix/skills/default.nix), by declared name.
 _TYPES: dict[str, type] = {"str": str, "int": int, "bool": bool}
+# A credential binding, as the Nix option checks it (`credentials` in nix/skills/default.nix).
+_VAULT_PATH = re.compile(r"[^/\s]+/\S+")
 
 
 class ConfigRefusedError(Exception):
@@ -54,35 +57,50 @@ def with_skill_entry(
     *,
     enable: bool,
     settings: dict[str, ConfigValue | None],
-    declared: dict[str, SettingDeclaration] | None,
+    credentials: dict[str, str | None],
+    declarations: SkillDeclarations | None,
 ) -> dict[str, Any]:
-    """*config* with *skill* turned on or off and *settings* set; None resets a setting to its default.
+    """*config* with *skill* turned on or off and *settings* and *credentials* set; None resets one.
 
-    Other keys of the entry (credential bindings) stay as they are, and empty parts are left out, so a
-    skill on its defaults has no entry at all.
+    Other keys of the entry stay as they are, and empty parts are left out, so a skill on its defaults has
+    no entry at all.
     """
+    if declarations is None and any(value is not None for value in [*settings.values(), *credentials.values()]):
+        raise ConfigRefusedError(f"What {skill} declares is not known until it is evaluated; try again then.")
     for name, value in settings.items():
         # A reset needs no declaration: it also clears a value the skill no longer declares.
         if value is None:
             continue
-        if declared is None:
-            raise ConfigRefusedError(f"The settings of {skill} are not known until it is evaluated; try again then.")
-        if name not in declared:
+        assert declarations is not None
+        if name not in declarations.settings:
             raise ConfigRefusedError(f"{skill} declares no setting {name}.")
-        expected = declared[name].type
+        expected = declarations.settings[name].type
         # Exact: a bool is no int here, as in Nix.
         if type(value) is not _TYPES[expected]:
             raise ConfigRefusedError(f"{skill}'s setting {name} has type {expected}, not {value!r}.")
-    entry = dict(config.get(skill, {}))
-    values = {name: value for name, value in {**entry.get("settings", {}), **settings}.items() if value is not None}
-    entry.pop("settings", None)
-    entry.pop("enable", None)
-    if values:
-        entry["settings"] = values
+    for slot, path in credentials.items():
+        if path is None:
+            continue
+        assert declarations is not None
+        if slot not in declarations.credentials:
+            raise ConfigRefusedError(f"{skill} declares no credential slot {slot}.")
+        if not _VAULT_PATH.fullmatch(path):
+            raise ConfigRefusedError(
+                f"{skill}'s credential slot {slot} takes a vault path <backend>/<id>, not {path!r}."
+            )
+    current = config.get(skill, {})
+    entry = {key: value for key, value in current.items() if key not in ("enable", "settings", "credentials")}
+    entry |= _merged(current, "settings", settings) | _merged(current, "credentials", credentials)
     if not enable:
         entry["enable"] = False
     rest = {name: value for name, value in config.items() if name != skill}
     return {**rest, skill: entry} if entry else rest
+
+
+def _merged(entry: dict[str, Any], part: str, changes: dict[str, Any]) -> dict[str, Any]:
+    """*entry*'s *part* with *changes* applied, as `{part: …}`, or nothing when it ends up empty."""
+    values = {name: value for name, value in {**entry.get(part, {}), **changes}.items() if value is not None}
+    return {part: values} if values else {}
 
 
 def config_text(config: dict[str, Any]) -> str:

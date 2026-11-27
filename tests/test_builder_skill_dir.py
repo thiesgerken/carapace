@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from carapace.builder import app as builder_app
 from carapace.builder import nix, skill_dir
 from carapace.builder.client import BuilderClient
-from carapace.builder.models import BuildResult, SettingDeclaration
+from carapace.builder.models import BuildResult, CredentialSlotDeclaration, SettingDeclaration, SkillDeclarations
 from carapace.builder.skill_dir import SkillFileError, checked_skill_dir, list_files, read_file
 from carapace.builder.store import SkillStore
 from tests.test_builder import AUTH, GRACE, KEY, TOKEN
@@ -89,8 +89,9 @@ def _nix(directory: str, *, build_code: int = 0):
     """`nix eval` answers with metadata naming *directory*; `nix build` succeeds or fails."""
 
     async def run(*args: str) -> tuple[int, str, str]:
-        if args[1] == "eval" and args[-1].endswith(".passthru.carapace.settings"):
-            return 0, json.dumps({"CITY": {"type": "str", "description": "City", "default": "Berlin"}}), ""
+        if args[1] == "eval" and "--apply" in args:
+            declared = {"CITY": {"type": "str", "description": "City", "default": "Berlin"}}
+            return 0, json.dumps({"settings": declared, "credentials": {"KEY": {"type": "secret"}}}), ""
         if args[1] == "eval":
             return (
                 0,
@@ -144,24 +145,25 @@ async def test_a_skill_dir_outside_the_store_fails_the_build(tmp_path: Path, mon
     assert result.skill_md is None
 
 
-async def test_a_build_carries_the_setting_declarations(
+async def test_a_build_carries_the_declarations(
     directory: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(nix, "_run", _nix(directory))
 
     result = await _build(tmp_path)
 
-    assert result.declared_settings == {
-        "CITY": SettingDeclaration(type="str", description="City", default="Berlin"),
-    }
+    assert result.declarations == SkillDeclarations(
+        settings={"CITY": SettingDeclaration(type="str", description="City", default="Berlin")},
+        credentials={"KEY": CredentialSlotDeclaration(type="secret")},
+    )
 
 
 async def test_a_manifest_failing_for_a_missing_value_still_has_the_declarations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def run(*args: str) -> tuple[int, str, str]:
-        if args[-1].endswith(".passthru.carapace.settings"):
-            return 0, json.dumps({"CITY": {"type": "str", "description": "City"}}), ""
+        if "--apply" in args:
+            return 0, json.dumps({"settings": {"CITY": {"type": "str", "description": "City"}}, "credentials": {}}), ""
         return 1, "", "error: skill demo: no value for its setting CITY; set it in skills/config.json"
 
     monkeypatch.setattr(nix, "_run", run)
@@ -169,7 +171,9 @@ async def test_a_manifest_failing_for_a_missing_value_still_has_the_declarations
     result = await _build(tmp_path)
 
     assert result.state == "failed" and "no value for its setting CITY" in result.log_tail
-    assert result.declared_settings == {"CITY": SettingDeclaration(type="str", description="City")}
+    assert result.declarations == SkillDeclarations(
+        settings={"CITY": SettingDeclaration(type="str", description="City")}, credentials={}
+    )
 
 
 def test_the_api_serves_files_of_a_stored_build(directory: str, tmp_path: Path) -> None:
@@ -197,8 +201,8 @@ async def test_a_skill_turned_off_is_not_built(tmp_path: Path, monkeypatch: pyte
 
     async def run(*args: str) -> tuple[int, str, str]:
         calls.append(args[1])
-        if args[-1].endswith(".passthru.carapace.settings"):
-            return 0, "{}", ""
+        if "--apply" in args:
+            return 0, json.dumps({"settings": {}, "credentials": {}}), ""
         return 0, json.dumps({"enable": False}), ""
 
     monkeypatch.setattr(nix, "_run", run)

@@ -82,6 +82,9 @@
             }
         },
         "skillConfig": {
+            "credentials": "Zugangsdaten",
+            "unbound": "nicht verknüpft",
+            "unbind": "Verknüpfung lösen",
             "enabled": "Aktiv",
             "notKnownYet": "Die Einstellungen erscheinen, sobald der Skill ausgewertet ist.",
             "noSettings": "Dieser Skill hat keine Einstellungen.",
@@ -91,6 +94,7 @@
             "saving": "Speichere…"
         },
         "skillSources": {
+            "credentialUnbound": "Zugangsdaten fehlen",
             "off": "aus",
             "needsConfig": "Braucht Einstellungen",
             "configure": "Einstellungen",

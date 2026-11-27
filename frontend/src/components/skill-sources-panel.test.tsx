@@ -132,7 +132,7 @@ test("an available update has an Update button; a refused update shows the serve
   }
 });
 
-test("a skill missing a setting says so, and saving commits only what changed against config.json's version", async () => {
+test("a skill missing a setting or a binding says so, and saving commits only what changed against config.json's version", async () => {
   const restore = installDom();
   const originalFetch = globalThis.fetch;
   const puts: { path: string; body: unknown }[] = [];
@@ -148,6 +148,7 @@ test("a skill missing a setting says so, and saving commits only what changed ag
           { name: "CITY", type: "str", description: "City", default: "Berlin", value: "Kiel", missing: false },
           { name: "DAYS", type: "int", description: "Days ahead", default: null, value: null, missing: true },
         ],
+        credentials: [{ name: "API_KEY", type: "secret", description: "Weather API key", binding: null }],
       },
     ],
   };
@@ -157,6 +158,7 @@ test("a skill missing a setting says so, and saving commits only what changed ag
       puts.push({ path, body: JSON.parse(String(init.body)) });
       return Response.json({ ...config, base: "d".repeat(40) });
     }
+    if (path.endsWith("/credentials")) return Response.json([{ vault_path: "personal/weather", name: "Weather", description: "" }]);
     return Response.json(path.endsWith("/config") ? config : checked);
   }) as typeof fetch;
 
@@ -169,6 +171,7 @@ test("a skill missing a setting says so, and saving commits only what changed ag
     await flushReact();
     const text = () => view.container.textContent ?? "";
     assert.match(text(), /Needs configuration/);
+    assert.match(text(), /Credential not bound/);
 
     const settings = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Settings");
     assert.ok(settings);
@@ -178,13 +181,25 @@ test("a skill missing a setting says so, and saving commits only what changed ag
     const days = view.container.querySelector<HTMLInputElement>("#skill-setting-DAYS");
     assert.ok(days);
     await setInputValue(days, "3");
+    await flushReact();
+    // The datalist offers the user's entries by vault path.
+    assert.ok(view.container.querySelector('datalist option[value="personal/weather"]'));
+    const apiKey = view.container.querySelector<HTMLInputElement>("#skill-credential-API_KEY");
+    assert.ok(apiKey);
+    await setInputValue(apiKey, "personal/weather");
     const save = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Save");
     assert.ok(save);
     await click(save);
     await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
     assert.deepEqual(puts, [
-      { path: "/api/knowledge/skills/tracker/config", body: { base: "c".repeat(40), enable: true, settings: { DAYS: 3 } } },
+      { path: "/api/knowledge/skills/tracker/config", body: {
+          base: "c".repeat(40),
+          enable: true,
+          settings: { DAYS: 3 },
+          credentials: { API_KEY: "personal/weather" },
+        },
+      },
     ]);
     await view.unmount();
   } finally {

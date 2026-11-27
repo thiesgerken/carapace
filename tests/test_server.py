@@ -34,7 +34,7 @@ from carapace.api_keys import Access, ApiKeyGrant, ApiKeyStore, Scope
 from carapace.artifact_shares import ArtifactShareStore
 from carapace.auth import AuthStore, UserIdentity
 from carapace.bootstrap import ensure_data_dir
-from carapace.builder.models import SettingDeclaration
+from carapace.builder.models import CredentialSlotDeclaration, SettingDeclaration, SkillDeclarations
 from carapace.builder.skill_builds import RetryRefusedError, SkillBuild, SkillBuilds, SkillCommand, SkillNeeds
 from carapace.builder.skill_updates import PendingUpdate, UpdateRefusedError
 from carapace.codex_auth import CodexAccounts, CodexCredentialStore
@@ -5677,13 +5677,16 @@ def _weather_with_settings(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
         dataclasses.replace(
             weather,
             detail="error: skill weather: no value for its setting DAYS; set it in skills/config.json",
-            declared_settings={
-                "CITY": SettingDeclaration(type="str", description="City", default="Berlin"),
-                "DAYS": SettingDeclaration(type="int", description="Days ahead"),
-            },
+            declarations=SkillDeclarations(
+                settings={
+                    "CITY": SettingDeclaration(type="str", description="City", default="Berlin"),
+                    "DAYS": SettingDeclaration(type="int", description="Days ahead"),
+                },
+                credentials={"API_KEY": CredentialSlotDeclaration(type="secret", description="Weather API key")},
+            ),
         )
     ]
-    builds.declared_settings = lambda repo, build: build.declared_settings
+    builds.declarations = lambda repo, build: build.declarations
     monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
     return builds
 
@@ -5722,6 +5725,9 @@ def test_the_skill_config_shows_declarations_values_and_nix_errors(
                         "missing": True,
                     },
                 ],
+                "credentials": [
+                    {"name": "API_KEY", "type": "secret", "description": "Weather API key", "binding": None},
+                ],
             }
         ],
     }
@@ -5739,13 +5745,19 @@ def test_a_skill_config_change_is_committed_sorted_as_the_user(
     response = client.put(
         "/api/knowledge/skills/weather/config",
         headers=auth_headers,
-        json={"base": blob, "enable": True, "settings": {"DAYS": 3, "CITY": None}},
+        json={
+            "base": blob,
+            "enable": True,
+            "settings": {"DAYS": 3, "CITY": None},
+            "credentials": {"API_KEY": "personal/weather"},
+        },
     )
 
     assert response.status_code == 200
     git_store.commit_replacing.assert_awaited_once_with(
         "skills/config.json",
-        '{\n  "weather": {\n    "settings": {\n      "DAYS": 3\n    }\n  }\n}\n',
+        '{\n  "weather": {\n    "credentials": {\n      "API_KEY": "personal/weather"\n    },\n'
+        '    "settings": {\n      "DAYS": 3\n    }\n  }\n}\n',
         unchanged={"skills/config.json": blob},
         message="🔧 skills: configure weather",
         author="Thies <thies@carapace>",
@@ -5793,3 +5805,19 @@ def test_a_skill_config_change_that_changes_nothing_makes_no_commit(
 
     assert response.status_code == 200
     git_store.commit_replacing.assert_not_awaited()
+
+
+def test_credential_search_lists_the_users_entries_without_values(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = MagicMock()
+    registry.search = AsyncMock(
+        return_value=[CredentialMetadata(vault_path="personal/weather", name="Weather API", description="")]
+    )
+    monkeypatch.setattr(srv, "_credential_registry_for_user", AsyncMock(return_value=registry))
+
+    response = client.get("/api/knowledge/credentials?q=weath", headers=auth_headers)
+
+    assert response.json() == [{"vault_path": "personal/weather", "name": "Weather API", "description": ""}]
+    registry.search.assert_awaited_once_with("weath")
+    srv._credential_registry_for_user.assert_awaited_once_with("thies")

@@ -1992,6 +1992,14 @@ export interface KnowledgeSkillSetting {
   missing: boolean;
 }
 
+export interface KnowledgeSkillCredential {
+  name: string;
+  type: string;
+  description: string;
+  /** The vault path config.json binds it to; null while unbound, which refuses the commands that need it. */
+  binding: string | null;
+}
+
 export interface KnowledgeSkillConfig {
   name: string;
   enabled: boolean;
@@ -2000,6 +2008,7 @@ export interface KnowledgeSkillConfig {
   detail: string;
   /** Null until the skill's declarations are known. */
   settings: KnowledgeSkillSetting[] | null;
+  credentials: KnowledgeSkillCredential[] | null;
 }
 
 export interface KnowledgeSkillsConfig {
@@ -2013,6 +2022,21 @@ export interface SkillConfigChange {
   enable: boolean;
   /** null resets a setting to its default. */
   settings: Record<string, SkillConfigValue | null>;
+  /** null unbinds a credential slot. */
+  credentials: Record<string, string | null>;
+}
+
+export interface CredentialEntry {
+  vault_path: string;
+  name: string;
+  description: string;
+}
+
+/** The user's password-manager entries matching *q*, to bind a credential slot: metadata, never values. */
+export async function searchCredentials(server: string, q = ""): Promise<CredentialEntry[]> {
+  const res = await fetch(`${server}/api/knowledge/credentials?q=${encodeURIComponent(q)}`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to list credentials"));
+  return (await res.json()) as CredentialEntry[];
 }
 
 export async function fetchSkillsConfig(server: string): Promise<KnowledgeSkillsConfig> {

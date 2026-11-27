@@ -117,12 +117,17 @@ export function SkillSourcesPanel({ server }: { server: string }) {
     return () => window.clearTimeout(timer);
   }, [config, server]);
 
-  async function save(name: string, enable: boolean, settings: Record<string, SkillConfigValue | null>) {
+  async function save(
+    name: string,
+    enable: boolean,
+    settings: Record<string, SkillConfigValue | null>,
+    credentials: Record<string, string | null>,
+  ) {
     if (!config) return;
     setError(null);
     setSaving(name);
     try {
-      setConfig(await saveSkillConfig(server, name, { base: config.base, enable, settings }));
+      setConfig(await saveSkillConfig(server, name, { base: config.base, enable, settings, credentials }));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -208,6 +213,8 @@ export function SkillSourcesPanel({ server }: { server: string }) {
           {sources.skills.map((skill) => {
             const skillConfig = config?.skills.find((entry) => entry.name === skill.name);
             const needsConfig = skillConfig?.settings?.some((setting) => setting.missing) ?? false;
+            // Every declared slot is needed by some command, so an unbound one refuses part of the skill.
+            const unbound = skillConfig?.credentials?.some((slot) => slot.binding === null) ?? false;
             return (
               <Fragment key={skill.name}>
                 <tr className="border-b border-border/60 align-top last:border-0">
@@ -227,6 +234,12 @@ export function SkillSourcesPanel({ server }: { server: string }) {
                         <span className="inline-flex items-center gap-1 text-[11px] font-normal text-warning">
                           <CircleAlert className="h-3 w-3" />
                           {t("needsConfig")}
+                        </span>
+                      ) : null}
+                      {unbound ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-normal text-warning">
+                          <CircleAlert className="h-3 w-3" />
+                          {t("credentialUnbound")}
                         </span>
                       ) : null}
                       {skillConfig ? (
@@ -263,10 +276,11 @@ export function SkillSourcesPanel({ server }: { server: string }) {
                     <td colSpan={2} className="pb-3">
                       {/* Keyed by config.json's version: a save, or anyone's commit, starts the form afresh. */}
                       <SkillConfigForm
+                        server={server}
                         key={config.base}
                         skill={skillConfig}
                         saving={saving === skill.name}
-                        onSave={(enable, settings) => save(skill.name, enable, settings)}
+                        onSave={(enable, settings, credentials) => save(skill.name, enable, settings, credentials)}
                       />
                     </td>
                   </tr>

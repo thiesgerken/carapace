@@ -1,10 +1,10 @@
 "use client";
 
 import { Loader2, RotateCcw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 
-import type { KnowledgeSkillConfig, KnowledgeSkillSetting, SkillConfigValue } from "@/lib/api";
+import { searchCredentials, type CredentialEntry, type KnowledgeSkillConfig, type KnowledgeSkillSetting, type SkillConfigValue } from "@/lib/api";
 
 type Draft = Record<string, SkillConfigValue | null>;
 
@@ -66,28 +66,51 @@ function SettingInput({
 
 /** One skill's entry in skills/config.json: on or off, and its settings. Saving commits it. */
 export function SkillConfigForm({
+  server,
   skill,
   saving,
   onSave,
 }: {
+  server: string;
   skill: KnowledgeSkillConfig;
   saving: boolean;
-  onSave: (enable: boolean, settings: Draft) => void;
+  onSave: (enable: boolean, settings: Draft, credentials: Record<string, string | null>) => void;
 }) {
   const t = useTranslations("knowledge.skillConfig");
   const settings = skill.settings ?? [];
   const [enabled, setEnabled] = useState(skill.enabled);
   const [draft, setDraft] = useState<Draft>(() => Object.fromEntries(settings.map((setting) => [setting.name, setting.value])));
+  const slots = skill.credentials ?? [];
+  const [bindings, setBindings] = useState<Record<string, string | null>>(() =>
+    Object.fromEntries(slots.map((slot) => [slot.name, slot.binding])),
+  );
+  const [entries, setEntries] = useState<CredentialEntry[]>([]);
+  const [entriesError, setEntriesError] = useState<string | null>(null);
   const changed = changedSettings(settings, draft);
+  const changedBindings = Object.fromEntries(
+    slots.filter((slot) => (bindings[slot.name] ?? null) !== slot.binding).map((slot) => [slot.name, bindings[slot.name] ?? null]),
+  );
+
+  // All of the user's entries once: the datalist filters them as one types, without a request per key.
+  useEffect(() => {
+    if (slots.length === 0) return;
+    let cancelled = false;
+    searchCredentials(server)
+      .then((next) => !cancelled && setEntries(next))
+      .catch((err) => !cancelled && setEntriesError(err instanceof Error ? err.message : String(err)));
+    return () => {
+      cancelled = true;
+    };
+  }, [server, slots.length]);
   const invalid = settings.some((setting) => setting.type === "int" && draft[setting.name] != null && !Number.isInteger(draft[setting.name]));
-  const dirty = enabled !== skill.enabled || Object.keys(changed).length > 0;
+  const dirty = enabled !== skill.enabled || Object.keys(changed).length > 0 || Object.keys(changedBindings).length > 0;
 
   return (
     <form
       className="space-y-3 rounded-md bg-inset p-3"
       onSubmit={(event) => {
         event.preventDefault();
-        onSave(enabled, changed);
+        onSave(enabled, changed, changedBindings);
       }}
     >
       <label className="flex items-center gap-2 font-medium">
@@ -127,6 +150,47 @@ export function SkillConfigForm({
           ))}
         </div>
       )}
+      {slots.length > 0 ? (
+        <div className="space-y-2">
+          <h3 className="text-xs font-medium text-muted-foreground">{t("credentials")}</h3>
+          {entriesError ? <p className="text-xs text-destructive">{entriesError}</p> : null}
+          <datalist id={`credential-entries-${skill.name}`}>
+            {entries.map((entry) => (
+              <option key={entry.vault_path} value={entry.vault_path}>
+                {entry.name}
+              </option>
+            ))}
+          </datalist>
+          {slots.map((slot) => (
+            <div key={slot.name} className="grid gap-1 sm:grid-cols-[12rem_1fr_auto] sm:items-center sm:gap-3">
+              <label htmlFor={`skill-credential-${slot.name}`} className="min-w-0">
+                <code className="font-mono font-medium">{slot.name}</code>
+                {bindings[slot.name] == null ? <span className="ml-2 text-warning">{t("unbound")}</span> : null}
+                {slot.description ? <span className="block text-muted-foreground">{slot.description}</span> : null}
+              </label>
+              <input
+                id={`skill-credential-${slot.name}`}
+                type="text"
+                list={`credential-entries-${skill.name}`}
+                value={bindings[slot.name] ?? ""}
+                placeholder="<backend>/<id>"
+                onChange={(event) => setBindings((current) => ({ ...current, [slot.name]: event.target.value || null }))}
+                className="w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-xs"
+              />
+              <button
+                type="button"
+                title={t("unbind")}
+                aria-label={t("unbind")}
+                disabled={bindings[slot.name] == null}
+                onClick={() => setBindings((current) => ({ ...current, [slot.name]: null }))}
+                className="justify-self-start rounded-md p-1 text-muted-foreground hover:bg-muted disabled:opacity-30"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <button
         type="submit"
         disabled={!dirty || invalid || saving}

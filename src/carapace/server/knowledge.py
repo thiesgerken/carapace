@@ -21,8 +21,10 @@ from ..builder.skill_builds import BuildState, RetryRefusedError, SkillBuilds, S
 from ..builder.skill_config import ConfigRefusedError, ConfigValue, config_at_head, config_text, with_skill_entry
 from ..builder.skill_updates import SkillUpdates, UpdateRefusedError, UpdateState
 from ..builder.skills_head import skills_flake_at_head
+from ..credentials import CredentialBackendError
 from ..git.store import ConcurrentChangeError, GitStore
 from ..knowledge import contained_target
+from ..models.credentials import CredentialMetadata
 from ..models.git import FileCommit
 from ..models.skills import SkillCarapaceConfig
 from ..session.manager import SessionManager
@@ -482,6 +484,14 @@ class KnowledgeSkillSetting(BaseModel):
     missing: bool
 
 
+class KnowledgeSkillCredential(BaseModel):
+    name: str
+    type: str
+    description: str
+    # The vault path config.json binds it to; None while unbound, which refuses the commands that need it.
+    binding: str | None
+
+
 class KnowledgeSkillConfig(BaseModel):
     name: str
     enabled: bool
@@ -490,6 +500,7 @@ class KnowledgeSkillConfig(BaseModel):
     detail: str
     # None while the skill's declarations are not known yet (building, or a package that does not evaluate).
     settings: list[KnowledgeSkillSetting] | None
+    credentials: list[KnowledgeSkillCredential] | None
 
 
 class KnowledgeSkillsConfig(BaseModel):
@@ -501,8 +512,9 @@ class KnowledgeSkillsConfig(BaseModel):
 class SkillConfigChange(BaseModel):
     base: str
     enable: bool
-    # None resets a setting to its default.
+    # None resets a setting to its default and unbinds a credential slot.
     settings: dict[str, ConfigValue | None] = {}
+    credentials: dict[str, str | None] = {}
 
 
 async def skills_config(builds: SkillBuilds, repo_dir: Path) -> KnowledgeSkillsConfig:
@@ -512,10 +524,11 @@ async def skills_config(builds: SkillBuilds, repo_dir: Path) -> KnowledgeSkillsC
     for build in await builds.ensure_built(repo_dir):
         entry = head.values.get(build.skill, {})
         values = entry.get("settings", {})
-        declared = builds.declared_settings(repo_dir, build)
+        bindings = entry.get("credentials", {})
+        declarations = builds.declarations(repo_dir, build)
         settings = (
             None
-            if declared is None
+            if declarations is None
             else [
                 KnowledgeSkillSetting(
                     name=name,
@@ -525,7 +538,20 @@ async def skills_config(builds: SkillBuilds, repo_dir: Path) -> KnowledgeSkillsC
                     value=values.get(name),
                     missing=name not in values and declaration.default is None,
                 )
-                for name, declaration in sorted(declared.items())
+                for name, declaration in sorted(declarations.settings.items())
+            ]
+        )
+        credentials = (
+            None
+            if declarations is None
+            else [
+                KnowledgeSkillCredential(
+                    name=slot,
+                    type=declaration.type,
+                    description=declaration.description,
+                    binding=bindings.get(slot),
+                )
+                for slot, declaration in sorted(declarations.credentials.items())
             ]
         )
         skills.append(
@@ -535,6 +561,7 @@ async def skills_config(builds: SkillBuilds, repo_dir: Path) -> KnowledgeSkillsC
                 state=build.state,
                 detail=build.detail if build.state == "failed" else "",
                 settings=settings,
+                credentials=credentials,
             )
         )
     return KnowledgeSkillsConfig(base=head.blob, skills=skills)
@@ -576,7 +603,8 @@ async def put_skill_config(
             name,
             enable=change.enable,
             settings=change.settings,
-            declared=builds.declared_settings(root, build),
+            credentials=change.credentials,
+            declarations=builds.declarations(root, build),
         )
         text = config_text(config)
         if text != head.text:
@@ -594,6 +622,22 @@ async def put_skill_config(
     if text != head.text:
         await server._after_push(user.username)
     return await skills_config(builds, root)
+
+
+@router.get("/knowledge/credentials")
+async def search_credentials(
+    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.read))],
+    q: str = "",
+) -> list[CredentialMetadata]:
+    """The user's password-manager entries matching *q*, to bind a skill's credential slot: metadata, no values.
+
+    No sentinel review, unlike the sandbox's listing: the user asks, about their own vault.
+    """
+    registry = await server._credential_registry_for_user(user.username)
+    try:
+        return await registry.search(q)
+    except CredentialBackendError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/knowledge/browse", response_model=None)

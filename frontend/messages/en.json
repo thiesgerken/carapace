@@ -82,6 +82,9 @@
             }
         },
         "skillConfig": {
+            "credentials": "Credentials",
+            "unbound": "not bound",
+            "unbind": "Unbind",
             "enabled": "Enabled",
             "notKnownYet": "Its settings show once the skill has been evaluated.",
             "noSettings": "This skill has no settings.",
@@ -91,6 +94,7 @@
             "saving": "Saving…"
         },
         "skillSources": {
+            "credentialUnbound": "Credential not bound",
             "off": "off",
             "needsConfig": "Needs configuration",
             "configure": "Settings",

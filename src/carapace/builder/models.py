@@ -46,6 +46,20 @@ class SettingDeclaration(BaseModel):
     default: str | int | bool | None = None
 
 
+class CredentialSlotDeclaration(BaseModel):
+    """A credential slot a skill declares (`mkSkill { credentials }`); config.json binds it to a vault entry."""
+
+    type: str
+    description: str = ""
+
+
+class SkillDeclarations(BaseModel):
+    """`passthru.carapace` of a skill package: what an instance configures, without any instance's values."""
+
+    settings: dict[str, SettingDeclaration]
+    credentials: dict[str, CredentialSlotDeclaration]
+
+
 class BuildResult(BaseModel):
     key: BuildKey
     skill: SkillName
@@ -61,9 +75,9 @@ class BuildResult(BaseModel):
     skill_files: list[str] = []
     # The end of the evaluation and build output, for showing why a build failed.
     log_tail: str = ""
-    # The package's setting declarations, evaluated without this instance's values, so they are there when
-    # the manifest fails for a missing or wrong value; None when the package itself does not evaluate.
-    declared_settings: dict[str, SettingDeclaration] | None = None
+    # What the package declares, evaluated without this instance's values, so it is there when the manifest
+    # fails for a missing or wrong value; None when the package itself does not evaluate.
+    declarations: SkillDeclarations | None = None
 
 
 class InputUpdate(BaseModel):

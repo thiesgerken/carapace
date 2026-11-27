@@ -24,7 +24,7 @@ from ..models.skills import SkillInfo
 from ..skills import SkillDocumentError, parse_skill_document
 from ..spans import span
 from .client import BuilderClient, BuilderSystemMismatchError
-from .models import BuildResult, SettingDeclaration
+from .models import BuildResult, SkillDeclarations
 from .skill_updates import SkillUpdates
 from .skills_head import archive_skills, object_id, skills_flake_at_head
 
@@ -77,7 +77,7 @@ class _Outcome:
     skill_dir: str | None = None
     skill_md: str | None = None
     skill_files: list[str] = field(default_factory=list)
-    declared_settings: dict[str, SettingDeclaration] | None = None
+    declarations: SkillDeclarations | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +97,7 @@ class SkillBuild:
     settings: dict[str, SettingValue] = field(default_factory=dict)
     # What the skill declares, for the Knowledge view to offer: also there for a failed or turned-off build,
     # None while building or when the package did not evaluate.
-    declared_settings: dict[str, SettingDeclaration] | None = None
+    declarations: SkillDeclarations | None = None
 
     def unbound(self, command: str) -> list[str]:
         """The credential slots *command* needs that skills/config.json does not bind."""
@@ -177,15 +177,15 @@ class SkillBuilds:
         builds = [build for build in await self.installable(repo_dir) if command in build.commands]
         return next((build for build in builds if store_path in build.store_paths), builds[0] if builds else None)
 
-    def declared_settings(self, repo_dir: Path, build: SkillBuild) -> dict[str, SettingDeclaration] | None:
+    def declarations(self, repo_dir: Path, build: SkillBuild) -> SkillDeclarations | None:
         """What *build*'s skill declares, or its last succeeded build's while it re-keys.
 
         A config.json change re-keys every skill: without the fallback, every form would empty out until
         the manifests are evaluated again.
         """
-        if build.declared_settings is not None:
-            return build.declared_settings
-        return self._usable(repo_dir, build).declared_settings
+        if build.declarations is not None:
+            return build.declarations
+        return self._usable(repo_dir, build).declarations
 
     async def refresh(self, repo_dir: Path) -> None:
         """`ensure_built`, then wait briefly until the builder said which of the new keys it built before.
@@ -384,7 +384,7 @@ def _log_crash(task: asyncio.Task[None], skill: _HeadSkill) -> None:
 
 
 def _read_result(result: BuildResult) -> _Outcome:
-    declared = result.declared_settings
+    declarations = result.declarations
     if result.state == "failed":
         return _Outcome(
             state="failed",
@@ -392,21 +392,21 @@ def _read_result(result: BuildResult) -> _Outcome:
             skill_dir=result.skill_dir,
             skill_md=result.skill_md,
             skill_files=result.skill_files,
-            declared_settings=declared,
+            declarations=declarations,
         )
     try:
         manifest = SkillManifest.model_validate(result.metadata)
     except ValidationError as exc:
         detail = f"The skill has no valid manifest; see docs/skill-flakes.md. {exc}"
-        return _Outcome(state="failed", detail=detail, declared_settings=declared)
+        return _Outcome(state="failed", detail=detail, declarations=declarations)
     if not manifest.enable:
         return _Outcome(
-            state="succeeded", enabled=False, detail="Turned off in skills/config.json.", declared_settings=declared
+            state="succeeded", enabled=False, detail="Turned off in skills/config.json.", declarations=declarations
         )
     if result.skill_dir is None:
-        return _Outcome(state="failed", detail=_NO_SKILL_DIR, declared_settings=declared)
+        return _Outcome(state="failed", detail=_NO_SKILL_DIR, declarations=declarations)
     return _Outcome(
-        declared_settings=declared,
+        declarations=declarations,
         state="succeeded",
         store_paths=result.store_paths,
         commands=manifest.commands,
@@ -446,7 +446,7 @@ def _build(skill: _HeadSkill, outcome: _Outcome) -> SkillBuild:
         skill_files=outcome.skill_files,
         enabled=outcome.enabled,
         settings=outcome.settings,
-        declared_settings=outcome.declared_settings,
+        declarations=outcome.declarations,
     )
 
 
