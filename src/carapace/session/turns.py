@@ -17,7 +17,7 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from datetime import UTC, datetime
 from functools import partial
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 from loguru import logger
 from pydantic_ai import ToolDenied
@@ -115,6 +115,26 @@ def _engine_module() -> Any:
     if module is None:
         raise RuntimeError("carapace.session.engine is not loaded")
     return module
+
+
+def _complete_cancelled_model_history(messages: list[ModelMessage], pending_tool_message: str) -> list[ModelMessage]:
+    # carapace enables no native (provider-run) tools, so only function tool calls can be left open.
+    pending: dict[str, ToolCallPart] = {}
+    for message in messages:
+        for part in message.parts:
+            if isinstance(part, ToolCallPart):
+                pending.setdefault(part.tool_call_id, part)
+            elif isinstance(part, ToolReturnPart):
+                pending.pop(part.tool_call_id, None)
+    if not pending:
+        return list(messages)
+    synthetic_returns = [
+        ToolReturnPart(
+            tool_name=part.tool_name, content=pending_tool_message, tool_call_id=part.tool_call_id, outcome="failed"
+        )
+        for part in pending.values()
+    ]
+    return [*messages, ModelRequest(parts=synthetic_returns)]
 
 
 class SessionTurnHost(Protocol):
@@ -885,7 +905,7 @@ class SessionTurnMixin(SessionTurnHost):
         else:
             history = self._session_mgr.load_history(session_id)
             history.append(ModelRequest(parts=[UserPromptPart(content=user_input)]))
-        history = self._complete_cancelled_model_history(history, pending_tool_message)
+        history = _complete_cancelled_model_history(history, pending_tool_message)
         if terminal_message:
             history.append(ModelResponse(parts=[TextPart(content=terminal_message)]))
         self._session_mgr.save_history(session_id, history)
@@ -905,62 +925,6 @@ class SessionTurnMixin(SessionTurnHost):
             events.append(error_event)
         self._session_mgr.save_events(session_id, events)
         return closed_tool_results
-
-    def _complete_cancelled_model_history(
-        self, messages: list[ModelMessage], pending_tool_message: str
-    ) -> list[ModelMessage]:
-        completed = list(messages)
-        pending_parts = []
-        pending_index_by_id: dict[str, int] = {}
-
-        for message in completed:
-            if isinstance(message, ModelResponse):
-                for part in message.parts:
-                    if not isinstance(part, ToolCallPart | NativeToolCallPart):
-                        continue
-                    tool_call_id = getattr(part, "tool_call_id", None)
-                    if isinstance(tool_call_id, str) and tool_call_id and tool_call_id not in pending_index_by_id:
-                        pending_index_by_id[tool_call_id] = len(pending_parts)
-                        pending_parts.append(part)
-            elif isinstance(message, ModelRequest):
-                for part in message.parts:
-                    if not isinstance(part, ToolReturnPart | NativeToolReturnPart):
-                        continue
-                    tool_call_id = getattr(part, "tool_call_id", None)
-                    if not isinstance(tool_call_id, str):
-                        continue
-                    pending_index = pending_index_by_id.pop(tool_call_id, None)
-                    if pending_index is not None:
-                        pending_parts[pending_index] = None
-
-        synthetic_returns: list[ToolReturnPart | NativeToolReturnPart] = []
-        for pending_part in pending_parts:
-            if pending_part is None:
-                continue
-            if isinstance(pending_part, NativeToolCallPart):
-                synthetic_returns.append(
-                    NativeToolReturnPart(
-                        tool_name=pending_part.tool_name,
-                        content=pending_tool_message,
-                        tool_call_id=pending_part.tool_call_id,
-                        outcome="failed",
-                        provider_name=pending_part.provider_name,
-                        provider_details=pending_part.provider_details,
-                    )
-                )
-            else:
-                synthetic_returns.append(
-                    ToolReturnPart(
-                        tool_name=pending_part.tool_name,
-                        content=pending_tool_message,
-                        tool_call_id=pending_part.tool_call_id,
-                        outcome="failed",
-                    )
-                )
-
-        if synthetic_returns:
-            completed.append(ModelRequest(parts=cast(Any, synthetic_returns)))
-        return completed
 
     def _truncate_incomplete_model_history(self, messages: list[ModelMessage]) -> list[ModelMessage]:
         pending_tool_calls: set[str] = set()
