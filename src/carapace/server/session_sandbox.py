@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from ..api_keys import Access, Scope
 from ..auth import UserIdentity
+from ..models.session import SessionState
 from ..sandbox.manager import UploadError, UploadTooLargeError
 from ..sandbox.state import SessionSandboxSnapshot
 from ..session import sent_files
@@ -22,7 +23,7 @@ server = server_module()
 router = APIRouter()
 
 
-def _load_owned_session(session_id: str, user: UserIdentity):
+def _load_owned_session(session_id: str, user: UserIdentity) -> SessionState:
     state = server._engine.session_mgr.load_state(session_id)
     if state is None or not server._engine.session_mgr.is_owned_by(session_id, user.username):
         raise HTTPException(status_code=404, detail="Session not found")

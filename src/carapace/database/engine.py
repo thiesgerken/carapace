@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import CursorResult, Engine, Result, create_engine, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -12,6 +12,15 @@ from ..models.config import DatabaseConfig
 SessionFactory = sessionmaker[Session]
 
 _ALEMBIC_DIR = Path(__file__).resolve().parent / "alembic"
+
+
+def affected_rows(result: Result[Any]) -> int:
+    """Rows an UPDATE or DELETE touched.
+
+    Session.execute is typed to return a plain Result, but for an UPDATE or DELETE it is a CursorResult.
+    """
+    assert isinstance(result, CursorResult)
+    return result.rowcount
 
 
 def _is_sqlite(url: str) -> bool:

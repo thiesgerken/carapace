@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from croniter import croniter
 from sqlalchemy import delete, select, update
 
-from .database.engine import SessionFactory
+from .database.engine import SessionFactory, affected_rows
 from .database.models import JobRow
 from .models.jobs import JobCronTrigger, JobDefinition, JobsFile
 
@@ -127,14 +127,14 @@ class JobsStore:
     def update_job(self, job_id: str, job: JobDefinition) -> JobDefinition:
         with self._session_factory.begin() as db:
             result = db.execute(update(JobRow).where(JobRow.id == job_id).values(**_job_columns(job)))
-            if result.rowcount == 0:  # type: ignore[missing-attribute]
+            if affected_rows(result) == 0:
                 raise KeyError(job_id)
         return job
 
     def delete_job(self, job_id: str) -> bool:
         with self._session_factory.begin() as db:
             result = db.execute(delete(JobRow).where(JobRow.id == job_id))
-            return result.rowcount > 0  # type: ignore[missing-attribute]
+            return affected_rows(result) > 0
 
 
 class JobsScheduler:

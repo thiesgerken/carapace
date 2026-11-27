@@ -18,7 +18,7 @@ from pydantic_ai.providers.openai_codex import (
 )
 from sqlalchemy import delete, update
 
-from .database.engine import SessionFactory
+from .database.engine import SessionFactory, affected_rows
 from .database.models import UserCodexCredentialsRow
 from .llm import retry_http_client
 from .models.config import CODEX_PROVIDER
@@ -108,13 +108,13 @@ class CodexCredentialStore:
                     updated_at=datetime.now(tz=UTC),
                 )
             )
-            if result.rowcount == 0:  # type: ignore[missing-attribute]
+            if affected_rows(result) == 0:
                 raise CodexNotConnectedError(user)
 
     def disconnect(self, user: str) -> bool:
         with self._session_factory.begin() as db:
             result = db.execute(delete(UserCodexCredentialsRow).where(UserCodexCredentialsRow.user == user))
-            return result.rowcount > 0  # type: ignore[missing-attribute]
+            return affected_rows(result) > 0
 
 
 class UserCodexCredentialSource(OpenAICodexCredentialSource):

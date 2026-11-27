@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -146,7 +146,7 @@ _current: ContextVar[tuple[TurnTrace, str] | None] = ContextVar("current_span", 
 
 
 @contextmanager
-def attach(trace: TurnTrace, parent_id: str) -> Iterator[None]:
+def attach(trace: TurnTrace, parent_id: str) -> Generator[None]:
     """Make *parent_id* in *trace* the parent of spans started in this block.
 
     For code that runs in another task than the turn (the proxy) and so does not inherit the turn's context.
@@ -159,7 +159,7 @@ def attach(trace: TurnTrace, parent_id: str) -> Iterator[None]:
 
 
 @contextmanager
-def attach_sandbox_call(trace: TurnTrace | None) -> Iterator[None]:
+def attach_sandbox_call(trace: TurnTrace | None) -> Generator[None]:
     """Nest the spans of a call from inside the sandbox (proxy, sandbox API) in its session's running turn.
 
     *trace* is the session's running turn, ``None`` outside one: then the block records no spans.
@@ -172,7 +172,7 @@ def attach_sandbox_call(trace: TurnTrace | None) -> Iterator[None]:
 
 
 @contextmanager
-def span(kind: str, name: str, /, **attrs: SpanAttr) -> Iterator[Span]:
+def span(kind: str, name: str, /, **attrs: SpanAttr) -> Generator[Span]:
     """Time the block as a span under the current one; its status follows how the block exits.
 
     A deferred tool call (approval required) is control flow, not a failure: it ends ``ok`` with

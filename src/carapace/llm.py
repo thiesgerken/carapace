@@ -132,7 +132,7 @@ class DisabledModelError(ValueError):
     """Raised when a model exists in the catalog but is switched off."""
 
 
-def resolve_available_model_entry(config: Config, model_name: str):
+def resolve_available_model_entry(config: Config, model_name: str) -> AvailableModelEntry:
     entries = {e.model_id: e for e in agent_available_model_entries(config.agent)}
     entry = entries.get(model_name)
     if entry is None:
@@ -151,7 +151,7 @@ def model_supports_vision(config: Config, model_name: str) -> bool:
 
 
 def model_settings_for_entry(
-    entry,
+    entry: AvailableModelEntry,
     *,
     default_thinking: ThinkingSetting | None = None,
 ) -> ModelSettings | None:
