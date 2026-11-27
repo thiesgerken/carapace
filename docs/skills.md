@@ -143,7 +143,7 @@ A built-in `create-skill` skill is seeded into every new knowledge repo to guide
 
 ## Bundled skills
 
-Every new knowledge repo gets them. The ones that need no setup (`artifacts`, `create-skill`, `credentials`, `mermaid`, `wikipedia`) are listed in the seeded `skills/flake.nix` as inputs on Carapace's `main` branch, not copied ([skill-flakes.md](skill-flakes.md#the-skills-flake)). The ones whose flake carries this instance's settings are copied into the repo: `carapace-cli` (listed), `ferret` and `web` (not listed until set up):
+Every new knowledge repo gets them. The ones that need no setup (`artifacts`, `create-skill`, `credentials`, `mermaid`, `wikipedia`) are listed in the seeded `skills/flake.nix` as inputs on Carapace's `main` branch, not copied ([skill-flakes.md](skill-flakes.md#the-skills-flake)). The others are copied into the repo until they move to Carapace's `main` too: `carapace-cli` (listed, but turned off in the seeded `skills/config.json` until its `CARAPACE_HOST` setting and `CARAPACE_API_KEY` slot are configured), `ferret` and `web` (not listed until set up, see their credential slots):
 
 | Skill          | Purpose                                                                        |
 | -------------- | ------------------------------------------------------------------------------ |

@@ -112,7 +112,7 @@ To turn a skill off, set `"enable": false` for it in `skills/config.json`, or re
 
 ### `skills/config.json`
 
-The values of the skills' [settings](#settings), per skill attribute, as JSON with sorted keys. A new knowledge repo gets `{}`; without the file every skill takes its defaults.
+The values of the skills' [settings](#settings) and the bindings of their [credential slots](#credential-slots), per skill attribute, as JSON with sorted keys. A new knowledge repo gets one that turns `carapace-cli` off until its server and API key are configured; without the file every skill takes its defaults.
 
 ```json
 {
