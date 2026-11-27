@@ -20,6 +20,42 @@ let
     bool = lib.types.bool;
   };
 
+  # The options a skill declares in skills/config.json: whether it is on, its settings, its credential slots.
+  skillOptions =
+    attr: package:
+    let
+      # The newest declaration: helpers that have it have the settings too.
+      slots =
+        package.passthru.carapace.credentials
+          or (throw "skill ${attr}: its Carapace helpers are older than credential slots; let it follow carapace and run `nix flake update carapace --flake ./skills`");
+    in
+    {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether ${attr} is a skill of this instance.";
+      };
+      settings = lib.mapAttrs (
+        _: setting:
+        lib.mkOption (
+          {
+            type = settingTypes.${setting.type};
+            inherit (setting) description;
+          }
+          // lib.optionalAttrs (setting ? default) { inherit (setting) default; }
+        )
+      ) package.passthru.carapace.settings;
+      # A vault path, as `ccred get` takes it; null until bound.
+      credentials = lib.mapAttrs (
+        slot: _:
+        lib.mkOption {
+          type = lib.types.nullOr (lib.types.strMatching "[^/[:space:]]+/[^[:space:]]+");
+          default = null;
+          description = "The password-manager entry bound to ${attr}'s credential slot ${slot}.";
+        }
+      ) slots;
+    };
+
   # The packages and manifests of every skill for one system. The manifest is what Carapace reads of a skill
   # (docs/skill-flakes.md): its settings and credential bindings with this instance's values, and each
   # command's needs for them.
@@ -27,50 +63,24 @@ let
     skills: values: system:
     let
       packages = lib.mapAttrs (_: skill: skill.packages.${system}.default) skills;
-      # The newest declaration: helpers that have it have the settings too.
-      slotsOf =
-        attr: package:
-        package.passthru.carapace.credentials
-          or (throw "skill ${attr}: its Carapace helpers are older than credential slots; let it follow carapace and run `nix flake update carapace --flake ./skills`");
-      evaluated = lib.evalModules {
-        modules = [
-          {
-            options.skills = lib.mapAttrs (attr: package: {
-              enable = lib.mkOption {
-                type = lib.types.bool;
-                default = true;
-                description = "Whether ${attr} is a skill of this instance.";
-              };
-              settings = lib.mapAttrs (
-                _: setting:
-                lib.mkOption (
-                  {
-                    type = settingTypes.${setting.type};
-                    inherit (setting) description;
-                  }
-                  // lib.optionalAttrs (setting ? default) { inherit (setting) default; }
-                )
-              ) package.passthru.carapace.settings;
-              # A vault path, as `ccred get` takes it; null until bound.
-              credentials = lib.mapAttrs (
-                slot: _:
-                lib.mkOption {
-                  type = lib.types.nullOr (lib.types.strMatching "[^/[:space:]]+/[^[:space:]]+");
-                  default = null;
-                  description = "The password-manager entry bound to ${attr}'s credential slot ${slot}.";
-                }
-              ) (slotsOf attr package);
-            }) packages;
-          }
-          {
-            _file = "skills/config.json";
-            skills = values;
-          }
-        ];
-      };
+      # Checked by name only: evaluating the other skills would read their flakes, and one broken skill
+      # must not fail the others.
+      unknown = lib.attrNames (removeAttrs values (lib.attrNames skills));
       manifest =
         attr: package:
+        assert lib.assertMsg (unknown == [ ])
+          "skills/config.json: ${lib.concatStringsSep ", " unknown} is not a skill that skills/flake.nix lists";
         let
+          # The module system over this skill alone, for the same reason.
+          evaluated = lib.evalModules {
+            modules = [
+              { options.skills.${attr} = skillOptions attr package; }
+              {
+                _file = "skills/config.json";
+                skills.${attr} = values.${attr} or { };
+              }
+            ];
+          };
           cfg = evaluated.config.skills.${attr};
           options = evaluated.options.skills.${attr}.settings;
           missing = lib.filter (setting: !options.${setting}.isDefined) (lib.attrNames options);

@@ -167,8 +167,8 @@ resources:
   limits:
     memory: 1Gi
 
-# -- Overwrite existing asset files (SOUL.md, SECURITY.md, bundled skills, …)
-# with the versions bundled in the container image on every startup.
+# -- Overwrite SECURITY.md in every knowledge repo with the version bundled in the
+# container image on every startup. Other seeded files and skills/ are never overwritten.
 resetAssets: false
 
 # -- Standalone Bitwarden CLI proxy instance(s) for Bitwarden-compatible credential backends.

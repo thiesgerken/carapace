@@ -102,7 +102,7 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 
 - A local skill is a `path:./<dir>` input, a skill from elsewhere any flake reference (e.g. `github:someone/skill-weather`). Every skill follows `nixpkgs` and `carapace`, so the lock holds one of each, and `nix flake update carapace --flake ./skills` moves the helpers of every skill at once.
 - The bundled skills come from Carapace's `main` branch, without a tag: every push to `main` is a release. The lock pins the commit they were last updated to; `nix flake update <name> --flake ./skills` brings one to the latest.
-- `skillsFlake` exposes each skill's package as `packages.<system>.<name>` and its [manifest](#the-manifest) as `manifests.<system>.<name>`. The builder evaluates and builds every attribute on its own, from `skills/flake.nix`, its lock, `config.json` and the skill's own directory at `HEAD`, so one broken skill leaves the others built and usable.
+- `skillsFlake` exposes each skill's package as `packages.<system>.<name>` and its [manifest](#the-manifest) as `manifests.<system>.<name>`. The builder evaluates and builds every attribute on its own, from `skills/flake.nix`, its lock, `config.json` and the skill's own directory at `HEAD`. A skill's package and manifest read no other skill's flake, so one broken skill leaves the others built and usable.
 - The server reads the list from `skills/flake.lock` (the root's inputs), never by evaluating Nix. Without `skills/flake.nix` or its lock the repo has no skills, and the Knowledge view says so.
 - `carapace` is the helpers' attribute, so the bundled skill in `skills/carapace` is listed as `carapace-cli`.
 
@@ -121,7 +121,7 @@ The values of the skills' [settings](#settings) and the bindings of their [crede
 }
 ```
 
-`skillsFlake` reads it into the Nix module system: each skill has the options `enable` (default `true`) and `settings.<NAME>` with the declared type. A setting the skill does not declare or a skill the flake does not list fails the evaluation of every skill, with the module system's message naming the option. A value of the wrong type fails only that skill's manifest, and so does a required setting without a value: `skill weather: no value for its setting CITY; set it in skills/config.json`. A skill that is off needs no values.
+`skillsFlake` reads it into the Nix module system, once per skill: a skill's manifest evaluates only its own options, `enable` (default `true`) and `settings.<NAME>` with the declared type, against its own entry, so it never reads another skill's flake. A key that names no skill the flake lists is checked by name and fails every skill's manifest. A setting the skill does not declare fails only that skill, with the module system's message naming the option, and so does a value of the wrong type, and so does a required setting without a value: `skill weather: no value for its setting CITY; set it in skills/config.json`. A skill that is off needs no values.
 
 A change to `config.json` re-evaluates every skill's manifest but builds nothing: the packages do not depend on it, so every instance of a skill runs the same build.
 
