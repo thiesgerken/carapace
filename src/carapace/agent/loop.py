@@ -13,7 +13,7 @@ Separates the core agent/approval loop from transport-specific code
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Generator
 from contextlib import contextmanager
 from typing import Any
 
@@ -221,7 +221,7 @@ def _record_usage(deps: Deps, usage: RunUsage, provider_cost: ProviderCostCapabi
 
 
 @contextmanager
-def _snapshot_on_failure(on_messages_snapshot: Callable[[list[Any]], None] | None) -> Iterator[None]:
+def _snapshot_on_failure(on_messages_snapshot: Callable[[list[Any]], None] | None) -> Generator[None]:
     """Hand the run's messages so far to *on_messages_snapshot* when the run raises or is cancelled.
 
     Without this the steps a run completed before failing (model responses, tool results) are lost

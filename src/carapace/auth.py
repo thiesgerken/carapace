@@ -16,7 +16,7 @@ from pwdlib import PasswordHash
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, select, update
 
-from .database.engine import SessionFactory
+from .database.engine import SessionFactory, affected_rows
 from .database.models import AuthSessionRow, User
 from .models.config import AuthConfig
 from .models.user import UserConfig
@@ -380,7 +380,7 @@ class AuthStore:
             result = db.execute(
                 update(AuthSessionRow).where(AuthSessionRow.id == session_id).values(revoked_at=datetime.now(tz=UTC))
             )
-            return result.rowcount > 0  # type: ignore[missing-attribute]
+            return affected_rows(result) > 0
 
     def revoke_user_sessions(self, username: str) -> int:
         key = normalize_username(username)
@@ -391,13 +391,13 @@ class AuthStore:
                 .where(AuthSessionRow.user == key, AuthSessionRow.revoked_at.is_(None))
                 .values(revoked_at=now)
             )
-            return result.rowcount  # type: ignore[missing-attribute]
+            return affected_rows(result)
 
     def prune_sessions(self, *, now: datetime | None = None) -> int:
         current = now or datetime.now(tz=UTC)
         with self._session_factory.begin() as db:
             result = db.execute(delete(AuthSessionRow).where(AuthSessionRow.expires_at <= current))
-            return result.rowcount  # type: ignore[missing-attribute]
+            return affected_rows(result)
 
     def signing_secret(self) -> str:
         with self._lock:

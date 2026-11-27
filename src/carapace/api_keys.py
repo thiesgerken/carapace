@@ -13,7 +13,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from .auth import AuthStore, UserIdentity, has_admin_role, normalize_username
-from .database.engine import SessionFactory
+from .database.engine import SessionFactory, affected_rows
 from .database.models import ApiKeyRow
 
 # Non-secret lookup handle prefix; the full token is "<prefix>.<body>".
@@ -139,7 +139,7 @@ class ApiKeyStore:
                 .where(ApiKeyRow.id == key_id, ApiKeyRow.user == key_user, ApiKeyRow.revoked_at.is_(None))
                 .values(revoked_at=datetime.now(tz=UTC))
             )
-            return result.rowcount > 0  # type: ignore[missing-attribute]
+            return affected_rows(result) > 0
 
     def validate_key(self, full_token: str) -> tuple[UserIdentity, set[ApiKeyGrant]] | None:
         """Resolve a plaintext token to its owner identity and effective grants."""

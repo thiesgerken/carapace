@@ -11,7 +11,7 @@ from sqlalchemy import ColumnElement, and_, case, delete, exists, func, not_, or
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
-from ..database.engine import SessionFactory
+from ..database.engine import SessionFactory, affected_rows
 from ..database.models import (
     MemoryDigestRow,
     MemoryDismissedLoopRow,
@@ -314,7 +314,7 @@ class MemoryStore:
                 .where(MemoryTaskRow.id.in_(ids), MemoryTaskRow.status.in_([s.value for s in from_statuses]))
                 .values(**values)
             )
-            return result.rowcount  # type: ignore[missing-attribute]
+            return affected_rows(result)
 
     # --- tasks: worker side ---
 
@@ -326,7 +326,7 @@ class MemoryStore:
                 .where(MemoryTaskRow.status == TaskStatus.running)
                 .values(status=TaskStatus.queued.value, started_at=None)
             )
-            return result.rowcount  # type: ignore[missing-attribute]
+            return affected_rows(result)
 
     def next_queued(self, limit: int) -> list[MemoryTask]:
         """Sources before digests, then oldest queued first across users; blocked ones included
@@ -371,7 +371,7 @@ class MemoryStore:
                 .where(MemoryTaskRow.id == task_id, MemoryTaskRow.status.in_(_OPEN))
                 .values(status=TaskStatus.cancelled.value, error=reason, finished_at=now, blocked_reason=None)
             )
-            return result.rowcount == 1  # type: ignore[missing-attribute]
+            return affected_rows(result) == 1
 
     def fail_unclaimed(self, task_id: int, error: str, now: datetime) -> bool:
         """pending/queued -> failed, for tasks that broke before they could run (estimation)."""
@@ -384,7 +384,7 @@ class MemoryStore:
                 )
                 .values(status=TaskStatus.failed.value, error=error, finished_at=now, blocked_reason=None)
             )
-            return result.rowcount == 1  # type: ignore[missing-attribute]
+            return affected_rows(result) == 1
 
     def claim(self, task_id: int, now: datetime) -> bool:
         """queued -> running, atomically: False if someone else claimed or cancelled it first."""
@@ -399,7 +399,7 @@ class MemoryStore:
                     attempts=MemoryTaskRow.attempts + 1,
                 )
             )
-            return result.rowcount == 1  # type: ignore[missing-attribute]
+            return affected_rows(result) == 1
 
     def record_outcome(self, task_id: int, outcome: TaskOutcome, now: datetime) -> bool:
         """Persist a handler's result and mark the task done, in one transaction.
@@ -724,7 +724,7 @@ class MemoryStore:
             result = db.execute(
                 delete(MemorySessionExtractionRow).where(MemorySessionExtractionRow.session_id == session_id)
             )
-            return result.rowcount  # type: ignore[missing-attribute]
+            return affected_rows(result)
 
     # --- dismissed open loops ---
 

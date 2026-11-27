@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import time
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any
@@ -335,7 +335,7 @@ class SessionUsageBudgetMixin:
         return [_budget_limit_message(metric, state.budget) for metric in limits]
 
     @contextlib.contextmanager
-    def llm_request_recording(self, active: ActiveSession, *, track_activity: bool = True):
+    def llm_request_recording(self, active: ActiveSession, *, track_activity: bool = True) -> Generator[None]:
         """Record LLM requests for *active* into its request log.
 
         When *track_activity* is False (e.g. background auto-titling), the recorder still appends

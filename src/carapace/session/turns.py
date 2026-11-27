@@ -17,7 +17,7 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from datetime import UTC, datetime
 from functools import partial
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 from loguru import logger
 from pydantic_ai import ToolDenied
@@ -26,8 +26,6 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    NativeToolCallPart,
-    NativeToolReturnPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -912,83 +910,38 @@ class SessionTurnMixin(SessionTurnHost):
     def _complete_cancelled_model_history(
         self, messages: list[ModelMessage], pending_tool_message: str
     ) -> list[ModelMessage]:
-        completed = list(messages)
-        pending_parts = []
-        pending_index_by_id: dict[str, int] = {}
-
-        for message in completed:
-            if isinstance(message, ModelResponse):
-                for part in message.parts:
-                    if not isinstance(part, ToolCallPart | NativeToolCallPart):
-                        continue
-                    tool_call_id = getattr(part, "tool_call_id", None)
-                    if isinstance(tool_call_id, str) and tool_call_id and tool_call_id not in pending_index_by_id:
-                        pending_index_by_id[tool_call_id] = len(pending_parts)
-                        pending_parts.append(part)
-            elif isinstance(message, ModelRequest):
-                for part in message.parts:
-                    if not isinstance(part, ToolReturnPart | NativeToolReturnPart):
-                        continue
-                    tool_call_id = getattr(part, "tool_call_id", None)
-                    if not isinstance(tool_call_id, str):
-                        continue
-                    pending_index = pending_index_by_id.pop(tool_call_id, None)
-                    if pending_index is not None:
-                        pending_parts[pending_index] = None
-
-        synthetic_returns: list[ToolReturnPart | NativeToolReturnPart] = []
-        for pending_part in pending_parts:
-            if pending_part is None:
-                continue
-            if isinstance(pending_part, NativeToolCallPart):
-                synthetic_returns.append(
-                    NativeToolReturnPart(
-                        tool_name=pending_part.tool_name,
-                        content=pending_tool_message,
-                        tool_call_id=pending_part.tool_call_id,
-                        outcome="failed",
-                        provider_name=pending_part.provider_name,
-                        provider_details=pending_part.provider_details,
-                    )
-                )
-            else:
-                synthetic_returns.append(
-                    ToolReturnPart(
-                        tool_name=pending_part.tool_name,
-                        content=pending_tool_message,
-                        tool_call_id=pending_part.tool_call_id,
-                        outcome="failed",
-                    )
-                )
-
-        if synthetic_returns:
-            completed.append(ModelRequest(parts=cast(Any, synthetic_returns)))
-        return completed
+        # carapace enables no native (provider-run) tools, so only function tool calls can be left open.
+        pending: dict[str, ToolCallPart] = {}
+        for message in messages:
+            for part in message.parts:
+                if isinstance(part, ToolCallPart):
+                    pending.setdefault(part.tool_call_id, part)
+                elif isinstance(part, ToolReturnPart):
+                    pending.pop(part.tool_call_id, None)
+        if not pending:
+            return list(messages)
+        synthetic_returns = [
+            ToolReturnPart(
+                tool_name=part.tool_name, content=pending_tool_message, tool_call_id=part.tool_call_id, outcome="failed"
+            )
+            for part in pending.values()
+        ]
+        return [*messages, ModelRequest(parts=synthetic_returns)]
 
     def _truncate_incomplete_model_history(self, messages: list[ModelMessage]) -> list[ModelMessage]:
         pending_tool_calls: set[str] = set()
         safe_prefix_end = 0
-
         for index, message in enumerate(messages):
-            if isinstance(message, ModelResponse):
-                for part in message.parts:
-                    if isinstance(part, ToolCallPart | NativeToolCallPart):
-                        tool_call_id = getattr(part, "tool_call_id", None)
-                        if isinstance(tool_call_id, str) and tool_call_id:
-                            pending_tool_calls.add(tool_call_id)
-            elif isinstance(message, ModelRequest):
-                for part in message.parts:
-                    # A retried ToolReturnPart resolves the call too: the model got a validation
-                    # retry instead of a result, but the call is answered and the turn continues.
-                    # Treating it as pending strands every later turn (history collapses).
-                    if isinstance(part, ToolReturnPart | NativeToolReturnPart):
-                        tool_call_id = getattr(part, "tool_call_id", None)
-                        if isinstance(tool_call_id, str) and tool_call_id in pending_tool_calls:
-                            pending_tool_calls.remove(tool_call_id)
-
+            for part in message.parts:
+                if isinstance(part, ToolCallPart):
+                    pending_tool_calls.add(part.tool_call_id)
+                # A retried ToolReturnPart resolves the call too: the model got a validation
+                # retry instead of a result, but the call is answered and the turn continues.
+                # Treating it as pending strands every later turn (history collapses).
+                elif isinstance(part, ToolReturnPart):
+                    pending_tool_calls.discard(part.tool_call_id)
             if not pending_tool_calls:
                 safe_prefix_end = index + 1
-
         return messages[:safe_prefix_end]
 
     def _complete_cancelled_events(
