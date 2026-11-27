@@ -30,7 +30,10 @@ _OLD_FLAKE = """{
 _RELEASE_CONFIG = {
     "carapace": '      server = "carapace.example.com";\n      apiKey = "<backend>/<your-carapace-api-key-id>";\n',
     "web": '                  credentials.BRAVE_API_KEY = "vault/brave-api-key";\n',
-    "ferret": '                url = "https://ferret.example.invalid/mcp";\n                bearer = "vault/ferret-api-key";\n',
+    "ferret": (
+        '                url = "https://ferret.example.invalid/mcp";\n'
+        '                bearer = "vault/ferret-api-key";\n'
+    ),
 }
 _DISABLED = "metadata:\n  carapace:\n    disabled: true\n"
 
@@ -114,14 +117,13 @@ def test_an_existing_repo_gets_its_skills_listed(repo: Path, tmp_path: Path) -> 
     assert 'notes = {\n      url = "path:./notes";' in flake
     assert '# drafts = {\n    #   url = "path:./drafts";' in flake
     # Copies changed only in their configuration become inputs; ferret's description changed too, so it stays.
-    assert (
-        'carapace-cli = {\n      url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/carapace";' in flake
-    )
-    assert 'web = {\n      url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/web";' in flake
+    bundled = 'url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills'
+    assert f'carapace-cli = {{\n      {bundled}/carapace";' in flake
+    assert f'web = {{\n      {bundled}/web";' in flake
     assert 'ferret = {\n      url = "path:./ferret";' in flake
     assert not (repo / "skills" / "carapace").exists() and not (repo / "skills" / "web").exists()
     assert "skills/ferret: you changed more than its configuration" in result.stdout
-    assert flake.count('inputs.carapace.follows = "carapace";') == 9
+    assert flake.count('inputs.carapace.follows = "carapace";') == 8
     # Skills without a flake get one; a flake without src gets it.
     assert 'name = "notes";\n          src = ./.;' in (repo / "skills" / "notes" / "flake.nix").read_text()
     assert (repo / "skills" / "mermaid" / "flake.nix").is_file()
@@ -184,9 +186,11 @@ def test_the_bundled_skills_it_replaces_are_the_inputs_of_the_seeded_flake() -> 
     script = SCRIPT.read_text()
     seeded = (ROOT / "src" / "carapace" / "assets" / "skills" / "flake.nix").read_text()
 
-    listed = re.search(r'^FROM_CARAPACE="([^"]*)"$', script, re.M)
-    assert listed is not None
-    assert sorted(listed.group(1).split()) == sorted(
+    # Together the two lists are what the seed takes from carapace.
+    lists = [re.search(rf'^{name}="([^"]*)"$', script, re.M) for name in ("FROM_CARAPACE", "CONFIGURED")]
+    names = " ".join(found.group(1) for found in lists if found).split()
+    assert all(lists)
+    assert sorted(names) == sorted(
         re.findall(r'url = "github:thiesgerken/carapace\?dir=src/carapace/assets/skills/([a-z-]+)";', seeded)
     )
 
