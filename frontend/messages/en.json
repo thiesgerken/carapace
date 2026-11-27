@@ -82,6 +82,7 @@
             }
         },
         "skillConfig": {
+            "fullLog": "Full log",
             "credentials": "Credentials",
             "unbound": "not bound",
             "unbind": "Unbind",
