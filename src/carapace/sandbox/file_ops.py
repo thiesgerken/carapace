@@ -64,6 +64,8 @@ class ExecInSession(Protocol):
 
 
 class SandboxFileOps:
+    # File ops pass tool_call_id=None: their scripts never cross the sandbox boundary, so there is no
+    # proxy, credential or push decision to nest under the agent's call.
     def __init__(
         self,
         *,
