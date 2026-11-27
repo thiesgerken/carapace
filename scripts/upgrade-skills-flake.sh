@@ -33,9 +33,15 @@ if [ -n "$(git status --porcelain -- .)" ]; then
   exit 1
 fi
 
-# Only bootstrap commits touched the directory.
-untouched() {
-  ! git log --format=%s -- "$1" | grep -qvxF "$BOOTSTRAP_SUBJECT"
+# The last bootstrap commit that wrote into the directory: the seed, or a later reset-assets.
+seeded_at() { # dir
+  git log --format='%H%x09%s' -- "$1" | awk -F '\t' -v subject="$BOOTSTRAP_SUBJECT" '$2 == subject { print $1; exit }'
+}
+
+# Nothing changed in the directory since bootstrap last wrote it.
+untouched() { # dir
+  base=$(seeded_at "$1")
+  [ -n "$base" ] && git diff --quiet "$base" HEAD -- "$1"
 }
 
 one_of() { # word list
@@ -126,64 +132,78 @@ strip_switch() {
   grep -Ev '^[[:space:]]*(disabled:.*|metadata:|carapace:)[[:space:]]*$|^# Before enabling' || true
 }
 
-# Whether a bundled copy changed only in its configuration since bootstrap added it: its flake.nix and
-# lock, and the lines that turn it on.
+# Whether a bundled copy changed only in its configuration since bootstrap last wrote it: its flake.nix
+# and lock, and the lines of SKILL.md that turn it on.
 config_only() { # dir
-  base=$(git log --diff-filter=A --format=%H -- "$1" | tail -n 1)
+  base=$(seeded_at "$1")
   [ -n "$base" ] || return 1
   [ -z "$(git diff --name-only "$base" HEAD -- "$1" ":(exclude)$1/flake.nix" ":(exclude)$1/flake.lock" ":(exclude)$1/SKILL.md")" ] || return 1
   [ "$(git show "$base:./$1/SKILL.md" | strip_switch)" = "$(strip_switch < "$1/SKILL.md")" ]
 }
 
-# The value of `<name> = "<value>";` in a flake, as the release's bundled flakes wrote their configuration.
-literal() { # file name-pattern
-  sed -n "s/^[[:space:]]*$2 = \"\([^\"]*\)\";.*/\1/p" "$1" | head -n 1
+# One configuration value from a copy's flake.nix, a whole line `<name> = "<value>";` as the release wrote
+# it, with a value starting with <prefix> (ferret's `url` is also the carapace input's attribute). Sets
+# `found` and returns 0 for a value to carry over, 1 for the release's placeholder, 2 when the flake has
+# no such line, several, or a value that is neither (reformatted, computed, or needing JSON escapes).
+read_value() { # file name prefix placeholder
+  matches=$(sed -n "s/^[[:space:]]*$2 = \"\($3[^\"]*\)\";[[:space:]]*$/\1/p" "$1")
+  found=$matches
+  [ -n "$matches" ] && [ "$(printf '%s\n' "$matches" | wc -l)" -eq 1 ] || return 2
+  [ "$found" != "$4" ] || return 1
+  printf '%s' "$found" | grep -Eq '^[A-Za-z0-9._:/@+=-]+$' || return 2
 }
 
-# A value worth carrying over: no placeholder from the release, nothing JSON would need escaped.
-usable() {
-  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._:/@+=-]+$' && ! printf '%s' "$1" | grep -Eq '\.example\.(com|invalid)'
+# Reads one value into the copy's config.json entry, or notes why it cannot.
+carry() { # dir name prefix placeholder kind json-name
+  if read_value "$1/flake.nix" "$2" "$3" "$4"; then
+    pair="\"$6\": \"$found\""
+    if [ "$5" = setting ]; then settings="$settings${settings:+, }$pair"; else credentials="$credentials${credentials:+, }$pair"; fi
+  else
+    case $? in
+      1) missing="$missing $6" ;;
+      *) unreadable="$unreadable $2" ;;
+    esac
+  fi
 }
 
-entry() { # json-name [json-value-or-empty]
-  [ -z "${2:-}" ] || printf '"%s": "%s"' "$1" "$2"
-}
-
-# The config.json entry of a bundled skill from its copy, and whether it is complete enough to turn on.
-configure() { # dir attr
+# The configuration of a bundled copy, read from its flake.nix: `settings` and `credentials` as JSON
+# members, `missing` for values still at the release's placeholder, `unreadable` for lines not as shipped.
+configure() { # dir
+  settings=""
+  credentials=""
+  missing=""
+  unreadable=""
   case "$1" in
     carapace)
-      setting=$(entry CARAPACE_HOST "$(value "$1/flake.nix" server)")
-      credential=$(entry CARAPACE_API_KEY "$(value "$1/flake.nix" apiKey)")
+      carry "$1" server "" carapace.example.com setting CARAPACE_HOST
+      carry "$1" apiKey "" "<backend>/<your-carapace-api-key-id>" credential CARAPACE_API_KEY
       ;;
     web)
-      setting=""
-      credential=$(entry BRAVE_API_KEY "$(value "$1/flake.nix" 'credentials\.BRAVE_API_KEY')")
+      carry "$1" 'credentials\.BRAVE_API_KEY' "" "" credential BRAVE_API_KEY
       ;;
     ferret)
-      setting=$(entry FERRET_URL "$(value "$1/flake.nix" url)")
-      credential=$(entry FERRET_API_KEY "$(value "$1/flake.nix" bearer)")
+      carry "$1" url "https:\/\/" https://ferret.example.invalid/mcp setting FERRET_URL
+      carry "$1" bearer "" "" credential FERRET_API_KEY
       ;;
   esac
-  enable=true
-  if [ -z "$credential" ] || { [ "$1" != web ] && [ -z "$setting" ]; }; then
-    enable=false
-    echo "skills/$1: not configured yet; set its values in skills/config.json and remove \"enable\": false (see its SKILL.md)"
-  elif grep -Eq '^[[:space:]]+disabled:[[:space:]]*true[[:space:]]*(#.*)?$' "$1/SKILL.md"; then
-    enable=false
-    echo "skills/$1: was disabled; its values are in skills/config.json, remove \"enable\": false there to turn it on"
-  fi
-  config="$config  \"$2\": {"
-  [ -z "$credential" ] || config="$config\"credentials\": {$credential}, "
-  config="$config\"enable\": $enable"
-  [ -z "$setting" ] || config="$config, \"settings\": {$setting}"
-  config="$config},
-"
 }
 
-value() { # file name-pattern
-  found=$(literal "$1" "$2")
-  if usable "$found"; then printf '%s' "$found"; fi
+# The config.json entry for a bundled skill: its values, on when they are complete and it was not disabled.
+entry() { # dir attr
+  enable=true
+  if [ -n "$missing" ]; then
+    enable=false
+    echo "skills/$1: not configured yet (missing:$missing); set it in skills/config.json and remove \"enable\": false"
+  elif grep -Eq '^[[:space:]]+disabled:[[:space:]]*true[[:space:]]*(#.*)?$' "$1/SKILL.md"; then
+    enable=false
+    echo "skills/$1: was disabled; remove \"enable\": false in skills/config.json to turn it on"
+  fi
+  members=""
+  [ -z "$credentials" ] || members="\"credentials\": {$credentials}, "
+  members="$members\"enable\": $enable"
+  [ -z "$settings" ] || members="$members, \"settings\": {$settings}"
+  config="$config  \"$2\": {$members},
+"
 }
 
 # Every skill that stays in the repo needs an attribute name; check them all before changing anything.
@@ -203,21 +223,44 @@ for dir in */; do
   [ -f "$name/SKILL.md" ] || continue
   if one_of "$name" "$CONFIGURED"; then
     attr=$(attribute "$name")
-    configure "$name" "$attr"
-    if config_only "$name"; then
+    bundled="$CARAPACE_URL?dir=src/carapace/assets/skills/$name"
+    if [ ! -f "$name/flake.nix" ]; then
+      # From before skill flakes, broken either way: the input replaces it, configured by hand.
       git rm -rq -- "$name"
-      external="$external$(input "$attr" "$CARAPACE_URL?dir=src/carapace/assets/skills/$name")
+      external="$external$(input "$attr" "$bundled")
+"
+      config="$config  \"$attr\": {\"enable\": false},
+"
+      echo "skills/$name: copy from before skill flakes, now an input on carapace; set it up in skills/config.json"
+      continue
+    fi
+    configure "$name"
+    if [ -z "$unreadable" ] && config_only "$name"; then
+      # Before the removal: it reads the copy's SKILL.md.
+      entry "$name" "$attr"
+      git rm -rq -- "$name"
+      external="$external$(input "$attr" "$bundled")
 "
       echo "skills/$name: bundled copy, now an input on carapace; its configuration is in skills/config.json"
-    else
-      add_src "$name/flake.nix"
-      local="$local$(input "$attr" "path:./$name")
-"
-      echo "skills/$name: you changed more than its configuration, so it stays a local skill. Its flake.nix must"
-      echo "  declare its settings and credential slots instead of literal values, as the bundled one does:"
-      echo "  https://github.com/thiesgerken/carapace/blob/main/src/carapace/assets/skills/$name/flake.nix"
-      echo "  The values are already in skills/config.json."
+      continue
     fi
+    # Its flake does not declare the settings and slots yet, and config.json may only set declared ones.
+    add_src "$name/flake.nix"
+    local="$local$(input "$attr" "path:./$name")
+"
+    config="$config  \"$attr\": {\"enable\": false},
+"
+    if [ -n "$unreadable" ]; then
+      echo "skills/$name: stays a local skill, because its flake.nix does not have these lines as shipped:$unreadable."
+    else
+      echo "skills/$name: stays a local skill, because you changed more than its configuration."
+    fi
+    echo "  Declare its settings and credential slots in its flake.nix as the bundled one does,"
+    echo "  https://github.com/thiesgerken/carapace/blob/main/src/carapace/assets/skills/$name/flake.nix,"
+    echo "  then replace its entry in skills/config.json with:"
+    members=""
+    [ -z "$credentials" ] || members="\"credentials\": {$credentials}, "
+    echo "  \"$attr\": {$members\"settings\": {$settings}}"
     continue
   fi
   if one_of "$name" "$FROM_CARAPACE" && untouched "$name"; then

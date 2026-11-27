@@ -26,26 +26,28 @@ _OLD_FLAKE = """{
   };
 }
 """
-# The configuration lines of the release's bundled flakes, as bootstrap seeded them.
-_RELEASE_CONFIG = {
-    "carapace": '      server = "carapace.example.com";\n      apiKey = "<backend>/<your-carapace-api-key-id>";\n',
-    "web": '                  credentials.BRAVE_API_KEY = "vault/brave-api-key";\n',
-    "ferret": (
-        '                url = "https://ferret.example.invalid/mcp";\n'
-        '                bearer = "vault/ferret-api-key";\n'
-    ),
-}
-_DISABLED = "metadata:\n  carapace:\n    disabled: true\n"
-
-
-def _bundled_flake(name: str) -> str:
-    return _OLD_FLAKE.replace('name = "carapace";', f'name = "{name}";\n{_RELEASE_CONFIG[name]}')
+# carapace, web and ferret as the last release shipped them, configuration lines and all.
+_RELEASE = Path(__file__).parent / "fixtures" / "release-v0.199.0"
 
 
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True, env=os.environ | _ENV
     ).stdout
+
+
+def _released(repo: Path, name: str) -> None:
+    directory = repo / "skills" / name
+    directory.mkdir(parents=True)
+    for source in (_RELEASE / name).iterdir():
+        (directory / source.name).write_text(source.read_text())
+
+
+def _edit(repo: Path, path: str, old: str, new: str) -> None:
+    file = repo / "skills" / path
+    text = file.read_text()
+    assert old in text
+    file.write_text(text.replace(old, new))
 
 
 def _skill(repo: Path, name: str, frontmatter: str = "", flake: str | None = None) -> None:
@@ -64,22 +66,16 @@ def repo(tmp_path: Path) -> Path:
     _git(repo, "init", "-q")
     _skill(repo, "artifacts")
     _skill(repo, "mermaid")
-    _skill(repo, "carapace", flake=_bundled_flake("carapace"))
-    _skill(repo, "web", _DISABLED, flake=_bundled_flake("web"))
-    _skill(repo, "ferret", _DISABLED, flake=_bundled_flake("ferret"))
+    for name in ("carapace", "web", "ferret"):
+        _released(repo, name)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", BOOTSTRAP)
     # Configured in its flake, as the release asked; nothing else changed.
-    carapace_flake = repo / "skills" / "carapace" / "flake.nix"
-    carapace_flake.write_text(
-        carapace_flake.read_text()
-        .replace("carapace.example.com", "carapace.home.test")
-        .replace("<backend>/<your-carapace-api-key-id>", "bw/carapace-key")
-    )
+    _edit(repo, "carapace/flake.nix", '"carapace.example.com"', '"carapace.home.test"')
+    _edit(repo, "carapace/flake.nix", '"<backend>/<your-carapace-api-key-id>"', '"bw/carapace-key"')
     # Set up as SETUP.md said: endpoint in the flake, turned on, and the sources in the description.
-    ferret_flake = repo / "skills" / "ferret" / "flake.nix"
-    ferret_flake.write_text(ferret_flake.read_text().replace("ferret.example.invalid", "ferret.home.test"))
-    (repo / "skills" / "ferret" / "SKILL.md").write_text("---\nname: ferret\ndescription: Mail and notes\n---\nBody\n")
+    _edit(repo, "ferret/flake.nix", "ferret.example.invalid", "ferret.home.test")
+    _edit(repo, "ferret/SKILL.md", "X, Y, Z", "mail and notes")
     _skill(repo, "notes")
     _skill(repo, "drafts", "metadata:\n  carapace:\n    disabled: true # later\n")
     # A package of its own takes a `src`; mkSkill still lacks one.
@@ -122,12 +118,17 @@ def test_an_existing_repo_gets_its_skills_listed(repo: Path, tmp_path: Path) -> 
     assert f'web = {{\n      {bundled}/web";' in flake
     assert 'ferret = {\n      url = "path:./ferret";' in flake
     assert not (repo / "skills" / "carapace").exists() and not (repo / "skills" / "web").exists()
-    assert "skills/ferret: you changed more than its configuration" in result.stdout
+    assert "skills/ferret: stays a local skill, because you changed more than its configuration." in result.stdout
+    # Its flake declares no settings yet, so config.json only turns it off; the values are printed instead.
+    assert (
+        '"ferret": {"credentials": {"FERRET_API_KEY": "vault/ferret-api-key"}, "settings": {"FERRET_URL": "https://ferret.home.test/mcp"}}'
+        in result.stdout
+    )
     assert flake.count('inputs.carapace.follows = "carapace";') == 8
     # Skills without a flake get one; a flake without src gets it.
     assert 'name = "notes";\n          src = ./.;' in (repo / "skills" / "notes" / "flake.nix").read_text()
     assert (repo / "skills" / "mermaid" / "flake.nix").is_file()
-    assert 'name = "ferret";\n        src = ./.;' in (repo / "skills" / "ferret" / "flake.nix").read_text()
+    assert "src = ./.;" in (repo / "skills" / "ferret" / "flake.nix").read_text()
     assert 'name = "tool";\n        src = ./.;' in (repo / "skills" / "tool" / "flake.nix").read_text()
     assert (tmp_path / "calls").read_text() == "flake lock ./skills\n"
     staged = _git(repo, "diff", "--cached", "--name-status")
@@ -140,11 +141,7 @@ def test_an_existing_repo_gets_its_skills_listed(repo: Path, tmp_path: Path) -> 
             "enable": True,
             "settings": {"CARAPACE_HOST": "carapace.home.test"},
         },
-        "ferret": {
-            "credentials": {"FERRET_API_KEY": "vault/ferret-api-key"},
-            "enable": True,
-            "settings": {"FERRET_URL": "https://ferret.home.test/mcp"},
-        },
+        "ferret": {"enable": False},
         "web": {"credentials": {"BRAVE_API_KEY": "vault/brave-api-key"}, "enable": False},
     }
     assert "carapace.lib.skillsFlake {" in flake
@@ -195,13 +192,86 @@ def test_the_bundled_skills_it_replaces_are_the_inputs_of_the_seeded_flake() -> 
     )
 
 
-def test_a_bundled_copy_left_at_its_placeholders_is_off(repo: Path, tmp_path: Path) -> None:
-    carapace_flake = repo / "skills" / "carapace" / "flake.nix"
-    carapace_flake.write_text(_bundled_flake("carapace"))
-    _git(repo, "commit", "-qam", "back to the placeholders")
+def _bootstrapped(tmp_path: Path) -> Path:
+    """Only the three configured skills, as the last release seeded them."""
+    repo = tmp_path / "knowledge"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    for name in ("carapace", "web", "ferret"):
+        _released(repo, name)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", BOOTSTRAP)
+    return repo
+
+
+def _config(repo: Path) -> dict[str, object]:
+    return json.loads((repo / "skills" / "config.json").read_text())
+
+
+def test_a_bundled_copy_left_at_its_placeholders_is_off(tmp_path: Path) -> None:
+    repo = _bootstrapped(tmp_path)
 
     result = _run(repo, tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert json.loads((repo / "skills" / "config.json").read_text())["carapace-cli"] == {"enable": False}
-    assert "skills/carapace: not configured yet" in result.stdout
+    assert _config(repo)["carapace-cli"] == {"enable": False}
+    assert "skills/carapace: not configured yet (missing: CARAPACE_HOST CARAPACE_API_KEY)" in result.stdout
+
+
+def test_ferret_configured_in_its_flake_becomes_an_input_with_its_endpoint(tmp_path: Path) -> None:
+    repo = _bootstrapped(tmp_path)
+    # The first `url =` of its flake is the carapace input's; the endpoint is the second.
+    _edit(repo, "ferret/flake.nix", "ferret.example.invalid", "ferret.home.test")
+    _edit(repo, "ferret/SKILL.md", "metadata:\n  carapace:\n    disabled: true\n", "")
+    _git(repo, "commit", "-qam", "set up ferret")
+
+    result = _run(repo, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert not (repo / "skills" / "ferret").exists()
+    assert _config(repo)["ferret"] == {
+        "credentials": {"FERRET_API_KEY": "vault/ferret-api-key"},
+        "enable": True,
+        "settings": {"FERRET_URL": "https://ferret.home.test/mcp"},
+    }
+
+
+def test_a_value_it_cannot_read_keeps_the_copy(tmp_path: Path) -> None:
+    repo = _bootstrapped(tmp_path)
+    _edit(repo, "carapace/flake.nix", 'server = "carapace.example.com";', 'server = "carapace" + ".home.test";')
+    _git(repo, "commit", "-qam", "computed server")
+
+    result = _run(repo, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert (repo / "skills" / "carapace" / "flake.nix").is_file()
+    assert _config(repo)["carapace-cli"] == {"enable": False}
+    assert "flake.nix does not have these lines as shipped: server." in result.stdout
+
+
+def test_changes_that_a_reset_undid_do_not_count(tmp_path: Path) -> None:
+    repo = _bootstrapped(tmp_path)
+    original = (repo / "skills" / "web" / "SKILL.md").read_text()
+    _edit(repo, "web/SKILL.md", "Search the web", "Search the whole web")
+    _git(repo, "commit", "-qam", "my wording")
+    (repo / "skills" / "web" / "SKILL.md").write_text(original)
+    _git(repo, "commit", "-qam", BOOTSTRAP)
+
+    result = _run(repo, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert not (repo / "skills" / "web").exists()
+    assert _config(repo)["web"] == {"credentials": {"BRAVE_API_KEY": "vault/brave-api-key"}, "enable": False}
+
+
+def test_a_copy_from_before_skill_flakes_becomes_the_input(tmp_path: Path) -> None:
+    repo = _bootstrapped(tmp_path)
+    (repo / "skills" / "carapace" / "flake.nix").unlink()
+    _git(repo, "commit", "-qam", "a pre-flake copy has no flake")
+
+    result = _run(repo, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert not (repo / "skills" / "carapace").exists()
+    assert _config(repo)["carapace-cli"] == {"enable": False}
+    assert not list((repo / "skills").glob("**/*.new"))
