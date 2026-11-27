@@ -30,10 +30,11 @@ The functions below come from the skills subflake of the Carapace repo, `github:
           default = skill.mkSkill {
             name = "weather";
             src = ./.;
-            needs = {
-              domains = [ "api.example.com" ];
-              credentials.WEATHER_TOKEN = "personal/weather-token";
+            credentials.WEATHER_TOKEN = {
+              type = "secret";
+              description = "A weather API token";
             };
+            needs.domains = [ "api.example.com" ];
             commands = {
               weather = {
                 exec = "${env}/bin/weather";
@@ -44,7 +45,7 @@ The functions below come from the skills subflake of the Carapace repo, `github:
                 description = "List the supported units, offline";
                 needs = {
                   domains = [ ];
-                  credentials = { };
+                  credentials = [ ];
                 };
               };
             };
@@ -111,7 +112,7 @@ To turn a skill off, set `"enable": false` for it in `skills/config.json`, or re
 
 ### `skills/config.json`
 
-The values of the skills' [settings](#settings), per skill attribute, as JSON with sorted keys. A new knowledge repo gets `{}`; without the file every skill takes its defaults.
+The values of the skills' [settings](#settings) and the bindings of their [credential slots](#credential-slots), per skill attribute, as JSON with sorted keys. A new knowledge repo gets one that turns `carapace-cli` off until its server and API key are configured; without the file every skill takes its defaults.
 
 ```json
 {
@@ -128,7 +129,7 @@ The Knowledge view of `skills/` edits it too: each skill's "Settings" opens a fo
 
 ## Commands and what they need
 
-`mkSkill { name, src, commands ? { }, needs ? { }, settings ? { } }` builds the package. `src` is the skill directory, normally `./.`: it becomes a store path of its own, referenced by the package, so the sandbox gets `SKILL.md`, scripts and references together with the commands. Each command has:
+`mkSkill { name, src, commands ? { }, needs ? { }, settings ? { }, credentials ? { } }` builds the package. `src` is the skill directory, normally `./.`: it becomes a store path of its own, referenced by the package, so the sandbox gets `SKILL.md`, scripts and references together with the commands. Each command has:
 
 - `exec`: what the wrapper runs, with the wrapper's arguments appended. It is shell words, not quoted for you: it gets word-split and expanded, which is what lets a store path carry fixed arguments (`"${pkgs.nodejs}/bin/node ${app}/src/main.mjs"`). A path with spaces needs its own quoting.
 - `description`: one short line, shown to the agent.
@@ -137,8 +138,8 @@ The Knowledge view of `skills/` edits it too: each skill's "Settings" opens a fo
 `needs` declares what a command will want from outside the sandbox, skill-wide or per command, as an attribute set or as a function of the [settings](#settings) (`settings: { domains = [ "${settings.CITY}.weather.example" ]; }`). Any other key, an invalid variable name or a malformed tunnel fails the evaluation of the manifest:
 
 - `domains`: host names, or `*.` plus a name of at least two labels.
-- `credentials`: environment variable to vault path. The wrapper exports each one before the command starts. Variable names must be shell identifiers.
-- `oauth`: vault paths of OAuth entries whose access token the command fetches itself with `ccred get --access-token`, as the MCP bridge does. Declared up front, exported nothing.
+- `credentials`: the skill's [credential slots](#credential-slots) the command gets, as a list of their names; every slot unless the skill-wide `needs` or the command says otherwise. A vault path here (the form `credentials.VAR = "<vault path>"`) fails the evaluation: vault paths belong in `skills/config.json`.
+- `oauth`: vault paths of OAuth entries whose access token the command fetches itself with `ccred get --access-token`, as the MCP bridge does. Declared up front, exported nothing. Until OAuth entries become credential slots too ([#656](https://github.com/thiesgerken/carapace/issues/656)), this is the one place a skill flake names a vault path.
 - `tunnels`: `"host:port"` with an exact host name (not an IP address) and a port from 1 to 65535, for clients that do not speak HTTP. Requested with `cgate request --tunnel` and open when the command starts; see [sandbox.md](sandbox.md#tunnels).
 
 A command with needs or a skill with settings gets a wrapper that first asks Carapace for itself by name, then runs the command:
@@ -170,7 +171,23 @@ mkSkill {
 }
 ```
 
-The values come from [`skills/config.json`](#skillsconfigjson). A setting without a default is required. Every command of the skill gets each setting as an environment variable of the same name, so names must be shell identifiers; numbers and booleans arrive in their JSON spelling (`443`, `true`). Settings are no secrets: a password or token belongs in `needs.credentials`.
+The values come from [`skills/config.json`](#skillsconfigjson). A setting without a default is required. Every command of the skill gets each setting as an environment variable of the same name, so names must be shell identifiers; numbers and booleans arrive in their JSON spelling (`443`, `true`). Settings are no secrets: a password or token belongs in a credential slot.
+
+### Credential slots
+
+A skill names the secrets it needs, never where they are stored:
+
+```nix
+credentials.WEATHER_TOKEN = { type = "secret"; description = "A weather API token"; };
+```
+
+`skills/config.json` binds each slot to a password-manager entry, by the vault path `ccred get` takes:
+
+```json
+{ "weather": { "credentials": { "WEATHER_TOKEN": "personal/weather-token" } } }
+```
+
+A command that needs the slot gets the entry's value as an environment variable of the slot's name; slot and setting names share that namespace, so they must differ. `cgate` fetches the value with `ccred get` after the up-front review, so the credential is approved like any other the command declares. A slot without a binding fails nothing at evaluation: the skill stays listed and `read_skill` says how to bind it, and only the commands that need the slot are refused, with the same hint (`weather: credential slot WEATHER_TOKEN is not bound; bind it … in skills/config.json: {…}`). A binding that is not of the form `<backend>/<id>` fails the evaluation of that skill.
 
 ## The manifest
 
@@ -186,6 +203,9 @@ nix eval --json 'path:skills#manifests.x86_64-linux.weather'
   "name": "weather",
   "skillDir": "/nix/store/…-skill-weather-src",
   "settings": { "CITY": "Berlin", "UNITS": "metric" },
+  "credentials": {
+    "WEATHER_TOKEN": { "type": "secret", "description": "A weather API token", "binding": "personal/weather-token" }
+  },
   "commands": {
     "weather": {
       "description": "Current weather for a city",
@@ -202,11 +222,12 @@ nix eval --json 'path:skills#manifests.x86_64-linux.weather'
 ```
 
 - `settings` are this instance's values, from `skills/config.json` or the declared defaults.
-- `needs` is resolved for those values: the skill-wide default with the command's override applied, every kind present.
+- `credentials` are the declared slots with their bindings from `skills/config.json`, `null` while unbound.
+- `needs` is resolved for those values: the skill-wide default with the command's override applied, every kind present, and `credentials` mapping each slot the command needs to its binding (or `null`).
 - `skillDir` is the store path of `src`. The evaluation already copies it into the store, so the builder reads `SKILL.md` from it before the commands are built.
 - `commands` has one entry per wrapper in `bin/`, under the same name. `mcp` is `true` for a command made by `mcpCommands`; `read_skill` lists its tools.
 - A skill that `config.json` turns off has the manifest `{ "enable": false }`. It is not built, and Carapace treats it like a skill that is not listed.
-- `skillsFlake` writes the manifest from what `mkSkill` declares in `passthru.carapace` (the settings, the commands) and `passthru.carapaceNeeds` (the needs for given setting values). Fields are only ever added.
+- `skillsFlake` writes the manifest from what `mkSkill` declares in `passthru.carapace` (the settings, the credential slots, the commands) and `passthru.carapaceNeeds` (the needs for given setting values). Fields are only ever added.
 
 ## Skills with only instructions
 
@@ -244,6 +265,7 @@ An MCP server becomes a command like any other: `<server> --list-tools`, `<serve
 ```nix
 default = skill.mkSkill {
   name = "tracker";
+  credentials.NOTES_TOKEN = { type = "secret"; description = "The notes server's token"; };
   commands = skill.mcpCommands {
     tracker = {
       url = "https://mcp.example.com/mcp";
@@ -253,15 +275,15 @@ default = skill.mkSkill {
     notes = {
       command = "${notesServer}/bin/notes-mcp --stdio";
       description = "Local notes, over stdio";
-      needs.credentials.NOTES_TOKEN = "personal/notes-token";
+      needs.credentials = [ "NOTES_TOKEN" ];
     };
   };
 };
 ```
 
 - `url` (streamable HTTP) or `command` (a shell command that starts the server on stdio), exactly one. The URL must be `https://` with a host name: no `http://`, since tokens go along, and no user info or IP address, which the domain review cannot express. A mistake fails the evaluation.
-- For an HTTP server, `bearer` names a vault path whose value is sent as `Authorization: Bearer`, and `oauth` names an OAuth entry (see below). At most one; neither applies to stdio, which takes its credentials as environment variables through `needs`.
-- `needs` is derived from the server: the URL's host, and the `bearer` credential or the `oauth` entry. The skill-wide `needs` do not apply. A `needs` given here overrides the derived one per kind.
+- For an HTTP server, `bearer` names a credential slot of the skill whose value is sent as `Authorization: Bearer`, and `oauth` names an OAuth entry (see below). At most one; neither applies to stdio, which takes its credentials as environment variables through `needs`.
+- `needs` is derived from the server: the URL's host, and the `bearer` slot or the `oauth` entry. The skill-wide `needs` do not apply. A `needs` given here overrides the derived one per kind.
 
 `read_skill` shows the agent each server's tools by running `<server> --list-tools` in the sandbox, reviewed like any call of the command; nothing is cached. The commands run the `mcp` bridge from the sandbox image, one connection per call; a server that keeps state between calls does not work. The bridge turns the tool's input schema into flags (see the [contract](sandbox.md#mcp)). `mcp --url …` also works directly in the sandbox, without a skill: the proxy then reviews the domain when the bridge connects.
 

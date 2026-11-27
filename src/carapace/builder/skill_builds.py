@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,7 +33,8 @@ class SkillNeeds(BaseModel):
     """What a command needs from outside the sandbox, resolved for this instance's settings."""
 
     domains: list[str]
-    credentials: dict[str, str]
+    # Credential slot (the environment variable) to the vault path skills/config.json binds; None while unbound.
+    credentials: dict[str, str | None]
     oauth: list[str]
     tunnels: list[str]
 
@@ -96,6 +98,10 @@ class SkillBuild:
     # What the skill declares, for the Knowledge view to offer: also there for a failed or turned-off build,
     # None while building or when the package did not evaluate.
     declared_settings: dict[str, SettingDeclaration] | None = None
+
+    def unbound(self, command: str) -> list[str]:
+        """The credential slots *command* needs that skills/config.json does not bind."""
+        return sorted(slot for slot, path in self.commands[command].needs.credentials.items() if path is None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,6 +415,16 @@ def _read_result(result: BuildResult) -> _Outcome:
         skill_md=result.skill_md,
         skill_files=result.skill_files,
     )
+
+
+def unbound_slot_hint(skill: str, slots: list[str]) -> str:
+    """Why a command cannot run yet, and the `skills/config.json` entry that fixes it."""
+    example = json.dumps({skill: {"credentials": {slot: "<backend>/<id>" for slot in slots}}})
+    if len(slots) == 1:
+        problem = f"credential slot {slots[0]} is not bound; bind it to a password-manager entry"
+    else:
+        problem = f"credential slots {', '.join(slots)} are not bound; bind them to password-manager entries"
+    return f"{skill}: {problem} in skills/config.json: {example}"
 
 
 _NO_SKILL_DIR = (

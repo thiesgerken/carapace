@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -102,6 +103,8 @@ def test_an_existing_repo_gets_its_skills_listed(repo: Path, tmp_path: Path) -> 
     staged = _git(repo, "diff", "--cached", "--name-status")
     assert "D\tskills/artifacts/SKILL.md" in staged and "A\tskills/flake.lock" in staged
     assert "A\tskills/config.json" in staged
+    # As bootstrap seeds it: carapace-cli is off until its server and API key are configured.
+    assert json.loads((repo / "skills" / "config.json").read_text()) == {"carapace-cli": {"enable": False}}
     assert "carapace.lib.skillsFlake {" in flake
 
 

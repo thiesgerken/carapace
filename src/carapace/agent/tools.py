@@ -18,7 +18,7 @@ from .. import security as security
 from ..artifacts import artifact_index, artifact_title
 from ..builder.models import SKILL_NAME_PATTERN
 from ..builder.profile import profile_plan
-from ..builder.skill_builds import SkillBuild, SkillCommand
+from ..builder.skill_builds import SkillBuild, SkillCommand, unbound_slot_hint
 from ..builder.skill_updates import describe_source
 from ..builder.skills_head import skills_flake_at_head
 from ..llm import (
@@ -238,7 +238,7 @@ def _command_docs(commands: dict[str, SkillCommand]) -> str:
         needs = command.needs
         asks = [
             *(f"domain {domain}" for domain in needs.domains),
-            *(f"credential {path} as ${variable}" for variable, path in needs.credentials.items()),
+            *(f"credential {path or 'UNBOUND'} as ${variable}" for variable, path in needs.credentials.items()),
             *(f"OAuth access token of {path}" for path in needs.oauth),
             *(f"tunnel {tunnel}" for tunnel in needs.tunnels),
         ]
@@ -275,6 +275,8 @@ async def _skill_commands(ctx: RunContext[Deps], build: SkillBuild) -> str:
         case "unavailable":
             return f"The skill's commands are not available: {build.detail}"
     docs = _command_docs(build.commands)
+    if unbound := sorted({slot for command in build.commands for slot in build.unbound(command)}):
+        docs += f"\n\n{unbound_slot_hint(build.skill, unbound)} Until then, the commands that need it are refused."
     if reason := profile_plan(await ctx.deps.skill_builds.installable(ctx.deps.knowledge_dir)).excluded.get(skill_name):
         return f"{docs}\n\nThese commands are not on PATH: {reason}. Rename one of them in its flake."
     try:

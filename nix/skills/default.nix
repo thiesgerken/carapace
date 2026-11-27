@@ -21,15 +21,17 @@ let
   };
 
   # The packages and manifests of every skill for one system. The manifest is what Carapace reads of a skill
-  # (docs/skill-flakes.md): its settings with this instance's values and each command's needs for them.
+  # (docs/skill-flakes.md): its settings and credential bindings with this instance's values, and each
+  # command's needs for them.
   skillsFor =
     skills: values: system:
     let
       packages = lib.mapAttrs (_: skill: skill.packages.${system}.default) skills;
-      carapaceOf =
+      # The newest declaration: helpers that have it have the settings too.
+      slotsOf =
         attr: package:
-        package.passthru.carapace.settings
-          or (throw "skill ${attr}: its Carapace helpers are older than settings; let it follow carapace and run `nix flake update carapace --flake ./skills`");
+        package.passthru.carapace.credentials
+          or (throw "skill ${attr}: its Carapace helpers are older than credential slots; let it follow carapace and run `nix flake update carapace --flake ./skills`");
       evaluated = lib.evalModules {
         modules = [
           {
@@ -48,7 +50,16 @@ let
                   }
                   // lib.optionalAttrs (setting ? default) { inherit (setting) default; }
                 )
-              ) (carapaceOf attr package);
+              ) package.passthru.carapace.settings;
+              # A vault path, as `ccred get` takes it; null until bound.
+              credentials = lib.mapAttrs (
+                slot: _:
+                lib.mkOption {
+                  type = lib.types.nullOr (lib.types.strMatching "[^/[:space:]]+/[^[:space:]]+");
+                  default = null;
+                  description = "The password-manager entry bound to ${attr}'s credential slot ${slot}.";
+                }
+              ) (slotsOf attr package);
             }) packages;
           }
           {
@@ -74,8 +85,21 @@ let
             enable = true;
             inherit (package.passthru.carapace) name skillDir;
             inherit (cfg) settings;
+            credentials = lib.mapAttrs (
+              slot: declared: declared // { binding = cfg.credentials.${slot}; }
+            ) package.passthru.carapace.credentials;
+            # An unbound slot stays in the needs as null: Carapace refuses the commands that need it.
             commands = lib.mapAttrs (
-              cmd: command: command // { needs = (package.passthru.carapaceNeeds cfg.settings).${cmd}; }
+              cmd: command:
+              let
+                needs = (package.passthru.carapaceNeeds cfg.settings).${cmd};
+              in
+              command
+              // {
+                needs = needs // {
+                  credentials = lib.genAttrs needs.credentials (slot: cfg.credentials.${slot});
+                };
+              }
             ) package.passthru.carapace.commands;
           };
     in

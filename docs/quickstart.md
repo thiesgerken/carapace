@@ -295,7 +295,7 @@ users:
 
 This is a good smoke test for the credential flow you just set up.
 
-The bundled `web` skill uses Brave Search by default and expects a credential at `vault/brave-api-key`, which carapace injects as `BRAVE_API_KEY` when the skill runs.
+The bundled `web` skill uses Brave Search by default. Its credential slot `BRAVE_API_KEY` needs a binding to the entry that holds your key, which carapace hands to the skill as `BRAVE_API_KEY` when it runs.
 
 If you use the file backend, add the key to your secrets file:
 
@@ -303,7 +303,7 @@ If you use the file backend, add the key to your secrets file:
 echo "brave-api-key=your-brave-search-api-key" >> data/secrets.env
 ```
 
-Then make sure the credential is reachable as `vault/brave-api-key`. The simplest option is a file credential backend named `vault` that points at `data/secrets.env`. If you use a different backend name or path shape, change `credentials.BRAVE_API_KEY` in the bundled web skill's `flake.nix` to match.
+The simplest backend for that is a file credential backend named `vault` that points at `data/secrets.env`, which makes the key `vault/brave-api-key`. Bind the slot to it in `skills/config.json` of your knowledge repo, `{"web": {"credentials": {"BRAVE_API_KEY": "vault/brave-api-key"}}}`, and list `web` in `skills/flake.nix` (uncomment its input, then `nix flake lock ./skills`).
 
 You can get a Brave Search API key at <https://brave.com/search/api/>.
 

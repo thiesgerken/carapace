@@ -19,7 +19,8 @@ def test_a_new_repo_lists_its_bundled_skills_in_skills_flake(tmp_path: Path) -> 
     listed = read_skills_flake(tmp_path / "skills")
 
     assert {"skills/flake.nix", "skills/flake.lock", "skills/config.json"} <= set(created)
-    assert json.loads((tmp_path / "skills" / "config.json").read_text()) == {}
+    # carapace-cli needs its server and API key first.
+    assert json.loads((tmp_path / "skills" / "config.json").read_text()) == {"carapace-cli": {"enable": False}}
     # The config-free ones come from carapace as external inputs, the others are copied.
     assert {(skill.name, skill.directory) for skill in listed} == {
         ("artifacts", None),

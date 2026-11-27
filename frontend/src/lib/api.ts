@@ -1855,7 +1855,8 @@ export type SkillBuildState = "building" | "succeeded" | "failed" | "unavailable
 
 export interface SkillCommandNeeds {
   domains: string[];
-  credentials: Record<string, string>;
+  /** Credential slot (its environment variable) to the bound vault path; null while unbound. */
+  credentials: Record<string, string | null>;
   tunnels: string[];
   oauth: string[];
 }
