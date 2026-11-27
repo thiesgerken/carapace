@@ -1,6 +1,46 @@
 # CHANGELOG
 
 
+## v0.199.2 (2026-11-27)
+
+### 🐛 Fix a bug
+
+- fix: keep the text in flight when the chat catches up after a reconnect
+- fix: catch up from the history after a WebSocket reconnect
+- fix: a read_skill card without a result says so
+- fix: pass tool_call_id from the sandbox file ops
+
+### 🏷️ Add or update types
+
+- types: return Generator from the remaining context managers
+- types: annotate the remaining untyped signatures
+- types: type the exec callback and drop stale ignores and casts
+
+### 💄 Add or update the UI and style files
+
+- ui: a smaller hourglass and a 32 px waiting line
+- ui: tortoise props at about twice their size
+- ui: a tortoise big enough to read its pose
+
+### ♻️ Refactor code
+
+- refactor: drop the native-tool branch from the history truncation too
+- refactor: close only function tool calls when a turn is cancelled
+- refactor: read UPDATE/DELETE row counts through affected_rows
+
+### 👷 Add or update CI build system
+
+- ci: verify and publish the release commit in its own push run
+
+### ✅ Add, update, or pass tests
+
+- test: a cancelled turn without open calls gets no synthetic returns
+- test: read the whole probe request before the fake proxy answers
+
+### 💡 Add or update comments in source code
+
+- docs: say why the sandbox file ops pass no tool_call_id
+
 ## v0.199.1 (2026-11-27)
 
 ### 🐛 Fix a bug
