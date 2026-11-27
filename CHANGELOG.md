@@ -1,6 +1,73 @@
 # CHANGELOG
 
 
+## v0.200.0 (2026-11-27)
+
+### ✨ Introduce new features
+
+- feat: apply a skill update from the Knowledge view
+- feat: add a script that lists an existing repo's skills in skills/flake.nix
+- feat: take the config-free bundled skills from carapace main
+- feat: show skill origins and update checks in the UI and to the agent
+- feat: list the instruction-only bundled skills in the seeded skills flake
+- feat: read the skill catalog and SKILL.md from the build output
+- feat: put the skill directory into the skill package
+- feat: check skills for updates in the builder
+- feat: build skills from the top-level skills flake
+
+### 🐛 Fix a bug
+
+- fix: keep the checkout clean when a skill update commit fails, and guard all of skills/
+- fix: check every name first, keep unset-up bundled skills off, stage only the script's changes
+- fix: keep a skill's last succeeded build while it rebuilds
+- fix: keep slashes in flake reference dirs and the skill table readable on a phone
+- fix: reference the skill directory instead of linking it
+- fix: let a reset overwrite assets copied from the Nix store
+- fix: resolve the sentinel's skill files through skills/flake.nix
+
+### 📌 Pin dependencies to specific versions
+
+- chore: lock the seeded skills to the commit that has them as mini-flakes
+- chore: lock bundled skills and examples to the referencing helpers
+- chore: lock bundled skills and examples to helpers with src
+
+### 🔒️ Fix security or privacy issues
+
+- fix: refuse builder-local inputs anywhere in the lock, update in a throwaway store
+- fix: build each skill from only its own part of skills/, refuse builder-local inputs, limit builder egress
+
+### ♻️ Refactor code
+
+- refactor: check for updates when skills/ changed, not after every push
+- refactor: serve the sentinel's skill files from the build
+
+### 📝 Add or update documentation
+
+- docs: describe the script's refusals and the skills it keeps off
+- docs: upgrade existing knowledge repos with the skills flake script
+- docs: bump the seeded skills with the helpers on a release
+- docs: describe skills read from their build output
+- docs: teach create-skill to list a skill in skills/flake.nix
+- docs: say which bundled skills the seeded skills flake lists
+
+### 🚧 Work in progress
+
+- wip: Update button in the skill table
+- wip: apply a skill update from the UI (backend)
+
+### ✅ Add, update, or pass tests
+
+- test: wait for the answer instead of a fixed 50 ms
+- test: expect the instruction-only skills in the seeded skills flake
+
+### 💚 Fix CI Build
+
+- fix: smoke-test the builder with a skills flake and a skill name
+
+### 🎉 Begin a project
+
+- Start portable skills, phase 1 (#621)
+
 ## v0.199.2 (2026-11-27)
 
 ### 🐛 Fix a bug

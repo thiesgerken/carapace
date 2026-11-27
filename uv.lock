@@ -402,7 +402,7 @@ wheels = [
 
 [[package]]
 name = "carapace"
-version = "0.199.2"
+version = "0.200.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
