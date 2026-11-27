@@ -11,14 +11,16 @@ from ..models.config import DatabaseConfig
 
 SessionFactory = sessionmaker[Session]
 
+_ALEMBIC_DIR = Path(__file__).resolve().parent / "alembic"
+
 
 def affected_rows(result: Result[Any]) -> int:
-    """Rows an UPDATE or DELETE touched. Session.execute is typed to return a plain Result for any statement."""
+    """Rows an UPDATE or DELETE touched.
+
+    Session.execute is typed to return a plain Result, but for an UPDATE or DELETE it is a CursorResult.
+    """
     assert isinstance(result, CursorResult)
     return result.rowcount
-
-
-_ALEMBIC_DIR = Path(__file__).resolve().parent / "alembic"
 
 
 def _is_sqlite(url: str) -> bool:

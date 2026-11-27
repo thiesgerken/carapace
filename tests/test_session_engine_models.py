@@ -919,10 +919,13 @@ def test_save_user_message_on_failure_appends_cancelled_parallel_tool_returns(tm
         ModelRequest(parts=[UserPromptPart(content="hello")]),
         ModelResponse(
             parts=[
+                ToolCallPart(tool_name="shell", args={"command": "true"}, tool_call_id="call-0"),
                 ToolCallPart(tool_name="shell", args={"command": "sleep 10"}, tool_call_id="call-1"),
                 ToolCallPart(tool_name="shell", args={"command": "sleep 20"}, tool_call_id="call-2"),
             ]
         ),
+        # An answered call gets no second return.
+        ModelRequest(parts=[ToolReturnPart(tool_name="shell", content="", tool_call_id="call-0")]),
     ]
 
     engine._save_user_message_on_failure(
@@ -937,10 +940,10 @@ def test_save_user_message_on_failure_appends_cancelled_parallel_tool_returns(tm
 
     history = engine.session_mgr.load_history(sid)
 
-    assert len(history) == 4
+    assert len(history) == 5
     assert isinstance(history[1], ModelResponse)
-    assert isinstance(history[2], ModelRequest)
-    assert isinstance(history[3], ModelResponse)
+    assert isinstance(history[3], ModelRequest)
+    assert isinstance(history[4], ModelResponse)
 
     synthetic_request = history[-2]
     assert isinstance(synthetic_request, ModelRequest)
