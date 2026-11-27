@@ -81,7 +81,19 @@
                 }
             }
         },
+        "skillConfig": {
+            "enabled": "Enabled",
+            "notKnownYet": "Its settings show once the skill has been evaluated.",
+            "noSettings": "This skill has no settings.",
+            "required": "required",
+            "reset": "Back to the default",
+            "save": "Save",
+            "saving": "Saving…"
+        },
         "skillSources": {
+            "off": "off",
+            "needsConfig": "Needs configuration",
+            "configure": "Settings",
             "title": "Skills",
             "check": "Check for updates",
             "checking": "Checking…",

@@ -1978,6 +1978,59 @@ export async function checkSkillUpdates(server: string): Promise<KnowledgeSkillS
   return (await res.json()) as KnowledgeSkillSources;
 }
 
+export type SkillConfigValue = string | number | boolean;
+
+export interface KnowledgeSkillSetting {
+  name: string;
+  type: "str" | "int" | "bool";
+  description: string;
+  default: SkillConfigValue | null;
+  /** From skills/config.json; null when it sets none. */
+  value: SkillConfigValue | null;
+  /** Neither a value nor a default: the skill fails to evaluate until one is set. */
+  missing: boolean;
+}
+
+export interface KnowledgeSkillConfig {
+  name: string;
+  enabled: boolean;
+  state: "building" | "succeeded" | "failed" | "unavailable";
+  /** Why the skill failed to evaluate or build; empty otherwise. */
+  detail: string;
+  /** Null until the skill's declarations are known. */
+  settings: KnowledgeSkillSetting[] | null;
+}
+
+export interface KnowledgeSkillsConfig {
+  /** The Git id of skills/config.json at HEAD; a change names it so nothing newer is overwritten. */
+  base: string;
+  skills: KnowledgeSkillConfig[];
+}
+
+export interface SkillConfigChange {
+  base: string;
+  enable: boolean;
+  /** null resets a setting to its default. */
+  settings: Record<string, SkillConfigValue | null>;
+}
+
+export async function fetchSkillsConfig(server: string): Promise<KnowledgeSkillsConfig> {
+  const res = await fetch(`${server}/api/knowledge/skills/config`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the skill settings"));
+  return (await res.json()) as KnowledgeSkillsConfig;
+}
+
+/** Commit *name*'s entry in skills/config.json; a 409 means config.json changed since it was loaded. */
+export async function saveSkillConfig(server: string, name: string, change: SkillConfigChange): Promise<KnowledgeSkillsConfig> {
+  const res = await fetch(`${server}/api/knowledge/skills/${encodeURIComponent(name)}/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(change),
+  });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to save the skill settings"));
+  return (await res.json()) as KnowledgeSkillsConfig;
+}
+
 /** Commit and push the update the last check found for skill *name*; it then builds like any push. */
 export async function applySkillUpdate(server: string, name: string): Promise<KnowledgeSkillSources> {
   const res = await fetch(`${server}/api/knowledge/skills/${encodeURIComponent(name)}/update`, { method: "POST" });
