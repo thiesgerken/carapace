@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 # A sha256 over everything a skill's build depends on, computed by the server (`skill_builds.build_key`).
 BuildKey = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
@@ -30,6 +30,18 @@ _CACHE_PATH = re.compile(
 def cache_path_allowed(path: str) -> bool:
     """Whether *path* (without query) is one of the binary cache requests."""
     return _CACHE_PATH.fullmatch(path) is not None
+
+
+class FetchCredential(BaseModel):
+    """A token the fetchers of one nix invocation may present to *host*: the knowledge remote's, for the same host."""
+
+    # A validation error would otherwise quote the token.
+    model_config = ConfigDict(hide_input_in_errors=True)
+
+    # A host name, with ":port" when the remote has one. Both end up in git and Nix settings, so no whitespace:
+    # a newline in the token would add a setting of the token owner's choice to that invocation's NIX_CONFIG.
+    host: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9.-]+(:[0-9]+)?$")]
+    token: Annotated[str, StringConstraints(pattern=r"^\S+$")] = Field(repr=False)
 
 
 class UpstreamCache(BaseModel):

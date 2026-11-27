@@ -12,7 +12,13 @@ from fastapi.testclient import TestClient
 from carapace.builder import app as builder_app
 from carapace.builder import nix, skill_dir
 from carapace.builder.client import BuilderClient
-from carapace.builder.models import BuildResult, CredentialSlotDeclaration, SettingDeclaration, SkillDeclarations
+from carapace.builder.models import (
+    BuildResult,
+    CredentialSlotDeclaration,
+    FetchCredential,
+    SettingDeclaration,
+    SkillDeclarations,
+)
 from carapace.builder.skill_dir import SkillFileError, checked_skill_dir, list_files, read_file
 from carapace.builder.store import SkillStore
 from tests.test_builder import AUTH, GRACE, KEY, TOKEN
@@ -88,7 +94,7 @@ def test_metadata_from_helpers_without_src_names_no_directory() -> None:
 def _nix(directory: str, *, build_code: int = 0):
     """`nix eval` answers with metadata naming *directory*; `nix build` succeeds or fails."""
 
-    async def run(*args: str) -> tuple[int, str, str]:
+    async def run(*args: str, credential: FetchCredential | None = None) -> tuple[int, str, str]:
         if args[1] == "eval" and "--apply" in args:
             declared = {"CITY": {"type": "str", "description": "City", "default": "Berlin"}}
             return 0, json.dumps({"settings": declared, "credentials": {"KEY": {"type": "secret"}}}), ""
@@ -109,7 +115,7 @@ async def _build(tmp_path: Path) -> BuildResult:
     source = tmp_path / "source"
     source.mkdir()
     (source / "flake.lock").write_text("{}")
-    return await nix.build_skill(source, KEY, "demo", "x86_64-linux", tmp_path / "roots")
+    return await nix.build_skill(source, KEY, "demo", "x86_64-linux", tmp_path / "roots", None)
 
 
 async def test_a_build_carries_the_skill_md_and_files_it_read_after_the_evaluation(
@@ -161,7 +167,7 @@ async def test_a_build_carries_the_declarations(
 async def test_a_manifest_failing_for_a_missing_value_still_has_the_declarations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def run(*args: str) -> tuple[int, str, str]:
+    async def run(*args: str, credential: FetchCredential | None = None) -> tuple[int, str, str]:
         if "--apply" in args:
             return 0, json.dumps({"settings": {"CITY": {"type": "str", "description": "City"}}, "credentials": {}}), ""
         return 1, "", "error: skill demo: no value for its setting CITY; set it in skills/config.json"
@@ -181,7 +187,7 @@ async def test_declarations_this_builder_cannot_read_leave_the_build_alone(
 ) -> None:
     run = _nix(directory)
 
-    async def newer_helpers(*args: str) -> tuple[int, str, str]:
+    async def newer_helpers(*args: str, credential: FetchCredential | None = None) -> tuple[int, str, str]:
         if "--apply" in args:
             return 0, json.dumps({"settings": {"RATIO": {"type": "float"}}, "credentials": {}}), ""
         return await run(*args)
@@ -216,7 +222,7 @@ async def test_the_client_refuses_a_path_out_of_the_skill_before_asking() -> Non
 async def test_a_skill_turned_off_is_not_built(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
 
-    async def run(*args: str) -> tuple[int, str, str]:
+    async def run(*args: str, credential: FetchCredential | None = None) -> tuple[int, str, str]:
         calls.append(args[1])
         if "--apply" in args:
             return 0, json.dumps({"settings": {}, "credentials": {}}), ""
@@ -238,7 +244,7 @@ async def test_a_skill_turned_off_is_not_built(tmp_path: Path, monkeypatch: pyte
 async def test_a_skills_flake_without_manifests_says_how_to_write_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def run(*_args: str) -> tuple[int, str, str]:
+    async def run(*_args: str, credential: FetchCredential | None = None) -> tuple[int, str, str]:
         return 1, "", "error: flake 'path:/x' does not provide attribute 'manifests.x86_64-linux.demo'"
 
     monkeypatch.setattr(nix, "_run", run)

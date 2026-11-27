@@ -17,7 +17,7 @@ import pytest
 import carapace.server as srv
 from carapace.builder import skill_builds, skills_head
 from carapace.builder.client import BuilderClient
-from carapace.builder.models import BuildResult, SettingDeclaration, SkillDeclarations, UpdatedLocks
+from carapace.builder.models import BuildResult, FetchCredential, SettingDeclaration, SkillDeclarations, UpdatedLocks
 from carapace.builder.skill_builds import SkillBuilds
 from carapace.builder.skill_updates import UpdateCheck
 from carapace.spans import TurnTrace, attach
@@ -60,7 +60,9 @@ class FakeBuilder:
         )
         self.file_reads: list[tuple[str, str]] = []
 
-    async def check_updates(self, archive: bytes, inputs: list[str]) -> UpdatedLocks:
+    async def check_updates(
+        self, archive: bytes, inputs: list[str], credential: FetchCredential | None
+    ) -> UpdatedLocks:
         """ensure_built starts an update check for a new skills/ tree; these tests are about builds."""
         return UpdatedLocks(inputs={})
 
@@ -69,7 +71,9 @@ class FakeBuilder:
             raise httpx.ConnectError("builder down")
         return self.stored.get(key)
 
-    async def build(self, key: str, skill: str, archive: bytes, *, retry: bool = False) -> BuildResult:
+    async def build(
+        self, key: str, skill: str, archive: bytes, credential: FetchCredential | None, *, retry: bool = False
+    ) -> BuildResult:
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
             self.built.append((key, skill, set(tar.getnames())))
         self.retries += retry
@@ -362,9 +366,11 @@ def _held(builder: FakeBuilder) -> asyncio.Event:
     release = asyncio.Event()
     build = builder.build
 
-    async def held_build(key: str, skill: str, archive: bytes, *, retry: bool = False) -> BuildResult:
+    async def held_build(
+        key: str, skill: str, archive: bytes, credential: FetchCredential | None, *, retry: bool = False
+    ) -> BuildResult:
         await release.wait()
-        return await build(key, skill, archive, retry=retry)
+        return await build(key, skill, archive, credential, retry=retry)
 
     builder.build = held_build  # type: ignore[method-assign]
     return release

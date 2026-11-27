@@ -19,7 +19,7 @@ inputs = {
 
 - **The attribute is the name.** `weather` is what the catalog, `read_skill` and `skills/config.json` call it, whatever its `mkSkill` name or frontmatter say. Pick another attribute if it collides with one of yours.
 - **Always write both `follows`.** The skill then builds with your `nixpkgs` and your Carapace helpers, the ones every other skill uses, and `nix flake update carapace --flake ./skills` moves them for all. Its other inputs (a Python or npm toolchain, say) come from its own `flake.lock`.
-- **Any flake reference works:** `github:`, `gitlab:`, `git+https://…`, `sourcehut:`, with `?dir=` for a skill in a subdirectory. The builder fetches inputs without credentials, so the repository must be public; private skill repos are not supported.
+- **Any flake reference works:** `github:`, `gitlab:`, `git+https://…`, `sourcehut:`, with `?dir=` for a skill in a subdirectory. A private repository works on the host of your knowledge remote ([private repositories](#private-repositories)).
 
 Then lock and push, and configure the skill if it declares settings or credential slots:
 
@@ -41,6 +41,19 @@ nix flake lock ./skills
 The skill's commands ask for what they need when they run, reviewed like any other request. Reading its `SKILL.md` and its flake before listing it is still worth it: a skill's instructions reach the agent, and its commands run in your sandboxes.
 
 To change a consumed skill, copy its directory into your `skills/`, point its input at `path:./<dir>`, and lock again. It is then a local skill, and no longer updates from upstream.
+
+## Private repositories
+
+The builder fetches your skill inputs with the token of your [knowledge remote](git.md#authentication) (Settings → Account), for that remote's host only. A skill in a private repository on the same forge as your knowledge repo therefore needs no further setup, as long as that token can read it:
+
+- **Write the input for your knowledge remote's host, over HTTPS:** `git+https://git.example.org/alice/knowledge?dir=skills/weather` works on any forge, `github:alice/knowledge?dir=skills/weather` when the host is `github.com`. For `gitlab:` and `sourcehut:` references the builder does not use the token; write those as `git+https://`. Inputs from other hosts are fetched without credentials, so they must be public.
+- **Sharing goes through the forge:** Alice gives Bob read access to her repository (as a collaborator, or through a team or organization), and Bob's token can read it from then on. Carapace has no setting for it.
+- **A forge in your LAN,** a self-hosted Gitea for example, is blocked by the builder's egress policy on Kubernetes. List its address in `builder.egress.allowedCidrs` ([egress](builder.md#egress-on-kubernetes)).
+- **Lock where you can read the repository.** Sandboxes have no token, so `nix flake lock` fails there for a private input. On your machine git's own credentials cover `git+https` inputs, and `github:` inputs need `access-tokens = github.com=<token>` in your `nix.conf`. Carapace's update check and its "Update" button run on the builder, with your token.
+
+How the builder hands the token to Nix, and that it never lands in a result, is in [builder.md](builder.md#fetch-credentials).
+
+**Known limit: one store for all users.** Nix does not fetch what its store already has, and the builder keeps one store for everyone. A private input that one user's build fetched can serve another user's build without a fetch, and so without that user's token, if their lock names the same input with the same `narHash`. Knowing the `narHash` means knowing the content already, so this hands out nothing new to someone who guessed a URL. It is fine for a family instance, but it is no boundary between users who must not see each other's repositories. Build results are shared the same way: a skill's key covers its flake, lock and directory, so the same skill locked the same way has one result for all users.
 
 ## Pinning or following
 

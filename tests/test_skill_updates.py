@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from carapace.builder.client import BuilderClient
-from carapace.builder.models import InputUpdate, UpdatedLocks
+from carapace.builder.models import FetchCredential, InputUpdate, UpdatedLocks
 from carapace.builder.skill_updates import (
     SkillUpdate,
     SkillUpdates,
@@ -169,7 +169,9 @@ class FakeBuilder:
         self.answer = answer
         self.asked: list[list[str]] = []
 
-    async def check_updates(self, archive: bytes, inputs: list[str]) -> UpdatedLocks:
+    async def check_updates(
+        self, archive: bytes, inputs: list[str], credential: FetchCredential | None
+    ) -> UpdatedLocks:
         self.asked.append(inputs)
         if isinstance(self.answer, Exception):
             raise self.answer

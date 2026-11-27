@@ -47,6 +47,7 @@ server = [
 # The skill builder service (carapace-builder); the server stack already contains it.
 builder = [
     "fastapi>=0.115,<1",
+    "python-multipart>=0.0.20,<1",
     "uvicorn[standard]>=0.40,<1",
     "loguru>=0.7.3",
 ]

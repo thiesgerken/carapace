@@ -243,7 +243,12 @@ def skill_archive(files: dict[str, bytes]) -> bytes:
 
 
 def put_build(url: str, token: str, archive: bytes) -> dict:
-    req = urllib.request.Request(url, data=archive, method="PUT", headers={"Authorization": f"Bearer {token}"})
+    """The build API's multipart body, with the archive as its only part."""
+    boundary = uuid.uuid4().hex
+    head = f'--{boundary}\r\nContent-Disposition: form-data; name="archive"; filename="skills.tar"\r\n\r\n'
+    body = head.encode() + archive + f"\r\n--{boundary}--\r\n".encode()
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": f"multipart/form-data; boundary={boundary}"}
+    req = urllib.request.Request(url, data=body, method="PUT", headers=headers)
     with urllib.request.urlopen(req, timeout=300) as response:
         return json.loads(response.read())
 

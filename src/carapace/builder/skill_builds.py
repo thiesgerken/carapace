@@ -25,8 +25,8 @@ from ..skills import SkillDocumentError, parse_skill_document
 from ..span_names import SKILL_BUILD_WAIT_SPAN
 from ..spans import span
 from .client import BuilderClient, BuilderSystemMismatchError
-from .models import BuildResult, SkillDeclarations
-from .skill_updates import SkillUpdates
+from .models import BuildResult, FetchCredential, SkillDeclarations
+from .skill_updates import FetchCredentials, SkillUpdates, no_fetch_credentials
 from .skills_head import archive_skills, object_id, skills_flake_at_head
 
 
@@ -132,10 +132,13 @@ class RetryRefusedError(Exception):
 
 
 class SkillBuilds:
-    def __init__(self, builder: BuilderClient | None) -> None:
+    def __init__(
+        self, builder: BuilderClient | None, fetch_credentials: FetchCredentials = no_fetch_credentials
+    ) -> None:
         self._builder = builder
+        self._fetch_credentials = fetch_credentials
         # Whether the skills have something newer: the same builder and repos, a separate question.
-        self.updates = SkillUpdates(builder)
+        self.updates = SkillUpdates(builder, fetch_credentials)
         self._results: dict[str, _Outcome] = {}
         self._running: dict[str, asyncio.Task[None]] = {}
         # The skills each repo listed at its head when last asked, for the catalog, and that head's commit.
@@ -339,7 +342,10 @@ class SkillBuilds:
     async def _build(self, builder: BuilderClient, repo_dir: Path, skill: _HeadSkill, *, retry: bool) -> None:
         looked_up = self._looked_up[skill.key]
         try:
-            self._results[skill.key] = await _build_outcome(builder, repo_dir, skill, looked_up, retry=retry)
+            credential = self._fetch_credentials(repo_dir)
+            self._results[skill.key] = await _build_outcome(
+                builder, repo_dir, skill, credential, looked_up, retry=retry
+            )
         finally:
             looked_up.set()
             del self._looked_up[skill.key]
@@ -347,7 +353,13 @@ class SkillBuilds:
 
 
 async def _build_outcome(
-    builder: BuilderClient, repo_dir: Path, skill: _HeadSkill, looked_up: asyncio.Event, *, retry: bool
+    builder: BuilderClient,
+    repo_dir: Path,
+    skill: _HeadSkill,
+    credential: FetchCredential | None,
+    looked_up: asyncio.Event,
+    *,
+    retry: bool,
 ) -> _Outcome:
     try:
         # A retry skips the stored result: it is the failure being retried.
@@ -368,7 +380,7 @@ async def _build_outcome(
                 archive = await archive_skills(repo_dir, skill.skills_tree, *paths)
             except RuntimeError as exc:
                 return _Outcome(state="failed", detail=str(exc))
-            result = await builder.build(skill.key, skill.name, archive, retry=retry)
+            result = await builder.build(skill.key, skill.name, archive, credential, retry=retry)
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         # The builder refused this skill (an archive its filter rejects, one too large): asking again won't help.

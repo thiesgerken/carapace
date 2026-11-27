@@ -13,14 +13,24 @@ from pathlib import Path
 from typing import Annotated
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from . import nix
 from .cache import create_cache_app
-from .models import BuilderInfo, BuildKey, BuildResult, GcResult, Roots, SkillName, UpdatedLocks, UpstreamCache
+from .models import (
+    BuilderInfo,
+    BuildKey,
+    BuildResult,
+    FetchCredential,
+    GcResult,
+    Roots,
+    SkillName,
+    UpdatedLocks,
+    UpstreamCache,
+)
 from .skill_dir import SkillFileError, read_file
 from .store import SkillStore
 
@@ -43,6 +53,26 @@ def _extract(archive: bytes, destination: Path) -> None:
             tar.extractall(destination, filter="data")
     except (tarfile.TarError, OSError) as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid skill archive: {exc}") from exc
+
+
+async def _read_archive(archive: UploadFile) -> bytes:
+    content = await archive.read(MAX_ARCHIVE_BYTES + 1)
+    if len(content) > MAX_ARCHIVE_BYTES:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Skill archive too large")
+    return content
+
+
+# A form field next to the archive, not a query parameter: a token in the URL would end up in access logs.
+_FetchCredential = Annotated[str | None, Form(description="JSON of a FetchCredential, if the fetches may use one")]
+
+
+def _credential(fetch_credential: str | None) -> FetchCredential | None:
+    if fetch_credential is None:
+        return None
+    try:
+        return FetchCredential.model_validate_json(fetch_credential)
+    except ValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Invalid fetch credential: {exc}") from exc
 
 
 def create_app(token: str, store: SkillStore, system: str, cache_public_keys: list[str]) -> FastAPI:
@@ -83,8 +113,14 @@ def create_app(token: str, store: SkillStore, system: str, cache_public_keys: li
         return Response(content, media_type="application/octet-stream")
 
     @app.put("/builds/{key}", dependencies=authorized)
-    async def build(key: BuildKey, skill: SkillName, request: Request, retry: bool = False) -> BuildResult:
-        """Build *skill* of the skills directory archive in the body (tar, optionally compressed).
+    async def build(
+        key: BuildKey,
+        skill: SkillName,
+        archive: UploadFile,
+        fetch_credential: _FetchCredential = None,
+        retry: bool = False,
+    ) -> BuildResult:
+        """Build *skill* of the skills directory *archive* (tar, optionally compressed).
 
         Blocks until the build finished. A key that has a result is answered from it without
         building, unless the result is a failure and *retry* is set.
@@ -93,35 +129,40 @@ def create_app(token: str, store: SkillStore, system: str, cache_public_keys: li
         async with store.locked(key):
             if (result := store.result(key)) is not None and not (retry and result.state == "failed"):
                 return result
-            archive = await request.body()
-            if len(archive) > MAX_ARCHIVE_BYTES:
-                raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Skill archive too large")
+            content = await _read_archive(archive)
             with tempfile.TemporaryDirectory(dir=store.work) as source:
-                _extract(archive, Path(source))
+                _extract(content, Path(source))
                 logger.info(f"Building skill {skill} ({key})")
-                result = await nix.build_skill(Path(source), key, skill, system, store.roots)
+                result = await nix.build_skill(
+                    Path(source), key, skill, system, store.roots, _credential(fetch_credential)
+                )
             logger.info(f"Skill {skill} ({key}): {result.state}")
             store.save(result)
             return result
 
     @app.post("/updates", dependencies=authorized)
-    async def check_updates(request: Request, inputs: Annotated[list[SkillName], Query(alias="input")]) -> UpdatedLocks:
-        """The lock each of *inputs* of the skills directory archive in the body would get from an update.
+    async def check_updates(
+        archive: UploadFile,
+        inputs: Annotated[list[SkillName], Query(alias="input")],
+        fetch_credential: _FetchCredential = None,
+    ) -> UpdatedLocks:
+        """The lock each of *inputs* of the skills directory *archive* would get from an update.
 
         Nothing is stored: upstreams move, so every call asks them again.
         """
-        archive = await request.body()
-        if len(archive) > MAX_ARCHIVE_BYTES:
-            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Skill archive too large")
+        content = await _read_archive(archive)
+        credential = _credential(fetch_credential)
         with tempfile.TemporaryDirectory(dir=store.work) as work:
             # Next to the lock files the updates write, never into the flake they read.
             source = Path(work) / "skills"
             source.mkdir()
-            _extract(archive, source)
+            _extract(content, source)
             logger.info(f"Checking skill inputs for updates: {', '.join(inputs)}")
             return UpdatedLocks(
                 inputs={
-                    name: await nix.update_input(source, name, Path(work) / f"{name}.lock", Path(work) / "store")
+                    name: await nix.update_input(
+                        source, name, Path(work) / f"{name}.lock", Path(work) / "store", credential
+                    )
                     for name in inputs
                 }
             )
