@@ -353,6 +353,37 @@ assert pkgs.lib.assertMsg (fails
 assert pkgs.lib.assertMsg (pkgs.lib.all (
   x: x
 ) badSearchUrl) "mcpCommands accepted an invalid URL from a setting";
+assert pkgs.lib.assertMsg (
+  let
+    server =
+      settings: extra:
+      skillLib.mkSkill {
+        src = fixture;
+        name = "url-checks";
+        inherit settings;
+        commands = skillLib.mcpCommands {
+          search = {
+            description = "A server whose needs override the derived domains";
+            needs.domains = [ "search.example.com" ];
+          }
+          // extra;
+        };
+      };
+    str.SEARCH_URL.type = "str";
+  in
+  # A fixed URL is checked although the needs override its domain.
+  fails (server { } { url = "http://search.example.com/mcp"; }).passthru.carapace.commands
+  # A setting's URL too, when the manifest resolves the needs.
+  && fails (
+    (server str { urlSetting = "SEARCH_URL"; }).passthru.carapaceNeeds {
+      SEARCH_URL = "http://search.example.com/mcp";
+    }
+  )
+  # The setting must exist and be a string, already for the package.
+  && fails (server { } { urlSetting = "SEARCH_URL"; }).drvPath
+  && fails (server { SEARCH_URL.type = "int"; } { urlSetting = "SEARCH_URL"; }).drvPath
+  && !fails (server str { urlSetting = "SEARCH_URL"; }).drvPath
+) "mcpCommands let a URL past its checks";
 pkgs.runCommand "skill-wrapper-contract" { } ''
   mkdir stubs
   # Carapace answers with the setting values and credentials as shell code; here a marker stands for them.

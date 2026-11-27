@@ -94,7 +94,7 @@ git push
 # then restart the server
 ```
 
-`example` is no longer bundled; the helper examples in [`nix/skills/examples`](../nix/skills/examples) replace it. Re-seeded skills come with their shipped defaults. A vault path you had changed in the old frontmatter now goes into `skills/config.json` as the binding of the skill's credential slot (`web`: `BRAVE_API_KEY`; `carapace-cli`: `CARAPACE_API_KEY`, plus its server domain as the setting `CARAPACE_HOST`; see [skill-flakes.md](skill-flakes.md#credential-slots)). Copies you had changed beyond that need converting like your own skills (below).
+`example` is no longer bundled; the helper examples in [`nix/skills/examples`](../nix/skills/examples) replace it. Re-seeded skills come with their shipped defaults. A vault path you had changed in the old frontmatter now goes into `skills/config.json` as the binding of the skill's credential slot (`web`: `BRAVE_API_KEY`; `carapace-cli`: `CARAPACE_API_KEY`, plus its server domain as the setting `CARAPACE_HOST`; see [skill-flakes.md](skill-flakes.md#credential-slots)). `ferret`'s endpoint is the setting `FERRET_URL` and its key the slot `FERRET_API_KEY`. Copies you had changed beyond that need converting like your own skills (below).
 
 `CARAPACE_RESET_ASSETS=true` overwrites the copies of `carapace`, `web` and `ferret` and `SECURITY.md` in place, but leaves files that the new versions no longer have (`setup.sh`, the old `pyproject.toml` of `carapace`). Prefer deleting the copies.
 
