@@ -94,7 +94,7 @@ git push
 # then restart the server
 ```
 
-`example` is no longer bundled; the helper examples in [`nix/skills/examples`](../nix/skills/examples) replace it. Re-seeded skills come with their shipped defaults. A vault path you had changed in the old frontmatter now goes into the skill's `flake.nix` (`web`: `credentials.BRAVE_API_KEY`; `carapace`: the `server` and `apiKey` bindings at the top of its `flake.nix`). Copies you had changed beyond that need converting like your own skills (below).
+`example` is no longer bundled; the helper examples in [`nix/skills/examples`](../nix/skills/examples) replace it. Re-seeded skills come with their shipped defaults. A vault path you had changed in the old frontmatter now goes into `skills/config.json` as the binding of the skill's credential slot (`web`: `BRAVE_API_KEY`; `carapace-cli`: `CARAPACE_API_KEY`, plus its server domain as the setting `CARAPACE_HOST`; see [skill-flakes.md](skill-flakes.md#credential-slots)). Copies you had changed beyond that need converting like your own skills (below).
 
 `CARAPACE_RESET_ASSETS=true` overwrites the copies of `carapace`, `web` and `ferret` and `SECURITY.md` in place, but leaves files that the new versions no longer have (`setup.sh`, the old `pyproject.toml` of `carapace`). Prefer deleting the copies.
 
@@ -139,13 +139,13 @@ A skill with `commands` or `mcp` gets a `flake.nix` and a `flake.lock` next to i
 | --- | --- |
 | `network.domains` | `needs.domains`, per skill or per command |
 | `network.tunnels` (`host`, `remote_port`, `local_port`) | `needs.tunnels = [ "host:port" ]`. The client connects to the real host and port: `/etc/hosts` sends the name to a local forwarder, so there is no `local_port` any more ([sandbox.md](sandbox.md#tunnels)). The host must be a name, not an IP address, and a host on your LAN also needs the [internal-destination allowlist](#sandboxes) |
-| `credentials` with `env_var` | `needs.credentials.<VAR> = "<vault path>"` |
+| `credentials` with `env_var` | a credential slot `credentials.<VAR> = { type = "secret"; description = …; }`, bound in `skills/config.json`: `{"<skill>": {"credentials": {"<VAR>": "<vault path>"}}}` |
 | `credentials` with `file` | the command fetches it itself: `ccred get <vault path> -o <file>` ([credentials.md](credentials.md#skill-declared-credentials)) |
 | `credentials` with `base64` | the command decodes the value itself |
 | `credentials` with neither `env_var` nor `file` | nothing: the agent fetches them with `ccred get <vault path>` when it needs them |
 | `commands` (`name`, `command`) | `mkSkill { commands.<name> = { exec = …; description = …; }; }`. A `uv run --directory …` becomes `"${skill.uvEnv { root = ./.; }}/bin/<script>"` |
-| `mcp` (HTTP, `auth.type: bearer` or `oauth`) | `skill.mcpCommands { <name> = { url = …; bearer = "<vault path>"; description = …; }; }` (or `oauth = "<vault path>"`). The URL must be `https://` with a host name: `http://` and IP addresses fail the evaluation. `description` is required ([skill-flakes.md](skill-flakes.md#mcp-servers)) |
-| `mcp` (stdio, `command`) | `skill.mcpCommands { <name> = { command = …; description = …; needs.credentials… }; }` |
+| `mcp` (HTTP, `auth.type: bearer` or `oauth`) | `skill.mcpCommands { <name> = { url = …; bearer = "<SLOT>"; description = …; }; }` with a credential slot `<SLOT>` bound in `skills/config.json` (or `oauth = "<vault path>"`). The URL must be `https://` with a host name: `http://` and IP addresses fail the evaluation. `description` is required ([skill-flakes.md](skill-flakes.md#mcp-servers)) |
+| `mcp` (stdio, `command`) | `skill.mcpCommands { <name> = { command = …; description = …; needs.credentials = [ "<SLOT>" ]; }; }` |
 | `hints` | stays in the frontmatter |
 | `disabled` | gone: leave the skill out of `skills/flake.nix` |
 
@@ -172,16 +172,16 @@ After, in `flake.nix` (inputs as in [skill-flakes.md](skill-flakes.md#the-flake)
 default = skill.mkSkill {
   name = "web";
   src = ./.;
+  credentials.BRAVE_API_KEY = { type = "secret"; description = "A Brave Search API key"; };
   commands.web_search = {
     exec = "${env}/bin/web_search";
     description = "Search the web with Brave Search";
-    needs = {
-      domains = [ "api.search.brave.com" ];
-      credentials.BRAVE_API_KEY = "vault/brave-api-key";
-    };
+    needs.domains = [ "api.search.brave.com" ];
   };
 };
 ```
+
+and in `skills/config.json`: `{"web": {"credentials": {"BRAVE_API_KEY": "vault/brave-api-key"}}}`.
 
 The steps:
 

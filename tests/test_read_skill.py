@@ -322,3 +322,20 @@ async def test_the_agent_reads_where_a_skill_comes_from_and_whether_it_has_an_up
         "Use it well.\n\nFrom github:someone/weather, locked at 2222222. An update is available: ccccccc (2026-11-20); "
         "`nix flake update weather --flake ./skills` takes it.\n\n# Commands\n- `weather`: Offline forecast." in result
     )
+
+
+@pytest.mark.anyio
+async def test_an_unbound_credential_slot_says_how_to_bind_it(tmp_path: Path) -> None:
+    unbound = _WEATHER.model_copy(
+        update={"needs": _WEATHER.needs.model_copy(update={"credentials": {"WEATHER_TOKEN": None}})}
+    )
+    deps = _deps(tmp_path, [_build("weather", "succeeded", weather=unbound, forecast=_PLAIN)])
+
+    result = await _read_skill(deps, "weather")
+
+    assert "Asks for: domain api.example.com, credential UNBOUND as $WEATHER_TOKEN." in result
+    assert (
+        "weather: credential slot WEATHER_TOKEN is not bound; bind it to a password-manager entry in "
+        'skills/config.json: {"weather": {"credentials": {"WEATHER_TOKEN": "<backend>/<id>"}}} '
+        "Until then, the commands that need it are refused." in result
+    )

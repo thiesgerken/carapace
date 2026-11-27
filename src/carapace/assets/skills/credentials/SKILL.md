@@ -12,8 +12,8 @@ subshell capture so that tools consume the values without exposing them.
 
 ## Credentials of skill commands
 
-A skill command that needs a credential declares it in the skill's
-`flake.nix` (`needs.credentials`, see the `create-skill` skill). When you run
+A skill command that needs a credential declares a credential slot in the skill's
+`flake.nix`, bound to an entry in `skills/config.json` (see the `create-skill` skill). When you run
 the command, its wrapper asks for everything it declared at once, fetches the
 credentials and exports them as environment variables for that command only.
 You do not need to do anything but run the command.

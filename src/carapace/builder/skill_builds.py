@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,7 +33,8 @@ class SkillNeeds(BaseModel):
     """What a command needs from outside the sandbox, resolved for this instance's settings."""
 
     domains: list[str]
-    credentials: dict[str, str]
+    # Credential slot (the environment variable) to the vault path skills/config.json binds; None while unbound.
+    credentials: dict[str, str | None]
     oauth: list[str]
     tunnels: list[str]
 
@@ -47,6 +49,15 @@ class SkillCommand(BaseModel):
 type SettingValue = str | int | bool
 
 
+class CredentialSlot(BaseModel):
+    """A credential slot a skill declares, with this instance's binding."""
+
+    type: Literal["secret"]
+    description: str
+    # A vault path, as `ccred get` takes it; None until skills/config.json binds the slot.
+    binding: str | None
+
+
 class SkillManifest(BaseModel):
     """`manifests.<system>.<skill>` of skills/flake.nix, as `skillsFlake` writes it (docs/skill-flakes.md).
 
@@ -55,6 +66,7 @@ class SkillManifest(BaseModel):
 
     enable: bool
     settings: dict[str, SettingValue] = {}
+    credentials: dict[str, CredentialSlot] = {}
     commands: dict[str, SkillCommand] = {}
 
 
@@ -71,6 +83,7 @@ class _Outcome:
     # False for a skill skills/config.json turns off: it counts as not listed.
     enabled: bool = True
     settings: dict[str, SettingValue] = field(default_factory=dict)
+    credentials: dict[str, CredentialSlot] = field(default_factory=dict)
     # The skill directory in the store and what the builder read from it; also kept for a failed build.
     skill_dir: str | None = None
     skill_md: str | None = None
@@ -92,6 +105,11 @@ class SkillBuild:
     enabled: bool = True
     # This instance's values, which a command gets as environment variables (`cgate request --command`).
     settings: dict[str, SettingValue] = field(default_factory=dict)
+    credentials: dict[str, CredentialSlot] = field(default_factory=dict)
+
+    def unbound(self, command: str) -> list[str]:
+        """The credential slots *command* needs that skills/config.json does not bind."""
+        return sorted(slot for slot, path in self.commands[command].needs.credentials.items() if path is None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -385,9 +403,19 @@ def _read_result(result: BuildResult) -> _Outcome:
         store_paths=result.store_paths,
         commands=manifest.commands,
         settings=manifest.settings,
+        credentials=manifest.credentials,
         skill_dir=result.skill_dir,
         skill_md=result.skill_md,
         skill_files=result.skill_files,
+    )
+
+
+def unbound_slot_hint(skill: str, slots: list[str]) -> str:
+    """Why a command cannot run yet, and the `skills/config.json` entry that fixes it."""
+    example = json.dumps({skill: {"credentials": {slot: "<backend>/<id>" for slot in slots}}})
+    return (
+        f"{skill}: credential slot {', '.join(slots)} is not bound; "
+        f"bind it to a password-manager entry in skills/config.json: {example}"
     )
 
 
@@ -410,6 +438,7 @@ def _build(skill: _HeadSkill, outcome: _Outcome) -> SkillBuild:
         skill_files=outcome.skill_files,
         enabled=outcome.enabled,
         settings=outcome.settings,
+        credentials=outcome.credentials,
     )
 
 

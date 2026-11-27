@@ -27,6 +27,7 @@ _METADATA = {
     "enable": True,
     "name": "weather",
     "settings": {"CITY": "Berlin"},
+    "credentials": {"TOKEN": {"type": "secret", "description": "API token", "binding": "demo/t"}},
     "commands": {
         "weather": {
             "description": "Current weather",
@@ -802,6 +803,7 @@ async def test_config_json_rekeys_every_skill_and_goes_to_the_builder(repo: Path
     assert {"config.json", "flake.nix", "flake.lock", "weather"} <= archived
     weather = next(build for build in await builds.installable(repo) if build.skill == "weather")
     assert weather.settings == {"CITY": "Berlin"}
+    assert weather.credentials["TOKEN"].binding == "demo/t"
 
 
 @pytest.mark.anyio

@@ -21,12 +21,16 @@
           default = skill.mkSkill {
             name = "ferret";
             src = ./.;
+            # Bind it to a Ferret API key with only search:read, in skills/config.json (SETUP.md).
+            credentials.FERRET_API_KEY = {
+              type = "secret";
+              description = "A Ferret API key with only search:read";
+            };
             commands = skill.mcpCommands {
               ferret = {
                 # Your deployment's HTTPS /mcp endpoint (SETUP.md).
                 url = "https://ferret.example.invalid/mcp";
-                # A Ferret API key with only search:read, sent as a bearer token.
-                bearer = "vault/ferret-api-key";
+                bearer = "FERRET_API_KEY";
                 description = "Read-only discovery across authorized personal indexed sources";
               };
             };

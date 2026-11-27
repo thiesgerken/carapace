@@ -1,1 +1,5 @@
-{}
+{
+  "carapace-cli": {
+    "enable": false
+  }
+}

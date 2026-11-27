@@ -18,21 +18,26 @@ This skill ships with **placeholders** and will not work until an operator fills
 In the carapace UI, create a scoped API key with the minimum scopes the agent needs
 (typically `sessions:read`, `sessions:write`, and `jobs:*` depending on the task).
 
-### 2. Store the key in the vault and set the server domain
+### 2. Store the key in the vault and configure the skill
 
 Put the API key in your credential vault and note its `<backend>/<id>` path. The sandbox
 refuses loopback and internal hosts (`localhost`, `127.0.0.1`, cluster services, …), so the
-CLI must reach the deployment's **public** API domain. Both values sit at the top of
-`flake.nix`:
+CLI must reach the deployment's **public** API domain. Both go into `skills/config.json`,
+under the skill's attribute `carapace-cli`; a new knowledge repo has it turned off until then:
 
-```nix
-server = "carapace.example.com";                    # public API domain, without https://
-apiKey = "<backend>/<your-carapace-api-key-id>";    # vault path of the API key
+```json
+{
+  "carapace-cli": {
+    "settings": { "CARAPACE_HOST": "carapace.example.com" },
+    "credentials": { "CARAPACE_API_KEY": "<backend>/<your-carapace-api-key-id>" }
+  }
+}
 ```
 
-The command declares both: it asks for the domain and the credential when it runs, exports
-the key as `CARAPACE_API_KEY` (the CLI reads it from there, never from a command line), and
-points the CLI at `https://<server>`. Commit and push; the builder rebuilds the skill.
+`CARAPACE_HOST` is the public API domain, without `https://`. Remove `"enable": false` if it is
+still there. The command asks for that domain and the credential when it runs, gets the key as
+`CARAPACE_API_KEY` (the CLI reads it from there, never from a command line), and points the CLI
+at `https://$CARAPACE_HOST`. Commit and push; the builder re-evaluates the skill.
 
 ## Which CLI
 
@@ -48,7 +53,7 @@ together.
 skills/carapace/
   SKILL.md         # agent instructions
   REFERENCE.md     # this file
-  flake.nix        # server domain, vault path, the `carapace` command
+  flake.nix        # the CARAPACE_HOST setting, the CARAPACE_API_KEY slot, the `carapace` command
   flake.lock       # pins nixpkgs and the Carapace commit
 ```
 

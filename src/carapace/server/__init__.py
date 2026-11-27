@@ -40,7 +40,7 @@ from ..auth import AuthStore
 from ..bootstrap import ensure_data_dir, ensure_knowledge_dir
 from ..builder.client import BuilderClient
 from ..builder.profile import ProfilePlan, profile_plan
-from ..builder.skill_builds import SkillBuilds
+from ..builder.skill_builds import SkillBuilds, unbound_slot_hint
 from ..cache import SessionListCache
 from ..codex_auth import CodexAccounts, CodexCredentialStore
 from ..config import build_config
@@ -1242,11 +1242,14 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
             f"{body.command} is not a command of a skill built for this knowledge repo, so its settings and needs "
             "are unknown: push the skill, and run it once the builder has built it"
         )
+    if unbound := build.unbound(body.command):
+        return _boundary_denied(unbound_slot_hint(build.skill, unbound))
     needs = build.commands[body.command].needs
-    if needs.domains or needs.credentials or needs.oauth or needs.tunnels:
+    credentials = {variable: path for variable, path in needs.credentials.items() if path is not None}
+    if needs.domains or credentials or needs.oauth or needs.tunnels:
         declared = UpfrontRequestBody(
             domains=needs.domains,
-            credentials=sorted(set(needs.credentials.values())),
+            credentials=sorted(set(credentials.values())),
             oauth=needs.oauth,
             tunnels=needs.tunnels,
             store_path=body.store_path,
@@ -1258,7 +1261,7 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
         if reviewed.status_code != 200:
             return reviewed
     # Settings are no secrets, but they only go to the wrapper, like the credentials it then fetches.
-    return JSONResponse({"settings": build.settings, "credentials": needs.credentials})
+    return JSONResponse({"settings": build.settings, "credentials": credentials})
 
 
 async def _review_upfront(

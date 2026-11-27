@@ -87,7 +87,7 @@ Hidden credentials are treated as not found.
 
 ## Skill-declared credentials
 
-A skill declares the credentials its commands need in its flake (`needs.credentials`, see [skill-flakes.md](skill-flakes.md#commands-and-what-they-need)), not in its `SKILL.md`. The generated wrapper asks for all of them with `cgate request` before the command starts, then exports each one with `ccred get`. Nothing is cached on the server and nothing is injected from outside: the values reach the sandbox only through `ccred`, reviewed per `exec`.
+A skill declares the credentials its commands need as credential slots in its flake (see [skill-flakes.md](skill-flakes.md#credential-slots)), not in its `SKILL.md`, and `skills/config.json` binds each slot to a vault path. The generated wrapper asks for everything the command needs with `cgate request` before it starts; `cgate` then fetches each bound credential with `ccred get` and exports it. A slot without a binding stops the command with a hint how to bind it. Nothing is cached on the server and nothing is injected from outside: the values reach the sandbox only through `ccred`, reviewed per `exec`.
 
 A command that needs a credential in a file writes it itself (`ccred get <vault_path> -o <file>`) and removes it when done.
 

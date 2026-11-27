@@ -30,10 +30,11 @@
           default = skill.mkSkill {
             name = "demo-uv";
             src = ./.;
-            needs = {
-              domains = [ "api.example.com" ];
-              credentials.DEMO_API_TOKEN = "demo/api-token";
+            credentials.DEMO_API_TOKEN = {
+              type = "secret";
+              description = "A token for api.example.com";
             };
+            needs.domains = [ "api.example.com" ];
             commands = {
               demo-status = {
                 exec = "${env}/bin/demo-status";
@@ -44,7 +45,7 @@
                 description = "Greet a name, locally";
                 needs = {
                   domains = [ ];
-                  credentials = { };
+                  credentials = [ ];
                 };
               };
             };

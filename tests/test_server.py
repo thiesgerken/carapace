@@ -3945,6 +3945,21 @@ def test_gate_answers_a_command_without_needs_without_a_review(client, auth_head
     sentinel.evaluate_upfront_request.assert_not_awaited()
 
 
+def test_gate_refuses_a_command_whose_credential_slot_is_unbound(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, _ = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    _skill_with(monkeypatch, {"weather": _command(domains=["berlin.example.com"], credentials={"TOKEN": None})})
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"store_path": _STORE_PATH, "command": "weather"}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert resp.status_code == 403
+    assert resp.text.startswith("weather: credential slot TOKEN is not bound; bind it")
+    assert '{"weather": {"credentials": {"TOKEN": "<backend>/<id>"}}}' in resp.text
+    sentinel.evaluate_upfront_request.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     ("body", "status"),
     [
