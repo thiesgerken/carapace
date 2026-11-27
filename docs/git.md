@@ -20,12 +20,12 @@ users:
 
 The owning user can also manage these fields from the web UI under Settings -> Account. The token field is write-only: responses report `token_set`, but never return the token value.
 
-| Field    | Default                    | Description                                                                                                                 |
-| -------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `remote` | `""` (none)                | URL of the upstream remote for this user's repo. Leave empty for local-only mode.                                           |
-| `branch` | `"main"`                   | Remote branch to fetch from and push to. **Must already exist on the remote.** The local repo still uses `main` internally. |
-| `author` | `"carapace <carapace@%h>"` | Commit author template for this user's repo. `%s` is replaced with the session ID, `%h` with the hostname.                  |
-| `token`  | `null`                     | Authentication token for the remote (see below).                                                                            |
+| Field    | Default                    | Description                                                                                                                                                                             |
+| -------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `remote` | `""` (none)                | URL of the upstream remote for this user's repo. Leave empty for local-only mode.                                                                                                       |
+| `branch` | `"main"`                   | Remote branch to fetch from and push to. **Must already exist on the remote.** The local repo still uses `main` internally.                                                             |
+| `author` | `"carapace <carapace@%h>"` | Commit author template for this user's repo. `%s` is replaced with the session ID, `%h` with the name of the host that commits: the server, or the session's sandbox for agent commits. |
+| `token`  | `null`                     | Authentication token for the remote (see below).                                                                                                                                        |
 
 ### Authentication
 

@@ -946,6 +946,10 @@ class KubernetesRuntime(ContainerRuntime):
         """In Kubernetes, image pulls are handled by the kubelet."""
         return True
 
+    def sandbox_hostname(self, container_id: str) -> str:
+        # A sandbox's container id is its pod name, which is also the pod's hostname.
+        return container_id
+
     async def get_ip(self, container_id: str, network: str) -> str | None:
         try:
             api = await self._ensure_api()

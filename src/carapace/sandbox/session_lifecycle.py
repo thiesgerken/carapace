@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..database.engine import SessionFactory
 from ..database.models import SandboxTokenRow
+from ..git.store import parse_author
 from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
 from ..spans import span
 from .egress_check import PROBE_SCRIPT, probe_env, raise_for_leaks
@@ -677,17 +678,14 @@ class SandboxSessionLifecycle:
         fresh (see ``SandboxManager._attach_or_start``).
         """
         with span("sandbox", "git identity"):
-            name_tpl = self._author_for_session(session_id).replace("%s", session_id)
-            if "<" in name_tpl and name_tpl.endswith(">"):
-                name, _, email = name_tpl.rpartition("<")
-                name, email = name.strip(), email.rstrip(">").strip()
-            else:
-                name, email = name_tpl, f"{session_id}@carapace"
-            name_sh = name.replace("%h", "$(hostname)")
-            email_sh = email.replace("%h", "$(hostname)")
+            name, email = parse_author(
+                self._author_for_session(session_id),
+                session_id=session_id,
+                hostname=self._runtime.sandbox_hostname(container_id),
+            )
             cmd = (
-                f"git config --global user.name {shlex.quote(name_sh)} && "
-                f"git config --global user.email {shlex.quote(email_sh)}"
+                f"git config --global user.name {shlex.quote(name)} && "
+                f"git config --global user.email {shlex.quote(email)}"
             )
             result = await self._runtime.exec(container_id, cmd, timeout=10)
             if result.exit_code != 0:
