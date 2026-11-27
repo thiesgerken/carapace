@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import shutil
 from importlib.resources import as_file, files
-from importlib.resources.abc import Traversable
 from pathlib import Path
 
 from loguru import logger
@@ -82,54 +81,19 @@ def _copy_asset(asset_path: str, target: Path) -> None:
         shutil.copyfile(src, target)
 
 
-def _skill_file_relpaths(skill_root: Traversable) -> list[str]:
-    paths: list[str] = []
+def _seed_skills_flake(knowledge_dir: Path, created: list[str]) -> None:
+    """Give a new repo the bundled ``skills/flake.nix``, its lock and ``skills/config.json``.
 
-    def walk(node: Traversable, prefix: str) -> None:
-        for child in sorted(node.iterdir(), key=lambda c: c.name):
-            rel = f"{prefix}/{child.name}" if prefix else child.name
-            if child.is_dir():
-                walk(child, rel)
-            elif child.is_file():
-                paths.append(rel)
-
-    walk(skill_root, "")
-    return paths
-
-
-# Bundled skills whose flake carries this instance's settings, so a repo gets its own copy. The other
-# bundled skills come from carapace's main branch as inputs of the seeded skills/flake.nix.
-LOCAL_BUNDLED_SKILLS = ("carapace", "ferret", "web")
-
-
-def _sync_bundled_skills(knowledge_dir: Path, reset: bool, created: list[str]) -> None:
-    """Copy each ``carapace.assets/skills/<name>/`` tree of `LOCAL_BUNDLED_SKILLS` into *knowledge_dir* when missing.
-
-    When *reset* is true, overwrite their files (same as critical knowledge files). A new repo also gets
-    the bundled ``skills/flake.nix`` and its lock, which list the skills, and an empty ``skills/config.json``
-    for their settings, which turns ``carapace-cli`` off until it is configured; an existing repo keeps its
-    own, even on reset.
+    The flake lists the bundled skills as inputs on carapace's main branch, and config.json turns off the ones
+    that need setting up first. An existing repo keeps its own, even on reset.
     """
-    skills_assets = _ASSETS.joinpath("skills")
-    if not skills_assets.is_dir():
-        return
     skills_out = knowledge_dir / "skills"
-    if not skills_out.exists():
-        skills_out.mkdir(parents=True)
-        for name in ("flake.nix", "flake.lock", "config.json"):
-            _copy_asset(f"skills/{name}", skills_out / name)
-            created.append(f"skills/{name}")
-    for name in LOCAL_BUNDLED_SKILLS:
-        skill_root = skills_assets.joinpath(name)
-        dest_root = skills_out / name
-        if not reset and dest_root.exists():
-            continue
-        for rel in _skill_file_relpaths(skill_root):
-            target_rel = f"skills/{name}/{rel}"
-            target = knowledge_dir / target_rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            _copy_asset(f"skills/{name}/{rel}", target)
-            created.append(target_rel)
+    if skills_out.exists():
+        return
+    skills_out.mkdir(parents=True)
+    for name in ("flake.nix", "flake.lock", "config.json"):
+        _copy_asset(f"skills/{name}", skills_out / name)
+        created.append(f"skills/{name}")
 
 
 def ensure_data_dir(data_dir: Path) -> list[str]:
@@ -183,6 +147,6 @@ def ensure_knowledge_dir(knowledge_dir: Path) -> list[str]:
             _copy_asset(asset_name, target)
             created.append(target_rel)
 
-    _sync_bundled_skills(knowledge_dir, reset, created)
+    _seed_skills_flake(knowledge_dir, created)
 
     return created

@@ -11,9 +11,16 @@
     };
 
     # Bundled with Carapace and taken from its main branch, so they stay current without a copy here:
-    # `nix flake update <name> --flake ./skills` brings one to the latest version.
+    # `nix flake update <name> --flake ./skills` brings one to the latest version. skills/config.json
+    # turns off the ones that need setting up first (see their SKILL.md).
     artifacts = {
       url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/artifacts";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.carapace.follows = "carapace";
+    };
+    # `carapace` is the helpers' input, so the skill in skills/carapace is listed as carapace-cli.
+    carapace-cli = {
+      url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/carapace";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };
@@ -27,8 +34,18 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };
+    ferret = {
+      url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/ferret";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.carapace.follows = "carapace";
+    };
     mermaid = {
       url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/mermaid";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.carapace.follows = "carapace";
+    };
+    web = {
+      url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/web";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };
@@ -37,26 +54,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };
-
-    # Bundled and copied into this repo, because their flake carries settings for this instance.
-    carapace-cli = {
-      url = "path:./carapace";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.carapace.follows = "carapace";
-    };
-
-    # Bundled, but they need setting up first (see their SKILL.md). To turn one on, uncomment it and run
-    # `nix flake lock ./skills`.
-    # web = {
-    #   url = "path:./web";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    #   inputs.carapace.follows = "carapace";
-    # };
-    # ferret = {
-    #   url = "path:./ferret";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    #   inputs.carapace.follows = "carapace";
-    # };
   };
 
   # Every input but nixpkgs and carapace is a skill; config.json holds the values of their settings.

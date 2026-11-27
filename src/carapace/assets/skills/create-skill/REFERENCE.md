@@ -96,7 +96,7 @@ inputs.my-skill = {
 
 Always write both `follows`: every skill then shares the one `nixpkgs` and the one Carapace helper version that `skills/flake.nix` pins, and `nix flake update carapace --flake ./skills` updates the helpers of all skills at once. A skill's own `flake.lock` only matters when it is built on its own.
 
-Some bundled skills (`artifacts`, `create-skill`, `credentials`, `mermaid`, `wikipedia`) are not in `skills/` but inputs on Carapace's `main` branch (`github:thiesgerken/carapace?dir=src/carapace/assets/skills/<name>`). To change one, copy its directory into `skills/`, point its input at `path:./<name>` and lock again; it is then a local skill.
+The bundled skills are not in `skills/` but inputs on Carapace's `main` branch (`github:thiesgerken/carapace?dir=src/carapace/assets/skills/<dir>`), configured in `skills/config.json`. To change one beyond its settings, copy its directory into `skills/`, point its input at `path:./<dir>` and lock again; it is then a local skill.
 
 ```text
 skills/

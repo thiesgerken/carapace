@@ -143,19 +143,19 @@ A built-in `create-skill` skill is seeded into every new knowledge repo to guide
 
 ## Bundled skills
 
-Every new knowledge repo gets them. The ones that need no setup (`artifacts`, `create-skill`, `credentials`, `mermaid`, `wikipedia`) are listed in the seeded `skills/flake.nix` as inputs on Carapace's `main` branch, not copied ([skill-flakes.md](skill-flakes.md#the-skills-flake)). The others are copied into the repo until they move to Carapace's `main` too: `carapace-cli` (listed, but turned off in the seeded `skills/config.json` until its `CARAPACE_HOST` setting and `CARAPACE_API_KEY` slot are configured), `ferret` and `web` (not listed until set up, see their credential slots):
+Every new knowledge repo lists them in its seeded `skills/flake.nix`, as inputs on Carapace's `main` branch: nothing is copied ([skill-flakes.md](skill-flakes.md#the-skills-flake)). The seeded `skills/config.json` turns off `carapace-cli`, `ferret` and `web`, which need a server, an endpoint or a key first ([settings and credential slots](skill-flakes.md#skillsconfigjson)):
 
 | Skill          | Purpose                                                                        |
 | -------------- | ------------------------------------------------------------------------------ |
 | `artifacts`    | Build self-contained HTML reports, dashboards, and local tools; [workflow](artifacts.md). |
-| `carapace-cli` | Drive a carapace server over its JSON CLI (sessions, approvals, jobs). Its directory is `skills/carapace`: the attribute `carapace` names the helpers every skill follows. |
+| `carapace-cli` | Drive a carapace server over its JSON CLI (sessions, approvals, jobs). Off by default; needs `CARAPACE_HOST` and `CARAPACE_API_KEY` ([setup](../src/carapace/assets/skills/carapace/REFERENCE.md)). Its directory is `skills/carapace`: the attribute `carapace` names the helpers every skill follows. |
 | `create-skill` | Write and refine skills.                                                       |
 | `credentials`  | List, fetch, and use secrets from the vault.                                   |
-| `ferret`       | Personal indexed-source discovery over MCP. Not listed by default; [setup](../src/carapace/assets/skills/ferret/SETUP.md). |
+| `ferret`       | Personal indexed-source discovery over MCP. Off by default; [setup](../src/carapace/assets/skills/ferret/SETUP.md). |
 | `mermaid`      | Write Mermaid diagrams; the web UI renders ` ```mermaid ` fences as pictures.   |
-| `web`          | Web search and page fetch. Not listed by default; bind its `BRAVE_API_KEY` slot to a Brave Search API key in `skills/config.json` before listing it. |
+| `web`          | Web search and page fetch. Off by default; bind its `BRAVE_API_KEY` slot to a Brave Search API key in `skills/config.json` and remove its `"enable": false`. |
 | `wikipedia`    | Wikipedia search and article fetch.                                            |
 
 All of them are [skill flakes](skill-flakes.md); `artifacts`, `create-skill`, `credentials` and `mermaid` carry only instructions. In a knowledge repo they follow the Carapace helpers that `skills/flake.lock` pins. Examples of the helpers live in [`nix/skills/examples`](../nix/skills/examples).
 
-To change a skill that comes from Carapace, copy its directory into `skills/` and point its input at `path:./<name>`; it is then a local skill like any other. To turn on `ferret` or `web`, set it up in its copied directory, uncomment its input in `skills/flake.nix`, run `nix flake lock ./skills`, push, and start a new session. Normal bootstrap seeds the missing copies without overwriting existing ones or user edits. Explicit `reset-assets` overwrites the copies, but never `skills/flake.nix`.
+To turn on `carapace-cli`, `ferret` or `web`, give it its settings and credential bindings in `skills/config.json` and remove its `"enable": false`, push, and start a new session. To change a bundled skill beyond that, copy its directory from the Carapace repo into `skills/` and point its input at `path:./<name>`; it is then a local skill like any other. Bootstrap writes `skills/flake.nix`, its lock and `config.json` only into a new repo, and never overwrites them, not even with `reset-assets`.
