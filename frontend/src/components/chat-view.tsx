@@ -68,7 +68,15 @@ import {
   sandboxStatusKey,
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
-import { applySpanToToolCall, applySpansToToolCalls, dropRunningSpans, runningStep, trackRunningSpan } from "@/lib/tool-call-status";
+import {
+  applySpanToToolCall,
+  applySpansToToolCalls,
+  dropRunningSpans,
+  isEscalationCard,
+  trackRunningSpan,
+  waitingLineState,
+  type EscalationCard,
+} from "@/lib/tool-call-status";
 import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall, streamingCallIndex } from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
@@ -1026,19 +1034,6 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
   return groupFoldedMessages(groupChildToolCalls(messages));
 }
 
-type EscalationCard = Extract<
-  ChatMessage,
-  { kind: "approval" | "domain_access_approval" | "git_push_approval" | "credential_approval" }
->;
-
-function isEscalationCard(message: ChatMessage): message is EscalationCard {
-  return (
-    message.kind === "approval"
-    || message.kind === "domain_access_approval"
-    || message.kind === "git_push_approval"
-    || message.kind === "credential_approval"
-  );
-}
 
 function escalationRequestId(card: EscalationCard): string {
   return card.kind === "approval" ? card.request.tool_call_id : card.request.request_id;
@@ -1730,8 +1725,9 @@ export function ChatView({
           break;
         case "cancelled":
           resetRollbackRef.current = null;
+          // The server closes the turn's open approvals and escalations as denied; nobody can answer them now.
           setMessages((prev) => [
-            ...prev,
+            ...prev.filter((m) => !isEscalationCard(m)),
             { kind: "error", detail: msg.detail, turnTerminal: true, turnId: msg.turn_id },
           ]);
           setLlmActivity(null);
@@ -1847,8 +1843,8 @@ export function ChatView({
   const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
   // The card being written carries the request's counter; the waiting line covers the other phases.
   const streamingCall = waiting ? streamingCallIndex(messages, llmActivity) : -1;
-  // Between model requests the waiting line acts out what the running tool call waits on.
-  const step = waiting ? runningStep(messages) : null;
+  // Between model requests the waiting line acts out what the turn waits on: the user, or a tool call's step.
+  const { awaitsUser, step } = waiting ? waitingLineState(messages) : { awaitsUser: false, step: null };
   const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
 
   function showInspector(open: boolean): void {
@@ -2988,7 +2984,7 @@ export function ChatView({
                   ),
                 );
               })()}
-              {waiting && <WaitingIndicator activity={llmActivity} step={step} hidden={streamingCall !== -1} />}
+              {waiting && <WaitingIndicator activity={llmActivity} step={step} awaitsUser={awaitsUser} hidden={streamingCall !== -1} />}
               <div ref={bottomRef} />
             </div>
           </div>

@@ -9,15 +9,13 @@ from dataclasses import dataclass
 from loguru import logger
 
 from ..security.context import ApprovalSource, ApprovalVerdict, BoundaryEvaluation
+from ..span_names import EXEC_LOCK_WAIT_SPAN
 from ..spans import span
 from .exec_scope import RunningExec
 from .runtime import ContainerGoneError, ContainerRuntime, ExecResult
 from .session_lifecycle import SessionContainer
 from .skill_profile import KILLER_MARKER, KILLER_SYNC_PID, SkillProfileSync
 from .tunnels import ExecEndedError, Tunnel, close_script, listen_addresses, open_script
-
-# The name of the span a call waits in while another exec holds the session's exec lock; the UI names it.
-EXEC_LOCK_WAIT_SPAN = "exec lock"
 
 type DomainApprovalCallback = Callable[[str, RunningExec], Awaitable[BoundaryEvaluation]]
 type DomainNotifyCallback = Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None]

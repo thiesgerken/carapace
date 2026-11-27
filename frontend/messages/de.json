@@ -1220,7 +1220,8 @@
                 "learnsCommands": "Lernt die neuen Befehle auswendig…",
                 "stowsCommands": "Stopft die Befehle in den Panzer…",
                 "awaitsYourGo": "Wartet auf dein Okay…",
-                "waitsItsTurn": "Wartet, bis es dran ist…"
+                "waitsItsTurn": "Wartet, bis es dran ist…",
+                "runsCommand": "Führt den Befehl aus…"
             },
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",

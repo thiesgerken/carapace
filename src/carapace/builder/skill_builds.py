@@ -18,6 +18,7 @@ from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from ..skills import SkillDocumentError, parse_skill_document
+from ..span_names import SKILL_BUILD_WAIT_SPAN
 from ..spans import span
 from .client import BuilderClient, BuilderSystemMismatchError
 from .models import BuildResult
@@ -122,7 +123,7 @@ class SkillBuilds:
             build = next((build for build in builds if build.skill == skill), None)
             if build is None or build.state != "building":
                 return build, builds
-            with span("skill", "build wait", skill=skill):
+            with span("skill", SKILL_BUILD_WAIT_SPAN, skill=skill):
                 await asyncio.shield(self._running[build.tree])
 
     async def sync_roots(self, repo_dirs: Iterable[Path]) -> None:

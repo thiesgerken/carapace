@@ -1220,7 +1220,8 @@
                 "learnsCommands": "Learns the new commands by heart…",
                 "stowsCommands": "Stuffs the commands into its shell…",
                 "awaitsYourGo": "Waits for your go…",
-                "waitsItsTurn": "Waits its turn…"
+                "waitsItsTurn": "Waits its turn…",
+                "runsCommand": "Runs the command…"
             },
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",

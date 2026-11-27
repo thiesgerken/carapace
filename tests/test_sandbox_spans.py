@@ -20,7 +20,7 @@ from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
 from carapace.models.config import Config
 from carapace.models.session import SessionState
-from carapace.sandbox.exec_flow import EXEC_LOCK_WAIT_SPAN, SandboxExecCoordinator, SandboxExecState
+from carapace.sandbox.exec_flow import SandboxExecCoordinator, SandboxExecState
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ExecResult
@@ -28,6 +28,7 @@ from carapace.sandbox.skill_profile import SkillProfileSync
 from carapace.security.context import BoundaryEvaluation, SessionSecurity
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillRegistry
+from carapace.span_names import EXEC_LOCK_WAIT_SPAN
 from carapace.spans import Span, TurnTrace, attach, attach_sandbox_call, current_span_ref, span
 from carapace.usage import UsageTracker
 from carapace.ws_models import EscalationResponse
