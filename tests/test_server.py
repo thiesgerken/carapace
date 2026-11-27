@@ -27,10 +27,11 @@ from pydantic_ai.usage import RunUsage
 # We patch the server module globals directly for testing
 import carapace.server as srv
 import carapace.server.jobs as server_jobs
+import carapace.server.knowledge as knowledge_routes
 import carapace.server.platform_settings as platform_settings
 from carapace.api_keys import Access, ApiKeyGrant, ApiKeyStore, Scope
 from carapace.artifact_shares import ArtifactShareStore
-from carapace.auth import AuthStore
+from carapace.auth import AuthStore, UserIdentity
 from carapace.bootstrap import ensure_data_dir
 from carapace.builder.skill_builds import RetryRefusedError, SkillBuild, SkillBuilds, SkillCommand, SkillNeeds
 from carapace.builder.skill_updates import PendingUpdate, UpdateRefusedError
@@ -5601,7 +5602,7 @@ def test_a_skill_update_is_committed_as_the_user_and_pushed(
 ) -> None:
     builds = SkillBuilds(None)
     monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
-    pending = PendingUpdate(base_lock="f" * 40, lock_text="{}\n", message="⬆️ skills: update tracker")
+    pending = PendingUpdate(base_tree="f" * 40, lock_text="{}\n", message="⬆️ skills: update tracker")
     monkeypatch.setattr(builds.updates, "pending_update", AsyncMock(return_value=pending))
     after_push = AsyncMock()
     monkeypatch.setattr(srv, "_after_push", after_push)
@@ -5613,7 +5614,7 @@ def test_a_skill_update_is_committed_as_the_user_and_pushed(
     git_store.commit_replacing.assert_awaited_once_with(
         "skills/flake.lock",
         "{}\n",
-        expected_blob="f" * 40,
+        unchanged={"skills": "f" * 40},
         message="⬆️ skills: update tracker",
         author="Thies <thies@carapace>",
     )
@@ -5631,3 +5632,9 @@ def test_a_skill_update_that_cannot_be_applied_is_a_conflict(
     response = client.post("/api/knowledge/skills/tracker/update", headers=auth_headers)
 
     assert (response.status_code, response.json()["detail"]) == (409, str(refused))
+
+
+def test_a_commit_author_cannot_smuggle_angle_brackets() -> None:
+    user = UserIdentity(username="eve", display_name="Eve <x@y>", email="e<v>e@example.com")
+
+    assert knowledge_routes._commit_author(user) == "Eve x@y <eve@example.com>"

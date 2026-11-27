@@ -178,27 +178,45 @@ class GitStore:
             return await self.head_sha()
 
     async def commit_replacing(
-        self, relative_path: str, content: str, *, expected_blob: str, message: str, author: str
+        self, relative_path: str, content: str, *, unchanged: dict[str, str], message: str, author: str
     ) -> str:
-        """Commit *content* as *relative_path* by *author* ("Name <email>"), if HEAD still has blob
-        *expected_blob* there; raises ConcurrentChangeError otherwise. Returns the new commit's sha.
+        """Commit *content* as *relative_path* by *author* ("Name <email>"), if every path in *unchanged* still
+        has that object id at HEAD ("" for absent); raises ConcurrentChangeError otherwise.
+
+        On any failure the file and the index are put back, so the checkout stays clean for pushes. Returns
+        the new commit's sha.
         """
         async with self._index_lock:
-            (self.repo_dir / relative_path).write_text(content, encoding="utf-8")
-            await self._run("add", "--", relative_path)
-            # Checked once staged: with the index ahead of HEAD, receive.denyCurrentBranch=updateInstead
-            # refuses sandbox pushes, so only one that landed before can have changed the file.
-            _, current = await self._run("rev-parse", "--verify", "--quiet", f"HEAD:{relative_path}")
-            if current != expected_blob:
-                await self._run("checkout", "HEAD", "--", relative_path)
-                raise ConcurrentChangeError(f"{relative_path} changed in the meantime; nothing was committed")
-            code, out = await self._run("commit", "-m", message, "--author", author, "--", relative_path)
-            if code != 0:
-                raise RuntimeError(f"git commit failed: {out}")
+            try:
+                (self.repo_dir / relative_path).write_text(content, encoding="utf-8")
+                code, out = await self._run("add", "--", relative_path)
+                if code != 0:
+                    raise RuntimeError(f"git add failed: {out}")
+                # Checked once staged: with the index ahead of HEAD, receive.denyCurrentBranch=updateInstead
+                # refuses sandbox pushes, so only one that landed before can have changed these.
+                for path, expected in unchanged.items():
+                    _, current = await self._run("rev-parse", "--verify", "--quiet", f"HEAD:{path}")
+                    if current != expected:
+                        raise ConcurrentChangeError(f"{path} changed in the meantime; nothing was committed")
+                code, out = await self._run("commit", "-m", message, "--author", author, "--", relative_path)
+                if code != 0:
+                    raise RuntimeError(f"git commit failed: {out}")
+            except BaseException:
+                await self._restore(relative_path)
+                raise
             logger.info(f"Knowledge commit: {message}")
             sha = await self.head_sha()
             assert sha is not None
             return sha
+
+    async def _restore(self, relative_path: str) -> None:
+        """Put *relative_path* back to HEAD in the index and the working tree; remove it if HEAD has none."""
+        await self._run("reset", "-q", "--", relative_path)
+        code, _ = await self._run("cat-file", "-e", f"HEAD:{relative_path}")
+        if code == 0:
+            await self._run("checkout", "--", relative_path)
+        else:
+            (self.repo_dir / relative_path).unlink(missing_ok=True)
 
     async def commit_removals(self, paths: list[str], message: str, *, session_id: str = "server") -> bool:
         """Stage tracked path removals and commit. Returns True if a commit was made."""

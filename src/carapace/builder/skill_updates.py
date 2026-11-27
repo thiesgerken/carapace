@@ -53,9 +53,11 @@ class UpdateCheck:
 
 @dataclass(frozen=True, slots=True)
 class PendingUpdate:
-    """skills/flake.lock with one skill updated, to commit if HEAD still has the lock it was made from."""
+    """skills/flake.lock with one skill updated, to commit if HEAD still has the skills/ it was made from."""
 
-    base_lock: str
+    # The skills/ tree at HEAD it was made from: a push in between, of the lock or anything the lock
+    # describes, makes it stale.
+    base_tree: str
     lock_text: str
     message: str
 
@@ -213,7 +215,7 @@ class SkillUpdates:
             raise UpdateRefusedError("skills/ changed since the last check; check for updates again.")
         lock = graft(json.loads(head.lock_text), check.locks[name], name)
         rev = f" to {update.available_rev[:7]}" if update.available_rev else ""
-        return PendingUpdate(base_lock=head.lock, lock_text=_lock_json(lock), message=f"⬆️ skills: update {name}{rev}")
+        return PendingUpdate(base_tree=head.tree, lock_text=_lock_json(lock), message=f"⬆️ skills: update {name}{rev}")
 
     async def wait(self, repo_dir: Path) -> None:
         if (task := self._running.get(repo_dir)) is not None:

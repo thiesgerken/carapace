@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -436,6 +437,13 @@ async def check_skill_updates(
     return await skill_sources(server._skill_builds.updates, root)
 
 
+def _commit_author(user: UserIdentity) -> str:
+    """The user as a commit author. Without `<` and `>`, which would turn --author into a search pattern."""
+    name = re.sub("[<>]", "", user.display_name or user.username)
+    email = re.sub("[<>]", "", user.email or f"{user.username}@carapace")
+    return f"{name} <{email}>"
+
+
 @router.post("/knowledge/skills/{name}/update")
 async def update_skill(
     name: str,
@@ -452,9 +460,9 @@ async def update_skill(
         await handle.git_store.commit_replacing(
             "skills/flake.lock",
             pending.lock_text,
-            expected_blob=pending.base_lock,
+            unchanged={"skills": pending.base_tree},
             message=pending.message,
-            author=f"{user.display_name or user.username} <{user.email or f'{user.username}@carapace'}>",
+            author=_commit_author(user),
         )
     except (UpdateRefusedError, ConcurrentChangeError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

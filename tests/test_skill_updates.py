@@ -282,7 +282,7 @@ async def test_applying_an_update_commits_only_that_skill_as_the_user(repo: Path
     await GitStore(repo).commit_replacing(
         "skills/flake.lock",
         pending.lock_text,
-        expected_blob=pending.base_lock,
+        unchanged={"skills": pending.base_tree},
         message=pending.message,
         author="Demo User <demo@example.com>",
     )
@@ -311,7 +311,7 @@ async def test_a_lock_that_changed_after_the_check_is_not_overwritten(repo: Path
         await GitStore(repo).commit_replacing(
             "skills/flake.lock",
             pending.lock_text,
-            expected_blob=pending.base_lock,
+            unchanged={"skills": pending.base_tree},
             message=pending.message,
             author="Demo User <demo@example.com>",
         )
@@ -329,3 +329,45 @@ async def test_only_an_available_update_can_be_applied(repo: Path) -> None:
 
     with pytest.raises(UpdateRefusedError, match="no update for notes"):
         await updates.pending_update(repo, "notes")
+
+
+@pytest.mark.anyio
+async def test_a_push_of_anything_under_skills_makes_the_update_stale(repo: Path) -> None:
+    updates = await _available(repo)
+    pending = await updates.pending_update(repo, "tracker")
+    # Only flake.nix changes: the lock blob is the same, but it may no longer describe the flake.
+    (repo / "skills" / "flake.nix").write_text("{ outputs = _: { x = 1; }; }\n")
+    _git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qam", "flake only")
+
+    with pytest.raises(ConcurrentChangeError, match="skills changed"):
+        await GitStore(repo).commit_replacing(
+            "skills/flake.lock",
+            pending.lock_text,
+            unchanged={"skills": pending.base_tree},
+            message=pending.message,
+            author="Demo User <demo@example.com>",
+        )
+
+    assert _git(repo, "status", "--porcelain") == ""
+
+
+@pytest.mark.anyio
+async def test_a_failed_commit_leaves_the_checkout_clean(repo: Path) -> None:
+    updates = await _available(repo)
+    pending = await updates.pending_update(repo, "tracker")
+
+    # Not "Name <email>": git refuses the commit after the file is written and staged.
+    with pytest.raises(RuntimeError, match="git commit failed"):
+        await GitStore(repo).commit_replacing(
+            "skills/flake.lock",
+            pending.lock_text,
+            unchanged={"skills": pending.base_tree},
+            message=pending.message,
+            author="nobody-matches-this",
+        )
+    with pytest.raises(RuntimeError, match="git commit failed"):
+        await GitStore(repo).commit_replacing(
+            "skills/new.json", "{}\n", unchanged={}, message="new file", author="nobody-matches-this"
+        )
+
+    assert _git(repo, "status", "--porcelain") == ""
