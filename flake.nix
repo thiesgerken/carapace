@@ -163,6 +163,7 @@
           skill-wrapper-contract = import ./nix/skills/tests.nix {
             inherit (p) pkgs;
             skillLib = skillLib.skill p.pkgs;
+            inherit (skillLib) skillsFlake;
           };
           # The examples' local commands run: the venv imports its packages, Node finds node_modules, the
           # nixpkgs script finds its runtimeInputs.
@@ -192,7 +193,8 @@
           skill-bundled-run =
             let
               bundled = bundledSkills.${system};
-              cgate = p.pkgs.writeShellScriptBin "cgate" "exit 0";
+              # Answers like Carapace with the settings a wrapper exports (`cgate request --command`).
+              cgate = p.pkgs.writeShellScriptBin "cgate" "echo export CARAPACE_HOST=carapace.example.com";
               ccred = p.pkgs.writeShellScriptBin "ccred" "echo demo-secret";
             in
             p.pkgs.runCommand "skill-bundled-run" { nativeBuildInputs = [ cgate ccred ]; } ''

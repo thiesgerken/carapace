@@ -18,17 +18,27 @@ from ..api_keys import Access, Scope
 from ..artifacts import artifact_index, artifact_title, is_artifact_slug
 from ..auth import UserIdentity
 from ..builder.skill_builds import BuildState, RetryRefusedError, SkillBuilds, SkillCommand
+from ..builder.skill_config import (
+    ConfigRefusedError,
+    ConfigValue,
+    config_at_head,
+    config_text,
+    skill_entry,
+    with_skill_entry,
+)
 from ..builder.skill_updates import SkillUpdates, UpdateRefusedError, UpdateState
 from ..builder.skills_head import skills_flake_at_head
+from ..credentials import CredentialBackendError
 from ..git.store import ConcurrentChangeError, GitStore
 from ..knowledge import contained_target
+from ..models.credentials import CredentialMetadata
 from ..models.git import FileCommit
 from ..models.skills import SkillCarapaceConfig
 from ..session.manager import SessionManager
 from ..session.sent_files import INLINE_MIME_TYPES, guess_mime
 from ..skills import SkillDocumentError, SkillsFlakeError, parse_skill_document, read_skills_flake
 from .artifact_rendering import artifact_headers
-from .auth import require
+from .auth import AuthContext, current_auth_context, require, require_browser_session
 from .state import server_module
 
 server = server_module()
@@ -157,6 +167,8 @@ class KnowledgeSkillSources(BaseModel):
     checking: bool
     # Why the last check could not run at all (no builder, builder unreachable).
     check_error: str | None
+    # A mistake in skills/config.json that no single skill reports (entries of skills that are not listed).
+    config_error: str | None
 
 
 class ArtifactSession(BaseModel):
@@ -416,6 +428,7 @@ async def skill_sources(updates: SkillUpdates, repo_dir: Path) -> KnowledgeSkill
         checked_at=check.checked_at if check is not None else None,
         checking=updates.running(repo_dir),
         check_error=(check.error or None) if check is not None else None,
+        config_error=head.config_error if head is not None else None,
     )
 
 
@@ -468,6 +481,182 @@ async def update_skill(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await server._after_push(user.username)
     return await skill_sources(server._skill_builds.updates, root)
+
+
+class KnowledgeSkillSetting(BaseModel):
+    name: str
+    type: Literal["str", "int", "bool"]
+    description: str
+    default: ConfigValue | None
+    # From skills/config.json; None when it sets none.
+    value: ConfigValue | None
+    # Neither a value nor a default: the skill fails to evaluate until one is set.
+    missing: bool
+
+
+class KnowledgeSkillCredential(BaseModel):
+    name: str
+    type: str
+    description: str
+    # The vault path config.json binds it to; None while unbound, which refuses the commands that need it.
+    binding: str | None
+
+
+class KnowledgeSkillConfig(BaseModel):
+    name: str
+    enabled: bool
+    state: BuildState
+    # Why the skill failed to evaluate or build, Nix's word on the values included.
+    detail: str
+    # None while the skill's declarations are not known yet (building, or a package that does not evaluate).
+    settings: list[KnowledgeSkillSetting] | None
+    credentials: list[KnowledgeSkillCredential] | None
+
+
+class KnowledgeSkillsConfig(BaseModel):
+    # The Git id of skills/config.json at HEAD ("" without one); a change names it as its base.
+    base: str
+    skills: list[KnowledgeSkillConfig]
+
+
+class SkillConfigChange(BaseModel):
+    base: str
+    enable: bool
+    # None resets a setting to its default and unbinds a credential slot.
+    settings: dict[str, ConfigValue | None] = {}
+    credentials: dict[str, str | None] = {}
+
+
+async def skills_config(builds: SkillBuilds, repo_dir: Path) -> KnowledgeSkillsConfig:
+    """Every skill skills/flake.nix lists at HEAD with what it declares and what config.json sets."""
+    head = await config_at_head(repo_dir)
+    skills: list[KnowledgeSkillConfig] = []
+    for build in await builds.ensure_built(repo_dir):
+        entry = skill_entry(head.values, build.skill)
+        values = entry.get("settings", {})
+        bindings = entry.get("credentials", {})
+        declarations = builds.declarations(repo_dir, build)
+        settings = (
+            None
+            if declarations is None
+            else [
+                KnowledgeSkillSetting(
+                    name=name,
+                    type=declaration.type,
+                    description=declaration.description,
+                    default=declaration.default,
+                    value=values.get(name),
+                    missing=name not in values and declaration.default is None,
+                )
+                for name, declaration in sorted(declarations.settings.items())
+            ]
+        )
+        credentials = (
+            None
+            if declarations is None
+            else [
+                KnowledgeSkillCredential(
+                    name=slot,
+                    type=declaration.type,
+                    description=declaration.description,
+                    binding=bindings.get(slot),
+                )
+                for slot, declaration in sorted(declarations.credentials.items())
+            ]
+        )
+        skills.append(
+            KnowledgeSkillConfig(
+                name=build.skill,
+                enabled=entry.get("enable", True) is not False,
+                state=build.state,
+                detail=build.detail if build.state == "failed" else "",
+                settings=settings,
+                credentials=credentials,
+            )
+        )
+    return KnowledgeSkillsConfig(base=head.blob, skills=skills)
+
+
+@router.get("/knowledge/skills/config")
+async def get_skills_config(
+    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.read))],
+) -> KnowledgeSkillsConfig:
+    root = server._knowledge_repo_registry.get_for_user(user.username).knowledge_dir.resolve()
+    try:
+        return await skills_config(server._skill_builds, root)
+    except ConfigRefusedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.put("/knowledge/skills/{name}/config")
+async def put_skill_config(
+    name: str,
+    change: SkillConfigChange,
+    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.write))],
+    auth: Annotated[AuthContext, Depends(current_auth_context)],
+) -> KnowledgeSkillsConfig:
+    """Commit *name*'s entry in skills/config.json as the user, then push and evaluate as after a sandbox push.
+
+    *base* is the config.json the form was made from: anything committed since is not overwritten. Binding a
+    credential slot takes a browser session: an API key, such as the one carapace-cli has in a sandbox, would
+    otherwise hand a skill any vault entry without the sentinel seeing it.
+    """
+    if change.credentials and auth.grants is not None:
+        raise HTTPException(
+            status_code=403, detail="Binding a credential slot needs a browser session, not an API key."
+        )
+    handle = server._knowledge_repo_registry.get_for_user(user.username)
+    root = handle.knowledge_dir.resolve()
+    builds = server._skill_builds
+    try:
+        head = await config_at_head(root)
+        if change.base != head.blob:
+            raise ConcurrentChangeError("skills/config.json changed since this form was loaded; reload it.")
+        build = next((build for build in await builds.ensure_built(root) if build.skill == name), None)
+        if build is None:
+            raise HTTPException(status_code=404, detail=f"skills/flake.nix lists no skill {name}")
+        config = with_skill_entry(
+            head.values,
+            name,
+            enable=change.enable,
+            settings=change.settings,
+            credentials=change.credentials,
+            declarations=builds.declarations(root, build),
+        )
+        # By content: a save that changes nothing makes no commit, also where config.json is missing.
+        changed = config != head.values
+        if changed:
+            await handle.git_store.commit_replacing(
+                "skills/config.json",
+                config_text(config),
+                unchanged={"skills/config.json": head.blob},
+                message=f"🔧 skills: configure {name}",
+                author=_commit_author(user),
+            )
+    except ConfigRefusedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ConcurrentChangeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if changed:
+        await server._after_push(user.username)
+    return await skills_config(builds, root)
+
+
+@router.get("/knowledge/credentials")
+async def search_credentials(
+    user: Annotated[UserIdentity, Depends(require_browser_session)],
+    q: str = "",
+) -> list[CredentialMetadata]:
+    """The user's password-manager entries matching *q*, to bind a skill's credential slot: metadata, no values.
+
+    No sentinel review, unlike the sandbox's listing, since the user asks about their own vault; so a browser
+    session only, never an API key that may sit in a sandbox.
+    """
+    registry = await server._credential_registry_for_user(user.username)
+    try:
+        return await registry.search(q)
+    except CredentialBackendError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/knowledge/browse", response_model=None)

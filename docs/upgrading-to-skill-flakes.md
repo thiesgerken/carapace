@@ -83,20 +83,13 @@ Each user's knowledge repo needs the same four checks. Make the changes in a clo
 
 ### Bundled skills
 
-Bootstrap only seeds bundled skills that are missing, so an existing repo keeps its old copies. Most of them no longer need a copy: `artifacts`, `create-skill`, `credentials`, `mermaid` and `wikipedia` now come from Carapace's `main` branch as inputs of `skills/flake.nix`. The script in [the next section](#the-skills-flake) replaces each of these copies with its input, unless you changed it: a copy that something other than bootstrap committed to, or with uncommitted changes, stays a local skill.
+Bootstrap no longer copies bundled skills: all of them come from Carapace's `main` branch as inputs of `skills/flake.nix`, and an existing repo keeps its old copies until the script in [the next section](#the-skills-flake) replaces them.
 
-`carapace`, `web` and `ferret` stay copies, because their flake carries this instance's settings. Copies from before skill flakes declare commands or `mcp` in their frontmatter, so they show up as broken. Delete them before running the script and restart the server; on start, bootstrap seeds their new versions and commits them:
+- `artifacts`, `create-skill`, `credentials`, `mermaid` and `wikipedia`: a copy that only bootstrap committed to becomes the input. One you changed stays a local skill.
+- `carapace`, `web` and `ferret` carried their configuration in their `flake.nix`, as the release asked you to edit it. The script reads it from there and writes it into `skills/config.json`: `carapace-cli` gets the setting `CARAPACE_HOST` (from `server`) and the slot binding `CARAPACE_API_KEY` (from `apiKey`), `web` the binding `BRAVE_API_KEY`, and `ferret` the setting `FERRET_URL` (from `url`) and the binding `FERRET_API_KEY` (from `bearer`). The release's placeholders are not carried over. A skill is turned on when its values are complete and its `SKILL.md` does not say `disabled: true`; otherwise `config.json` has `"enable": false` for it, and the script says what is missing.
+- A copy of those three that changed only in its configuration since bootstrap last wrote it (its `flake.nix`, its lock and the `disabled` lines of `SKILL.md`) becomes the input. One with other changes, such as the list of sources in `ferret`'s description, stays a local skill, and so does one whose configuration lines the script cannot read as shipped (reformatted, computed). Its flake still has literal values, which Carapace now rejects: declare the setting and slot there as the bundled flake does. Until then `config.json` only turns it off, since it may set only what the flake declares; the script prints the entry to put there afterwards and links the bundled flake.
 
-```sh
-git rm -r skills/carapace skills/web skills/ferret skills/example
-git commit -m "Remove pre-flake bundled skills"
-git push
-# then restart the server
-```
-
-`example` is no longer bundled; the helper examples in [`nix/skills/examples`](../nix/skills/examples) replace it. Re-seeded skills come with their shipped defaults. A vault path you had changed in the old frontmatter now goes into the skill's `flake.nix` (`web`: `credentials.BRAVE_API_KEY`; `carapace`: the `server` and `apiKey` bindings at the top of its `flake.nix`). Copies you had changed beyond that need converting like your own skills (below).
-
-`CARAPACE_RESET_ASSETS=true` overwrites the copies of `carapace`, `web` and `ferret` and `SECURITY.md` in place, but leaves files that the new versions no longer have (`setup.sh`, the old `pyproject.toml` of `carapace`). Prefer deleting the copies.
+Copies from before skill flakes declare commands or `mcp` in their frontmatter and are broken either way. The script replaces an untouched one of the first five, and any of `carapace`, `web` and `ferret` (which have no `flake.nix` to read), with the input; the three come out turned off, to be set up in `config.json`. A changed pre-flake copy of the first five stays local and shows up as broken until you convert it (below) or delete it. Delete the `example` skill before running the script: it is no longer bundled, and the helper examples in [`nix/skills/examples`](../nix/skills/examples) replace it.
 
 ### The skills flake
 
@@ -104,12 +97,12 @@ git push
 
 [`scripts/upgrade-skills-flake.sh`](../scripts/upgrade-skills-flake.sh) writes it from the skill directories in the repo:
 
-- An unchanged copy of a bundled skill that Carapace ships from `main` becomes an input on Carapace, and the copy is removed (see [Bundled skills](#bundled-skills)).
+- A copy of a bundled skill becomes an input on Carapace and is removed, and the configuration of `carapace`, `web` and `ferret` moves into `skills/config.json` (see [Bundled skills](#bundled-skills)).
 - Every other directory with a `SKILL.md` becomes a `path:./<dir>` input. The bundled `carapace` skill is listed as `carapace-cli`, because `carapace` names the helpers.
 - A skill without a `flake.nix` gets a flake of a few lines ([Skills with only instructions](skill-flakes.md#skills-with-only-instructions)).
 - `mkSkill` now takes the skill directory as `src`. The script adds `src = ./.;` to each local flake that lacks it, right after `mkSkill`'s `name`, and names any flake where it could not.
-- `web` and `ferret` as bootstrap seeded them are written as commented-out inputs, since they need setting up first. So is a skill whose `SKILL.md` still sets `metadata.carapace.disabled`. `disabled` is gone: a skill is off when it is not listed, and one that still sets the field shows up as broken once listed, so delete the field before you uncomment it.
-- Every input follows the repo's `nixpkgs` and `carapace`. The script then runs `nix flake lock ./skills` and stages everything, but commits nothing.
+- A skill of your own whose `SKILL.md` still sets `metadata.carapace.disabled` is written as a commented-out input. `disabled` is gone: a skill is off when it is not listed, and one that still sets the field shows up as broken once listed, so delete the field before you uncomment it.
+- Every input follows the repo's `nixpkgs` and `carapace`, and the outputs come from `carapace.lib.skillsFlake`. The script writes `skills/config.json` with the [settings and credential bindings](skill-flakes.md#skillsconfigjson) it found, then runs `nix flake lock ./skills` and stages everything, but commits nothing.
 
 It needs Git and Nix and runs anywhere in a clone of the repo. The agent can run it in its sandbox too; fetching the script is a domain request like any other:
 
@@ -121,7 +114,7 @@ git commit -m "List the skills in skills/flake.nix"
 git push
 ```
 
-It refuses to run when `skills/flake.nix` exists already or `skills/` has uncommitted changes, and when a skill directory's name can't be a flake attribute (`nixpkgs`, `self`, or one with dots), which you rename first. It checks all of that before it changes anything.
+It refuses to run when `skills/flake.nix` or `skills/config.json` exists already or `skills/` has uncommitted changes, and when a skill directory's name can't be a flake attribute (`nixpkgs`, `self`, or one with dots), which you rename first. It checks all of that before it changes anything.
 
 ### `SECURITY.md`
 
@@ -139,13 +132,13 @@ A skill with `commands` or `mcp` gets a `flake.nix` and a `flake.lock` next to i
 | --- | --- |
 | `network.domains` | `needs.domains`, per skill or per command |
 | `network.tunnels` (`host`, `remote_port`, `local_port`) | `needs.tunnels = [ "host:port" ]`. The client connects to the real host and port: `/etc/hosts` sends the name to a local forwarder, so there is no `local_port` any more ([sandbox.md](sandbox.md#tunnels)). The host must be a name, not an IP address, and a host on your LAN also needs the [internal-destination allowlist](#sandboxes) |
-| `credentials` with `env_var` | `needs.credentials.<VAR> = "<vault path>"` |
+| `credentials` with `env_var` | a credential slot `credentials.<VAR> = { type = "secret"; description = …; }`, bound in `skills/config.json`: `{"<skill>": {"credentials": {"<VAR>": "<vault path>"}}}` |
 | `credentials` with `file` | the command fetches it itself: `ccred get <vault path> -o <file>` ([credentials.md](credentials.md#skill-declared-credentials)) |
 | `credentials` with `base64` | the command decodes the value itself |
 | `credentials` with neither `env_var` nor `file` | nothing: the agent fetches them with `ccred get <vault path>` when it needs them |
 | `commands` (`name`, `command`) | `mkSkill { commands.<name> = { exec = …; description = …; }; }`. A `uv run --directory …` becomes `"${skill.uvEnv { root = ./.; }}/bin/<script>"` |
-| `mcp` (HTTP, `auth.type: bearer` or `oauth`) | `skill.mcpCommands { <name> = { url = …; bearer = "<vault path>"; description = …; }; }` (or `oauth = "<vault path>"`). The URL must be `https://` with a host name: `http://` and IP addresses fail the evaluation. `description` is required ([skill-flakes.md](skill-flakes.md#mcp-servers)) |
-| `mcp` (stdio, `command`) | `skill.mcpCommands { <name> = { command = …; description = …; needs.credentials… }; }` |
+| `mcp` (HTTP, `auth.type: bearer` or `oauth`) | `skill.mcpCommands { <name> = { url = …; bearer = "<SLOT>"; description = …; }; }` with a credential slot `<SLOT>` bound in `skills/config.json` (or `oauth = "<SLOT>"` with a slot of type `oauth`). A URL that differs per instance goes into a setting: `urlSetting = "<SETTING>"` instead of `url`. The URL must be `https://` with a host name: `http://` and IP addresses fail the evaluation. `description` is required ([skill-flakes.md](skill-flakes.md#mcp-servers)) |
+| `mcp` (stdio, `command`) | `skill.mcpCommands { <name> = { command = …; description = …; needs.credentials = [ "<SLOT>" ]; }; }` |
 | `hints` | stays in the frontmatter |
 | `disabled` | gone: leave the skill out of `skills/flake.nix` |
 
@@ -172,16 +165,16 @@ After, in `flake.nix` (inputs as in [skill-flakes.md](skill-flakes.md#the-flake)
 default = skill.mkSkill {
   name = "web";
   src = ./.;
+  credentials.BRAVE_API_KEY = { type = "secret"; description = "A Brave Search API key"; };
   commands.web_search = {
     exec = "${env}/bin/web_search";
     description = "Search the web with Brave Search";
-    needs = {
-      domains = [ "api.search.brave.com" ];
-      credentials.BRAVE_API_KEY = "vault/brave-api-key";
-    };
+    needs.domains = [ "api.search.brave.com" ];
   };
 };
 ```
+
+and in `skills/config.json`: `{"web": {"credentials": {"BRAVE_API_KEY": "vault/brave-api-key"}}}`.
 
 The steps:
 
@@ -207,5 +200,5 @@ Old turns keep their recorded `gate` spans in the [debug view](debug-view.md). N
 ## Checking the upgrade
 
 1. The server log shows no builder warning at start, and the egress self-test passes.
-2. In the Knowledge view, every skill that `skills/flake.nix` lists shows a successful build. `web` and `ferret` are not listed until you set them up, so they are not built.
+2. In the Knowledge view, every skill that `skills/flake.nix` lists shows a successful build. A skill that `config.json` turns off is not built.
 3. Ask the agent to use a skill with commands, e.g. `wikipedia`. It calls `read_skill`, which waits for the build and the profile sync, then runs the command. Its wrapper first sends an up-front `cgate request` for the Wikipedia domains, which the sentinel decides, or you if the sentinel escalates.

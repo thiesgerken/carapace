@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import dataclasses
 import json
 import subprocess
 from collections.abc import Callable
@@ -33,7 +34,8 @@ from carapace.api_keys import Access, ApiKeyGrant, ApiKeyStore, Scope
 from carapace.artifact_shares import ArtifactShareStore
 from carapace.auth import AuthStore, UserIdentity
 from carapace.bootstrap import ensure_data_dir
-from carapace.builder.skill_builds import RetryRefusedError, SkillBuild, SkillBuilds
+from carapace.builder.models import CredentialSlotDeclaration, SettingDeclaration, SkillDeclarations
+from carapace.builder.skill_builds import RetryRefusedError, SkillBuild, SkillBuilds, SkillCommand, SkillNeeds
 from carapace.builder.skill_updates import PendingUpdate, UpdateRefusedError
 from carapace.codex_auth import CodexAccounts, CodexCredentialStore
 from carapace.config import build_config, resolve_user_knowledge_dir
@@ -67,7 +69,7 @@ from carapace.sandbox.exec_scope import CredentialGrant, RunningExec
 from carapace.sandbox.manager import SandboxLimitError, SandboxManager
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.sandbox.tunnels import ExecEndedError, Tunnel
-from carapace.security.context import CredentialAccessEntry, SentinelVerdict, SessionSecurity
+from carapace.security.context import CredentialAccessEntry, SentinelVerdict, SessionSecurity, SkillCommandOrigin
 from carapace.server import app, sandbox_app
 from carapace.server.runtime import KnowledgeGitRuntime, MatrixChannelHandle, MatrixChannelManager
 from carapace.session import SessionEngine, SessionManager, sent_files
@@ -3895,6 +3897,112 @@ def test_gate_request_approves_everything_for_the_exec_in_one_review(client, aut
     sentinel.evaluate_upfront_request.assert_awaited_once()
 
 
+def _skill_with(monkeypatch, commands: dict[str, SkillCommand]) -> None:
+    """A built skill whose package is _STORE_PATH, with a setting of this instance."""
+    build = SkillBuild(
+        skill="weather",
+        key="0" * 64,
+        state="succeeded",
+        store_paths=[_STORE_PATH],
+        commands=commands,
+        detail="",
+        settings={"CITY": "Berlin", "PORT": 443},
+    )
+    builds = MagicMock()
+    builds.command_build = AsyncMock(side_effect=lambda _repo, _path, command: build if command in commands else None)
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+
+
+def _command(**needs: object) -> SkillCommand:
+    empty: dict[str, object] = {"domains": [], "credentials": {}, "oauth": {}, "tunnels": []}
+    return SkillCommand(description="", needs=SkillNeeds.model_validate(empty | needs), mcp=False)
+
+
+def test_gate_reviews_a_skill_commands_needs_and_answers_with_its_settings(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    weather = _command(domains=["berlin.example.com"], credentials={"TOKEN": "demo/t"}, oauth={"CAL": "demo/cal"})
+    _skill_with(monkeypatch, {"weather": weather})
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"store_path": _STORE_PATH, "command": "weather"}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "settings": {"CITY": "Berlin", "PORT": 443},
+        "credentials": {"TOKEN": "demo/t"},
+        "oauth": {"CAL": "demo/cal"},
+    }
+    request = sentinel.evaluate_upfront_request.await_args.args[1]
+    assert (request.domains, [c.vault_path for c in request.credentials]) == (["berlin.example.com"], ["demo/t"])
+    assert request.store_path == _STORE_PATH
+    assert request.origin == SkillCommandOrigin(skill="weather", command="weather", installed=True)
+    assert [token.vault_path for token in request.access_tokens] == ["demo/cal"]
+    assert running.credentials == {("demo/t", "password"), ("demo/cal", "oauth_access_token")}
+
+
+def test_gate_answers_a_command_without_needs_without_a_review(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, _ = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="deny", explanation="never asked"))
+    _skill_with(monkeypatch, {"weather": _command()})
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"store_path": _STORE_PATH, "command": "weather"}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert resp.json() == {"settings": {"CITY": "Berlin", "PORT": 443}, "credentials": {}, "oauth": {}}
+    sentinel.evaluate_upfront_request.assert_not_awaited()
+
+
+def test_gate_refuses_a_command_whose_oauth_slot_is_unbound(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, _ = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    _skill_with(monkeypatch, {"weather": _command(domains=["berlin.example.com"], oauth={"CAL": None})})
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"store_path": _STORE_PATH, "command": "weather"}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert resp.status_code == 403
+    assert resp.text.startswith("weather: credential slot CAL is not bound")
+    sentinel.evaluate_upfront_request.assert_not_awaited()
+
+
+def test_gate_refuses_a_command_whose_credential_slot_is_unbound(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, _ = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    _skill_with(monkeypatch, {"weather": _command(domains=["berlin.example.com"], credentials={"TOKEN": None})})
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"store_path": _STORE_PATH, "command": "weather"}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert resp.status_code == 403
+    assert resp.text.startswith("weather: credential slot TOKEN is not bound; bind it")
+    assert '{"weather": {"credentials": {"TOKEN": "<backend>/<id>"}}}' in resp.text
+    sentinel.evaluate_upfront_request.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("body", "status"),
+    [
+        ({"store_path": _STORE_PATH, "command": "other"}, 403),
+        ({"command": "weather"}, 400),
+        ({"store_path": _STORE_PATH, "command": "weather", "domains": ["evil.example.com"]}, 400),
+    ],
+)
+def test_gate_refuses_a_command_that_is_not_the_built_skills(client, auth_headers, monkeypatch, body, status):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, _ = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    _skill_with(monkeypatch, {"weather": _command(domains=["berlin.example.com"])})
+
+    resp = TestClient(sandbox_app).post("/gate", json=body, headers=_sandbox_basic_auth(sid))
+
+    assert resp.status_code == status
+    sentinel.evaluate_upfront_request.assert_not_awaited()
+
+
 def test_gate_request_denial_carries_the_explanation(client, auth_headers, monkeypatch):
     sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
     _, _, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="deny", explanation="Not for this task."))
@@ -5493,6 +5601,8 @@ def test_the_skill_list_shows_origins_and_an_update_check_on_request(
     root = srv._knowledge_repo_registry.get_for_user("thies").knowledge_dir
     _make_skill("weather")
     write_skills_flake(root / "skills", ["weather"], external=["tracker"])
+    # Left behind when a skill's input was removed: reported, never failing the listed skills.
+    (root / "skills" / "config.json").write_text('{"gone": {"enable": false}}\n')
     git = ["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@example.com"]
     subprocess.run([*git, "init", "-q"], check=True)
     subprocess.run([*git, "add", "-A"], check=True)
@@ -5520,6 +5630,7 @@ def test_the_skill_list_shows_origins_and_an_update_check_on_request(
         ("weather", "skills/weather", "./weather"),
     ]
     assert listed["skills"][0]["locked_rev"] == "2" * 40
+    assert listed["config_error"].startswith("skills/config.json has entries for gone,")
     assert (listed["checked_at"], listed["checking"]) == (None, False)
     assert (response.status_code, started) == (200, [root.resolve()])
     assert checked["checked_at"] is not None
@@ -5567,3 +5678,238 @@ def test_a_commit_author_cannot_smuggle_angle_brackets() -> None:
     user = UserIdentity(username="eve", display_name="Eve <x@y>", email="e<v>e@example.com")
 
     assert knowledge_routes._commit_author(user) == "Eve x@y <eve@example.com>"
+
+
+def _configured_repo(config: str) -> tuple[Path, str]:
+    """The user's knowledge repo with *config* committed as skills/config.json; its blob id."""
+    root = srv._knowledge_repo_registry.get_for_user("thies").knowledge_dir
+    (root / "skills").mkdir(parents=True, exist_ok=True)
+    (root / "skills" / "config.json").write_text(config)
+    git = ["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@example.com"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", "config"], check=True)
+    blob = subprocess.run([*git, "rev-parse", "HEAD:skills/config.json"], check=True, capture_output=True, text=True)
+    return root, blob.stdout.strip()
+
+
+def _weather_with_settings(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    builds = _builds_reporting("failed")
+    weather = builds.ensure_built.return_value[0]
+    builds.ensure_built.return_value = [
+        dataclasses.replace(
+            weather,
+            detail="error: skill weather: no value for its setting DAYS; set it in skills/config.json",
+            declarations=SkillDeclarations(
+                settings={
+                    "CITY": SettingDeclaration(type="str", description="City", default="Berlin"),
+                    "DAYS": SettingDeclaration(type="int", description="Days ahead"),
+                },
+                credentials={"API_KEY": CredentialSlotDeclaration(type="secret", description="Weather API key")},
+            ),
+        )
+    ]
+    builds.declarations = lambda repo, build: build.declarations
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+    return builds
+
+
+def test_the_skill_config_shows_declarations_values_and_nix_errors(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, blob = _configured_repo('{"weather": {"settings": {"CITY": "Kiel"}}}\n')
+    _weather_with_settings(monkeypatch)
+
+    response = client.get("/api/knowledge/skills/config", headers=auth_headers).json()
+
+    assert response == {
+        "base": blob,
+        "skills": [
+            {
+                "name": "weather",
+                "enabled": True,
+                "state": "failed",
+                "detail": "error: skill weather: no value for its setting DAYS; set it in skills/config.json",
+                "settings": [
+                    {
+                        "name": "CITY",
+                        "type": "str",
+                        "description": "City",
+                        "default": "Berlin",
+                        "value": "Kiel",
+                        "missing": False,
+                    },
+                    {
+                        "name": "DAYS",
+                        "type": "int",
+                        "description": "Days ahead",
+                        "default": None,
+                        "value": None,
+                        "missing": True,
+                    },
+                ],
+                "credentials": [
+                    {"name": "API_KEY", "type": "secret", "description": "Weather API key", "binding": None},
+                ],
+            }
+        ],
+    }
+
+
+def test_a_skill_config_change_is_committed_sorted_as_the_user(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, blob = _configured_repo('{"weather": {"settings": {"CITY": "Kiel"}}}\n')
+    _weather_with_settings(monkeypatch)
+    after_push = AsyncMock()
+    monkeypatch.setattr(srv, "_after_push", after_push)
+    git_store = srv._knowledge_repo_registry.get_for_user("thies").git_store
+
+    response = client.put(
+        "/api/knowledge/skills/weather/config",
+        headers=auth_headers,
+        json={
+            "base": blob,
+            "enable": True,
+            "settings": {"DAYS": 3, "CITY": None},
+            "credentials": {"API_KEY": "personal/weather"},
+        },
+    )
+
+    assert response.status_code == 200
+    git_store.commit_replacing.assert_awaited_once_with(
+        "skills/config.json",
+        '{\n  "weather": {\n    "credentials": {\n      "API_KEY": "personal/weather"\n    },\n'
+        '    "settings": {\n      "DAYS": 3\n    }\n  }\n}\n',
+        unchanged={"skills/config.json": blob},
+        message="🔧 skills: configure weather",
+        author="Thies <thies@carapace>",
+    )
+    after_push.assert_awaited_once_with("thies")
+
+
+@pytest.mark.parametrize(
+    ("change", "status", "detail"),
+    [
+        ({"base": "stale", "enable": True}, 409, "changed since this form was loaded"),
+        ({"enable": True, "settings": {"DAYS": "3"}}, 422, "DAYS has type int, not '3'"),
+    ],
+)
+def test_a_skill_config_change_that_cannot_be_made_commits_nothing(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    change: dict[str, object],
+    status: int,
+    detail: str,
+) -> None:
+    _, blob = _configured_repo("{}\n")
+    _weather_with_settings(monkeypatch)
+    git_store = srv._knowledge_repo_registry.get_for_user("thies").git_store
+
+    response = client.put("/api/knowledge/skills/weather/config", headers=auth_headers, json={"base": blob, **change})
+
+    assert response.status_code == status and detail in response.json()["detail"]
+    git_store.commit_replacing.assert_not_awaited()
+
+
+def test_a_skill_config_change_that_changes_nothing_makes_no_commit(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, blob = _configured_repo('{\n  "weather": {\n    "settings": {\n      "CITY": "Kiel"\n    }\n  }\n}\n')
+    _weather_with_settings(monkeypatch)
+    git_store = srv._knowledge_repo_registry.get_for_user("thies").git_store
+
+    response = client.put(
+        "/api/knowledge/skills/weather/config",
+        headers=auth_headers,
+        json={"base": blob, "enable": True, "settings": {"CITY": "Kiel"}},
+    )
+
+    assert response.status_code == 200
+    git_store.commit_replacing.assert_not_awaited()
+
+
+def test_credential_search_lists_the_users_entries_without_values(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = MagicMock()
+    registry.search = AsyncMock(
+        return_value=[CredentialMetadata(vault_path="personal/weather", name="Weather API", description="")]
+    )
+    monkeypatch.setattr(srv, "_credential_registry_for_user", AsyncMock(return_value=registry))
+
+    response = client.get("/api/knowledge/credentials?q=weath", headers=auth_headers)
+
+    assert response.json() == [{"vault_path": "personal/weather", "name": "Weather API", "description": ""}]
+    registry.search.assert_awaited_once_with("weath")
+    srv._credential_registry_for_user.assert_awaited_once_with("thies")
+
+
+_KNOWLEDGE_KEY = [
+    ApiKeyGrant(scope=Scope.knowledge, access=Access.read),
+    ApiKeyGrant(scope=Scope.knowledge, access=Access.write),
+]
+
+
+def test_an_api_key_cannot_list_vault_entries_or_bind_a_slot(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, blob = _configured_repo("{}\n")
+    _weather_with_settings(monkeypatch)
+    monkeypatch.setattr(srv, "_after_push", AsyncMock())
+    headers = _api_key_headers("thies", _KNOWLEDGE_KEY)
+    git_store = srv._knowledge_repo_registry.get_for_user("thies").git_store
+
+    listing = client.get("/api/knowledge/credentials", headers=headers)
+    binding = client.put(
+        "/api/knowledge/skills/weather/config",
+        headers=headers,
+        json={"base": blob, "enable": True, "credentials": {"API_KEY": "personal/weather"}},
+    )
+    setting = client.put(
+        "/api/knowledge/skills/weather/config",
+        headers=headers,
+        json={"base": blob, "enable": True, "settings": {"DAYS": 3}},
+    )
+
+    assert (listing.status_code, binding.status_code, setting.status_code) == (403, 403, 200)
+    git_store.commit_replacing.assert_awaited_once()
+    assert '"DAYS": 3' in git_store.commit_replacing.await_args.args[1]
+
+
+def test_a_save_that_changes_nothing_commits_no_empty_config(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _configured_repo("{}\n")
+    subprocess.run(["git", "-C", str(root), "rm", "-q", "skills/config.json"], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "no config"],
+        check=True,
+    )
+    _weather_with_settings(monkeypatch)
+    git_store = srv._knowledge_repo_registry.get_for_user("thies").git_store
+
+    response = client.put(
+        "/api/knowledge/skills/weather/config",
+        headers=auth_headers,
+        json={"base": "", "enable": True, "settings": {"CITY": None}},
+    )
+
+    assert response.status_code == 200 and response.json()["base"] == ""
+    git_store.commit_replacing.assert_not_awaited()
+
+
+def test_a_malformed_entry_is_refused_not_a_crash(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, blob = _configured_repo('{"weather": {"settings": ["CITY"]}}\n')
+    _weather_with_settings(monkeypatch)
+
+    listed = client.get("/api/knowledge/skills/config", headers=auth_headers)
+    saved = client.put(
+        "/api/knowledge/skills/weather/config", headers=auth_headers, json={"base": blob, "enable": False}
+    )
+
+    assert (listed.status_code, saved.status_code) == (409, 422)
+    assert "entry of weather in skills/config.json is malformed" in saved.json()["detail"]

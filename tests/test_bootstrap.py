@@ -1,14 +1,15 @@
-"""Seeding a knowledge repo: a new one gets the bundled skills and the flake that lists them."""
+"""Seeding a knowledge repo: a new one gets the flake that lists the bundled skills."""
 
 from __future__ import annotations
 
+import json
 import re
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 import pytest
 
 import carapace
-from carapace.bootstrap import LOCAL_BUNDLED_SKILLS, ensure_knowledge_dir
+from carapace.bootstrap import ensure_knowledge_dir
 from carapace.skills import read_skills_flake
 
 
@@ -17,34 +18,40 @@ def test_a_new_repo_lists_its_bundled_skills_in_skills_flake(tmp_path: Path) -> 
 
     listed = read_skills_flake(tmp_path / "skills")
 
-    assert {"skills/flake.nix", "skills/flake.lock"} <= set(created)
-    # The config-free ones come from carapace as external inputs, the others are copied.
+    assert set(created) >= {"skills/flake.nix", "skills/flake.lock", "skills/config.json"}
+    # All come from carapace as inputs; nothing is copied.
     assert {(skill.name, skill.directory) for skill in listed} == {
         ("artifacts", None),
-        ("carapace-cli", PurePosixPath("carapace")),
+        ("carapace-cli", None),
         ("create-skill", None),
         ("credentials", None),
+        ("ferret", None),
         ("mermaid", None),
+        ("web", None),
         ("wikipedia", None),
     }
-    assert sorted(path.name for path in (tmp_path / "skills").iterdir() if path.is_dir()) == [
-        "carapace",
-        "ferret",
-        "web",
-    ]
-    assert (tmp_path / "skills" / "carapace" / "flake.nix").is_file()
+    assert not [path for path in (tmp_path / "skills").iterdir() if path.is_dir()]
+    # The ones that need a server, a key or an endpoint first are off.
+    assert json.loads((tmp_path / "skills" / "config.json").read_text()) == {
+        "carapace-cli": {"enable": False},
+        "ferret": {"enable": False},
+        "web": {"enable": False},
+    }
 
 
-def test_every_bundled_skill_is_copied_or_an_input_on_carapace() -> None:
+def test_every_bundled_skill_is_an_input_on_carapace() -> None:
     assets = Path(carapace.__file__).parent / "assets" / "skills"
     flake = (assets / "flake.nix").read_text()
-    external = set(re.findall(r'url = "github:thiesgerken/carapace\?dir=src/carapace/assets/skills/([a-z-]+)";', flake))
-    bundled = {path.name for path in assets.iterdir() if path.is_dir()}
+    inputs = dict(
+        re.findall(
+            r'    ([a-z-]+) = \{\n      url = "github:thiesgerken/carapace\?dir=src/carapace/assets/skills/([a-z-]+)";',
+            flake,
+        )
+    )
 
-    assert external.isdisjoint(LOCAL_BUNDLED_SKILLS)
-    assert external | set(LOCAL_BUNDLED_SKILLS) == bundled
-    # Each external input follows the repo's carapace and nixpkgs, so `nix flake update carapace` moves them all.
-    for name in external:
+    assert set(inputs.values()) == {path.name for path in assets.iterdir() if path.is_dir()}
+    # Each follows the repo's carapace and nixpkgs, so `nix flake update carapace` moves them all.
+    for name in inputs:
         block = flake[flake.index(f"    {name} = {{") :]
         block = block[: block.index("};")]
         assert 'inputs.nixpkgs.follows = "nixpkgs";' in block and 'inputs.carapace.follows = "carapace";' in block

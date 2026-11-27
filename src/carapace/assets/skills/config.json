@@ -1,0 +1,11 @@
+{
+  "carapace-cli": {
+    "enable": false
+  },
+  "ferret": {
+    "enable": false
+  },
+  "web": {
+    "enable": false
+  }
+}

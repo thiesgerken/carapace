@@ -18,7 +18,7 @@ from .. import security as security
 from ..artifacts import artifact_index, artifact_title
 from ..builder.models import SKILL_NAME_PATTERN
 from ..builder.profile import profile_plan
-from ..builder.skill_builds import SkillBuild, SkillCommand
+from ..builder.skill_builds import SkillBuild, SkillCommand, unbound_slot_hint
 from ..builder.skill_updates import describe_source
 from ..builder.skills_head import skills_flake_at_head
 from ..llm import (
@@ -238,8 +238,8 @@ def _command_docs(commands: dict[str, SkillCommand]) -> str:
         needs = command.needs
         asks = [
             *(f"domain {domain}" for domain in needs.domains),
-            *(f"credential {path} as ${variable}" for variable, path in needs.credentials.items()),
-            *(f"OAuth access token of {path}" for path in needs.oauth),
+            *(f"credential {path or 'UNBOUND'} as ${variable}" for variable, path in needs.credentials.items()),
+            *(f"OAuth access token of {path or 'UNBOUND'} as ${slot}" for slot, path in needs.oauth.items()),
             *(f"tunnel {tunnel}" for tunnel in needs.tunnels),
         ]
         line = f"- `{name}`: {command.description}"
@@ -251,19 +251,20 @@ def _command_docs(commands: dict[str, SkillCommand]) -> str:
     return "\n".join(lines)
 
 
-async def _skill_sources(ctx: RunContext[Deps]) -> dict[str, str]:
-    """Per skill at HEAD: where it comes from and the last update check's verdict.
+async def _skills_at_head(ctx: RunContext[Deps]) -> tuple[dict[str, str], str | None]:
+    """Per skill at HEAD where it comes from and the last update check's verdict, and the config.json error.
 
     Only in tool results, never in the catalog: the catalog is part of the cached prompt prefix, and the
     update check changes every day.
     """
     head = await skills_flake_at_head(ctx.deps.knowledge_dir)
     if head is None:
-        return {}
+        return {}, None
     check = ctx.deps.skill_builds.updates.latest(ctx.deps.knowledge_dir)
-    return {
+    sources = {
         skill.name: describe_source(skill, check.skills.get(skill.name) if check else None) for skill in head.skills
     }
+    return sources, head.config_error
 
 
 async def _skill_commands(ctx: RunContext[Deps], build: SkillBuild) -> str:
@@ -275,6 +276,8 @@ async def _skill_commands(ctx: RunContext[Deps], build: SkillBuild) -> str:
         case "unavailable":
             return f"The skill's commands are not available: {build.detail}"
     docs = _command_docs(build.commands)
+    if unbound := sorted({slot for command in build.commands for slot in build.unbound(command)}):
+        docs += f"\n\n{unbound_slot_hint(build.skill, unbound)} Until then, the commands that need it are refused."
     if reason := profile_plan(await ctx.deps.skill_builds.installable(ctx.deps.knowledge_dir)).excluded.get(skill_name):
         return f"{docs}\n\nThese commands are not on PATH: {reason}. Rename one of them in its flake."
     try:
@@ -495,9 +498,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         catalog = ctx.deps.skill_catalog
         if not catalog:
             return "No skills available."
-        sources = await _skill_sources(ctx)
+        sources, config_error = await _skills_at_head(ctx)
         lines = [f"- {s.name}: {s.description.strip()} [{sources.get(s.name, 'not at HEAD')}]" for s in catalog]
-        result = "Available skills:\n" + "\n".join(lines)
+        result = "\n\n".join(part for part in ("Available skills:\n" + "\n".join(lines), config_error) if part)
         return _emit_tool_result(ctx, "list_skills", result)
 
     @agent.tool
@@ -521,6 +524,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                 "builder builds it after the push.",
                 exit_code=1,
             )
+        if not build.enabled:
+            return _emit_tool_result(
+                ctx,
+                "read_skill",
+                f'Error: {skill_name} is turned off in skills/config.json. Remove its `"enable": false` there, '
+                "commit and push to use it.",
+                exit_code=1,
+            )
         instructions = build.skill_md
         if instructions is None:
             reason = build.detail or "its skill directory has no SKILL.md"
@@ -537,8 +548,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                 exit_code=1,
             )
         commands = await _skill_commands(ctx, build)
-        source = (await _skill_sources(ctx)).get(skill_name, "")
-        text = "\n\n".join(part for part in (instructions.rstrip(), source, commands) if part)
+        sources, config_error = await _skills_at_head(ctx)
+        parts = (instructions.rstrip(), sources.get(skill_name, ""), commands, config_error)
+        text = "\n\n".join(part for part in parts if part)
         return _emit_tool_result(ctx, "read_skill", text)
 
     # --- Filesystem (sandboxed — runs inside the sandbox container) ---

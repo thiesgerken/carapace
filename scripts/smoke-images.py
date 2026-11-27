@@ -193,6 +193,10 @@ BUILDER_SMOKE_SKILLS = {
   inputs.smoke.url = "path:./smoke";
   outputs = { self, smoke }: {
     packages = builtins.mapAttrs (_system: packages: { smoke = packages.default; }) smoke.packages;
+    # By hand: carapace.lib.skillsFlake would need the helpers, which are not fetched offline.
+    manifests = builtins.mapAttrs (_system: _: {
+      smoke = { enable = true; commands.smoke.description = "Smoke"; };
+    }) smoke.packages;
   };
 }
 """,
@@ -219,7 +223,7 @@ BUILDER_SMOKE_SKILLS = {
         inherit system;
         builder = "/bin/sh";
         args = [ "-c" "echo smoke > $out" ];
-      } // { passthru.carapace.commands.smoke.description = "Smoke"; };
+      };
     }) [ "x86_64-linux" "aarch64-linux" ]);
   };
 }
@@ -278,7 +282,7 @@ def assert_builder() -> str:
         url = base + "/builds/" + "5" * 64 + "?skill=smoke"
         built = put_build(url, token, skill_archive(BUILDER_SMOKE_SKILLS))
         assert (built["state"], built["skill"]) == ("succeeded", "smoke"), built
-        assert built["metadata"] == {"commands": {"smoke": {"description": "Smoke"}}}, built
+        assert built["metadata"] == {"enable": True, "commands": {"smoke": {"description": "Smoke"}}}, built
         assert put_build(url, token, b"stored results need no archive") == built
         assert_builder_cache(container, base, token, built["store_paths"][0])
         processes = run("docker", "top", container, "-eo", "pid,euid,cmd").splitlines()[1:]

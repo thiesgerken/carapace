@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,8 +17,12 @@ class SkillsFlakeAtHead:
     tree: str
     flake: str
     lock: str
+    # skills/config.json, the values of the skills' settings; empty without one.
+    config: str
     lock_text: str
     skills: list[ListedSkill]
+    # What is wrong with config.json that no skill's manifest reports, or None.
+    config_error: str | None
 
 
 async def skills_flake_at_head(repo_dir: Path) -> SkillsFlakeAtHead | None:
@@ -27,12 +32,38 @@ async def skills_flake_at_head(repo_dir: Path) -> SkillsFlakeAtHead | None:
     lock = await object_id(repo_dir, "HEAD:skills/flake.lock")
     if not (tree and flake and lock):
         return None
+    config = await object_id(repo_dir, "HEAD:skills/config.json")
     try:
         lock_text = (await _git(repo_dir, "cat-file", "blob", lock)).decode()
         skills = parse_skills_lock(lock_text)
     except (SkillsFlakeError, UnicodeDecodeError):
         return None
-    return SkillsFlakeAtHead(tree=tree, flake=flake, lock=lock, lock_text=lock_text, skills=skills)
+    config_error = unlisted_config_entries(await _git(repo_dir, "cat-file", "blob", config), skills) if config else None
+    return SkillsFlakeAtHead(
+        tree=tree, flake=flake, lock=lock, config=config, lock_text=lock_text, skills=skills, config_error=config_error
+    )
+
+
+def unlisted_config_entries(config: bytes, skills: list[ListedSkill]) -> str | None:
+    """Entries of config.json for skills that skills/flake.nix does not list, as a message, or None.
+
+    skillsFlake ignores them so that a skill dropped from the flake does not fail every other one; they are
+    still a mistake, so the server says so.
+    """
+    try:
+        values = json.loads(config)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        # Every skill's manifest fails on it, with Nix's message.
+        return None
+    if not isinstance(values, dict):
+        return None
+    unlisted = sorted(set(values) - {skill.name for skill in skills})
+    if not unlisted:
+        return None
+    return (
+        f"skills/config.json has entries for {', '.join(unlisted)}, which skills/flake.nix does not list: "
+        "remove them, or list the skills again."
+    )
 
 
 async def archive_skills(repo_dir: Path, tree: str, *paths: str) -> bytes:

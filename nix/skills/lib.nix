@@ -7,31 +7,35 @@
   pyproject-nix,
   uv2nix,
   pyproject-build-systems,
+  settingTypes,
 }:
 let
   inherit (pkgs) lib;
 
-  # What a command needs from outside the sandbox: domains, credentials as env var -> vault path, OAuth
-  # vault paths whose access token the command fetches itself, and tunnels as "host:port".
+  # What a command needs from outside the sandbox: domains, the skill's secret slots it gets as environment
+  # variables, its OAuth slots whose access token it fetches itself (`ccred get --access-token "$SLOT"`),
+  # and tunnels as "host:port".
   noNeeds = {
     domains = [ ];
-    credentials = { };
+    credentials = [ ];
     oauth = [ ];
     tunnels = [ ];
   };
+
+  isIdentifier = var: builtins.match "[A-Za-z_][A-Za-z0-9_]*" var != null;
 
   # A command's own `needs` replaces the skill-wide default per kind, so a command can drop or narrow
   # what the rest of the skill asks for. Checked here, which the metadata forces: a mistake fails
   # `nix eval` of `passthru.carapace` as well as the build.
   needsOf =
-    where: defaults: command:
+    where: slots: defaults: command:
     let
       needs = noNeeds // defaults // (command.needs or { });
       unknown = lib.subtractLists (lib.attrNames noNeeds) (lib.attrNames needs);
-      # Spliced into the wrapper as `VAR="$(ccred get …)"; export VAR`.
-      badVars = lib.filter (var: builtins.match "[A-Za-z_][A-Za-z0-9_]*" var == null) (
-        lib.attrNames needs.credentials
-      );
+      literal = builtins.isAttrs needs.credentials;
+      slotsOfType = type: lib.attrNames (lib.filterAttrs (_: slot: slot.type == type) slots);
+      undeclared = if literal then [ ] else lib.subtractLists (slotsOfType "secret") needs.credentials;
+      undeclaredOauth = lib.subtractLists (slotsOfType "oauth") needs.oauth;
       # What `cgate request --tunnel` accepts: an exact host name (any case, not an IP address, which a
       # client would connect to directly) and a port from 1 to 65535.
       badTunnels = lib.filter (
@@ -46,39 +50,105 @@ let
     in
     assert lib.assertMsg (unknown == [ ])
       "${where}: unknown kinds in needs: ${lib.concatStringsSep ", " unknown} (known: ${lib.concatStringsSep ", " (lib.attrNames noNeeds)})";
-    assert lib.assertMsg (
-      badVars == [ ]
-    ) "${where}: credential variables must be shell identifiers: ${lib.concatStringsSep ", " badVars}";
-    assert lib.assertMsg (
-      badTunnels == [ ]
-    ) "${where}: tunnels must be host:port with an exact host name: ${lib.concatStringsSep ", " badTunnels}";
+    # Vault paths belong to an instance: a skill names a slot, skills/config.json binds it.
+    assert lib.assertMsg (!literal)
+      "${where}: needs.credentials lists credential slots, not vault paths: declare credentials.${
+        lib.head (lib.attrNames needs.credentials ++ [ "<NAME>" ])
+      } = { type = \"secret\"; description = \"…\"; } in mkSkill, list it in needs.credentials, and bind it in skills/config.json";
+    assert lib.assertMsg (undeclared == [ ])
+      "${where}: needs.credentials names no secret slots of the skill: ${lib.concatStringsSep ", " undeclared}";
+    assert lib.assertMsg (undeclaredOauth == [ ])
+      "${where}: needs.oauth lists OAuth slots, not vault paths: declare credentials.<NAME> = { type = \"oauth\"; description = \"…\"; } in mkSkill and bind it in skills/config.json. Not an OAuth slot of the skill: ${lib.concatStringsSep ", " undeclaredOauth}";
+    assert lib.assertMsg (badTunnels == [ ])
+      "${where}: tunnels must be host:port with an exact host name: ${lib.concatStringsSep ", " badTunnels}";
     needs;
 
-  wrapper =
-    command: needs:
+  checkSettings =
+    name: settings:
     let
-      gateArgs =
-        map (domain: "--domain ${lib.escapeShellArg domain}") needs.domains
-        ++ map (path: "--credential ${lib.escapeShellArg path}") (lib.attrValues needs.credentials)
-        ++ map (path: "--oauth ${lib.escapeShellArg path}") needs.oauth
-        ++ map (tunnel: "--tunnel ${lib.escapeShellArg tunnel}") needs.tunnels;
-      # Assignment and export apart: `export X="$(…)"` would hide a failing ccred from `set -e`.
-      exports = lib.mapAttrsToList (var: path: ''
-        ${var}="$(ccred get ${lib.escapeShellArg path})"
-        export ${var}'') needs.credentials;
+      where = "skill ${name}";
+      # Each becomes an environment variable of the skill's commands.
+      badNames = lib.filter (var: !isIdentifier var) (lib.attrNames settings);
+      badTypes = lib.filter (setting: !(settingTypes ? ${settings.${setting}.type or ""})) (
+        lib.attrNames settings
+      );
     in
+    assert lib.assertMsg (
+      badNames == [ ]
+    ) "${where}: setting names must be shell identifiers: ${lib.concatStringsSep ", " badNames}";
+    assert lib.assertMsg (badTypes == [ ])
+      "${where}: settings need a type, one of ${lib.concatStringsSep ", " (lib.attrNames settingTypes)}: ${lib.concatStringsSep ", " badTypes}";
+    lib.mapAttrs (_: setting: { description = ""; } // setting) settings;
+
+  # Credential slots the skill declares; skills/config.json binds each to a password-manager entry.
+  checkCredentials =
+    name: settings: credentials:
+    let
+      where = "skill ${name}";
+      names = lib.attrNames credentials;
+      # Each becomes an environment variable of the commands that need it, like a setting.
+      badNames = lib.filter (var: !isIdentifier var) names;
+      clashes = lib.intersectLists names (lib.attrNames settings);
+      badTypes = lib.filter (
+        slot:
+        !builtins.elem (credentials.${slot}.type or "") [
+          "secret"
+          "oauth"
+        ]
+      ) names;
+      # Anything else (a `default` vault path, say) would carry instance data in the flake.
+      extraKeys = lib.filter (
+        slot:
+        removeAttrs credentials.${slot} [
+          "type"
+          "description"
+        ] != { }
+      ) names;
+    in
+    assert lib.assertMsg (badNames == [ ])
+      "${where}: credential slot names must be shell identifiers: ${lib.concatStringsSep ", " badNames}";
+    assert lib.assertMsg (
+      clashes == [ ]
+    ) "${where}: names used for a setting and a credential slot: ${lib.concatStringsSep ", " clashes}";
+    assert lib.assertMsg (badTypes == [ ])
+      "${where}: credential slots need type = \"secret\" or \"oauth\": ${lib.concatStringsSep ", " badTypes}";
+    assert lib.assertMsg (extraKeys == [ ])
+      "${where}: credential slots take only type and description, a binding goes into skills/config.json: ${lib.concatStringsSep ", " extraKeys}";
+    lib.mapAttrs (_: slot: { description = ""; } // slot) credentials;
+
+  # `needs` may depend on the skill's settings: a function from their values to the needs.
+  withSettings = settings: needs: if lib.isFunction needs then needs settings else needs;
+
+  # The values of settings and needs belong to an instance, not to the package: Carapace hands them to the
+  # wrapper when it runs (`cgate request --command`), so every instance runs the same build.
+  wrapper =
+    command: gated:
     ''
       #!${pkgs.runtimeShell}
       set -eu
     ''
-    # cgate and ccred come from the sandbox image, not from the skill: they talk to this Carapace.
-    + lib.optionalString (gateArgs != [ ]) ''
-      cgate request --store-path "@out@" ${lib.concatStringsSep " " gateArgs}
+    # cgate and ccred come from the sandbox image, not from the skill: they talk to this Carapace. Assignment
+    # and eval apart: `eval "$(…)"` would hide a failing cgate from `set -e`.
+    + lib.optionalString gated ''
+      gate="$(cgate request --store-path "@out@" --command ${lib.escapeShellArg command.name})"
+      eval "$gate"
     ''
-    + lib.concatMapStrings (line: line + "\n") exports
     + ''
       exec ${command.exec} "$@"
     '';
+
+  # The host of an MCP server's URL. A host name and an optional port: no userinfo, whose `u@` would become
+  # the declared domain, and no IP literal, which the proxy's domain review does not cover. HTTPS only,
+  # since tokens go along.
+  mcpHost =
+    where: url:
+    let
+      authority = builtins.match "https://([A-Za-z0-9.-]+)(:[0-9]+)?([/?#].*)?" url;
+      host = if authority == null then null else builtins.head authority;
+    in
+    assert lib.assertMsg (host != null && builtins.match "[0-9.]+" host == null)
+      "${where}: the URL must be https://<host name>[:port][/path], without userinfo or IP address: ${url}";
+    host;
 
   # Only the named files of the skill directory, so a derivation built from them survives code edits.
   lockFiles =
@@ -106,15 +176,19 @@ in
   # The skill's package: one wrapper per command in bin/, so skills never collide on interpreters or
   # libraries in the session profile, and a reference to the skill directory (SKILL.md, scripts,
   # references), which brings it into every sandbox that installs the commands. The declarations travel as
-  # `passthru.carapace`, which the builder evaluates without building anything; its `skillDir` is
-  # already in the store after that evaluation, so SKILL.md can be read before the commands are built.
+  # `passthru.carapace`, which `skillsFlake` turns into the manifest the builder evaluates without building
+  # anything; its `skillDir` is already in the store after that evaluation, so SKILL.md can be read before
+  # the commands are built. `settings` are typed values from skills/config.json; a command sees each as an
+  # environment variable, and `needs` (skill-wide or per command) may be a function of them.
   #
   #   mkSkill { name = "notes"; src = ./.; }   # instructions only
   #
   #   mkSkill {
   #     name = "weather";
   #     src = ./.;
-  #     needs = { domains = [ "api.example.com" ]; credentials.WEATHER_TOKEN = "personal/weather"; };
+  #     settings.CITY = { type = "str"; description = "City to report on"; default = "Berlin"; };
+  #     credentials.WEATHER_TOKEN = { type = "secret"; description = "A weather API token"; };
+  #     needs.domains = [ "api.example.com" ];
   #     commands.weather = { exec = "${env}/bin/weather"; description = "Current weather"; };
   #     commands.weather-offline = { exec = "..."; description = "..."; needs = { domains = [ ]; }; };
   #   }
@@ -124,6 +198,8 @@ in
       src,
       commands ? { },
       needs ? { },
+      settings ? { },
+      credentials ? { },
     }:
     let
       # A store path of its own: with a `path:` input `src` lies inside the whole skills tree, which
@@ -132,19 +208,61 @@ in
         path = src;
         name = "skill-${name}-src";
       };
-      declared = lib.mapAttrs (cmd: command: {
-        inherit (command) description;
-        needs = needsOf "skill ${name}, command ${cmd}" needs command;
-        # `read_skill` runs `<cmd> --list-tools` for an MCP server, so the agent sees its tools.
-        mcp = command.mcp or false;
-      }) commands;
+      declaredSettings = checkSettings name settings;
+      declaredCredentials = checkCredentials name settings credentials;
+      # An MCP command's URL setting, checked here because only mkSkill sees the settings.
+      checkedCommands = lib.mapAttrs (
+        cmd: command:
+        let
+          setting = command.urlSetting or null;
+        in
+        assert lib.assertMsg (setting == null || (declaredSettings.${setting}.type or null) == "str")
+          "skill ${name}, command ${cmd}: urlSetting ${toString setting} needs a setting of type str: declare settings.${toString setting} = { type = \"str\"; description = \"…\"; } in mkSkill";
+        command
+      ) commands;
+      slotNames = type: lib.attrNames (lib.filterAttrs (_: slot: slot.type == type) declaredCredentials);
+      # Every command gets every slot of its type unless the needs say otherwise.
+      slotDefaults = {
+        credentials = slotNames "secret";
+        oauth = slotNames "oauth";
+      };
+      skillWideNeeds = lib.optionalAttrs (!lib.isFunction needs) (
+        needsOf "skill ${name}" declaredCredentials slotDefaults { inherit needs; }
+      );
+      commandNeeds =
+        values:
+        lib.mapAttrs (
+          cmd: command:
+          needsOf "skill ${name}, command ${cmd}" declaredCredentials (
+            slotDefaults // withSettings values needs
+          ) (command // { needs = withSettings values (command.needs or { }); })
+        ) checkedCommands;
+      # Whether a command asks Carapace before it runs: for its settings, or for needs it has or may have.
+      gated =
+        cmd: command:
+        declaredSettings != { }
+        || lib.isFunction needs
+        || lib.isFunction (command.needs or { })
+        || (commandNeeds { }).${cmd} != noNeeds;
     in
     pkgs.runCommand "skill-${name}"
       {
-        passthru.carapace = {
-          inherit name;
-          skillDir = "${skillDir}";
-          commands = declared;
+        passthru = {
+          # What the skills flake (`skillsFlake`) and the builder read, as JSON.
+          carapace = {
+            inherit name;
+            skillDir = "${skillDir}";
+            settings = declaredSettings;
+            # Forcing it checks the skill-wide needs too, which no command checks in a skill without commands.
+            credentials = builtins.seq skillWideNeeds declaredCredentials;
+            commands = lib.mapAttrs (_: command: {
+              inherit (command) description;
+              # `read_skill` runs `<cmd> --list-tools` for an MCP server, so the agent sees its tools.
+              mcp = command.mcp or false;
+            }) checkedCommands;
+          };
+          # Each command's needs for the given setting values; checked when `skillsFlake` resolves them.
+          carapaceNeeds = commandNeeds;
         };
       }
       (
@@ -156,21 +274,24 @@ in
         ''
         + lib.concatStrings (
           lib.mapAttrsToList (cmd: command: ''
-            substitute ${pkgs.writeText "${cmd}-wrapper" (wrapper command declared.${cmd}.needs)} \
-              $out/bin/${cmd} --subst-var out
+            substitute ${
+              pkgs.writeText "${cmd}-wrapper" (wrapper (command // { name = cmd; }) (gated cmd command))
+            } $out/bin/${cmd} --subst-var out
             chmod +x $out/bin/${cmd}
-          '') commands
+          '') checkedCommands
         )
       );
 
   # Commands for MCP servers, one per attribute, for `mkSkill.commands`: `<name> --list-tools`,
   # `<name> <tool> --flag …`. They run the `mcp` bridge from the sandbox image; what they need follows
-  # from the server: the URL's host, and the credential of `bearer` (a token) or `oauth` (a vault entry
-  # Carapace refreshes, whose access token the bridge fetches itself). A stdio server declares its own
-  # `needs`, which also override the derived ones per kind; the skill-wide `needs` do not apply.
+  # from the server: the URL's host, and the credential slot of `bearer` (type secret, a token) or `oauth`
+  # (type oauth, an entry Carapace refreshes, whose access token the bridge fetches itself). The URL is fixed
+  # (`url`) or this instance's value of one of the skill's settings (`urlSetting`). A stdio server declares
+  # its own `needs`, which also override the derived ones per kind; the skill-wide `needs` do not apply.
   #
   #   commands = skill.mcpCommands {
-  #     tracker = { url = "https://mcp.example.com/mcp"; oauth = "personal/tracker"; description = "…"; };
+  #     tracker = { url = "https://mcp.example.com/mcp"; oauth = "TRACKER_OAUTH"; description = "…"; };
+  #     search = { urlSetting = "SEARCH_URL"; bearer = "SEARCH_TOKEN"; description = "…"; };
   #     notes = { command = "${notes}/bin/notes-mcp"; description = "…"; };
   #   };
   mcpCommands = lib.mapAttrs (
@@ -178,6 +299,7 @@ in
     {
       description,
       url ? null,
+      urlSetting ? null,
       command ? null,
       bearer ? null,
       oauth ? null,
@@ -185,40 +307,64 @@ in
     }:
     let
       where = "MCP server ${name}";
-      # A host name and an optional port: no userinfo, whose `u@` would become the declared domain, and no
-      # IP literal, which the proxy's domain review does not cover. HTTPS only, since tokens go along.
-      authority =
-        if url == null then null else builtins.match "https://([A-Za-z0-9.-]+)(:[0-9]+)?([/?#].*)?" url;
-      host = if authority == null then null else builtins.head authority;
+      # Every kind set, so the skill-wide needs do not leak into the server's command.
+      derived =
+        domains:
+        noNeeds
+        // {
+          inherit domains;
+        }
+        // lib.optionalAttrs (bearer != null) { credentials = [ bearer ]; }
+        // lib.optionalAttrs (oauth != null) { oauth = [ oauth ]; };
+      fixedDomains = lib.optional (url != null) (mcpHost where url);
+      settingDomains = settings: [ (mcpHost "${where} (setting ${urlSetting})" settings.${urlSetting}) ];
     in
     assert lib.assertMsg (
-      (url == null) != (command == null)
-    ) "${where}: set exactly one of url and command";
-    assert lib.assertMsg (url == null || (host != null && builtins.match "[0-9.]+" host == null))
-      "${where}: url must be https://<host name>[:port][/path], without userinfo or IP address: ${toString url}";
-    assert lib.assertMsg (
-      command == null || (bearer == null && oauth == null)
-    ) "${where}: bearer and oauth apply to url; a stdio server takes credentials through needs";
+      lib.count (x: x != null) [
+        url
+        urlSetting
+        command
+      ] == 1
+    ) "${where}: set exactly one of url, urlSetting and command";
+    assert lib.assertMsg (command == null || (bearer == null && oauth == null))
+      "${where}: bearer and oauth apply to an HTTP server; a stdio server takes credentials through needs";
     assert lib.assertMsg (
       bearer == null || oauth == null
     ) "${where}: set at most one of bearer and oauth";
+    assert lib.assertMsg
+      (lib.all (field: field == null || isIdentifier field) [
+        bearer
+        oauth
+        urlSetting
+      ])
+      "${where}: bearer and oauth name credential slots of the skill and urlSetting one of its settings, not a vault path or URL";
+    # On the command itself, so a `needs` override of the domains cannot skip it.
+    assert url == null || builtins.isString (mcpHost where url);
     {
-      inherit description;
+      inherit description urlSetting;
       mcp = true;
+      # Slot and setting values arrive as environment variables (`cgate request --command`); an OAuth slot
+      # holds the entry's vault path, for `ccred get --access-token`.
       exec = lib.concatStringsSep " " (
         [ "mcp --name ${lib.escapeShellArg name}" ]
         ++ lib.optional (url != null) "--url ${lib.escapeShellArg url}"
+        ++ lib.optional (urlSetting != null) "--url \"\$${urlSetting}\""
         ++ lib.optional (command != null) "--stdio ${lib.escapeShellArg command}"
-        ++ lib.optional (bearer != null) "--bearer-env MCP_BEARER_TOKEN"
-        ++ lib.optional (oauth != null) "--oauth ${lib.escapeShellArg oauth}"
+        ++ lib.optional (bearer != null) "--bearer-env ${bearer}"
+        ++ lib.optional (oauth != null) "--oauth \"\$${oauth}\""
       );
-      # Every kind set, so the skill-wide needs do not leak into the server's command.
       needs =
-        noNeeds
-        // lib.optionalAttrs (url != null) { domains = [ host ]; }
-        // lib.optionalAttrs (bearer != null) { credentials.MCP_BEARER_TOKEN = bearer; }
-        // lib.optionalAttrs (oauth != null) { oauth = [ oauth ]; }
-        // needs;
+        if urlSetting != null then
+          # Checked whatever the needs override: the bridge connects to this URL either way.
+          settings:
+          let
+            domains = settingDomains settings;
+          in
+          builtins.deepSeq domains (derived domains // withSettings settings needs)
+        else if lib.isFunction needs then
+          settings: derived fixedDomains // needs settings
+        else
+          derived fixedDomains // needs;
     }
   );
 

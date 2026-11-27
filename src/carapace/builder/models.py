@@ -37,13 +37,36 @@ class UpstreamCache(BaseModel):
     public_key: str
 
 
+class SettingDeclaration(BaseModel):
+    """A setting a skill declares (`mkSkill { settings }`), independent of any instance's value."""
+
+    type: Literal["str", "int", "bool"]
+    description: str = ""
+    # None when the setting has no default; Nix's str, int and bool admit no null.
+    default: str | int | bool | None = None
+
+
+class CredentialSlotDeclaration(BaseModel):
+    """A credential slot a skill declares (`mkSkill { credentials }`); config.json binds it to a vault entry."""
+
+    type: str
+    description: str = ""
+
+
+class SkillDeclarations(BaseModel):
+    """`passthru.carapace` of a skill package: what an instance configures, without any instance's values."""
+
+    settings: dict[str, SettingDeclaration]
+    credentials: dict[str, CredentialSlotDeclaration]
+
+
 class BuildResult(BaseModel):
     key: BuildKey
     skill: SkillName
     state: Literal["succeeded", "failed"]
     # Every output of `packages.<system>.<skill>`; empty for a failed build.
     store_paths: list[str] = []
-    # `passthru.carapace` of that package as JSON, defined by `mkSkill`; None when absent.
+    # `manifests.<system>.<skill>` of the skills flake as JSON, written by `skillsFlake`; None when absent.
     metadata: Any = None
     # Its `skillDir`, the skill directory in the store, and what is in it, read right after the evaluation,
     # so a failed build has them too. None and empty for a package from helpers without `src`.
@@ -52,6 +75,9 @@ class BuildResult(BaseModel):
     skill_files: list[str] = []
     # The end of the evaluation and build output, for showing why a build failed.
     log_tail: str = ""
+    # What the package declares, evaluated without this instance's values, so it is there when the manifest
+    # fails for a missing or wrong value; None when the package itself does not evaluate.
+    declarations: SkillDeclarations | None = None
 
 
 class InputUpdate(BaseModel):

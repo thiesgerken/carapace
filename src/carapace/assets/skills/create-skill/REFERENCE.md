@@ -96,7 +96,7 @@ inputs.my-skill = {
 
 Always write both `follows`: every skill then shares the one `nixpkgs` and the one Carapace helper version that `skills/flake.nix` pins, and `nix flake update carapace --flake ./skills` updates the helpers of all skills at once. A skill's own `flake.lock` only matters when it is built on its own.
 
-Some bundled skills (`artifacts`, `create-skill`, `credentials`, `mermaid`, `wikipedia`) are not in `skills/` but inputs on Carapace's `main` branch (`github:thiesgerken/carapace?dir=src/carapace/assets/skills/<name>`). To change one, copy its directory into `skills/`, point its input at `path:./<name>` and lock again; it is then a local skill.
+The bundled skills are not in `skills/` but inputs on Carapace's `main` branch (`github:thiesgerken/carapace?dir=src/carapace/assets/skills/<dir>`), configured in `skills/config.json`. To change one beyond its settings, copy its directory into `skills/`, point its input at `path:./<dir>` and lock again; it is then a local skill.
 
 ```text
 skills/
@@ -207,10 +207,12 @@ The Carapace builder builds the flake whenever the skill changes on the server, 
           default = skill.mkSkill {
             name = "my-skill";
             src = ./.;
-            needs = {
-              domains = [ "api.example.com" ];
-              credentials.EXAMPLE_TOKEN = "personal/example-token";
+            # Bound to a password-manager entry in skills/config.json, never written here.
+            credentials.EXAMPLE_TOKEN = {
+              type = "secret";
+              description = "A token for the Example service";
             };
+            needs.domains = [ "api.example.com" ];
             commands = {
               my-search = {
                 exec = "${env}/bin/my-search";
@@ -221,7 +223,7 @@ The Carapace builder builds the flake whenever the skill changes on the server, 
                 description = "Reformat a local file, offline";
                 needs = {
                   domains = [ ];
-                  credentials = { };
+                  credentials = [ ];
                 };
               };
             };
@@ -234,7 +236,10 @@ The Carapace builder builds the flake whenever the skill changes on the server, 
 
 - `name` matches the skill directory. Command names are what the agent types; keep them unique across skills.
 - `exec` is what the wrapper runs, with the agent's arguments appended. It is shell words: a store path may carry fixed arguments.
-- `needs` declares what a command will ask for from outside the sandbox: `domains`, `credentials` (environment variable to vault path), `oauth` (vault paths of OAuth entries the command reads itself). It is the skill-wide default; a command's own `needs` overrides it per kind. The wrapper asks for everything declared at once before the command starts, and exports the credentials. Undeclared requests still work and are reviewed when they happen.
+- `needs` declares what a command will ask for from outside the sandbox: `domains`, `credentials` (names of the skill's credential slots, by default all of them), `oauth` (names of the skill's OAuth slots, `type = "oauth"`, whose access token the command fetches with `ccred get --access-token "$SLOT"`). It is the skill-wide default; a command's own `needs` overrides it per kind. The wrapper asks for everything declared at once before the command starts, and exports the credentials. Undeclared requests still work and are reviewed when they happen.
+- `credentials` declares the secrets the skill needs, never where they are: `credentials.WEATHER_TOKEN = { type = "secret"; description = "…"; };`. `skills/config.json` binds the slot to a vault path (`{"<skill>": {"credentials": {"WEATHER_TOKEN": "<backend>/<id>"}}}`), and the commands get it as `$WEATHER_TOKEN`. A vault path in the flake fails the evaluation. Until the user binds a slot, the commands that need it are refused with a hint; ask the user which entry to bind, and use `ccred list` to find candidates.
+- `needs` may also be a function of the skill's settings: `needs = settings: { domains = [ "${settings.CITY}.weather.example" ]; };`.
+- `settings` declares what an instance configures: `settings.CITY = { type = "str"; description = "…"; default = "Berlin"; };`, with type `str`, `int` or `bool`, required without a default. The values live in `skills/config.json` (`{"<skill>": {"settings": {"CITY": "Hamburg"}}}`), and every command gets each setting as an environment variable of the same name. Use a setting for a server URL, a city or a default, never for a secret: those are credential slots. Never write an instance's values into the flake, so the skill stays usable anywhere.
 - `description` is one short line the agent sees.
 - The wrapper keeps the caller's working directory. Commands take paths as arguments rather than assuming a directory.
 

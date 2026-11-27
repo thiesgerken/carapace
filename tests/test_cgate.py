@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import runpy
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -34,6 +35,9 @@ def test_request_posts_the_declaration(monkeypatch: pytest.MonkeyPatch) -> None:
 
         def __exit__(self, *_exc: object) -> None:
             return None
+
+        def read(self) -> bytes:
+            return b""
 
     def capture(request: urllib.request.Request) -> Any:
         sent.append(request)
@@ -68,7 +72,51 @@ def test_request_posts_the_declaration(monkeypatch: pytest.MonkeyPatch) -> None:
         "oauth": ["demo/tracker-oauth"],
         "tunnels": ["imap.example.com:993"],
         "store_path": "/nix/store/abc-example",
+        "command": None,
     }
+
+
+def test_a_skill_command_gets_its_settings_and_credentials_as_exports(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sent: list[urllib.request.Request] = []
+    answer = {
+        "settings": {"CITY": "Bad Homburg", "PORT": 443, "METRIC": True},
+        "credentials": {"TOKEN": "demo/t"},
+        "oauth": {"CAL": "demo/cal"},
+    }
+
+    class _Answer(io.BytesIO):
+        def __enter__(self) -> _Answer:
+            return self
+
+    def respond(request: urllib.request.Request) -> Any:
+        sent.append(request)
+        return _Answer(json.dumps(answer).encode())
+
+    def ccred(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert args == ["ccred", "get", "demo/t"]
+        return subprocess.CompletedProcess(args, 0, stdout="it's s3cret\n")
+
+    monkeypatch.setattr(urllib.request, "urlopen", respond)
+    monkeypatch.setattr(subprocess, "run", ccred)
+
+    code = _run(monkeypatch, "request", "--store-path", "/nix/store/abc-example", "--command", "weather")
+
+    assert code == 0
+    assert json.loads(sent[0].data or b"")["command"] == "weather"
+    assert capsys.readouterr().out.splitlines() == [
+        "export CITY='Bad Homburg'",
+        "export PORT=443",
+        "export METRIC=true",
+        "export CAL=demo/cal",
+        "export TOKEN='it'\"'\"'s s3cret'",
+    ]
+
+
+def test_a_command_takes_nothing_but_its_store_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _run(monkeypatch, "request", "--command", "weather") == 2
+    assert _run(monkeypatch, "request", "--store-path", "/nix/store/a-b", "--command", "w", "--domain", "x.com") == 2
 
 
 def test_denial_exits_1_with_the_reason(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

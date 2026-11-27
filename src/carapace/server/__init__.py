@@ -40,7 +40,7 @@ from ..auth import AuthStore
 from ..bootstrap import ensure_data_dir, ensure_knowledge_dir
 from ..builder.client import BuilderClient
 from ..builder.profile import ProfilePlan, profile_plan
-from ..builder.skill_builds import SkillBuilds
+from ..builder.skill_builds import SkillBuilds, unbound_slot_hint
 from ..cache import SessionListCache
 from ..codex_auth import CodexAccounts, CodexCredentialStore
 from ..config import build_config
@@ -85,7 +85,7 @@ from ..security import (
     evaluate_push_with,
     evaluate_upfront_request_with,
 )
-from ..security.context import UpfrontRequest
+from ..security.context import SkillCommandOrigin, UpfrontRequest
 from ..security.sentinel import Sentinel
 from ..session import SessionEngine, SessionManager
 from ..session.archive import SessionArchiveService
@@ -1203,6 +1203,8 @@ class UpfrontRequestBody(BaseModel):
     oauth: list[str] = []
     tunnels: list[str] = []
     store_path: str | None = None
+    # A skill command by name, from its wrapper (with `store_path`): its needs come from the skill's manifest.
+    command: str | None = None
 
 
 # A host name, or `*.` plus a name of at least two labels. A bare `*` would open the proxy to everything,
@@ -1219,11 +1221,56 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
     Approved domains and credentials hold for the rest of the running exec. Credentials are approved as
     the password kind, the one generated wrappers fetch with ``ccred get``. Approved tunnels are opened
     before the answer, so the command can connect as soon as ``cgate`` returns.
+
+    A skill command's wrapper names itself instead (``--command``): its needs are reviewed the same way, and
+    the answer carries the skill's settings and the credentials to export, as JSON.
     """
     session_id = _authenticate_sandbox(request.headers.get("authorization"))
     if session_id is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    if body.command is None:
+        return await _review_upfront(session_id, body)
+    if body.store_path is None or body.domains or body.credentials or body.oauth or body.tunnels:
+        return Response(
+            status_code=400, content="--command takes --store-path and nothing else", media_type="text/plain"
+        )
 
+    knowledge_dir = _engine._knowledge_dir_for_session(session_id)
+    build = await _skill_builds.command_build(knowledge_dir, body.store_path, body.command)
+    if build is None:
+        return _boundary_denied(
+            f"{body.command} is not a command of a skill built for this knowledge repo, so its settings and needs "
+            "are unknown: push the skill, and run it once the builder has built it"
+        )
+    if unbound := build.unbound(body.command):
+        return _boundary_denied(unbound_slot_hint(build.skill, unbound))
+    needs = build.commands[body.command].needs
+    # Unbound slots were refused above.
+    credentials = {slot: path for slot, path in needs.credentials.items() if path is not None}
+    oauth = {slot: path for slot, path in needs.oauth.items() if path is not None}
+    if needs.domains or credentials or oauth or needs.tunnels:
+        declared = UpfrontRequestBody(
+            domains=needs.domains,
+            credentials=sorted(set(credentials.values())),
+            oauth=sorted(set(oauth.values())),
+            tunnels=needs.tunnels,
+            store_path=body.store_path,
+        )
+        origin = SkillCommandOrigin(
+            skill=build.skill, command=body.command, installed=body.store_path in build.store_paths
+        )
+        reviewed = await _review_upfront(session_id, declared, origin)
+        if reviewed.status_code != 200:
+            return reviewed
+    # Settings are no secrets, but they only go to the wrapper, like the credentials it then fetches.
+    # An OAuth slot goes to the command as its vault path, no secret: the refresh token stays here, and the
+    # access token comes from `ccred get --access-token`, approved by this review.
+    return JSONResponse({"settings": build.settings, "credentials": credentials, "oauth": oauth})
+
+
+async def _review_upfront(
+    session_id: str, body: UpfrontRequestBody, origin: SkillCommandOrigin | None = None
+) -> Response:
     domains = sorted({domain.strip().lower() for domain in body.domains})
     if invalid := [domain for domain in domains if not _DECLARABLE_DOMAIN.fullmatch(domain)]:
         return Response(status_code=400, content=f"not a domain: {invalid[0]}", media_type="text/plain")
@@ -1284,6 +1331,7 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
                     access_tokens=access_tokens,
                     tunnels=[str(tunnel) for tunnel in pending_tunnels],
                     store_path=body.store_path,
+                    origin=origin,
                 ),
                 running.command,
                 follow_up=running.boundary_reviewed,

@@ -1,6 +1,6 @@
 ---
 name: web
-# Before listing it in skills/flake.nix, store a Brave Search API key at vault/brave-api-key or change the vault path in flake.nix.
+# Before turning it on, bind its BRAVE_API_KEY slot to your Brave Search API key in skills/config.json: {"web": {"credentials": {"BRAVE_API_KEY": "<backend>/<id>"}}}.
 description: >-
   Search the web and fetch page content. Use web_search to find information
   across the web via Brave Search. Use web_fetch to retrieve and extract
