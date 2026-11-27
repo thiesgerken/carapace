@@ -4,10 +4,10 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import timedelta
-from os import stat_result
 from pathlib import Path
 from typing import Any
 
+import httpx
 from loguru import logger
 from pydantic_ai import Agent, ModelMessage, ModelRetry, RunContext, ToolOutput
 from pydantic_ai.capabilities import AbstractCapability
@@ -15,6 +15,8 @@ from pydantic_ai.models import infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
+from ..builder.skill_builds import SkillBuild, SkillBuilds
+from ..builder.skill_dir import SkillFileError
 from ..git.diff import touched_paths
 from ..llm import (
     ModelFactory,
@@ -160,7 +162,6 @@ type _SentinelOutput = SentinelVerdict | UnattendedSentinelVerdict
 
 @dataclass(frozen=True, slots=True)
 class SentinelDeps:
-    skills_dir: Path
     # Whether the agent gets to read what the verdict says to it: an `allow` comment.
     # Every evaluation kind shares one output schema, because a schema that changes between evaluations would
     # break the prompt cache.
@@ -270,7 +271,7 @@ class Sentinel:
         model: str,
         user: str,
         knowledge_dir: Path,
-        skills_dir: Path,
+        skill_builds: SkillBuilds,
         llm_slots: asyncio.Semaphore | None,
         unattended: bool = False,
         ask_mode: bool = False,
@@ -287,7 +288,7 @@ class Sentinel:
         # The server's shared LLM slots (``agent.max_parallel_llm``); None leaves requests unlimited.
         self._llm_slots = llm_slots
         self._knowledge_dir = knowledge_dir
-        self._skills_dir = skills_dir
+        self._skill_builds = skill_builds
         self._unattended = unattended
         self._ask_mode = ask_mode
         self._timeout = timeout
@@ -299,7 +300,8 @@ class Sentinel:
         self._provider_compaction = provider_compaction
         self._on_provider_compaction_rejected = on_provider_compaction_rejected
         self._agent = self._create_agent()
-        self._skill_file_cache: dict[tuple[str, str], tuple[int, int, str]] = {}
+        # (skill, path) -> the build key it was read under, which changes with any change of the skill.
+        self._skill_file_cache: dict[tuple[str, str], str] = {}
         self._eval_skill_reads: int = 0
         self._eval_cache_hits: int = 0
         self._eval_cache_misses: int = 0
@@ -313,10 +315,6 @@ class Sentinel:
     def agent(self) -> Agent[SentinelDeps, _SentinelOutput]:
         """The agent evaluations run on."""
         return self._agent
-
-    @property
-    def skills_dir(self) -> Path:
-        return self._skills_dir
 
     def set_model(self, model: str) -> None:
         """Switch the sentinel model, recreating the internal agent."""
@@ -359,32 +357,41 @@ class Sentinel:
             ask_mode=self._ask_mode,
         )
 
-    def _read_skill_file_cached(self, skills_dir: Path, skill_name: str, path: str) -> str:
-        skill_dir = skills_dir / skill_name
-        full_path = (skill_dir / path).resolve()
-        if not str(full_path).startswith(str(skill_dir.resolve())):
-            return "Error: path escapes skill directory"
-        if not full_path.exists():
-            return f"File not found: {path}"
+    async def _built_skill(self, skill_name: str) -> SkillBuild | str:
+        """The build of *skill_name* whose skill directory there is to read, or why there is none.
 
-        stat = full_path.stat()
+        While a changed skill builds, that is its previous build: older files are better than none.
+        """
+        builds = await self._skill_builds.ensure_built(self._knowledge_dir)
+        if not any(build.skill == skill_name for build in builds):
+            return f"Skill '{skill_name}' not found."
+        build = self._skill_builds.readable(self._knowledge_dir, skill_name)
+        if build is None:
+            return f"Skill '{skill_name}' has no skill directory to read yet: its first build has not got that far."
+        return build
+
+    async def _read_skill_file_cached(self, skill_name: str, path: str) -> str:
+        build = await self._built_skill(skill_name)
+        if isinstance(build, str):
+            return build
         cache_key = (skill_name, path)
-        cached = self._skill_file_cache.get(cache_key)
-        fingerprint = self._fingerprint_file_stat(stat)
-        if cached is not None and cached[:2] == fingerprint:
+        if self._skill_file_cache.get(cache_key) == build.key:
             self._record_skill_file_read(skill_name, path, cache_hit=True)
             return (
                 f"File '{path}' for skill '{skill_name}' was already provided earlier in this sentinel conversation "
                 + "and has not changed. Reuse the previous tool result instead of reading it again."
             )
-
-        content = full_path.read_text()
-        self._skill_file_cache[cache_key] = (*fingerprint, content)
+        try:
+            content = await self._skill_builds.skill_file(build, path)
+        except SkillFileError as exc:
+            return f"Error: {exc}"
+        except httpx.HTTPError as exc:
+            return f"Error: the skill builder is unavailable: {type(exc).__name__}: {exc}"
+        if content is None:
+            return f"File not found: {path}"
+        self._skill_file_cache[cache_key] = build.key
         self._record_skill_file_read(skill_name, path, cache_hit=False)
-        return content
-
-    def _fingerprint_file_stat(self, stat: stat_result) -> tuple[int, int]:
-        return (stat.st_mtime_ns, stat.st_size)
+        return content.decode(errors="replace")
 
     def _record_skill_file_read(self, skill_name: str, path: str, *, cache_hit: bool) -> None:
         self._eval_skill_reads += 1
@@ -549,7 +556,7 @@ class Sentinel:
                 in_flight = "sentinel"
                 result = await self._agent.run(
                     prompt,
-                    deps=SentinelDeps(skills_dir=self._skills_dir, agent_reads_verdict=agent_reads_verdict),
+                    deps=SentinelDeps(agent_reads_verdict=agent_reads_verdict),
                     message_history=session.sentinel_messages or None,
                     usage_limits=usage_limits,
                 )
@@ -614,16 +621,8 @@ class Sentinel:
             """List files in a skill's master directory. Skills are trusted user-authored content."""
             tool_seq = self._log_tool_call("list_skill_files", skill_name=skill_name)
             try:
-                skill_dir = ctx.deps.skills_dir / skill_name
-                if not skill_dir.exists() or not skill_dir.is_dir():
-                    result = f"Skill '{skill_name}' not found."
-                else:
-                    entries = sorted(skill_dir.rglob("*"))
-                    lines = []
-                    for e in entries:
-                        if e.is_file() and "__pycache__" not in str(e) and ".venv" not in str(e):
-                            lines.append(str(e.relative_to(skill_dir)))
-                    result = "\n".join(lines) if lines else "No files."
+                build = await self._built_skill(skill_name)
+                result = build if isinstance(build, str) else "\n".join(build.skill_files) or "No files."
             except Exception as exc:
                 self._log_tool_failure("list_skill_files", tool_seq, exc)
                 raise
@@ -640,7 +639,7 @@ class Sentinel:
             """Read a file from a skill directory. Skills are trusted user-authored content."""
             tool_seq = self._log_tool_call("read_skill_file", skill_name=skill_name, path=path)
             try:
-                result = self._read_skill_file_cached(ctx.deps.skills_dir, skill_name, path)
+                result = await self._read_skill_file_cached(skill_name, path)
             except Exception as exc:
                 self._log_tool_failure("read_skill_file", tool_seq, exc)
                 raise

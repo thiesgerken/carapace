@@ -14,6 +14,7 @@ import pytest
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo
 
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.security.context import (
     SENTINEL_VERDICT_TOOL,
     AgentResponseEntry,
@@ -66,7 +67,7 @@ def _sentinel(knowledge_dir: Path, model: _RecordingModel) -> Sentinel:
         model="test:model",
         user="thies",
         knowledge_dir=knowledge_dir,
-        skills_dir=knowledge_dir / "skills",
+        skill_builds=SkillBuilds(None),
         llm_slots=None,
         model_factory=lambda _name, *, user: ReplayStreamModel(model),
     )

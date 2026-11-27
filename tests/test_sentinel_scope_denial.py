@@ -9,6 +9,7 @@ import pytest
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo
 
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.security import evaluate_push_with
 from carapace.security.context import (
     SENTINEL_VERDICT_TOOL,
@@ -61,7 +62,7 @@ async def test_a_revise_verdict_is_no_longer_accepted(tmp_path: Path) -> None:
         model="test:model",
         user="thies",
         knowledge_dir=tmp_path,
-        skills_dir=tmp_path / "skills",
+        skill_builds=SkillBuilds(None),
         llm_slots=None,
         model_factory=lambda _name, *, user: ReplayStreamModel(respond),
     )

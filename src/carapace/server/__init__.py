@@ -560,7 +560,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     def prompt_prefix_for_user(user: str) -> str:
         handle = _knowledge_repo_registry.get_for_user(user)
-        return shared_prompt_prefix(handle.knowledge_dir, handle.skill_registry.scan())
+        return shared_prompt_prefix(handle.knowledge_dir, _skill_builds.catalog(handle.knowledge_dir))
 
     _sandbox_mgr = SandboxManager(
         runtime=runtime,
@@ -580,7 +580,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     async def skill_profile_plan(session_id: str) -> ProfilePlan:
         # Also what starts building a tree nobody asked for yet: content that arrived without a push.
-        return profile_plan(await _skill_builds.ensure_built(knowledge_repo_for_session(session_id).knowledge_dir))
+        return profile_plan(await _skill_builds.installable(knowledge_repo_for_session(session_id).knowledge_dir))
 
     _sandbox_mgr.set_skill_profile_plan_callback(skill_profile_plan)
     logger.info(f"Sandbox enabled (image={base_image}, network={sandbox_network})")
@@ -773,6 +773,13 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     memory_task = asyncio.create_task(_memory_service.run())
     roots_task = asyncio.create_task(_builder_roots_loop(), name="builder roots")
     roots_task.add_done_callback(_log_loop_crash)
+    updates_task = asyncio.create_task(
+        _skill_builds.updates.check_every(
+            timedelta(days=1), lambda: [repo.knowledge_dir for repo in _knowledge_repo_registry.existing()]
+        ),
+        name="skill updates",
+    )
+    updates_task.add_done_callback(_log_loop_crash)
 
     def matrix_channel_factory(username: str, user_config: UserConfig) -> MatrixChannelHandle:
         from ..channels.matrix import MatrixChannel
@@ -811,6 +818,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     jobs_task.cancel()
     memory_task.cancel()
     roots_task.cancel()
+    updates_task.cancel()
     await _matrix_channel_manager.stop_all()
     sandbox_server.should_exit = True
     internal_server.should_exit = True

@@ -1,14 +1,11 @@
 ---
 name: web
-# Before enabling, store a Brave Search API key at vault/brave-api-key or change the vault path in flake.nix.
+# Before listing it in skills/flake.nix, store a Brave Search API key at vault/brave-api-key or change the vault path in flake.nix.
 description: >-
   Search the web and fetch page content. Use web_search to find information
   across the web via Brave Search. Use web_fetch to retrieve and extract
   readable content from a specific URL. Activate when the user asks to look
   something up online, find recent information, or read a webpage.
-metadata:
-  carapace:
-    disabled: true
 ---
 
 # Web Skill

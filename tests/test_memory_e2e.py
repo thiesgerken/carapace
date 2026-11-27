@@ -41,7 +41,6 @@ from carapace.models.session import SessionJobRunContext
 from carapace.models.user import MemoryBudget, UserConfig, UserMemoryConfig
 from carapace.prompt_prefix import shared_prompt_prefix
 from carapace.session import SessionManager
-from carapace.skills import SkillRegistry
 
 from .streaming_model import ReplayStreamModel
 
@@ -190,7 +189,6 @@ class Pipeline:
             owner=user,
             knowledge_dir=knowledge_dir,
             git_store=GitStore(knowledge_dir),
-            skill_registry=SkillRegistry(knowledge_dir / "skills"),
         )
 
     def session(self, user: str, first_message_at: str, *, private: bool = False, job_id: str | None = None) -> str:

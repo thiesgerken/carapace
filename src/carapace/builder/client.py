@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import platform
+from urllib.parse import quote
 
 import httpx
 
-from .models import CACHE_HOST, BuilderInfo, BuildResult, Roots
+from .models import CACHE_HOST, BuilderInfo, BuildResult, Roots, UpdatedLocks
+from .skill_dir import relative_parts
 
 
 class BuilderSystemMismatchError(RuntimeError):
@@ -74,28 +76,51 @@ class BuilderClient:
             ]
         )
 
-    async def get(self, tree: str) -> BuildResult | None:
+    async def get(self, key: str) -> BuildResult | None:
         await self._ensure_system()
-        response = await self._client.get(f"/builds/{tree}")
+        response = await self._client.get(f"/builds/{key}")
         if response.status_code == httpx.codes.NOT_FOUND:
             return None
         response.raise_for_status()
         return BuildResult.model_validate(response.json())
 
-    async def build(self, tree: str, archive: bytes, *, retry: bool = False) -> BuildResult:
-        """Build a skill directory archive (`git archive` of its tree). Blocks until the build ends.
+    async def build(self, key: str, skill: str, archive: bytes, *, retry: bool = False) -> BuildResult:
+        """Build *skill* of a skills directory archive (`git archive` of its tree). Blocks until the build ends.
 
         A stored result is returned as it is, unless it is a failure and *retry* is set. Builds can
         take minutes; callers must not hold up a push or a session on this.
         """
         await self._ensure_system()
-        response = await self._client.put(f"/builds/{tree}", content=archive, params={"retry": retry})
+        response = await self._client.put(f"/builds/{key}", content=archive, params={"skill": skill, "retry": retry})
         response.raise_for_status()
         return BuildResult.model_validate(response.json())
 
-    async def put_roots(self, trees: list[str]) -> None:
-        """Tell the builder which skill trees the current heads reference; the rest may be collected."""
-        response = await self._client.put("/roots", json=Roots(trees=trees).model_dump())
+    async def check_updates(self, archive: bytes, inputs: list[str]) -> UpdatedLocks:
+        """The lock each input of a skills directory archive would get from `nix flake update <input>`.
+
+        Fetches from every upstream, so it takes as long as they do; callers run it in the background.
+        """
+        await self._ensure_system()
+        response = await self._client.post("/updates", content=archive, params={"input": inputs})
+        response.raise_for_status()
+        return UpdatedLocks.model_validate(response.json())
+
+    async def skill_file(self, key: str, path: str) -> bytes | None:
+        """A file of the skill directory of *key*'s build; None when it has no such file.
+
+        Raises ``SkillFileError`` for a path outside the directory: the URL would resolve its `..` away.
+        """
+        quoted = "/".join(quote(part, safe="") for part in relative_parts(path))
+        await self._ensure_system()
+        response = await self._client.get(f"/builds/{key}/files/{quoted}")
+        if response.status_code == httpx.codes.NOT_FOUND:
+            return None
+        response.raise_for_status()
+        return response.content
+
+    async def put_roots(self, keys: list[str]) -> None:
+        """Tell the builder which build keys the current heads reference; the rest may be collected."""
+        response = await self._client.put("/roots", json=Roots(keys=keys).model_dump())
         response.raise_for_status()
 
     async def aclose(self) -> None:

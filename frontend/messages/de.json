@@ -63,7 +63,7 @@
             "invalid": "Ungültiges Frontmatter: {error}",
             "build": {
                 "title": "Build",
-                "tree": "Git-Tree des Skills im HEAD",
+                "key": "Build-Schlüssel des Skills im HEAD",
                 "retry": "Erneut versuchen",
                 "log": "Build-Log",
                 "needsDomains": "erreicht {domains}",
@@ -79,6 +79,29 @@
                     "failed": "Seine Befehle sind nicht verfügbar. Skill korrigieren und pushen, oder erneut versuchen, wenn der Fehler vorübergehend war.",
                     "unavailable": "Der Skill-Builder ist nicht erreichbar; der Build startet, sobald er wieder da ist."
                 }
+            }
+        },
+        "skillSources": {
+            "title": "Skills",
+            "check": "Nach Updates suchen",
+            "checking": "Wird geprüft…",
+            "checkedAt": "Geprüft {date}",
+            "neverChecked": "Noch nicht geprüft",
+            "local": "lokal",
+            "columns": {
+                "skill": "Skill",
+                "origin": "Herkunft",
+                "locked": "Gepinnt",
+                "update": "Update"
+            },
+            "update": {
+                "apply": "Aktualisieren",
+                "applying": "Aktualisiere…",
+                "unchecked": "Nicht geprüft",
+                "current": "Aktuell",
+                "available": "Update verfügbar",
+                "outdated": "Lock veraltet",
+                "failed": "Prüfung fehlgeschlagen"
             }
         }
     },

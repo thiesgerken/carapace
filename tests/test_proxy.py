@@ -31,7 +31,7 @@ from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.sandbox.skill_profile import SkillProfileSync
 from carapace.security.context import BoundaryEvaluation
 from carapace.session.manager import SessionManager, SessionMeta
-from carapace.skills import SkillDocumentError, SkillRegistry
+from carapace.skills import SkillDocumentError, parse_skill_document
 from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, fake_dns, make_runtime_mock
 
 
@@ -58,7 +58,6 @@ def _sandbox_manager(
             owner="thies",
             knowledge_dir=knowledge_dir,
             git_store=GitStore(knowledge_dir),
-            skill_registry=SkillRegistry(knowledge_dir / "skills"),
         )
 
         def knowledge_repo_for_session(_session_id: str) -> KnowledgeRepoHandle:
@@ -324,7 +323,6 @@ class TestSandboxManagerProxyEnv:
                 owner="ada",
                 knowledge_dir=tmp_path / "knowledges" / "ada",
                 git_store=GitStore(tmp_path / "knowledges" / "ada"),
-                skill_registry=SkillRegistry(tmp_path / "knowledges" / "ada" / "skills"),
             ),
         )
 
@@ -339,13 +337,11 @@ class TestSandboxManagerProxyEnv:
                 owner="thies",
                 knowledge_dir=tmp_path / "knowledges" / "thies",
                 git_store=GitStore(tmp_path / "knowledges" / "thies"),
-                skill_registry=SkillRegistry(tmp_path / "knowledges" / "thies" / "skills"),
             ),
             "sess-ada": KnowledgeRepoHandle(
                 owner="ada",
                 knowledge_dir=tmp_path / "knowledges" / "ada",
                 git_store=GitStore(tmp_path / "knowledges" / "ada"),
-                skill_registry=SkillRegistry(tmp_path / "knowledges" / "ada" / "skills"),
             ),
         }
 
@@ -437,21 +433,11 @@ async def test_exec_container_gone_recovery_restores_git_identity(tmp_path: Path
 
 
 class TestSkillMetadataParsing:
-    def _write_skill_md(self, skill_dir: Path, body: str) -> None:
-        skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(body)
+    def test_no_carapace_metadata(self):
+        assert parse_skill_document("Body.\n", fallback_name="plain").carapace_config() is None
 
-    def test_no_carapace_metadata(self, tmp_path: Path):
-        skill_dir = tmp_path / "plain"
-        self._write_skill_md(skill_dir, "Body.\n")
-
-        registry = SkillRegistry(tmp_path)
-        assert registry.get_carapace_config("plain") is None
-
-    def test_invalid_frontmatter_carapace_raises(self, tmp_path: Path):
-        skill_dir = tmp_path / "bad-inline"
-        self._write_skill_md(
-            skill_dir,
+    def test_invalid_frontmatter_carapace_raises(self):
+        text = (
             "---\n"
             "name: bad-inline\n"
             "metadata:\n"
@@ -460,12 +446,11 @@ class TestSkillMetadataParsing:
             "      - name: ok\n"
             "        command: uv run ok\n"
             "---\n"
-            "Body.\n",
+            "Body.\n"
         )
 
-        registry = SkillRegistry(tmp_path)
         with pytest.raises(SkillDocumentError, match="moved out of the frontmatter into the skill's flake"):
-            registry.get_carapace_config("bad-inline")
+            parse_skill_document(text, fallback_name="bad-inline").carapace_config()
 
 
 def _make_exec_state(**overrides) -> SandboxExecState:

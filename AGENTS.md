@@ -56,7 +56,7 @@ src/carapace/          # main package
   span_names.py        # span names clients match on (kept dependency-free for the CLI)
   prompt_prefix.py     # shared system prompt prefix (AGENTS/SOUL/USER.md, skill catalog)
   prompt_preview.py    # what every LLM role sends, split into sections (GET /api/prompts/preview)
-  skills.py            # skill registry
+  skills.py            # skill list from skills/flake.lock, SKILL.md frontmatter
   credentials.py       # password-manager-backed credentials
   agent/
     __init__.py        # re-exports (create_agent, build_system_prompt, run_agent_turn)

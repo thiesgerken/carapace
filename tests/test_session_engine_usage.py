@@ -7,15 +7,17 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from unittest.mock import ANY, AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from pydantic_ai.providers.openai_codex import CredentialsRefreshError
 from pydantic_ai.usage import RunUsage
 
 import carapace.usage as usage_mod
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.codex_auth import CODEX_RECONNECT_MESSAGE, CodexNotConnectedError
 from carapace.knowledge import KnowledgeRepoRegistry
 from carapace.models.session import SessionBudget
+from carapace.models.skills import SkillInfo
 from carapace.usage import LlmRequestRecord, LlmRequestState, ModelUsage, UsageTracker
 from tests.session_helpers import (
     _FakeSubscriber,
@@ -305,20 +307,45 @@ def test_handle_slash_command_usage_includes_tool_call_total(tmp_path: Path, db_
         asyncio.run(_run())
 
 
+def test_the_skill_catalog_is_frozen_per_session_until_compaction(tmp_path: Path, db_factory) -> None:
+    current = [SkillInfo(name="alpha", description="First")]
+    skill_builds = MagicMock(spec=SkillBuilds)
+    skill_builds.refresh = AsyncMock()
+    skill_builds.catalog = MagicMock(side_effect=lambda _repo_dir: list(current))
+
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory, skill_builds=skill_builds)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+
+        async def _run() -> None:
+            await engine._ensure_skill_catalog(active)
+            current.append(SkillInfo(name="beta", description="Pushed mid-session"))
+            await engine._ensure_skill_catalog(active)
+
+            assert [info.name for info in engine._skill_catalog_for_session(sid)] == ["alpha"]
+            assert engine.session_mgr.load_state(sid).skill_catalog == [SkillInfo(name="alpha", description="First")]
+
+            # Compaction drops the snapshot together with the memory block; the next turn takes it anew.
+            active.state.skill_catalog = None
+            await engine._ensure_skill_catalog(active)
+            assert [info.name for info in engine._skill_catalog_for_session(sid)] == ["alpha", "beta"]
+
+        asyncio.run(_run())
+
+
 def test_handle_slash_command_skills_stays_owner_scoped_for_two_users(tmp_path: Path, db_factory) -> None:
     with _patch_sentinel():
         registry = KnowledgeRepoRegistry(tmp_path)
-        thies_skill = registry.ensure_user_repo("thies").knowledge_dir / "skills" / "alpha"
-        thies_skill.mkdir(parents=True)
-        (thies_skill / "SKILL.md").write_text(
-            "---\nname: alpha\ndescription: Owner skill\n---\n",
-            encoding="utf-8",
-        )
-        ada_skill = registry.ensure_user_repo("ada").knowledge_dir / "skills" / "beta"
-        ada_skill.mkdir(parents=True)
-        (ada_skill / "SKILL.md").write_text(
-            "---\nname: beta\ndescription: Other skill\n---\n",
-            encoding="utf-8",
+        catalogs = {
+            registry.ensure_user_repo("thies").knowledge_dir: [SkillInfo(name="alpha", description="Owner skill")],
+            registry.ensure_user_repo("ada").knowledge_dir: [SkillInfo(name="beta", description="Other skill")],
+        }
+        refreshed: list[Path] = []
+        skill_builds = MagicMock(spec=SkillBuilds)
+        skill_builds.refresh = AsyncMock(side_effect=lambda repo_dir: refreshed.append(repo_dir))
+        skill_builds.catalog = MagicMock(
+            side_effect=lambda repo_dir: catalogs[repo_dir] if repo_dir in refreshed else []
         )
 
         engine = None
@@ -329,7 +356,10 @@ def test_handle_slash_command_skills_stays_owner_scoped_for_two_users(tmp_path: 
             return registry.get_for_user(owner)
 
         engine = _make_engine(
-            tmp_path, session_factory=db_factory, knowledge_repo_for_session=knowledge_repo_for_session
+            tmp_path,
+            session_factory=db_factory,
+            knowledge_repo_for_session=knowledge_repo_for_session,
+            skill_builds=skill_builds,
         )
         thies_state = engine.session_mgr.create_session(user="thies")
         ada_state = engine.session_mgr.create_session(user="ada")

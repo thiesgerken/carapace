@@ -64,7 +64,7 @@ export function SkillBuildPanel({ server, skill, initial }: { server: string; sk
           {style.icon}
           {t(`state.${build.state}`)}
         </span>
-        <code className="font-mono text-xs text-muted-foreground" title={t("tree")}>{build.tree.slice(0, 12)}</code>
+        <code className="font-mono text-xs text-muted-foreground" title={t("key")}>{build.key.slice(0, 12)}</code>
         {build.state === "failed" ? (
           <button
             type="button"

@@ -146,6 +146,8 @@ class SessionTurnHost(Protocol):
 
     def _ensure_memory_snapshot(self, active: ActiveSession) -> None: ...
 
+    async def _ensure_skill_catalog(self, active: ActiveSession) -> None: ...
+
     async def compact_during_run(
         self, active: ActiveSession, messages: list[ModelMessage]
     ) -> list[ModelMessage] | None: ...
@@ -537,6 +539,7 @@ class SessionTurnMixin(SessionTurnHost):
         # A user message is a human interaction: the agent starts a new autonomous streak.
         active.autonomy.start_over()
         self._ensure_memory_snapshot(active)
+        await self._ensure_skill_catalog(active)
 
         deps = self._build_deps(
             active,

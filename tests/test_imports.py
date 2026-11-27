@@ -33,7 +33,7 @@ def test_import_session():
 
 
 def test_import_skills():
-    from carapace.skills import SkillRegistry  # noqa: F401
+    from carapace.skills import read_skills_flake  # noqa: F401
 
 
 def test_import_credentials():

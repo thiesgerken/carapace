@@ -10,9 +10,11 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from .models import BuildResult
+from .models import BuildResult, InputUpdate
+from .skill_dir import SkillFileError, checked_skill_dir, list_files, read_file
 
 LOG_TAIL_CHARS = 16_000
 
@@ -80,34 +82,108 @@ async def collect_garbage() -> str:
     return _tail(stdout + stderr)
 
 
-def _failed(tree: str, log: str) -> BuildResult:
-    return BuildResult(tree=tree, state="failed", log_tail=_tail(log))
+@dataclass(frozen=True, slots=True)
+class _SkillDocs:
+    skill_dir: str | None = None
+    skill_md: str | None = None
+    skill_files: list[str] = field(default_factory=list)
 
 
-async def build_skill(source: Path, tree: str, system: str, roots: Path) -> BuildResult:
-    """Build `packages.<system>.default` of the skill flake in `source` and read its metadata."""
+_NO_DOCS = _SkillDocs()
+
+
+def _failed(key: str, skill: str, log: str, docs: _SkillDocs = _NO_DOCS) -> BuildResult:
+    return BuildResult(
+        key=key,
+        skill=skill,
+        state="failed",
+        log_tail=_tail(log),
+        skill_dir=docs.skill_dir,
+        skill_md=docs.skill_md,
+        skill_files=docs.skill_files,
+    )
+
+
+def _skill_docs(metadata: object) -> _SkillDocs:
+    """The skill directory the metadata names, its SKILL.md and its file list."""
+    skill_dir = checked_skill_dir(metadata)
+    if skill_dir is None:
+        return _SkillDocs()
+    try:
+        skill_md: str | None = read_file(skill_dir, "SKILL.md").decode()
+    except FileNotFoundError:
+        skill_md = None
+    return _SkillDocs(skill_dir=skill_dir, skill_md=skill_md, skill_files=list_files(skill_dir))
+
+
+async def build_skill(source: Path, key: str, skill: str, system: str, roots: Path) -> BuildResult:
+    """Build `packages.<system>.<skill>` of the skills flake in `source` and read its metadata.
+
+    Only that attribute is evaluated, so a broken skill does not stop the others' builds.
+    """
     if not (source / "flake.lock").is_file():
-        return _failed(tree, "flake.lock is missing. The builder never writes lock files; commit one with the skill.")
-    package = f"path:{source}#packages.{system}.default"
+        return _failed(key, skill, "skills/flake.lock is missing. The builder never writes lock files; commit one.")
+    package = f"path:{source}#packages.{system}.{skill}"
+    # The metadata first: it fails fast on a mistake in the declarations, before any build runs.
+    code, stdout, eval_log = await _run(
+        "nix", "eval", "--json", "--no-update-lock-file", package, "--apply", "p: p.passthru.carapace or null"
+    )
+    if code != 0:
+        return _failed(key, skill, eval_log)
+    metadata = json.loads(stdout)
+    try:
+        docs = _skill_docs(metadata)
+    except (SkillFileError, OSError, UnicodeDecodeError) as exc:
+        return _failed(key, skill, f"Cannot read the skill directory: {exc}")
     code, stdout, build_log = await _run(
         "nix",
         "build",
         "--no-update-lock-file",
         "--print-build-logs",
         "--json",
-        # A GC root per tree, under the builder's state, keeps the outputs until GC drops it.
+        # A GC root per key, under the builder's state, keeps the outputs until GC drops it.
         "--out-link",
-        str(roots / tree),
+        str(roots / key),
         package,
     )
     if code != 0:
-        return _failed(tree, build_log)
+        return _failed(key, skill, build_log, docs)
     store_paths = [path for built in json.loads(stdout) for path in built["outputs"].values()]
-    code, stdout, eval_log = await _run(
-        "nix", "eval", "--json", "--no-update-lock-file", package, "--apply", "p: p.passthru.carapace or null"
+    return BuildResult(
+        key=key,
+        skill=skill,
+        state="succeeded",
+        store_paths=store_paths,
+        metadata=metadata,
+        log_tail=_tail(build_log),
+        skill_dir=docs.skill_dir,
+        skill_md=docs.skill_md,
+        skill_files=docs.skill_files,
+    )
+
+
+async def update_input(source: Path, name: str, out: Path, store: Path) -> InputUpdate:
+    """The lock of the skills flake in *source* after `nix flake update <name>`, written to *out*, not *source*.
+
+    Only that input moves, so nixpkgs and carapace stay as locked, and one input that cannot be fetched
+    does not hide the others' updates. An input pinned to a rev or tag never moves.
+
+    Fetches go to the throwaway *store*, not the daemon's: an update locks whatever a local skill's
+    flake.nix names, unlocked `path:/…` inputs included, and the shared store is what the binary cache
+    serves. Builds never fetch those, since they refuse to change the lock.
+    """
+    code, _, log = await _run(
+        "nix",
+        "flake",
+        "update",
+        name,
+        "--flake",
+        f"path:{source}",
+        "--output-lock-file",
+        str(out),
+        "--store",
+        str(store),
     )
     if code != 0:
-        return _failed(tree, build_log + eval_log)
-    return BuildResult(
-        tree=tree, state="succeeded", store_paths=store_paths, metadata=json.loads(stdout), log_tail=_tail(build_log)
-    )
+        return InputUpdate(log_tail=_tail(log))
+    return InputUpdate(lock=out.read_text(), log_tail=_tail(log))

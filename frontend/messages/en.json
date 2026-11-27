@@ -63,7 +63,7 @@
             "invalid": "Invalid frontmatter: {error}",
             "build": {
                 "title": "Build",
-                "tree": "Git tree of the skill at HEAD",
+                "key": "Build key of the skill at HEAD",
                 "retry": "Retry",
                 "log": "Build log",
                 "needsDomains": "reaches {domains}",
@@ -79,6 +79,29 @@
                     "failed": "Its commands are not available. Fix the skill and push, or retry if the failure was transient.",
                     "unavailable": "The skill builder cannot be reached; the build starts once it is back."
                 }
+            }
+        },
+        "skillSources": {
+            "title": "Skills",
+            "check": "Check for updates",
+            "checking": "Checking…",
+            "checkedAt": "Checked {date}",
+            "neverChecked": "Not checked yet",
+            "local": "local",
+            "columns": {
+                "skill": "Skill",
+                "origin": "Origin",
+                "locked": "Locked",
+                "update": "Update"
+            },
+            "update": {
+                "apply": "Update",
+                "applying": "Updating…",
+                "unchecked": "Not checked",
+                "current": "Up to date",
+                "available": "Update available",
+                "outdated": "Lock outdated",
+                "failed": "Check failed"
             }
         }
     },

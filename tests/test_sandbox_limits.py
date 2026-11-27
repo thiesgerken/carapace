@@ -12,7 +12,6 @@ from carapace.knowledge import KnowledgeRepoHandle
 from carapace.sandbox.manager import SandboxLimitError, SandboxManager
 from carapace.sandbox.state import load_sandbox_snapshot
 from carapace.session.manager import SessionManager, SessionMeta
-from carapace.skills import SkillRegistry
 from tests.runtime_mocks import make_runtime_mock
 
 
@@ -24,7 +23,6 @@ def _manager(tmp_path: Path, db_factory, *, retained: set[str], max_per_user: in
         owner="thies",
         knowledge_dir=tmp_path,
         git_store=GitStore(tmp_path),
-        skill_registry=SkillRegistry(tmp_path / "skills"),
     )
     mgr = SandboxManager(
         runtime=runtime,

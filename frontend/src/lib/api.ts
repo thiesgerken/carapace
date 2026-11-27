@@ -1839,7 +1839,6 @@ export interface KnowledgeEntry {
 }
 
 export interface SkillCarapaceConfig {
-  disabled: boolean;
   hints: Record<string, string>;
 }
 
@@ -1861,10 +1860,10 @@ export interface SkillCommandNeeds {
   oauth: string[];
 }
 
-/** How the skill's flake at HEAD is built; uncommitted edits are not built. */
+/** How the skill is built at HEAD; uncommitted edits are not built. */
 export interface KnowledgeSkillBuild {
   state: SkillBuildState;
-  tree: string;
+  key: string;
   commands: Record<string, { description: string; needs: SkillCommandNeeds }>;
   /** Why it failed or is unavailable: the end of the build log. */
   log_tail: string;
@@ -1890,9 +1889,11 @@ export interface KnowledgeDirListing {
   doc_name: string | null;
   doc: string | null;
   skill: KnowledgeSkill | null;
-  /** Only for a flake skill directly under skills/. */
+  /** Only for a skill skills/flake.nix lists. */
   build: KnowledgeSkillBuild | null;
   artifact: KnowledgeArtifact | null;
+  /** On the root and skills/: why the repo has no skills, with the fix. */
+  skills_error: string | null;
   path: string;
   entries: KnowledgeEntry[];
 }
@@ -1932,6 +1933,56 @@ export async function retrySkillBuild(server: string, skill: string): Promise<Kn
   const res = await fetch(`${server}/api/knowledge/skills/${encodeURIComponent(skill)}/build/retry`, { method: "POST" });
   if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to retry the build"));
   return (await res.json()) as KnowledgeSkillBuild;
+}
+
+export type SkillUpdateState = "current" | "available" | "outdated" | "failed";
+
+export interface KnowledgeSkillUpdate {
+  state: SkillUpdateState;
+  available_rev: string | null;
+  available_at: string | null;
+  /** How to fix an outdated skill, or why the check failed for it. */
+  detail: string;
+}
+
+/** A skill skills/flake.nix lists at HEAD: where it comes from, and the last update check's verdict. */
+export interface KnowledgeSkillSource {
+  name: string;
+  /** The skill's directory in the repo; null for a skill from another flake. */
+  path: string | null;
+  origin: string;
+  locked_rev: string | null;
+  locked_at: string | null;
+  /** Null until a check covered it. */
+  update: KnowledgeSkillUpdate | null;
+}
+
+export interface KnowledgeSkillSources {
+  skills: KnowledgeSkillSource[];
+  checked_at: string | null;
+  checking: boolean;
+  /** Why the last check could not run at all. */
+  check_error: string | null;
+}
+
+export async function fetchSkillSources(server: string): Promise<KnowledgeSkillSources> {
+  const res = await fetch(`${server}/api/knowledge/skills`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the skills"));
+  return (await res.json()) as KnowledgeSkillSources;
+}
+
+/** Start an update check; poll fetchSkillSources until `checking` is false. */
+export async function checkSkillUpdates(server: string): Promise<KnowledgeSkillSources> {
+  const res = await fetch(`${server}/api/knowledge/skills/updates/check`, { method: "POST" });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to start the update check"));
+  return (await res.json()) as KnowledgeSkillSources;
+}
+
+/** Commit and push the update the last check found for skill *name*; it then builds like any push. */
+export async function applySkillUpdate(server: string, name: string): Promise<KnowledgeSkillSources> {
+  const res = await fetch(`${server}/api/knowledge/skills/${encodeURIComponent(name)}/update`, { method: "POST" });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to update the skill"));
+  return (await res.json()) as KnowledgeSkillSources;
 }
 
 /** The artifact's current metadata, or null once it no longer exists (deleted or renamed). */

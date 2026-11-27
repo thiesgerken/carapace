@@ -20,7 +20,7 @@ flowchart TB
         ApprovalGate[Approval Gate]
         AgentLoop[Agent Loop]
         Agent["Pydantic AI Agent"]
-        SkillRegistry[Skill Registry]
+        SkillBuilds["Skill Builds<br/>(catalog, skill files)"]
         GitStore[Git Store]
         CredentialRegistry[Credential Registry]
         Proxy[HTTP Forward Proxy]
@@ -58,7 +58,7 @@ flowchart TB
     SessionEngine <--> SessionMgr
     SessionEngine --> AgentLoop
     AgentLoop <--> Agent
-    Agent <--> SkillRegistry
+    Agent <--> SkillBuilds
     Agent -->|tool calls, logged| SecurityMod
     Proxy -->|domain requests| SecurityMod
     SecurityMod --> Sentinel
@@ -73,6 +73,7 @@ flowchart TB
     CredentialRegistry --> Vault
     GitStore --> Sentinel
     GitStore -->|skill trees| Builder
+    SkillBuilds <-->|results, SKILL.md, skill files| Builder
     Proxy -->|cache.carapace.internal| Builder
 
     Server --> MemorySvc
@@ -162,7 +163,7 @@ The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives me
 | `show_artifact` | Reference a pushed artifact in chat; the chat always shows its current version |
 | `read_tool_output` | Return the original output of an earlier tool call whose output was compacted |
 
-Persistent writes to workspace files, skills, and archived session snapshots happen via `git commit` + `git push` inside the sandbox. Each push is evaluated by the security sentinel through a pre-receive hook, so persistent knowledge changes do not bypass the sentinel.
+Persistent writes to workspace files, skills, and archived session snapshots happen via `git commit` + `git push` inside the sandbox. Each push is evaluated by the security sentinel through a pre-receive hook, so the agent's persistent knowledge changes do not bypass the sentinel. The server's own commits (session archives, the memory mirror, bootstrap seeding) and the ones a user makes in the UI, such as [applying a skill update](skills.md#updates), go in without that review: they do not come from the agent.
 Skill commands are built by the builder and are on `PATH` in every session; they ask for the domains and credentials they declare when they start (`cgate`, `ccred`), and the sentinel reviews those requests per `exec` (see [skills.md](skills.md)).
 
 ### Security Module
@@ -177,9 +178,9 @@ An LLM-powered agent that evaluates actions against the natural-language `SECURI
 
 When the sentinel escalates a boundary request or a push, the session engine sends a structured approval request (domain access, credential or up-front request, git push) to all session subscribers (WebSocket clients, Matrix rooms) and waits for a response (approve/deny). The request includes the sentinel's explanation. The agent loop's own approval requests come only from the autonomy limit.
 
-### Skill Registry
+### Skill Catalog
 
-Loads skill metadata (name, description) from each skill's `SKILL.md` frontmatter at startup. The full `SKILL.md` is loaded only when the agent reads a skill with `read_skill`. See [skills.md](skills.md).
+Lists the skills of `skills/flake.lock` with the descriptions from their `SKILL.md`, which the builder reads from each skill's build (`builder/skill_builds.py`). The full `SKILL.md` comes from the build too, when the agent reads a skill with `read_skill`. See [skills.md](skills.md).
 
 ### Git Store
 
@@ -217,7 +218,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `llm.py`       | Pydantic AI model factory and model settings helpers.                                         |
 | `payloads.py`  | Defensive helpers for coercing untrusted payload shapes.                                      |
 | `prompt_prefix.py` | System prompt prefix shared by the agent, compaction and memory tasks (see [persistent context](persistent-context.md#system-prompt-loading)). |
-| `skills.py`    | Skill registry, frontmatter parsing, and carapace skill metadata loading.                     |
+| `skills.py`    | The skill list from `skills/flake.lock` and frontmatter parsing.                               |
 | `usage.py`     | Usage tracking, cost estimation, budget gauges, and LLM request activity records.             |
 | `ws_models.py` | WebSocket protocol models and client-message parser.                                          |
 
@@ -336,7 +337,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `builder/store.py`        | Build results and GC roots on the builder's store volume, and garbage collection.      |
 | `builder/models.py`       | Wire format between the server and the builder.                                        |
 | `builder/client.py`       | The server's side of the builder API.                                                  |
-| `builder/skill_builds.py` | Server side: which skill trees are built, building or failed, and their commands.      |
+| `builder/skill_builds.py` | Server side: which skills are built, building or failed (per build key), and their commands. |
 | `builder/profile.py`      | What a sandbox's skill profile should hold: built skills minus colliding command names. |
 
 ### Security package

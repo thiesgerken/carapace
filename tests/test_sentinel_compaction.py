@@ -27,6 +27,7 @@ from carapace.security.sentinel import Sentinel
 from carapace.session.compaction import is_fold_message, split_merged_requests, tool_return_is_compacted
 from carapace.session.transcript import completed_model_turn_end_indexes
 from carapace.usage import UsageTracker
+from tests.fake_skill_builds import fake_skill_builds
 from tests.session_helpers import _make_engine
 from tests.streaming_model import ReplayStreamModel
 
@@ -191,9 +192,7 @@ async def test_failing_compaction_fails_the_evaluation(tmp_path: Path, db_factor
 
 @pytest.mark.anyio
 async def test_compaction_forgets_which_skill_files_were_provided(tmp_path: Path) -> None:
-    skills_dir = tmp_path / "skills"
-    (skills_dir / "mail").mkdir(parents=True)
-    (skills_dir / "mail" / "run.py").write_text("import smtplib\n")
+    skill_builds, _fake = fake_skill_builds("mail", {"run.py": "import smtplib\n"})
 
     async def compact(messages: list[ModelMessage], _system_prompt: str) -> list[ModelMessage] | None:
         return messages[-1:]
@@ -202,18 +201,18 @@ async def test_compaction_forgets_which_skill_files_were_provided(tmp_path: Path
         model="test:model",
         user="thies",
         knowledge_dir=tmp_path,
-        skills_dir=skills_dir,
+        skill_builds=skill_builds,
         llm_slots=None,
         model_factory=lambda _name, *, user: TestModel(call_tools=[]),
         compactor=compact,
     )
-    sentinel._read_skill_file_cached(skills_dir, "mail", "run.py")
+    await sentinel._read_skill_file_cached("mail", "run.py")
     security = SessionSecurity("session-1")
     security.replace_sentinel_messages(_evaluation(1, decision="allow"))
 
     await sentinel.evaluate_domain_access(security, ["example.com"], "ls", follow_up=False)
 
-    assert sentinel._read_skill_file_cached(skills_dir, "mail", "run.py") == "import smtplib\n"
+    assert await sentinel._read_skill_file_cached("mail", "run.py") == "import smtplib\n"
 
 
 @pytest.mark.anyio

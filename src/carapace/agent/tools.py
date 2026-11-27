@@ -16,8 +16,11 @@ from pydantic_ai.messages import BinaryContent, ToolReturn
 
 from .. import security as security
 from ..artifacts import artifact_index, artifact_title
+from ..builder.models import SKILL_NAME_PATTERN
 from ..builder.profile import profile_plan
-from ..builder.skill_builds import SkillCommand
+from ..builder.skill_builds import SkillBuild, SkillCommand
+from ..builder.skill_updates import describe_source
+from ..builder.skills_head import skills_flake_at_head
 from ..llm import (
     ProviderCompactionRejectionCapability,
     model_settings_for_config,
@@ -28,7 +31,7 @@ from ..models.tooling import SentFileInfo, ToolResult, normalize_tool_call_args
 from ..prompt_prefix import join_prompt_sections, shared_prompt_prefix
 from ..sandbox.manager import READ_TOOL_MAX_LINE_WINDOW, SandboxLimitError, UploadError, UploadTooLargeError
 from ..security.context import ToolResultEntry
-from ..skills import SkillDocumentError, SkillRegistry
+from ..skills import SkillDocumentError, parse_skill_document
 from ..spans import ToolSpanCapability, span
 from ..usage import LlmRequestLogCapability
 from .autonomy import AutonomyLimitCapability
@@ -43,8 +46,8 @@ _ARTIFACTS_ROOT = "artifacts"
 _EXEC_OUTPUT_SPILL_ROOT = PurePosixPath("/tmp/carapace-tool-output")
 # Covers a review the user decides on: the listing asks for the server's domain and credentials first.
 _LIST_TOOLS_TIMEOUT_SECONDS = 600
-# A directory under skills/, never a path out of it.
-_SKILL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# An attribute of skills/flake.nix, as the builder accepts it.
+_SKILL_NAME = re.compile(SKILL_NAME_PATTERN)
 
 # Raster image suffixes the model can ingest directly. SVG is intentionally excluded
 # (text/XML source; the Anthropic API rejects image/svg+xml) so it falls through to a text read.
@@ -248,18 +251,31 @@ def _command_docs(commands: dict[str, SkillCommand]) -> str:
     return "\n".join(lines)
 
 
-async def _skill_commands(ctx: RunContext[Deps], skill_name: str) -> str:
-    """The skill's commands and whether they are on PATH, once its build and the profile sync are done."""
-    build, builds = await ctx.deps.skill_builds.wait_built(ctx.deps.knowledge_dir, skill_name)
-    if build is None:
-        return "The skill has no flake.nix, so it has no commands."
+async def _skill_sources(ctx: RunContext[Deps]) -> dict[str, str]:
+    """Per skill at HEAD: where it comes from and the last update check's verdict.
+
+    Only in tool results, never in the catalog: the catalog is part of the cached prompt prefix, and the
+    update check changes every day.
+    """
+    head = await skills_flake_at_head(ctx.deps.knowledge_dir)
+    if head is None:
+        return {}
+    check = ctx.deps.skill_builds.updates.latest(ctx.deps.knowledge_dir)
+    return {
+        skill.name: describe_source(skill, check.skills.get(skill.name) if check else None) for skill in head.skills
+    }
+
+
+async def _skill_commands(ctx: RunContext[Deps], build: SkillBuild) -> str:
+    """The skill's commands and files, and whether they are in the sandbox, once the profile sync is done."""
+    skill_name = build.skill
     match build.state:
         case "failed":
             return f"The skill's build failed, so its commands are not available. Build log tail:\n\n{build.detail}"
         case "unavailable":
             return f"The skill's commands are not available: {build.detail}"
     docs = _command_docs(build.commands)
-    if reason := profile_plan(builds).excluded.get(skill_name):
+    if reason := profile_plan(await ctx.deps.skill_builds.installable(ctx.deps.knowledge_dir)).excluded.get(skill_name):
         return f"{docs}\n\nThese commands are not on PATH: {reason}. Rename one of them in its flake."
     try:
         failure = await ctx.deps.sandbox.sync_skill_profile(ctx.deps.session_state.session_id)
@@ -268,7 +284,18 @@ async def _skill_commands(ctx: RunContext[Deps], skill_name: str) -> str:
     if failure:
         return f"{docs}\n\nThe commands could not be put on PATH: {failure}"
     servers = sorted(name for name, command in build.commands.items() if command.mcp)
-    return "\n\n".join([docs, "The commands are on PATH.", *[await _mcp_tools(ctx, server) for server in servers]])
+    on_path = "The commands are on PATH." if build.commands else ""
+    return "\n\n".join(
+        part
+        for part in [docs, on_path, _skill_files(build), *[await _mcp_tools(ctx, server) for server in servers]]
+        if part
+    )
+
+
+def _skill_files(build: SkillBuild) -> str:
+    """Where the skill directory is in the sandbox, for the scripts and references its SKILL.md mentions."""
+    files = "\n".join(f"- {path}" for path in build.skill_files if path != "SKILL.md")
+    return f"# Files\n\nThe skill's files are read-only at {build.skill_dir}:\n{files}" if files else ""
 
 
 async def _mcp_tools(ctx: RunContext[Deps], server: str) -> str:
@@ -314,9 +341,10 @@ _SANDBOX_INSTRUCTIONS = (
     "(`README.md`, `sessions/`, `weeks/`, `months/`, `facts/`); read-only, the mirror reverts edits pushed there\n"
     "Use `rg` to search archived conversations by session ID, message text, "
     "tool names, or JSON fields when you need prior context.\n"
-    "Call `read_skill(skill_name)` before using a skill. A skill with a flake puts its commands on PATH; "
+    "Call `read_skill(skill_name)` before using a skill. A skill's commands are on PATH once it is built; "
     "`read_skill` waits until they are there and says what each command asks for when it starts.\n"
-    "A skill is `skills/<name>/SKILL.md`, optionally with a `flake.nix` that declares its commands. "
+    "A skill is an input of `skills/flake.nix`, named by its attribute: a local one is `skills/<name>/` with "
+    "`SKILL.md` and a `flake.nix`, listed as `path:./<name>`; another comes from a flake elsewhere. "
     "The skill list and `read_skill` see only the pushed knowledge repo, so a new or changed skill takes effect "
     "after commit and push: the sentinel reviews the push, the builder builds it, and `read_skill` then puts its "
     "commands on PATH in this session too. Before writing or changing a skill, read the `create-skill` skill.\n\n"
@@ -467,13 +495,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         catalog = ctx.deps.skill_catalog
         if not catalog:
             return "No skills available."
-        lines = [f"- {s.name}: {s.description.strip()}" for s in catalog]
+        sources = await _skill_sources(ctx)
+        lines = [f"- {s.name}: {s.description.strip()} [{sources.get(s.name, 'not at HEAD')}]" for s in catalog]
         result = "Available skills:\n" + "\n".join(lines)
         return _emit_tool_result(ctx, "list_skills", result)
 
     @agent.tool
     async def read_skill(ctx: RunContext[Deps], skill_name: str) -> str:
-        """Read a skill: its SKILL.md, its commands and whether they are on PATH. Call before using a skill.
+        """Read a skill: its SKILL.md, commands and files, and whether they are in the sandbox. Call before using it.
 
         Waits while the skill builds and its commands are being installed in the sandbox.
         """
@@ -481,32 +510,36 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             return _emit_tool_result(ctx, "read_skill", f"Error: {skill_name!r} is not a skill name.", exit_code=1)
         # Reading grants nothing, but the sentinel learns what later requests are about.
         _record(ctx, "read_skill", {"skill_name": skill_name})
-        registry = SkillRegistry(ctx.deps.knowledge_dir / "skills")
-        instructions = registry.get_full_instructions(skill_name)
-        if instructions is None:
-            # The registry is the server's copy: a skill only in /workspace is not there until it is pushed.
+        build = await ctx.deps.skill_builds.wait_built(ctx.deps.knowledge_dir, skill_name)
+        if build is None:
+            # Builds read the pushed HEAD: a skill only in /workspace is not there until it is pushed.
             return _emit_tool_result(
                 ctx,
                 "read_skill",
-                f"Error: there is no skill {skill_name!r}. read_skill sees only pushed skills: if skills/{skill_name} "
-                "exists in /workspace, commit and push it, and the builder builds it after the push.",
+                f"Error: there is no skill {skill_name!r}. read_skill sees only skills that skills/flake.nix lists "
+                "in the pushed repo: add its input there, run `nix flake lock ./skills`, commit and push, and the "
+                "builder builds it after the push.",
                 exit_code=1,
             )
+        instructions = build.skill_md
+        if instructions is None:
+            reason = build.detail or "its skill directory has no SKILL.md"
+            return _emit_tool_result(
+                ctx, "read_skill", f"Error: {skill_name} has no SKILL.md to read: {reason}", exit_code=1
+            )
         try:
-            if registry.is_disabled(skill_name):
-                return _emit_tool_result(
-                    ctx, "read_skill", f"Skill {skill_name!r} is disabled (metadata.carapace.disabled).", exit_code=1
-                )
-            registry.get_carapace_config(skill_name)
+            parse_skill_document(instructions, fallback_name=skill_name).carapace_config()
         except SkillDocumentError as exc:
             return _emit_tool_result(
                 ctx,
                 "read_skill",
-                f"Error: skills/{skill_name}/SKILL.md is invalid: {exc}. Fix it, commit and push.\n\n{instructions}",
+                f"Error: the SKILL.md of {skill_name} is invalid: {exc}. Fix it, commit and push.\n\n{instructions}",
                 exit_code=1,
             )
-        commands = await _skill_commands(ctx, skill_name)
-        return _emit_tool_result(ctx, "read_skill", f"{instructions.rstrip()}\n\n{commands}")
+        commands = await _skill_commands(ctx, build)
+        source = (await _skill_sources(ctx)).get(skill_name, "")
+        text = "\n\n".join(part for part in (instructions.rstrip(), source, commands) if part)
+        return _emit_tool_result(ctx, "read_skill", text)
 
     # --- Filesystem (sandboxed — runs inside the sandbox container) ---
 

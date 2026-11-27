@@ -9,33 +9,31 @@ from pydantic_ai.models.test import TestModel
 
 from carapace.security.context import AgentResponseEntry, ApprovalEntry, SentinelVerdict, SessionSecurity, ToolCallEntry
 from carapace.security.sentinel import Sentinel, _format_entry
+from tests.fake_skill_builds import FakeSkillBuilds, fake_skill_builds
 
 
-def _make_sentinel(tmp_path: Path, *, timeout: timedelta | None = None) -> tuple[Sentinel, Path]:
+def _make_sentinel(tmp_path: Path, *, timeout: timedelta | None = None) -> tuple[Sentinel, FakeSkillBuilds]:
     knowledge_dir = tmp_path / "knowledge"
-    skills_dir = tmp_path / "skills"
     knowledge_dir.mkdir()
-    skills_dir.mkdir()
+    skill_builds, fake = fake_skill_builds("moneydb", {"SKILL.md": "# MoneyDB\n"})
     sentinel = Sentinel(
         model="test:model",
         user="thies",
         knowledge_dir=knowledge_dir,
-        skills_dir=skills_dir,
+        skill_builds=skill_builds,
         llm_slots=None,
         timeout=timeout,
         model_factory=lambda _name, *, user: TestModel(),
     )
-    return sentinel, skills_dir
+    return sentinel, fake
 
 
-def test_read_skill_file_cached_reuses_unchanged_content(tmp_path: Path) -> None:
-    sentinel, skills_dir = _make_sentinel(tmp_path)
-    skill_dir = skills_dir / "moneydb"
-    skill_dir.mkdir()
-    (skill_dir / "SKILL.md").write_text("# MoneyDB\n")
+@pytest.mark.asyncio
+async def test_read_skill_file_cached_reuses_unchanged_content(tmp_path: Path) -> None:
+    sentinel, _builds = _make_sentinel(tmp_path)
 
-    first = sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md")
-    second = sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md")
+    first = await sentinel._read_skill_file_cached("moneydb", "SKILL.md")
+    second = await sentinel._read_skill_file_cached("moneydb", "SKILL.md")
 
     assert first == "# MoneyDB\n"
     assert "already provided earlier in this sentinel conversation" in second
@@ -43,36 +41,41 @@ def test_read_skill_file_cached_reuses_unchanged_content(tmp_path: Path) -> None
     assert "moneydb" in second
 
 
-def test_read_skill_file_cached_reloads_changed_file(tmp_path: Path) -> None:
-    sentinel, skills_dir = _make_sentinel(tmp_path)
-    skill_dir = skills_dir / "moneydb"
-    skill_dir.mkdir()
-    skill_file = skill_dir / "SKILL.md"
-    skill_file.write_text("version-1\n")
+@pytest.mark.asyncio
+async def test_read_skill_file_cached_reloads_changed_file(tmp_path: Path) -> None:
+    sentinel, builds = _make_sentinel(tmp_path)
 
-    assert sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md") == "version-1\n"
+    assert await sentinel._read_skill_file_cached("moneydb", "SKILL.md") == "# MoneyDB\n"
 
-    skill_file.write_text("version-2\n")
+    builds.change("SKILL.md", "version-2\n")
 
-    assert sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md") == "version-2\n"
+    assert await sentinel._read_skill_file_cached("moneydb", "SKILL.md") == "version-2\n"
 
 
-def test_set_policy_preserves_skill_cache(tmp_path: Path) -> None:
-    sentinel, skills_dir = _make_sentinel(tmp_path)
-    skill_dir = skills_dir / "moneydb"
-    skill_dir.mkdir()
-    (skill_dir / "SKILL.md").write_text("# MoneyDB\n")
+@pytest.mark.asyncio
+async def test_skill_files_come_from_the_build(tmp_path: Path) -> None:
+    sentinel, builds = _make_sentinel(tmp_path)
+    builds.change("scripts/run.sh", "echo hi\n")
 
-    sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md")
+    assert await sentinel._read_skill_file_cached("moneydb", "scripts/run.sh") == "echo hi\n"
+    assert await sentinel._read_skill_file_cached("moneydb", "missing.md") == "File not found: missing.md"
+    assert await sentinel._read_skill_file_cached("other", "SKILL.md") == "Skill 'other' not found."
+
+
+@pytest.mark.asyncio
+async def test_set_policy_preserves_skill_cache(tmp_path: Path) -> None:
+    sentinel, _builds = _make_sentinel(tmp_path)
+
+    await sentinel._read_skill_file_cached("moneydb", "SKILL.md")
 
     sentinel.set_policy(ask_mode=True)
 
-    cached = sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md")
+    cached = await sentinel._read_skill_file_cached("moneydb", "SKILL.md")
     assert "already provided earlier in this sentinel conversation" in cached
 
 
 def test_eval_tool_logging_includes_context(tmp_path: Path, monkeypatch) -> None:
-    sentinel, _skills_dir = _make_sentinel(tmp_path)
+    sentinel, _builds = _make_sentinel(tmp_path)
     messages: list[str] = []
     monkeypatch.setattr("carapace.security.sentinel.logger.info", messages.append)
 
@@ -90,14 +93,12 @@ def test_eval_tool_logging_includes_context(tmp_path: Path, monkeypatch) -> None
 
 @pytest.mark.asyncio
 async def test_evaluation_timeout_returns_deny_verdict(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    sentinel, skills_dir = _make_sentinel(tmp_path, timeout=timedelta(seconds=0.01))
+    sentinel, _builds = _make_sentinel(tmp_path, timeout=timedelta(seconds=0.01))
     session = SessionSecurity("session-1")
-    (skills_dir / "moneydb").mkdir()
-    (skills_dir / "moneydb" / "SKILL.md").write_text("# MoneyDB\n")
 
     async def _hang(*_args, **_kwargs):
         # A skill read inside the evaluation that then times out.
-        sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md")
+        await sentinel._read_skill_file_cached("moneydb", "SKILL.md")
         await asyncio.sleep(1)
 
     monkeypatch.setattr(sentinel._agent, "run", _hang)
@@ -112,7 +113,7 @@ async def test_evaluation_timeout_returns_deny_verdict(tmp_path: Path, monkeypat
     )
     assert session.sentinel_eval_count == 1
     assert session.sentinel_messages == []
-    assert sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md") == "# MoneyDB\n"
+    assert await sentinel._read_skill_file_cached("moneydb", "SKILL.md") == "# MoneyDB\n"
 
 
 @pytest.mark.parametrize(
@@ -131,7 +132,7 @@ async def test_evaluation_timeout_returns_deny_verdict(tmp_path: Path, monkeypat
 async def test_push_context_warns_only_for_touched_artifacts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diff: str, touches_artifacts: bool
 ) -> None:
-    sentinel, _skills_dir = _make_sentinel(tmp_path)
+    sentinel, _builds = _make_sentinel(tmp_path)
     prompts: list[str] = []
 
     async def capture(_session: SessionSecurity, prompt: str, **_kwargs: object) -> SentinelVerdict:
@@ -170,7 +171,7 @@ async def test_push_context_warns_only_for_touched_artifacts(
 async def test_push_context_marks_only_touched_shared_artifacts_as_publications(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diff: str, shared: set[str], is_public: bool
 ) -> None:
-    sentinel, _skills_dir = _make_sentinel(tmp_path)
+    sentinel, _builds = _make_sentinel(tmp_path)
     prompts: list[str] = []
 
     async def capture(_session: SessionSecurity, prompt: str, **_kwargs: object) -> SentinelVerdict:

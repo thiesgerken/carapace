@@ -25,6 +25,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.usage import RequestUsage
 
+from carapace.builder.skill_builds import SkillBuilds
 from carapace.security.context import SENTINEL_VERDICT_TOOL, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.engine import SessionEngine
@@ -81,7 +82,7 @@ def _sentinel(tmp_path: Path, model: FunctionModel, *, timeout: timedelta = time
         model="test:model",
         user="thies",
         knowledge_dir=tmp_path,
-        skills_dir=tmp_path / "skills",
+        skill_builds=SkillBuilds(None),
         llm_slots=None,
         timeout=timeout,
         model_factory=lambda _name, *, user: model,

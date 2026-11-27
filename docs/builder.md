@@ -1,6 +1,6 @@
 # Skill builder
 
-Skills with commands are Nix flakes (see [#548](https://github.com/thiesgerken/carapace/issues/548)). The builder is the service that evaluates and builds them, one per installation, shared by all users. The Carapace server sends it a skill directory and gets back store paths and the skill's command metadata. Sandboxes never build pushed skills themselves; they download the results from the builder's [binary cache](#binary-cache). The builder never sees a knowledge repo.
+Skills with commands are Nix flakes (see [#548](https://github.com/thiesgerken/carapace/issues/548)). The builder is the service that evaluates and builds them, one per installation, shared by all users. The Carapace server sends it a knowledge repo's `skills/` directory with the name of one skill and gets back store paths and the skill's command metadata. Sandboxes never build pushed skills themselves; they download the results from the builder's [binary cache](#binary-cache). The builder never sees a knowledge repo.
 
 ## API
 
@@ -10,20 +10,23 @@ The build API listens on port 8330. Every route except `/healthz` requires `Auth
 | --- | --- |
 | `GET /healthz` | Liveness, unauthenticated |
 | `GET /info` | `{"system": "x86_64-linux", "cache_public_keys": ["carapace-builder-1:…", "cache.nixos.org-1:…"]}`: the Nix system the builder builds for, and the keys sandboxes trust for its [cache](#binary-cache) |
-| `GET /builds/{tree}` | The stored result for a skill tree, or 404 |
-| `PUT /builds/{tree}` | Body: the skill directory as a tar archive (gzip or plain), e.g. `git archive <tree>`. Builds, stores and returns the result. `?retry=true` builds a tree again whose stored result failed |
-| `PUT /roots` | Body: `{"trees": [...]}`, the skill trees the current heads reference (see [garbage collection](#garbage-collection)). 204 |
-| `POST /gc` | Runs garbage collection now and returns `{"dropped": [trees], "log_tail": "…"}` |
+| `GET /builds/{key}` | The stored result for a build key, or 404 |
+| `GET /builds/{key}/files/{path}` | A file of that build's skill directory, as raw bytes. 404 for a missing file or a result without a skill directory, 400 for a path out of the directory, a symlink, a directory or a file over 1 MiB |
+| `PUT /builds/{key}?skill=<name>` | Body: the `skills/` directory as a tar archive (gzip or plain), e.g. `git archive HEAD:skills`. Builds skill `<name>`, stores and returns the result. `&retry=true` builds a key again whose stored result failed |
+| `POST /updates?input=<name>&input=…` | Body: the `skills/` directory as a tar archive. Runs `nix flake update <name> --output-lock-file <tmp>` for each input on its own and returns `{"inputs": {"<name>": {"lock": "…", "log_tail": "…"}}}`: the lock that update would write, or `null` with the log when it failed. Stores nothing ([update checks](skills.md#updates)) |
+| `PUT /roots` | Body: `{"keys": [...]}`, the build keys of the skills at the current heads (see [garbage collection](#garbage-collection)). 204 |
+| `POST /gc` | Runs garbage collection now and returns `{"dropped": [keys], "log_tail": "…"}` |
 
-`{tree}` is the Git tree hash of the skill directory (SHA-1 or SHA-256). It is the cache key: a tree that has a result, succeeded or failed, is answered from it without building (unless it failed and `retry` is set), and its archive is not even read. The key is the caller's claim: the builder does not recompute it from the archive. The server is trusted to send `git archive <tree>` for `<tree>`, and keeping that invariant is the caller's job. A wrong key sticks until the tree is retried or collected.
+`{key}` is a sha256 (64 hex characters) the server computes over everything the skill's build depends on ([skills.md](skills.md#building-skills)). It is the cache key: a key that has a result, succeeded or failed, is answered from it without building (unless it failed and `retry` is set), and its archive is not even read. The key is the caller's claim: the builder does not recompute it from the archive, and keeping key and archive together is the server's job. A wrong key sticks until it is retried or collected. `<name>` is an attribute of `packages.<system>` in `skills/flake.nix`: a letter or `_`, then letters, digits, `_`, `'` or `-`, since it ends up in a flake reference.
 
-`PUT` blocks until the build ends, which takes seconds for a small change and a few minutes for a cold uv skill. Requests for the same tree wait for each other; different trees build in parallel. Callers must not hold up a push or a session on it.
+`PUT` blocks until the build ends, which takes seconds for a small change and a few minutes for a cold uv skill. Requests for the same key wait for each other; different keys build in parallel. Callers must not hold up a push or a session on it.
 
 A result:
 
 ```json
 {
-  "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+  "key": "9f2b6c1e…",
+  "skill": "web",
   "state": "succeeded",
   "store_paths": ["/nix/store/…-skill-web"],
   "metadata": {"commands": {"…": "…"}},
@@ -35,12 +38,15 @@ A result:
 
 ### What the builder builds
 
-For a skill directory with `flake.nix` and `flake.lock`, on system `<system>`:
+For skill `<name>` of a `skills/` directory with `flake.nix` and `flake.lock`, on system `<system>`:
 
-- **Outputs:** `nix build --no-update-lock-file path:<dir>#packages.<system>.default`. `store_paths` lists every output of that package. `mkSkill` puts only the command wrappers into it.
-- **Metadata:** `nix eval --json --no-update-lock-file path:<dir>#packages.<system>.default --apply 'p: p.passthru.carapace or null'`. The builder passes this JSON through without reading it. `mkSkill` defines its schema (command names, descriptions, declarations), and the server reads it. It is `null` when the package has no `passthru.carapace`.
+- **Metadata:** `nix eval --json --no-update-lock-file path:<dir>#packages.<system>.<name> --apply 'p: p.passthru.carapace or null'`, first, so a mistake in the declarations fails before anything builds. The builder passes this JSON through without reading it. `mkSkill` defines its schema (command names, descriptions, declarations), and the server reads it. It is `null` when the package has no `passthru.carapace`.
+- **Outputs:** `nix build --no-update-lock-file path:<dir>#packages.<system>.<name>`. `store_paths` lists every output of that package. `mkSkill` puts the command wrappers into it, and a reference to the skill directory (a store path of its own) that brings it along. Only that attribute is evaluated, so another skill's mistakes do not fail it.
+- **Skill directory:** right after the evaluation, the builder takes `skillDir` from the metadata (it must be a top-level store path) and reads `SKILL.md` and the list of regular files from it, never following a symlink. The result carries them as `skill_dir`, `skill_md` and `skill_files`, also when the build then fails. Metadata without `skillDir` (helpers whose `mkSkill` takes no `src`) leaves them empty.
 - **Locks:** a missing `flake.lock` is a failed build, and so is one that lacks an input (`--no-update-lock-file`). The builder never writes lock files.
 - **Evaluation:** import-from-derivation is off, and a flake's `nixConfig` is ignored.
+
+An update check (`POST /updates`) fetches each input's upstream with `nix flake update <name>`, which evaluates the inputs' `flake.nix` but builds nothing. Only that input moves, so `nixpkgs` and `carapace` stay as locked, and one input that cannot be fetched does not hide the others. It fetches into a throwaway store under the work directory, not the daemon's: an update locks whatever a local skill's `flake.nix` names, an unlocked `path:/…` input included, and the daemon's store is what the [binary cache](#binary-cache) serves to every sandbox. Builds don't need this, since `--no-update-lock-file` never fetches an input the lock lacks.
 
 ### Architecture
 
@@ -78,13 +84,13 @@ Sandboxes reach the cache only through their session proxy, as `http://cache.car
 
 At start, before it listens, the API builds a fresh probe derivation that fails if it can see the store database, which is only visible outside the build sandbox. If the sandbox cannot be set up or is not in effect, the builder exits with the reason in its log.
 
-The store lives on a volume that replaces `/nix`, so it survives restarts and image updates. Built skills and the dependencies they downloaded stay warm. `carapace-builder-init` runs before every start, with the volume at `/mnt/nix`. It copies the image's own store paths into the volume and roots them, so after an update the volume holds the new image's tools, and the old ones become garbage. Results and GC roots for built trees are under `/nix/var/carapace-builder` on the same volume.
+The store lives on a volume that replaces `/nix`, so it survives restarts and image updates. Built skills and the dependencies they downloaded stay warm. `carapace-builder-init` runs before every start, with the volume at `/mnt/nix`. It copies the image's own store paths into the volume and roots them, so after an update the volume holds the new image's tools, and the old ones become garbage. Results and GC roots for built keys are under `/nix/var/carapace-builder` on the same volume.
 
 ## Garbage collection
 
-The builder does not know users or heads; the server tells it. At start, hourly and after every sandbox push, the server sends `PUT /roots` with the trees of the flake skills at every user's current head, and the builder notes when it last saw each one. A tree no head has referenced for the grace period loses its stored result and its GC root together, so no result ever names a deleted path. The grace period exists because Nix's GC knows nothing about sandboxes still downloading a path a push just replaced. A tree that was built but never sent starts its grace period at the first GC run after the build.
+The builder does not know users or heads; the server tells it. At start, hourly and after every sandbox push, the server sends `PUT /roots` with the build keys of the skills at every user's current head, and the builder notes when it last saw each one. A key no head has referenced for the grace period loses its stored result and its GC root together, so no result ever names a deleted path. The grace period exists because Nix's GC knows nothing about sandboxes still downloading a path a push just replaced. A key that was built but never sent starts its grace period at the first GC run after the build.
 
-GC runs every `CARAPACE_BUILDER_GC_INTERVAL_HOURS` (default 24) with a grace period of `CARAPACE_BUILDER_GC_GRACE_HOURS` (default 24), both on the builder. It drops the expired trees and then runs `nix-store --gc` through the daemon, which deletes everything no root keeps: the outputs of dropped trees, and the build-time dependencies of every skill (compilers, nixpkgs sources), which a later rebuild downloads again. The image's own tools are rooted by `carapace-builder-init`. A failing GC run stops the builder, so the store never grows unnoticed. To run it by hand:
+GC runs every `CARAPACE_BUILDER_GC_INTERVAL_HOURS` (default 24) with a grace period of `CARAPACE_BUILDER_GC_GRACE_HOURS` (default 24), both on the builder. It drops the expired keys and then runs `nix-store --gc` through the daemon, which deletes everything no root keeps: the outputs of dropped keys, and the build-time dependencies of every skill (compilers, nixpkgs sources), which a later rebuild downloads again. The image's own tools are rooted by `carapace-builder-init`. A failing GC run stops the builder, so the store never grows unnoticed. To run it by hand:
 
 ```sh
 curl -X POST -H "Authorization: Bearer $CARAPACE_BUILDER_TOKEN" http://builder:8330/gc
@@ -94,15 +100,15 @@ The server reaches the builder at least hourly, so an unreachable server only le
 
 ### Sizing the store
 
-What stays after a GC run is the runtime closure of every skill tree the heads reference, about 0.2 to 0.45 GB per uv or npm skill and shared between skills on the same nixpkgs pin, plus about 1 GB for the image's tools. Between runs, each build adds its build-time dependencies on top: about 1.5 GB for a nixpkgs pin the builder has not seen yet, much less for one it has. The chart's default of 20Gi covers a few dozen skills on two or three pins with a daily GC. With many diverging pins, or many pushes per day, give it more disk or shorten the interval.
+What stays after a GC run is the runtime closure of every skill the heads reference, about 0.2 to 0.45 GB per uv or npm skill and shared between skills on the same nixpkgs pin, plus about 1 GB for the image's tools. Between runs, each build adds its build-time dependencies on top: about 1.5 GB for a nixpkgs pin the builder has not seen yet, much less for one it has. The chart's default of 20Gi covers a few dozen skills on two or three pins with a daily GC. With many diverging pins, or many pushes per day, give it more disk or shorten the interval.
 
 ## Running it
 
-The server builds a skill tree after a push that changes it and otherwise on first use (see [skills.md](skills.md#building-skills)). It finds the builder through `CARAPACE_BUILDER_URL`, `CARAPACE_BUILDER_CACHE_URL` (its cache, port 8331) and `CARAPACE_BUILDER_TOKEN`; the two URLs come together. Without them there is no builder, and skills with commands are not built. The server logs a warning at start. `CARAPACE_BUILDER_TIMEOUT_SECONDS` (default 1800) bounds one request.
+The server builds a skill after a push that changes its key and otherwise on first use (see [skills.md](skills.md#building-skills)). It finds the builder through `CARAPACE_BUILDER_URL`, `CARAPACE_BUILDER_CACHE_URL` (its cache, port 8331) and `CARAPACE_BUILDER_TOKEN`; the two URLs come together. Without them there is no builder, and skills with commands are not built. The server logs a warning at start. `CARAPACE_BUILDER_TIMEOUT_SECONDS` (default 1800) bounds one request.
 
 ### Docker Compose
 
-`docker-compose.yml` runs `builder-init` and `builder` with a named volume `builder-nix`, and points the server at `http://builder:8330` and `http://builder:8331`. Set `CARAPACE_BUILDER_TOKEN` in `.env`. The builder is on the default network only, so sandboxes, which sit on the internal `carapace-sandbox-<instance>` network ([instances](sandbox.md#instances)), cannot reach it.
+`docker-compose.yml` runs `builder-init` and `builder` with a named volume `builder-nix`, and points the server at `http://builder:8330` and `http://builder:8331`. Set `CARAPACE_BUILDER_TOKEN` in `.env`. The builder is on the default network only, so sandboxes, which sit on the internal `carapace-sandbox-<instance>` network ([instances](sandbox.md#instances)), cannot reach it. Compose has no egress rules: the builder, and so every skill flake it evaluates, reaches whatever the host reaches, your LAN included. To limit that, firewall the container on the host or run the builder on Kubernetes.
 
 The Nix build sandbox needs `security_opt: [seccomp=unconfined, apparmor=unconfined, systempaths=unconfined]`: unshare must be allowed and `/proc` unmasked so that Nix can mount its own. Without all three the builder refuses to start.
 
@@ -117,11 +123,11 @@ This switches the restriction off for the whole host, not only for the builder. 
 
 ### Dev stack
 
-The [dev stack](development.md#dev-stack) runs the builder as a container too, from the `builder-image` built from the checkout: `builder-init` and `builder` with the volume `carapace-builder-nix-<instance>`, ports published on loopback at the stack's builder ports (`7506` and `7507` for stack 0). The server reaches it there, sandboxes reach the cache through the session proxy. Stopping the stack removes the container; the volume keeps the store. Set `CARAPACE_BUILDER_TOKEN` in `.env`.
+The [dev stack](development.md#dev-stack) runs the builder as a container too, from the `builder-image` built from the checkout: `builder-init` and `builder` with the volume `carapace-builder-nix-<instance>`, ports published on loopback at the stack's builder ports (`7506` and `7507` for stack 0). The server reaches it there, sandboxes reach the cache through the session proxy. Stopping the stack removes the container; the volume keeps the store. Set `CARAPACE_BUILDER_TOKEN` in `.env`. As under Compose, nothing limits where the builder connects to.
 
 ### Kubernetes
 
-The chart deploys the builder by default (`builder.enabled`). That covers a Deployment with an init container, a PVC (`builder.persistence.size`, default 20Gi), a Service, a NetworkPolicy that admits only the server on ports 8330 and 8331, and a generated token Secret. The pod runs with `hostUsers: false` (root in the pod is an unprivileged host user), `procMount: Unmasked`, and `Unconfined` seccomp and AppArmor profiles. It gets no added capabilities.
+The chart deploys the builder by default (`builder.enabled`). That covers a Deployment with an init container, a PVC (`builder.persistence.size`, default 20Gi), a Service, two NetworkPolicies, and a generated token Secret. One admits only the server on ports 8330 and 8331. The other limits the builder's egress (see [egress](#egress-on-kubernetes)). The pod runs with `hostUsers: false` (root in the pod is an unprivileged host user), `procMount: Unmasked`, and `Unconfined` seccomp and AppArmor profiles. It gets no added capabilities.
 
 The cluster has to support user namespaces for pods. That means a recent kernel and container runtime, plus the `UserNamespacesSupport` and `ProcMountType` features. The settings were verified on k3s 1.37 with containerd 2.3 and kernel 7.3. If the builder logs that the Nix build sandbox is not effective, the node or its runtime lacks one of these. Pod Security Admission levels `restricted` and `baseline` reject the pod (unconfined seccomp, unmasked `/proc`), so the builder needs `privileged`. `hostUsers: false` keeps that from meaning root on the node.
 
@@ -130,6 +136,21 @@ A Pod Security label covers every pod in its namespace, and the server creates s
 The chart puts the builder's Deployment, PVC, Service and NetworkPolicy into the builder namespace, writes the token Secret into both namespaces, and points the server at `http://<release>-builder.<builder namespace>:8330` (and `:8331`). The NetworkPolicy admits only server pods from the release namespace. With `builder.auth.existingSecret`, create that Secret in both namespaces.
 
 The chart only ships the ingress side and adds no egress policy for the server. If the release namespace denies egress by default, or only allows it within the namespace, allow server pods egress to cluster DNS, the API server (it manages sandboxes through it) and the builder namespace on ports 8330 and 8331, on top of its outbound traffic to model providers and the domains it proxies for sandboxes. Without the builder rule, every sandbox start fails with `The skill builder is configured but unreachable`.
+
+#### Egress on Kubernetes
+
+The builder evaluates agent-authored flakes and fetches whatever their locks name, so its egress policy (`<release>-builder-egress`) lets it reach the internet but nothing that isn't globally routable: private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`), carrier-grade NAT (`100.64.0.0/10`), loopback, link-local (`169.254.0.0/16`, `fe80::/10`, cloud metadata endpoints included), multicast and reserved ranges. That matches the sandbox proxy's [private-address rule](sandbox.md). DNS to `kube-dns` in `kube-system` stays allowed.
+
+**A binary cache or other substituter in your own network is blocked by default.** List it in `builder.egress.allowedCidrs`, as must anything else private the builder needs: an upstream cache from `builder.upstreamCaches` on a LAN address, a Git server that skill flakes fetch from, or NodeLocal DNSCache (`169.254.20.10/32`):
+
+```yaml
+builder:
+  egress:
+    allowedCidrs:
+      - 192.168.10.5/32  # the LAN's binary cache
+```
+
+Pod and service ranges outside these private ranges are not covered; most clusters use private ones. Whether `ipBlock` rules apply to traffic to other pods at all depends on the network plugin (Cilium never matches pods by `ipBlock`, so they stay unreachable either way).
 
 When namespaces are managed elsewhere (GitOps), set `builder.createNamespace: false` and create the namespace with the label yourself:
 

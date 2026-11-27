@@ -27,12 +27,14 @@ from pydantic_ai.usage import RunUsage
 # We patch the server module globals directly for testing
 import carapace.server as srv
 import carapace.server.jobs as server_jobs
+import carapace.server.knowledge as knowledge_routes
 import carapace.server.platform_settings as platform_settings
 from carapace.api_keys import Access, ApiKeyGrant, ApiKeyStore, Scope
 from carapace.artifact_shares import ArtifactShareStore
-from carapace.auth import AuthStore
+from carapace.auth import AuthStore, UserIdentity
 from carapace.bootstrap import ensure_data_dir
 from carapace.builder.skill_builds import RetryRefusedError, SkillBuild, SkillBuilds
+from carapace.builder.skill_updates import PendingUpdate, UpdateRefusedError
 from carapace.codex_auth import CodexAccounts, CodexCredentialStore
 from carapace.config import build_config, resolve_user_knowledge_dir
 from carapace.credentials import CredentialBackendError, CredentialRegistry
@@ -72,6 +74,7 @@ from carapace.session import SessionEngine, SessionManager, sent_files
 from carapace.session.archive import SessionArchiveResult, SessionArchiveService
 from carapace.spans import TurnTrace
 from carapace.usage import CostSplit, LlmRequestLog, LlmRequestRecord, LlmRequestState
+from tests.skills_flake import write_skills_flake
 
 _TEST_TOKEN = "test-bearer-token-for-server-tests"
 
@@ -5413,6 +5416,7 @@ def _make_skill(name: str, *, under_skills: bool = True) -> Path:
     directory = root / ("skills" if under_skills else "notes") / name
     directory.mkdir(parents=True)
     (directory / "SKILL.md").write_text(f"---\nname: {name}\ndescription: demo\n---\nBody\n")
+    write_skills_flake(root / "skills", [name])
     return directory
 
 
@@ -5422,7 +5426,7 @@ def _builds_reporting(state: str) -> MagicMock:
         return_value=[
             SkillBuild(
                 skill="weather",
-                tree="4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                key="9f2b6c1e4d8a3f7b" * 4,
                 state=state,  # type: ignore[arg-type]
                 store_paths=[],
                 commands={},
@@ -5446,11 +5450,11 @@ def test_a_skill_listing_shows_its_build(
 
     assert build == {
         "state": "failed",
-        "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "key": "9f2b6c1e4d8a3f7b" * 4,
         "commands": {},
         "log_tail": "error: flake.lock is missing nixpkgs",
     }
-    # Only skills directly under skills/ are built.
+    # Only skills skills/flake.nix lists are built.
     assert elsewhere is None
 
 
@@ -5481,3 +5485,85 @@ def test_a_skill_build_that_did_not_fail_is_not_retried(
         409,
         "Only a failed build can be retried; weather is succeeded",
     )
+
+
+def test_the_skill_list_shows_origins_and_an_update_check_on_request(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = srv._knowledge_repo_registry.get_for_user("thies").knowledge_dir
+    _make_skill("weather")
+    write_skills_flake(root / "skills", ["weather"], external=["tracker"])
+    git = ["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@example.com"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", "skills"], check=True)
+    # No builder: the check runs and says why it could not ask anyone.
+    builds = SkillBuilds(None)
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+    started: list[Path] = []
+    real_start = builds.updates.start
+    monkeypatch.setattr(builds.updates, "start", started.append)
+
+    listed = client.get("/api/knowledge/skills", headers=auth_headers).json()
+    response = client.post("/api/knowledge/skills/updates/check", headers=auth_headers)
+
+    # The test client ends its event loop after each request, so the check runs on one of its own.
+    async def check() -> None:
+        real_start(root.resolve())
+        await builds.updates.wait(root.resolve())
+
+    asyncio.run(check())
+    checked = client.get("/api/knowledge/skills", headers=auth_headers).json()
+
+    assert [(skill["name"], skill["path"], skill["origin"]) for skill in listed["skills"]] == [
+        ("tracker", None, "github:someone/tracker"),
+        ("weather", "skills/weather", "./weather"),
+    ]
+    assert listed["skills"][0]["locked_rev"] == "2" * 40
+    assert (listed["checked_at"], listed["checking"]) == (None, False)
+    assert (response.status_code, started) == (200, [root.resolve()])
+    assert checked["checked_at"] is not None
+    assert "CARAPACE_BUILDER_URL" in checked["check_error"]
+
+
+def test_a_skill_update_is_committed_as_the_user_and_pushed(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    builds = SkillBuilds(None)
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+    pending = PendingUpdate(base_tree="f" * 40, lock_text="{}\n", message="⬆️ skills: update tracker")
+    monkeypatch.setattr(builds.updates, "pending_update", AsyncMock(return_value=pending))
+    after_push = AsyncMock()
+    monkeypatch.setattr(srv, "_after_push", after_push)
+    git_store = srv._knowledge_repo_registry.get_for_user("thies").git_store
+
+    response = client.post("/api/knowledge/skills/tracker/update", headers=auth_headers)
+
+    assert response.status_code == 200
+    git_store.commit_replacing.assert_awaited_once_with(
+        "skills/flake.lock",
+        "{}\n",
+        unchanged={"skills": "f" * 40},
+        message="⬆️ skills: update tracker",
+        author="Thies <thies@carapace>",
+    )
+    after_push.assert_awaited_once_with("thies")
+
+
+def test_a_skill_update_that_cannot_be_applied_is_a_conflict(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    builds = SkillBuilds(None)
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+    refused = UpdateRefusedError("skills/ changed since the last check; check for updates again.")
+    monkeypatch.setattr(builds.updates, "pending_update", AsyncMock(side_effect=refused))
+
+    response = client.post("/api/knowledge/skills/tracker/update", headers=auth_headers)
+
+    assert (response.status_code, response.json()["detail"]) == (409, str(refused))
+
+
+def test_a_commit_author_cannot_smuggle_angle_brackets() -> None:
+    user = UserIdentity(username="eve", display_name="Eve <x@y>", email="e<v>e@example.com")
+
+    assert knowledge_routes._commit_author(user) == "Eve x@y <eve@example.com>"

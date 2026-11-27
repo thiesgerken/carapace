@@ -1,8 +1,8 @@
 # Ferret setup
 
-Ferret is bundled **disabled by default**. Configure your copy in this directory
-(`flake.nix` and `SKILL.md`) before enabling it. This operator guide is not
-returned by `read_skill`.
+Ferret is bundled but not listed in `skills/flake.nix`, so it is off by default.
+Configure your copy in this directory (`flake.nix` and `SKILL.md`) before listing
+it. This operator guide is not returned by `read_skill`.
 
 ## Manual opt-in
 
@@ -20,8 +20,9 @@ returned by `read_skill`.
    with your actual indexed sources. The description is an always-visible
    coverage hint; `ferret list_sources` shows the sources currently authorized
    for the key.
-5. Set `metadata.carapace.disabled: false`, commit and push. The builder builds
-   the skill, and a new session lists it in its catalog.
+5. Uncomment the `ferret` input in `skills/flake.nix`, run `nix flake lock ./skills`,
+   commit and push. The builder builds the skill, and a new session lists it in
+   its catalog.
 
 The `ferret` command runs the MCP bridge in the sandbox. Each time it starts it
 asks for the endpoint's domain and the API key with `cgate`, and the sentinel
@@ -38,10 +39,10 @@ metasearch or routine code navigation. Agents can answer from indexed text or
 optionally follow origin links with source-specific skills for freshness or
 actions.
 
-The disabled flag controls the catalog and builds. A session that is already
-running keeps the catalog it started with.
+Being listed in `skills/flake.nix` controls the catalog and builds. A session that
+is already running keeps the catalog it started with.
 
 Normal bootstrap seeds missing bundled skill directories and preserves existing
 directories and user edits. Explicit `reset-assets` overwrites bundled
-customization, including Ferret's endpoint and vault reference in `flake.nix`,
-the source description, and the disabled flag.
+customization, including Ferret's endpoint and vault reference in `flake.nix`
+and the source description. It never touches `skills/flake.nix`.

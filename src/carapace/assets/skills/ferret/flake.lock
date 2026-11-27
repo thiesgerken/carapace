@@ -11,11 +11,11 @@
       },
       "locked": {
         "dir": "nix/skills",
-        "lastModified": 1795638791,
-        "narHash": "sha256-FNBU8tIT126Jt+XDwe/0k/Gl6V/vXe2Wtjx5iCSdZkw=",
+        "lastModified": 1795729417,
+        "narHash": "sha256-5QqWxd5YJHUB75/MWH1Fc0Kw6ZGlt+7d4NwKPaqvx2Y=",
         "owner": "thiesgerken",
         "repo": "carapace",
-        "rev": "8a5b2cbf941cd09a741523e783ccf2b1788af1c1",
+        "rev": "1bbd25926bb392dfe96b6362c217379b2235d2fc",
         "type": "github"
       },
       "original": {

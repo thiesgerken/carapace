@@ -7,8 +7,11 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, StringConstraints
 
-# A Git tree hash, SHA-1 or SHA-256 object format.
-TreeHash = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}([0-9a-f]{24})?$")]
+# A sha256 over everything a skill's build depends on, computed by the server (`skill_builds.build_key`).
+BuildKey = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+# An attribute of `packages.<system>` in skills/flake.nix. It ends up in a flake reference, so no dots or quotes.
+SKILL_NAME_PATTERN = r"[A-Za-z_][A-Za-z0-9_'-]*"
+SkillName = Annotated[str, StringConstraints(pattern=f"^{SKILL_NAME_PATTERN}$")]
 
 # Sandboxes reach the builder's binary cache under this name through their session proxy, which
 # maps it to the cache listener (`.internal` is reserved for private use, so it never collides).
@@ -35,23 +38,41 @@ class UpstreamCache(BaseModel):
 
 
 class BuildResult(BaseModel):
-    tree: TreeHash
+    key: BuildKey
+    skill: SkillName
     state: Literal["succeeded", "failed"]
-    # Every output of `packages.<system>.default`; empty for a failed build.
+    # Every output of `packages.<system>.<skill>`; empty for a failed build.
     store_paths: list[str] = []
     # `passthru.carapace` of that package as JSON, defined by `mkSkill`; None when absent.
     metadata: Any = None
+    # Its `skillDir`, the skill directory in the store, and what is in it, read right after the evaluation,
+    # so a failed build has them too. None and empty for a package from helpers without `src`.
+    skill_dir: str | None = None
+    skill_md: str | None = None
+    skill_files: list[str] = []
     # The end of the evaluation and build output, for showing why a build failed.
     log_tail: str = ""
 
 
+class InputUpdate(BaseModel):
+    # The lock `nix flake update <input>` writes for the skills flake; None when that failed.
+    lock: str | None = None
+    # The end of its output, for showing why it failed.
+    log_tail: str = ""
+
+
+class UpdatedLocks(BaseModel):
+    # Per input of skills/flake.nix that was asked about.
+    inputs: dict[SkillName, InputUpdate]
+
+
 class Roots(BaseModel):
-    # The skill trees the current heads of all knowledge repos reference; replaces the last set.
-    trees: list[TreeHash]
+    # The build keys of the skills at the current heads of all knowledge repos.
+    keys: list[BuildKey]
 
 
 class GcResult(BaseModel):
-    # Trees whose results and GC roots were dropped because no head referenced them for the grace period.
+    # Keys whose results and GC roots were dropped because no head referenced them for the grace period.
     dropped: list[str]
     log_tail: str
 
