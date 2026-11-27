@@ -12,11 +12,9 @@
 let
   inherit (pkgs) lib;
 
-  # What a command needs from outside the sandbox: domains, the skill's credential slots it gets as
-  # environment variables, OAuth vault paths whose access token the command fetches itself, and tunnels as
-  # "host:port".
-  # ponytail: `oauth` still takes literal vault paths, the one exception to "no vault paths in a skill
-  # flake"; #656 turns them into credential slots of type oauth and removes it.
+  # What a command needs from outside the sandbox: domains, the skill's secret slots it gets as environment
+  # variables, its OAuth slots whose access token it fetches itself (`ccred get --access-token "$SLOT"`),
+  # and tunnels as "host:port".
   noNeeds = {
     domains = [ ];
     credentials = [ ];
@@ -35,7 +33,9 @@ let
       needs = noNeeds // defaults // (command.needs or { });
       unknown = lib.subtractLists (lib.attrNames noNeeds) (lib.attrNames needs);
       literal = builtins.isAttrs needs.credentials;
-      undeclared = if literal then [ ] else lib.subtractLists (lib.attrNames slots) needs.credentials;
+      slotsOfType = type: lib.attrNames (lib.filterAttrs (_: slot: slot.type == type) slots);
+      undeclared = if literal then [ ] else lib.subtractLists (slotsOfType "secret") needs.credentials;
+      undeclaredOauth = lib.subtractLists (slotsOfType "oauth") needs.oauth;
       # What `cgate request --tunnel` accepts: an exact host name (any case, not an IP address, which a
       # client would connect to directly) and a port from 1 to 65535.
       badTunnels = lib.filter (
@@ -56,7 +56,9 @@ let
         lib.head (lib.attrNames needs.credentials ++ [ "<NAME>" ])
       } = { type = \"secret\"; description = \"…\"; } in mkSkill, list it in needs.credentials, and bind it in skills/config.json";
     assert lib.assertMsg (undeclared == [ ])
-      "${where}: needs.credentials names undeclared credential slots: ${lib.concatStringsSep ", " undeclared}";
+      "${where}: needs.credentials names no secret slots of the skill: ${lib.concatStringsSep ", " undeclared}";
+    assert lib.assertMsg (undeclaredOauth == [ ])
+      "${where}: needs.oauth lists OAuth slots, not vault paths: declare credentials.<NAME> = { type = \"oauth\"; description = \"…\"; } in mkSkill and bind it in skills/config.json. Not an OAuth slot of the skill: ${lib.concatStringsSep ", " undeclaredOauth}";
     assert lib.assertMsg (badTunnels == [ ])
       "${where}: tunnels must be host:port with an exact host name: ${lib.concatStringsSep ", " badTunnels}";
     needs;
@@ -87,7 +89,13 @@ let
       # Each becomes an environment variable of the commands that need it, like a setting.
       badNames = lib.filter (var: !isIdentifier var) names;
       clashes = lib.intersectLists names (lib.attrNames settings);
-      badTypes = lib.filter (slot: (credentials.${slot}.type or "") != "secret") names;
+      badTypes = lib.filter (
+        slot:
+        !builtins.elem (credentials.${slot}.type or "") [
+          "secret"
+          "oauth"
+        ]
+      ) names;
     in
     assert lib.assertMsg (badNames == [ ])
       "${where}: credential slot names must be shell identifiers: ${lib.concatStringsSep ", " badNames}";
@@ -96,7 +104,7 @@ let
     ) "${where}: names used for a setting and a credential slot: ${lib.concatStringsSep ", " clashes}";
     assert lib.assertMsg (
       badTypes == [ ]
-    ) "${where}: credential slots need type = \"secret\": ${lib.concatStringsSep ", " badTypes}";
+    ) "${where}: credential slots need type = \"secret\" or \"oauth\": ${lib.concatStringsSep ", " badTypes}";
     lib.mapAttrs (_: slot: { description = ""; } // slot) credentials;
 
   # `needs` may depend on the skill's settings: a function from their values to the needs.
@@ -179,13 +187,18 @@ in
       };
       declaredSettings = checkSettings name settings;
       declaredCredentials = checkCredentials name settings credentials;
+      slotNames = type: lib.attrNames (lib.filterAttrs (_: slot: slot.type == type) declaredCredentials);
       # Unless the skill-wide needs say otherwise, every command gets every slot.
       commandNeeds =
         values:
         lib.mapAttrs (
           cmd: command:
           needsOf "skill ${name}, command ${cmd}" declaredCredentials (
-            { credentials = lib.attrNames declaredCredentials; } // withSettings values needs
+            {
+              credentials = slotNames "secret";
+              oauth = slotNames "oauth";
+            }
+            // withSettings values needs
           ) (command // { needs = withSettings values (command.needs or { }); })
         ) commands;
       # Whether a command asks Carapace before it runs: for its settings, or for needs it has or may have.
