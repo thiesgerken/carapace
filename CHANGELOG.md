@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.199.1 (2026-11-27)
+
+### 🐛 Fix a bug
+
+- fix: only the current turn's open card claims the waiting line
+- fix: the tortoise states user waits plainly and keeps its counter
+
+### ♻️ Refactor code
+
+- refactor: span names clients match on as constants
+
 ## v0.199.0 (2026-11-26)
 
 ### ✨ Introduce new features
