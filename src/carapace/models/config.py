@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, IPvAnyNetwork, SecretStr, model_serializer, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    IPvAnyNetwork,
+    SecretStr,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..notifications.models import NotificationsConfig
@@ -184,7 +192,7 @@ class AvailableModelEntry(ConfigModel):
         return default_compaction_threshold(self.max_input_tokens)
 
     @model_serializer(mode="wrap")
-    def _serialize(self, handler: Callable[..., Any]) -> dict[str, Any]:
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data = handler(self)
         data["id"] = self.model_id
         return data

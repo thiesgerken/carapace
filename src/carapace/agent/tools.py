@@ -429,7 +429,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
     agent: Agent[Deps, str | TaskDone | TaskFailed | DeferredToolRequests] = Agent(
         deps.agent_model,
         deps_type=Deps,
-        output_type=output_type,  # type: ignore[arg-type]
+        output_type=output_type,
         # A callable is a dynamic instruction: the prompt cache breakpoint goes before it, so the
         # date and session ID don't split the cached prefix.
         instructions=[system_prompt, lambda: build_session_info(deps)],
