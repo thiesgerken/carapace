@@ -14,6 +14,7 @@ const checked: KnowledgeSkillSources = {
   checked_at: "2026-11-21T08:00:00Z",
   checking: false,
   check_error: null,
+  config_error: null,
   skills: [
     {
       name: "tracker",

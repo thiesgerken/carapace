@@ -117,7 +117,7 @@ def ensure_data_dir(data_dir: Path) -> list[str]:
 def ensure_knowledge_dir(knowledge_dir: Path) -> list[str]:
     """Ensure knowledge dir has all required files.
 
-    Seeds user-owned files, critical files, skills, and ``.gitignore``.
+    Seeds user-owned files, critical files, the skills flake, and ``.gitignore``.
     Returns the list of file paths (relative to *knowledge_dir*) that were
     created or overwritten.
     """

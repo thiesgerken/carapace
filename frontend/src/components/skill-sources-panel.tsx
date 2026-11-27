@@ -144,6 +144,7 @@ export function SkillSourcesPanel({ server }: { server: string }) {
           {sources.checking ? t("checking") : t("check")}
         </button>
       </div>
+      {sources.config_error ? <p className="mt-2 text-xs text-destructive">{sources.config_error}</p> : null}
       {sources.check_error ? <p className="mt-2 text-xs text-destructive">{sources.check_error}</p> : null}
       {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
       <table className="mt-3 w-full text-left text-xs">
