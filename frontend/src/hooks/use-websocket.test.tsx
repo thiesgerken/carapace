@@ -130,11 +130,13 @@ function HookHarness({
   url,
   onMessage,
   onDisconnect,
+  onReconnect,
   stateRef,
 }: {
   url: string | null;
   onMessage: (message: unknown) => void;
   onDisconnect?: () => void;
+  onReconnect?: () => void;
   stateRef: {
     current: {
       status: string;
@@ -142,7 +144,7 @@ function HookHarness({
     } | null;
   };
 }) {
-  const state = useWebSocket(url, onMessage as never, onDisconnect);
+  const state = useWebSocket(url, onMessage as never, onDisconnect, onReconnect);
 
   useEffect(() => {
     stateRef.current = state as {
@@ -160,6 +162,7 @@ test("useWebSocket connects, sends messages, parses server payloads, and reconne
   const originalWebSocket = globalThis.WebSocket;
   const messages: unknown[] = [];
   let disconnectCount = 0;
+  let reconnectCount = 0;
 
   try {
     FakeWebSocket.instances = [];
@@ -176,6 +179,9 @@ test("useWebSocket connects, sends messages, parses server payloads, and reconne
         onMessage={(message) => messages.push(message)}
         onDisconnect={() => {
           disconnectCount += 1;
+        }}
+        onReconnect={() => {
+          reconnectCount += 1;
         }}
         stateRef={stateRef}
       />,
@@ -195,6 +201,7 @@ test("useWebSocket connects, sends messages, parses server payloads, and reconne
     });
     await flushReact();
     assert.equal(stateRef.current?.status, "connected");
+    assert.equal(reconnectCount, 0, "the first connection is no reconnect");
 
     stateRef.current?.send({ kind: "user", content: "hello" });
     assert.deepEqual(firstSocket?.sentMessages, [JSON.stringify({ kind: "user", content: "hello" })]);
@@ -225,6 +232,7 @@ test("useWebSocket connects, sends messages, parses server payloads, and reconne
     });
     await flushReact();
     assert.equal(stateRef.current?.status, "connected");
+    assert.equal(reconnectCount, 1, "the caller catches up on what the dropped connection missed");
 
     await view.unmount();
     assert.equal(secondSocket?.closeCalls, 1);

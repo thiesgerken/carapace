@@ -278,13 +278,13 @@ Failed Nix builds retain expanded log tails in CI. Locally, `nix log .#checks.<s
 
 Releases are made by [Presswerk](https://presswerk.dev/) on every push to `main` that brings a release-worthy commit since the last release. The release is declared in the flake's `presswerk.default` output: the version files, the Gitmoji analyzer, the changelog, and the publishers (the five Nix images and the chart on GHCR, the GitHub Release). The CLI comes from the flake's pinned `presswerk` input.
 
-The [release workflow](../.github/workflows/release.yml) runs in two steps. The push run prepares a `🔖 Release vX.Y.Z` commit with the bumped version files and changelog, pushes it to `main` and dispatches the workflow with that commit as the candidate. The candidate run verifies exactly that commit with Nix verification, which pushes the Nix images and the chart to Cachix. The publish job then runs `presswerk publish`, which fetches the images and the chart from Cachix and pushes the tag, the images, the chart and the GitHub Release. Presswerk checks every destination before writing anything, so a failed or cancelled candidate run is safe to repeat:
+The [release workflow](../.github/workflows/release.yml) runs on every push to `main`. Its prepare job makes a `🔖 Release vX.Y.Z` commit with the bumped version files and changelog and pushes it to `main`. The same run then verifies exactly that commit with Nix verification, which pushes the Nix images and the chart to Cachix. The publish job then runs `presswerk publish`, which fetches the images and the chart from Cachix and pushes the tag, the images, the chart and the GitHub Release. Presswerk checks every destination before writing anything, so a failed or cancelled release is safe to repeat: rerun the failed jobs, or dispatch the release commit as the candidate:
 
 ```sh
 gh workflow run release.yml --ref main -f candidate=<full SHA of the release commit>
 ```
 
-A re-dispatched candidate publishes the same images, since they are matched by store path. Until that candidate is published, the next push run fails because a release is pending. To see what the next release would contain, run `nix run --inputs-from . presswerk -- plan` on an up-to-date `main` (with `GITHUB_TOKEN="$(gh auth token)"`, since it checks the previous GitHub Release). See Presswerk's [recovery guide](https://presswerk.dev/guide/recovery/) for anything else.
+A repeated release publishes the same images, since they are matched by store path. Until that release is published, the next push run fails because a release is pending. To see what the next release would contain, run `nix run --inputs-from . presswerk -- plan` on an up-to-date `main` (with `GITHUB_TOKEN="$(gh auth token)"`, since it checks the previous GitHub Release). See Presswerk's [recovery guide](https://presswerk.dev/guide/recovery/) for anything else.
 
 See the native builder's [known constraints](https://docs.determinate.systems/troubleshooting/native-linux-builder/) for shared-store filesystem and builder configuration issues.
 
