@@ -736,6 +736,22 @@ async def test_an_external_skill_gets_only_the_flake_and_its_lock(repo: Path) ->
 
 
 @pytest.mark.anyio
+async def test_next_to_a_local_skill_an_external_one_still_gets_only_the_flake_and_its_lock(repo: Path) -> None:
+    """Each build gets only what its key covers: skillsFlake evaluates every skill on its own, so the
+    external one never reads the local one's flake.nix (nix/skills/tests.nix checks that side)."""
+    _write_skills_flake(repo, ["weather"], external=("tracker",))
+    _commit(repo, "a local and an external skill")
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+
+    assert await _settled(builds, repo) == {"tracker": "succeeded", "weather": "succeeded"}
+    archives = {skill: {name.rstrip("/") for name in files} for _, skill, files in builder.built}
+    assert archives["tracker"] == {"flake.nix", "flake.lock"}
+    assert archives["weather"] == {"flake.nix", "flake.lock", "weather", "weather/SKILL.md", "weather/flake.nix"}
+
+
+@pytest.mark.anyio
 async def test_a_listed_directory_that_is_missing_fails_before_the_builder(repo: Path) -> None:
     _write_skills_flake(repo, ["weather", "gone"])
     _commit(repo, "list a skill without its directory")

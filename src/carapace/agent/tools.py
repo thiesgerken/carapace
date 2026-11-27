@@ -251,19 +251,20 @@ def _command_docs(commands: dict[str, SkillCommand]) -> str:
     return "\n".join(lines)
 
 
-async def _skill_sources(ctx: RunContext[Deps]) -> dict[str, str]:
-    """Per skill at HEAD: where it comes from and the last update check's verdict.
+async def _skills_at_head(ctx: RunContext[Deps]) -> tuple[dict[str, str], str | None]:
+    """Per skill at HEAD where it comes from and the last update check's verdict, and the config.json error.
 
     Only in tool results, never in the catalog: the catalog is part of the cached prompt prefix, and the
     update check changes every day.
     """
     head = await skills_flake_at_head(ctx.deps.knowledge_dir)
     if head is None:
-        return {}
+        return {}, None
     check = ctx.deps.skill_builds.updates.latest(ctx.deps.knowledge_dir)
-    return {
+    sources = {
         skill.name: describe_source(skill, check.skills.get(skill.name) if check else None) for skill in head.skills
     }
+    return sources, head.config_error
 
 
 async def _skill_commands(ctx: RunContext[Deps], build: SkillBuild) -> str:
@@ -497,9 +498,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         catalog = ctx.deps.skill_catalog
         if not catalog:
             return "No skills available."
-        sources = await _skill_sources(ctx)
+        sources, config_error = await _skills_at_head(ctx)
         lines = [f"- {s.name}: {s.description.strip()} [{sources.get(s.name, 'not at HEAD')}]" for s in catalog]
-        result = "Available skills:\n" + "\n".join(lines)
+        result = "\n\n".join(part for part in ("Available skills:\n" + "\n".join(lines), config_error) if part)
         return _emit_tool_result(ctx, "list_skills", result)
 
     @agent.tool
@@ -547,8 +548,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                 exit_code=1,
             )
         commands = await _skill_commands(ctx, build)
-        source = (await _skill_sources(ctx)).get(skill_name, "")
-        text = "\n\n".join(part for part in (instructions.rstrip(), source, commands) if part)
+        sources, config_error = await _skills_at_head(ctx)
+        parts = (instructions.rstrip(), sources.get(skill_name, ""), commands, config_error)
+        text = "\n\n".join(part for part in parts if part)
         return _emit_tool_result(ctx, "read_skill", text)
 
     # --- Filesystem (sandboxed — runs inside the sandbox container) ---

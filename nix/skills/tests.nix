@@ -195,12 +195,16 @@ let
         weather.packages.${system}.default = weather;
         contract.packages.${system}.default = skill;
         notes.packages.${system}.default = notes;
+        # A local skill whose flake.nix is broken, or missing from the archive of another skill's build.
+        broken.packages.${system}.default = throw "skills/broken/flake.nix: syntax error";
       };
       config = builtins.toFile "config.json" (builtins.toJSON values);
     }).manifests.${system};
   configured = manifestsWith {
     weather.settings.CITY = "Berlin";
     contract.credentials.DEMO_TOKEN = "demo/token";
+    # Named in config.json, so the module system would read its flake while checking the definitions.
+    broken.enable = false;
   };
   fails = value: !(builtins.tryEval (builtins.toJSON value)).success;
 in
@@ -313,9 +317,12 @@ assert pkgs.lib.assertMsg (
   fails (manifestsWith { weather.settings.CITY = 7; }).weather
   && !fails (manifestsWith { weather.settings.CITY = 7; }).notes
 ) "skillsFlake accepted a setting of the wrong type, or failed another skill for it";
-assert pkgs.lib.assertMsg (fails
-  (manifestsWith { typo.enable = false; }).notes
-) "skillsFlake accepted a skill that is not listed";
+# The server reports an entry of a skill that is not listed; it must not fail the others.
+assert pkgs.lib.assertMsg (
+  !fails (manifestsWith { typo.enable = false; }).notes
+) "skillsFlake failed a skill for another key of config.json";
+# The others' manifests never touch it (the asserts above evaluate them next to it), only its own fails.
+assert pkgs.lib.assertMsg (fails configured.broken) "skillsFlake evaluated a broken skill";
 assert pkgs.lib.assertMsg (
   (manifestsWith { weather.enable = false; }).weather == { enable = false; }
 ) "skillsFlake did not turn weather off";
