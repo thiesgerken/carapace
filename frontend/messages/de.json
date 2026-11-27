@@ -1074,7 +1074,8 @@
             "arguments": "Argumente",
             "result": "Ergebnis",
             "command": "Befehl",
-            "output": "Ausgabe"
+            "output": "Ausgabe",
+            "noResult": "Für diesen Aufruf wurde kein Ergebnis gespeichert."
         }
     },
     "toolCallGroup": {

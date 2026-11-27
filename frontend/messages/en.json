@@ -1074,7 +1074,8 @@
             "arguments": "Arguments",
             "result": "Result",
             "command": "Command",
-            "output": "Output"
+            "output": "Output",
+            "noResult": "No result was recorded for this call."
         }
     },
     "toolCallGroup": {
