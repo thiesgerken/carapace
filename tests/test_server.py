@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import dataclasses
 import json
 import subprocess
 from collections.abc import Callable
@@ -33,6 +34,7 @@ from carapace.api_keys import Access, ApiKeyGrant, ApiKeyStore, Scope
 from carapace.artifact_shares import ArtifactShareStore
 from carapace.auth import AuthStore, UserIdentity
 from carapace.bootstrap import ensure_data_dir
+from carapace.builder.models import SettingDeclaration
 from carapace.builder.skill_builds import RetryRefusedError, SkillBuild, SkillBuilds, SkillCommand, SkillNeeds
 from carapace.builder.skill_updates import PendingUpdate, UpdateRefusedError
 from carapace.codex_auth import CodexAccounts, CodexCredentialStore
@@ -5638,3 +5640,141 @@ def test_a_commit_author_cannot_smuggle_angle_brackets() -> None:
     user = UserIdentity(username="eve", display_name="Eve <x@y>", email="e<v>e@example.com")
 
     assert knowledge_routes._commit_author(user) == "Eve x@y <eve@example.com>"
+
+
+def _configured_repo(config: str) -> tuple[Path, str]:
+    """The user's knowledge repo with *config* committed as skills/config.json; its blob id."""
+    root = srv._knowledge_repo_registry.get_for_user("thies").knowledge_dir
+    (root / "skills").mkdir(parents=True, exist_ok=True)
+    (root / "skills" / "config.json").write_text(config)
+    git = ["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@example.com"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", "config"], check=True)
+    blob = subprocess.run([*git, "rev-parse", "HEAD:skills/config.json"], check=True, capture_output=True, text=True)
+    return root, blob.stdout.strip()
+
+
+def _weather_with_settings(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    builds = _builds_reporting("failed")
+    weather = builds.ensure_built.return_value[0]
+    builds.ensure_built.return_value = [
+        dataclasses.replace(
+            weather,
+            detail="error: skill weather: no value for its setting DAYS; set it in skills/config.json",
+            declared_settings={
+                "CITY": SettingDeclaration(type="str", description="City", default="Berlin"),
+                "DAYS": SettingDeclaration(type="int", description="Days ahead"),
+            },
+        )
+    ]
+    builds.declared_settings = lambda repo, build: build.declared_settings
+    monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
+    return builds
+
+
+def test_the_skill_config_shows_declarations_values_and_nix_errors(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, blob = _configured_repo('{"weather": {"settings": {"CITY": "Kiel"}}}\n')
+    _weather_with_settings(monkeypatch)
+
+    response = client.get("/api/knowledge/skills/config", headers=auth_headers).json()
+
+    assert response == {
+        "base": blob,
+        "skills": [
+            {
+                "name": "weather",
+                "enabled": True,
+                "state": "failed",
+                "detail": "error: skill weather: no value for its setting DAYS; set it in skills/config.json",
+                "settings": [
+                    {
+                        "name": "CITY",
+                        "type": "str",
+                        "description": "City",
+                        "default": "Berlin",
+                        "value": "Kiel",
+                        "missing": False,
+                    },
+                    {
+                        "name": "DAYS",
+                        "type": "int",
+                        "description": "Days ahead",
+                        "default": None,
+                        "value": None,
+                        "missing": True,
+                    },
+                ],
+            }
+        ],
+    }
+
+
+def test_a_skill_config_change_is_committed_sorted_as_the_user(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, blob = _configured_repo('{"weather": {"settings": {"CITY": "Kiel"}}}\n')
+    _weather_with_settings(monkeypatch)
+    after_push = AsyncMock()
+    monkeypatch.setattr(srv, "_after_push", after_push)
+    git_store = srv._knowledge_repo_registry.get_for_user("thies").git_store
+
+    response = client.put(
+        "/api/knowledge/skills/weather/config",
+        headers=auth_headers,
+        json={"base": blob, "enable": True, "settings": {"DAYS": 3, "CITY": None}},
+    )
+
+    assert response.status_code == 200
+    git_store.commit_replacing.assert_awaited_once_with(
+        "skills/config.json",
+        '{\n  "weather": {\n    "settings": {\n      "DAYS": 3\n    }\n  }\n}\n',
+        unchanged={"skills/config.json": blob},
+        message="🔧 skills: configure weather",
+        author="Thies <thies@carapace>",
+    )
+    after_push.assert_awaited_once_with("thies")
+
+
+@pytest.mark.parametrize(
+    ("change", "status", "detail"),
+    [
+        ({"base": "stale", "enable": True}, 409, "changed since this form was loaded"),
+        ({"enable": True, "settings": {"DAYS": "3"}}, 422, "DAYS has type int, not '3'"),
+    ],
+)
+def test_a_skill_config_change_that_cannot_be_made_commits_nothing(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    change: dict[str, object],
+    status: int,
+    detail: str,
+) -> None:
+    _, blob = _configured_repo("{}\n")
+    _weather_with_settings(monkeypatch)
+    git_store = srv._knowledge_repo_registry.get_for_user("thies").git_store
+
+    response = client.put("/api/knowledge/skills/weather/config", headers=auth_headers, json={"base": blob, **change})
+
+    assert response.status_code == status and detail in response.json()["detail"]
+    git_store.commit_replacing.assert_not_awaited()
+
+
+def test_a_skill_config_change_that_changes_nothing_makes_no_commit(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, blob = _configured_repo('{\n  "weather": {\n    "settings": {\n      "CITY": "Kiel"\n    }\n  }\n}\n')
+    _weather_with_settings(monkeypatch)
+    git_store = srv._knowledge_repo_registry.get_for_user("thies").git_store
+
+    response = client.put(
+        "/api/knowledge/skills/weather/config",
+        headers=auth_headers,
+        json={"base": blob, "enable": True, "settings": {"CITY": "Kiel"}},
+    )
+
+    assert response.status_code == 200
+    git_store.commit_replacing.assert_not_awaited()
