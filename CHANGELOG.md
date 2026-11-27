@@ -1,6 +1,55 @@
 # CHANGELOG
 
 
+## v0.199.1 (2026-11-27)
+
+### 🐛 Fix a bug
+
+- fix: only the current turn's open card claims the waiting line
+- fix: the tortoise states user waits plainly and keeps its counter
+
+### ♻️ Refactor code
+
+- refactor: span names clients match on as constants
+
+## v0.199.0 (2026-11-26)
+
+### ✨ Introduce new features
+
+- feat: session row menu, two-line rows and archive with undo
+
+### 🐛 Fix a bug
+
+- fix: harden the archive undo flow from review
+
+### 💬 Add or update text and literals
+
+- copy: "Session" in the German UI, a shorter new-session button and sandbox warning
+
+## v0.198.0 (2026-11-26)
+
+### ✨ Introduce new features
+
+- feat: knowledge sync row above the account row
+
+### 🐛 Fix a bug
+
+- fix: let a late sentinel verdict finish its pending card
+- fix: run the knowledge sync's pull and push as one action
+
+## v0.197.0 (2026-11-26)
+
+### ✨ Introduce new features
+
+- feat: sandbox liveness after the session id in the chat header
+
+## v0.196.1 (2026-11-26)
+
+### 🔧 Add or update configuration files
+
+- chore(frontend): update Next.js-generated agent rules
+- chore: move the dev stack port block to 7500-7599
+
 ## v0.196.0 (2026-11-26)
 
 ### ✨ Introduce new features
