@@ -82,9 +82,9 @@ The functions below come from the skills subflake of the Carapace repo, `github:
       inputs.carapace.follows = "carapace";
     };
 
-    # A local skill: the directory skills/carapace, under the name carapace-cli.
-    carapace-cli = {
-      url = "path:./carapace";
+    # A local skill: the directory skills/notes.
+    notes = {
+      url = "path:./notes";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.carapace.follows = "carapace";
     };
@@ -101,7 +101,7 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 ```
 
 - A local skill is a `path:./<dir>` input, a skill from elsewhere any flake reference (e.g. `github:someone/skill-weather`). Every skill follows `nixpkgs` and `carapace`, so the lock holds one of each, and `nix flake update carapace --flake ./skills` moves the helpers of every skill at once.
-- The bundled skills that need no setup (`artifacts`, `create-skill`, `credentials`, `mermaid`, `wikipedia`) come from Carapace's `main` branch, without a tag: every push to `main` is a release. The lock pins the commit they were last updated to; `nix flake update <name> --flake ./skills` brings one to the latest.
+- The bundled skills come from Carapace's `main` branch, without a tag: every push to `main` is a release. The lock pins the commit they were last updated to; `nix flake update <name> --flake ./skills` brings one to the latest.
 - `skillsFlake` exposes each skill's package as `packages.<system>.<name>` and its [manifest](#the-manifest) as `manifests.<system>.<name>`. The builder evaluates and builds every attribute on its own, from `skills/flake.nix`, its lock, `config.json` and the skill's own directory at `HEAD`, so one broken skill leaves the others built and usable.
 - The server reads the list from `skills/flake.lock` (the root's inputs), never by evaluating Nix. Without `skills/flake.nix` or its lock the repo has no skills, and the Knowledge view says so.
 - `carapace` is the helpers' attribute, so the bundled skill in `skills/carapace` is listed as `carapace-cli`.
@@ -112,7 +112,7 @@ To turn a skill off, set `"enable": false` for it in `skills/config.json`, or re
 
 ### `skills/config.json`
 
-The values of the skills' [settings](#settings) and the bindings of their [credential slots](#credential-slots), per skill attribute, as JSON with sorted keys. A new knowledge repo gets one that turns `carapace-cli` off until its server and API key are configured; without the file every skill takes its defaults.
+The values of the skills' [settings](#settings) and the bindings of their [credential slots](#credential-slots), per skill attribute, as JSON with sorted keys. A new knowledge repo gets one that turns off `carapace-cli`, `ferret` and `web` until they are configured; without the file every skill takes its defaults.
 
 ```json
 {
