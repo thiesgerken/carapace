@@ -1000,6 +1000,8 @@ def test_save_user_message_on_failure_appends_cancelled_parallel_tool_results(tm
     )
 
     events = engine.session_mgr.load_events(sid)
+    # The model history had no open calls, so it gets no synthetic returns, only the terminal message.
+    assert [type(message) for message in engine.session_mgr.load_history(sid)] == [ModelRequest, ModelResponse]
 
     assert [event["role"] for event in events] == [
         "user",
