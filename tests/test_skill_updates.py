@@ -14,7 +14,16 @@ import pytest
 
 from carapace.builder.client import BuilderClient
 from carapace.builder.models import InputUpdate, UpdatedLocks
-from carapace.builder.skill_updates import SkillUpdate, SkillUpdates, compare, describe_source
+from carapace.builder.skill_updates import (
+    SkillUpdate,
+    SkillUpdates,
+    UpdateRefusedError,
+    _resolved,
+    compare,
+    describe_source,
+    graft,
+)
+from carapace.git.store import ConcurrentChangeError, GitStore
 from carapace.skills import ListedSkill
 from tests.skills_flake import write_skills_flake
 
@@ -93,6 +102,40 @@ def test_a_moved_transitive_input_is_an_update_of_its_skill() -> None:
     updated["nodes"]["utils"]["locked"]["rev"] = "4" * 40
 
     assert compare("tracker", _lock(), updated).state == "available"
+
+
+def test_a_graft_takes_only_the_one_skill_from_the_updated_lock() -> None:
+    updated = _lock()
+    # The update moved tracker and its own input, whose node Nix named differently this time ...
+    updated["nodes"]["tracker"]["locked"]["rev"] = _NEW_REV
+    updated["nodes"]["tracker"]["inputs"]["utils"] = "utils_2"
+    updated["nodes"]["utils_2"] = {
+        "locked": {"type": "github", "owner": "numtide", "repo": "flake-utils", "rev": "4" * 40}
+    }
+    del updated["nodes"]["utils"]
+    # ... and re-locked notes, whose flake.nix gained an input, along the way.
+    updated["nodes"]["notes"]["inputs"]["extra"] = "extra"
+    updated["nodes"]["extra"] = {"locked": {"type": "github", "owner": "x", "repo": "extra", "rev": "5" * 40}}
+
+    grafted = graft(_lock(), updated, "tracker")
+
+    assert _resolved(grafted, "tracker") == _resolved(updated, "tracker")
+    assert _resolved(grafted, "notes") == _resolved(_lock(), "notes")
+    # The old utils node is gone, nothing dangles: every node is reachable from the root.
+    assert set(grafted["nodes"]) == {"root", "nixpkgs", "carapace", "notes", "tracker", "utils_2"}
+
+
+def test_a_graft_keeps_an_id_another_input_still_uses() -> None:
+    current = _lock()
+    current["nodes"]["notes"]["inputs"]["utils"] = "utils"
+    updated = copy.deepcopy(current)
+    updated["nodes"]["tracker"]["locked"]["rev"] = _NEW_REV
+    updated["nodes"]["utils"]["locked"]["rev"] = "4" * 40
+
+    grafted = graft(current, updated, "tracker")
+
+    assert _resolved(grafted, "tracker") == _resolved(updated, "tracker")
+    assert _resolved(grafted, "notes") == _resolved(current, "notes")
 
 
 def _listed(name: str, *, local: bool) -> ListedSkill:
@@ -213,3 +256,118 @@ async def test_a_repo_without_skills_flake_has_no_check(tmp_path: Path) -> None:
     await _checked(updates, tmp_path)
 
     assert updates.latest(tmp_path) is None
+
+
+async def _available(repo: Path) -> SkillUpdates:
+    """A check that found tracker moved; the builder's lock also re-locked notes, as Nix does."""
+    lock = json.loads((repo / "skills" / "flake.lock").read_text())
+    updated = copy.deepcopy(lock)
+    updated["nodes"]["tracker"]["locked"]["rev"] = _NEW_REV
+    updated["nodes"]["notes"]["inputs"] = {"extra": "extra"}
+    updated["nodes"]["extra"] = {"locked": {"type": "github", "owner": "x", "repo": "extra", "rev": "5" * 40}}
+    answer = {"notes": InputUpdate(lock=json.dumps(lock)), "tracker": InputUpdate(lock=json.dumps(updated))}
+    updates = SkillUpdates(cast(BuilderClient, FakeBuilder(answer)))
+    await _checked(updates, repo)
+    return updates
+
+
+@pytest.mark.anyio
+async def test_applying_an_update_commits_only_that_skill_as_the_user(repo: Path) -> None:
+    _git(repo, "config", "user.name", "carapace")
+    _git(repo, "config", "user.email", "carapace@example.com")
+    before = json.loads((repo / "skills" / "flake.lock").read_text())
+    updates = await _available(repo)
+
+    pending = await updates.pending_update(repo, "tracker")
+    await GitStore(repo).commit_replacing(
+        "skills/flake.lock",
+        pending.lock_text,
+        unchanged={"skills": pending.base_tree},
+        message=pending.message,
+        author="Demo User <demo@example.com>",
+    )
+
+    after = json.loads(_git(repo, "show", "HEAD:skills/flake.lock"))
+    assert after["nodes"]["tracker"]["locked"]["rev"] == _NEW_REV
+    assert {k: v for k, v in after["nodes"].items() if k != "tracker"} == {
+        k: v for k, v in before["nodes"].items() if k != "tracker"
+    }
+    assert (
+        _git(repo, "log", "-1", "--format=%an <%ae>|%s")
+        == f"Demo User <demo@example.com>|⬆️ skills: update tracker to {_NEW_REV[:7]}"
+    )
+    assert _git(repo, "status", "--porcelain") == ""
+
+
+@pytest.mark.anyio
+async def test_a_lock_that_changed_after_the_check_is_not_overwritten(repo: Path) -> None:
+    updates = await _available(repo)
+    pending = await updates.pending_update(repo, "tracker")
+    # A push lands between preparing the update and committing it.
+    (repo / "skills" / "flake.lock").write_text("{}\n")
+    _git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qam", "relock")
+
+    with pytest.raises(ConcurrentChangeError):
+        await GitStore(repo).commit_replacing(
+            "skills/flake.lock",
+            pending.lock_text,
+            unchanged={"skills": pending.base_tree},
+            message=pending.message,
+            author="Demo User <demo@example.com>",
+        )
+
+    assert _git(repo, "log", "-1", "--format=%s") == "relock"
+    assert _git(repo, "status", "--porcelain") == ""
+    # And once HEAD's skills/ moved on, the old check no longer offers the update at all.
+    with pytest.raises(UpdateRefusedError, match="check for updates again"):
+        await updates.pending_update(repo, "tracker")
+
+
+@pytest.mark.anyio
+async def test_only_an_available_update_can_be_applied(repo: Path) -> None:
+    updates = await _available(repo)
+
+    with pytest.raises(UpdateRefusedError, match="no update for notes"):
+        await updates.pending_update(repo, "notes")
+
+
+@pytest.mark.anyio
+async def test_a_push_of_anything_under_skills_makes_the_update_stale(repo: Path) -> None:
+    updates = await _available(repo)
+    pending = await updates.pending_update(repo, "tracker")
+    # Only flake.nix changes: the lock blob is the same, but it may no longer describe the flake.
+    (repo / "skills" / "flake.nix").write_text("{ outputs = _: { x = 1; }; }\n")
+    _git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qam", "flake only")
+
+    with pytest.raises(ConcurrentChangeError, match="skills changed"):
+        await GitStore(repo).commit_replacing(
+            "skills/flake.lock",
+            pending.lock_text,
+            unchanged={"skills": pending.base_tree},
+            message=pending.message,
+            author="Demo User <demo@example.com>",
+        )
+
+    assert _git(repo, "status", "--porcelain") == ""
+
+
+@pytest.mark.anyio
+async def test_a_failed_commit_leaves_the_checkout_clean(repo: Path) -> None:
+    updates = await _available(repo)
+    pending = await updates.pending_update(repo, "tracker")
+
+    # Not "Name <email>": git refuses the commit after the file is written and staged.
+    with pytest.raises(RuntimeError, match="git commit failed"):
+        await GitStore(repo).commit_replacing(
+            "skills/flake.lock",
+            pending.lock_text,
+            unchanged={"skills": pending.base_tree},
+            message=pending.message,
+            author="nobody-matches-this",
+        )
+    with pytest.raises(RuntimeError, match="git commit failed"):
+        await GitStore(repo).commit_replacing(
+            "skills/new.json", "{}\n", unchanged={}, message="new file", author="nobody-matches-this"
+        )
+
+    assert _git(repo, "status", "--porcelain") == ""

@@ -90,3 +90,38 @@ test("the skill list shows origin, locked rev and the update verdict, and starts
     restore();
   }
 });
+
+test("an available update has an Update button; a refused update shows the server's reason", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    requests.push(`${method} ${new URL(String(input)).pathname}`);
+    if (method === "POST") {
+      return Response.json({ detail: "skills/flake.lock changed in the meantime; nothing was committed" }, { status: 409 });
+    }
+    return Response.json(checked);
+  }) as typeof fetch;
+
+  try {
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <SkillSourcesPanel server={SERVER} />
+      </NextIntlClientProvider>,
+    );
+    await flushReact();
+    const updates = Array.from(view.container.querySelectorAll("button")).filter((b) => b.textContent?.trim() === "Update");
+    // Only tracker has an update; the outdated and current skills get no button.
+    assert.equal(updates.length, 1);
+    await click(updates[0]);
+    await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    assert.deepEqual(requests, ["GET /api/knowledge/skills", "POST /api/knowledge/skills/tracker/update"]);
+    assert.match(view.container.textContent ?? "", /changed in the meantime/);
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
