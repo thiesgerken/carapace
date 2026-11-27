@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from collections.abc import Callable
+from typing import Any
 
 from loguru import logger
 from redis.asyncio import Redis
@@ -26,7 +26,7 @@ class SessionListCache:
 
         client = Redis.from_url(self._redis_url, decode_responses=True)
         try:
-            await cast(Awaitable[bool], client.ping())
+            await client.ping()
         except (OSError, RedisError, ValueError) as exc:
             await client.aclose()
             raise RuntimeError(f"Failed to connect session list cache to Redis at {self._redis_url}: {exc}") from exc

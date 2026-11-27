@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import cast
 
 from pydantic import BaseModel
 from pydantic_ai import Agent, capture_run_messages
@@ -76,9 +75,9 @@ def capped_model_settings(config: Config, model: str, output_tokens_cap: int) ->
     Thinking models may already require a larger ``max_tokens`` (see ``model_settings_for_entry``);
     that larger value then becomes the cap, so estimates stay an upper bound.
     """
-    settings = dict(with_prompt_cache(model_settings_for_config(config, model), conversation=False))
-    settings["max_tokens"] = max(output_tokens_cap, cast(int, settings.get("max_tokens", 0)))
-    return cast(ModelSettings, settings)
+    settings = with_prompt_cache(model_settings_for_config(config, model), conversation=False)
+    settings["max_tokens"] = max(output_tokens_cap, settings.get("max_tokens", 0))
+    return settings
 
 
 def structured_agent[OutputT: BaseModel](

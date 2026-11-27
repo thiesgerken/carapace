@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import Connection, engine_from_config, pool
 
 from carapace.database import models  # noqa: F401  (register tables on metadata)
 from carapace.database.base import Base
@@ -23,7 +23,7 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def _run_with_connection(connection) -> None:
+def _run_with_connection(connection: Connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
