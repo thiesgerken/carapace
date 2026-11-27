@@ -50,10 +50,10 @@ The input URL decides what an update can move to:
 | --- | --- | --- |
 | `github:alice/knowledge?dir=skills/weather` | the default branch's head | to its new head |
 | `github:alice/knowledge/dev?dir=skills/weather` | the `dev` branch's head | to its new head |
-| `github:alice/knowledge/weather-v2?dir=skills/weather` | the tag `weather-v2` | never |
+| `github:alice/knowledge/weather-v2?dir=skills/weather` | the tag `weather-v2` | only if the tag is moved |
 | `github:alice/knowledge/<40-hex rev>?dir=skills/weather` | that commit | never |
 
-`skills/flake.lock` holds the exact commit either way, so a build never changes on its own. Following a branch only means that an update has somewhere to go: `nix flake update weather --flake ./skills`, Carapace's update check with its "Update" button ([skills.md](skills.md#updates)), or Renovate (below). A pinned input never moves, so it never reports an update; to move it, change the tag or rev in the URL and lock again.
+`skills/flake.lock` holds the exact commit either way, so a build never changes on its own. Following a branch only means that an update has somewhere to go: `nix flake update weather --flake ./skills`, Carapace's update check with its "Update" button ([skills.md](skills.md#updates)), or Renovate (below). A pinned input does not move (a tag only if its publisher moves it), so it reports no update; to move it, change the tag or rev in the URL and lock again.
 
 Follow a branch for skills you trust to stay compatible, such as the bundled ones on Carapace's `main`. Pin to a tag when the publisher tags releases and you want to read the changes before taking them.
 
@@ -79,19 +79,23 @@ Its own `flake.lock` pins the inputs that consumers do not override. If consumer
 
 ## Renovate on a knowledge repo
 
-[Renovate](https://docs.renovatebot.com/) can propose lock updates as pull requests on the forge that holds your knowledge repo (the [upstream remote](git.md)), instead of Carapace's update check or a manual `nix flake update`. Its Nix manager is opt-in (in beta as of Renovate 45), finds `skills/flake.nix` with its default file pattern, and needs a Renovate that can run Nix. Whether a hosted Renovate app runs it depends on that app; a self-hosted Renovate with Nix available does. A `renovate.json` at the root of the knowledge repo:
+[Renovate](https://docs.renovatebot.com/) can propose lock updates as pull requests on the forge that holds your knowledge repo (the [upstream remote](git.md)), instead of Carapace's update check or a manual `nix flake update`. Its Nix manager is opt-in (in beta as of Renovate 45), and needs a Renovate that can run Nix. Whether a hosted Renovate app runs it depends on that app; a self-hosted Renovate with Nix available does. A `renovate.json` at the root of the knowledge repo:
 
 ```json
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
-  "nix": { "enabled": true },
+  "nix": {
+    "enabled": true,
+    "managerFilePatterns": ["/^skills/flake\\.nix$/"]
+  },
   "lockFileMaintenance": { "enabled": true }
 }
 ```
 
-- **What the PRs look like:** updates of single inputs in `skills/flake.lock`, and with `lockFileMaintenance` a scheduled PR that refreshes the whole lock (on Renovate's lock file maintenance schedule, never grouped with other updates). Only `skills/flake.lock` changes, so a PR is a list of moved inputs. Pinned inputs never move, exactly as above.
+- **Only `skills/flake.nix`:** the manager's default pattern matches every `flake.nix`, local skills' own included. Renovate would then update their locks too, which leaves the top-level lock [outdated](skills.md#updates); the pattern above keeps it to the skills flake. A local skill's own inputs are updated with `nix flake update --flake ./skills/<dir>` and then `nix flake update <name> --flake ./skills`.
+- **What the PRs look like:** updates of single inputs in `skills/flake.lock`, and with `lockFileMaintenance` a scheduled PR that refreshes the whole lock (on Renovate's lock file maintenance schedule, never grouped with other updates). Only `skills/flake.lock` changes, so a PR is a list of moved inputs. Pinned inputs stay where they are, as above.
 - **Who reviews what:** the sentinel reviews what a sandbox pushes, through the server. A Renovate PR is merged on the forge, by you, and never passes the sentinel: your review of the PR is the review, so read which inputs moved and to where, as you would read the sentinel's lines for a lock change.
-- **Getting the merge into Carapace:** the server takes remote changes when it starts, on `/pull` in a session, or with "Pull" in the Git sync panel. After the pull, the builder builds the skills whose keys changed, and new sessions see them. Sessions that are running keep the catalog they started with.
+- **Getting the merge into Carapace:** the server takes remote changes when it starts, on `/pull` in a session, or with "Pull" in the Git sync panel. After the pull, the builder builds the skills whose keys changed, and new sessions see them. A running session keeps its catalog until `/compact`.
 
 Renovate and Carapace's own update check can run side by side: both look at the same lock, and whichever lands first leaves the other nothing to do.
