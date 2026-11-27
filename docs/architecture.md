@@ -434,7 +434,7 @@ sequenceDiagram
     Note over Agent: Skill read, its commands are on PATH
 
     Agent->>Sandbox: exec("web_search 'python 3.14 release notes'")
-    Sandbox->>Sentinel: cgate request: domain api.search.brave.com, credential vault/brave-api-key
+    Sandbox->>Sentinel: cgate request --command web_search: domain api.search.brave.com, credential bound to BRAVE_API_KEY
     Sentinel-->>Sandbox: verdict: allow (fits the search)
     Sandbox->>Proxy: CONNECT api.search.brave.com:443
     Proxy->>Sandbox: connection established (approved for this exec)

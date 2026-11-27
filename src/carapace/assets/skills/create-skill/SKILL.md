@@ -64,7 +64,7 @@ Good filenames are `REFERENCE.md`, `CONFIG.md`, or `references/*.md`.
 
 ## Setup Guidance
 
-If a command needs credentials or network access, declare them in `flake.nix`; the command asks for them itself when it runs. Say that in one line in `SKILL.md`. Do not inline credential wiring, vault paths, or build details there.
+If a command needs credentials or network access, declare them in `flake.nix` (a credential slot, bound in `skills/config.json`); the command asks for them itself when it runs. Say that in one line in `SKILL.md`. Do not inline credential wiring, vault paths, or build details there.
 
 ## Template
 

@@ -143,7 +143,7 @@ A built-in `create-skill` skill is seeded into every new knowledge repo to guide
 
 ## Bundled skills
 
-Every new knowledge repo gets them. The ones that need no setup (`artifacts`, `create-skill`, `credentials`, `mermaid`, `wikipedia`) are listed in the seeded `skills/flake.nix` as inputs on Carapace's `main` branch, not copied ([skill-flakes.md](skill-flakes.md#the-skills-flake)). The ones whose flake carries this instance's settings are copied into the repo: `carapace-cli` (listed), `ferret` and `web` (not listed until set up):
+Every new knowledge repo gets them. The ones that need no setup (`artifacts`, `create-skill`, `credentials`, `mermaid`, `wikipedia`) are listed in the seeded `skills/flake.nix` as inputs on Carapace's `main` branch, not copied ([skill-flakes.md](skill-flakes.md#the-skills-flake)). The others are copied into the repo until they move to Carapace's `main` too: `carapace-cli` (listed, but turned off in the seeded `skills/config.json` until its `CARAPACE_HOST` setting and `CARAPACE_API_KEY` slot are configured), `ferret` and `web` (not listed until set up, see their credential slots):
 
 | Skill          | Purpose                                                                        |
 | -------------- | ------------------------------------------------------------------------------ |
@@ -153,7 +153,7 @@ Every new knowledge repo gets them. The ones that need no setup (`artifacts`, `c
 | `credentials`  | List, fetch, and use secrets from the vault.                                   |
 | `ferret`       | Personal indexed-source discovery over MCP. Not listed by default; [setup](../src/carapace/assets/skills/ferret/SETUP.md). |
 | `mermaid`      | Write Mermaid diagrams; the web UI renders ` ```mermaid ` fences as pictures.   |
-| `web`          | Web search and page fetch. Not listed by default; requires a Brave Search API key at `vault/brave-api-key` before listing it. |
+| `web`          | Web search and page fetch. Not listed by default; bind its `BRAVE_API_KEY` slot to a Brave Search API key in `skills/config.json` before listing it. |
 | `wikipedia`    | Wikipedia search and article fetch.                                            |
 
 All of them are [skill flakes](skill-flakes.md); `artifacts`, `create-skill`, `credentials` and `mermaid` carry only instructions. In a knowledge repo they follow the Carapace helpers that `skills/flake.lock` pins. Examples of the helpers live in [`nix/skills/examples`](../nix/skills/examples).

@@ -27,6 +27,9 @@ let
     !(builtins.tryEval (builtins.toJSON (bad.passthru.carapaceNeeds { }))).success;
   rejected = map rejects [
     { domain = [ "api.example.com" ]; }
+    # A literal vault path, the form before credential slots, and a slot the skill does not declare.
+    { credentials.TOKEN = "demo/token"; }
+    { credentials = [ "UNDECLARED" ]; }
     { credentials."A=B" = "demo/token"; }
     { credentials."TOKEN; rm -rf ~" = "demo/token"; }
     { tunnels = [ "imap.example.com" ]; }
@@ -40,7 +43,10 @@ let
   mcp = skillLib.mkSkill {
     src = fixture;
     name = "mcp-contract";
-    needs.credentials.UNRELATED = "demo/unrelated";
+    credentials = {
+      UNRELATED.type = "secret";
+      NOTES_TOKEN.type = "secret";
+    };
     commands = skillLib.mcpCommands {
       tracker = {
         url = "https://mcp.example.com/mcp";
@@ -49,7 +55,7 @@ let
       };
       notes = {
         url = "https://notes.example.com:8443/mcp";
-        bearer = "demo/notes-token";
+        bearer = "NOTES_TOKEN";
         description = "A bearer HTTP server";
       };
       local = {
@@ -84,6 +90,10 @@ let
       )
     )).success;
   rejectedMcp = map rejectsMcp [
+    {
+      url = "https://mcp.example.com/mcp";
+      bearer = "demo/token";
+    }
     { url = "http://mcp.example.com/mcp"; }
     { url = "https://user:secret@mcp.example.com/mcp"; }
     { url = "https://user@mcp.example.com/mcp"; }
@@ -101,10 +111,11 @@ let
   skill = skillLib.mkSkill {
     src = fixture;
     name = "contract";
-    needs = {
-      domains = [ "api.example.com" ];
-      credentials.DEMO_TOKEN = "demo/token";
+    credentials.DEMO_TOKEN = {
+      type = "secret";
+      description = "The demo API's token";
     };
+    needs.domains = [ "api.example.com" ];
     commands = {
       show-token = {
         exec = "${pkgs.coreutils}/bin/printenv FROM_CGATE";
@@ -115,7 +126,7 @@ let
         description = "Needs nothing";
         needs = {
           domains = [ ];
-          credentials = { };
+          credentials = [ ];
         };
       };
       mail = {
@@ -123,7 +134,7 @@ let
         description = "Needs a tunnel and nothing else";
         needs = {
           domains = [ ];
-          credentials = { };
+          credentials = [ ];
           # Any case, like the server, which lowercases it.
           tunnels = [ "Imap.example.com:993" ];
         };
@@ -158,11 +169,15 @@ let
         nixpkgs = { };
         carapace = { };
         weather.packages.${system}.default = weather;
+        contract.packages.${system}.default = skill;
         notes.packages.${system}.default = notes;
       };
       config = builtins.toFile "config.json" (builtins.toJSON values);
     }).manifests.${system};
-  configured = manifestsWith { weather.settings.CITY = "Berlin"; };
+  configured = manifestsWith {
+    weather.settings.CITY = "Berlin";
+    contract.credentials.DEMO_TOKEN = "demo/token";
+  };
   fails = value: !(builtins.tryEval (builtins.toJSON value)).success;
 in
 assert pkgs.lib.assertMsg (pkgs.lib.all (x: x) rejected) "mkSkill accepted invalid needs";
@@ -173,19 +188,19 @@ assert pkgs.lib.assertMsg (
   mcpNeeds == {
     tracker = {
       domains = [ "mcp.example.com" ];
-      credentials = { };
+      credentials = [ ];
       oauth = [ "demo/tracker-oauth" ];
       tunnels = [ ];
     };
     notes = {
       domains = [ "notes.example.com" ];
-      credentials.MCP_BEARER_TOKEN = "demo/notes-token";
+      credentials = [ "NOTES_TOKEN" ];
       oauth = [ ];
       tunnels = [ ];
     };
     local = {
       domains = [ ];
-      credentials = { };
+      credentials = [ ];
       oauth = [ ];
       tunnels = [ ];
     };
@@ -224,9 +239,32 @@ assert pkgs.lib.assertMsg (
       name = "notes";
       skillDir = notes.passthru.carapace.skillDir;
       settings = { };
+      credentials = { };
       commands = { };
     }
+  &&
+    configured.contract.credentials.DEMO_TOKEN == {
+      type = "secret";
+      description = "The demo API's token";
+      binding = "demo/token";
+    }
+  && configured.contract.commands.show-token.needs.credentials == { DEMO_TOKEN = "demo/token"; }
+  && configured.contract.commands.local.needs.credentials == { }
 ) "skillsFlake resolved the wrong manifests: ${builtins.toJSON configured}";
+# An unbound slot stays in the manifest as null, for Carapace to refuse the commands that need it.
+assert pkgs.lib.assertMsg (
+  let
+    unbound = (manifestsWith { weather.settings.CITY = "Berlin"; }).contract;
+  in
+  unbound.credentials.DEMO_TOKEN.binding == null
+  && unbound.commands.show-token.needs.credentials == { DEMO_TOKEN = null; }
+) "skillsFlake did not leave an unbound slot null";
+assert pkgs.lib.assertMsg (fails
+  (manifestsWith {
+    weather.settings.CITY = "Berlin";
+    contract.credentials.DEMO_TOKEN = "not a vault path";
+  }).contract
+) "skillsFlake accepted a binding that is no vault path";
 # A required setting without a value fails, also for every other key of config.json; a skill that is off
 # needs none.
 assert pkgs.lib.assertMsg (fails
@@ -264,6 +302,23 @@ assert pkgs.lib.assertMsg (fails
     settings.URL.type = "url";
   }).passthru.carapace
 ) "mkSkill accepted an unknown setting type";
+assert pkgs.lib.assertMsg (fails
+  (skillLib.mkSkill {
+    src = fixture;
+    name = "bad-slot";
+    credentials.TOKEN = {
+      type = "secret";
+      default = "demo/token";
+    };
+  }).passthru.carapace
+) "mkSkill accepted a credential slot with a default";
+assert pkgs.lib.assertMsg (fails
+  (skillLib.mkSkill {
+    src = fixture;
+    name = "bad-skill-wide";
+    needs.credentials.TOKEN = "demo/token";
+  }).passthru.carapace
+) "mkSkill accepted a skill-wide vault path on a skill without commands";
 pkgs.runCommand "skill-wrapper-contract" { } ''
   mkdir stubs
   # Carapace answers with the setting values and credentials as shell code; here a marker stands for them.
@@ -311,7 +366,7 @@ pkgs.runCommand "skill-wrapper-contract" { } ''
     "cgate request --store-path ${mcp} --command tracker" \
     "mcp --name tracker --url https://mcp.example.com/mcp --oauth demo/tracker-oauth --list-tools FROM_CGATE=tracker" \
     "cgate request --store-path ${mcp} --command notes" \
-    "mcp --name notes --url https://notes.example.com:8443/mcp --bearer-env MCP_BEARER_TOKEN search --query a b FROM_CGATE=notes" \
+    "mcp --name notes --url https://notes.example.com:8443/mcp --bearer-env NOTES_TOKEN search --query a b FROM_CGATE=notes" \
     "mcp --name local --stdio local-mcp --stdio --list-tools FROM_CGATE=" | diff - calls
 
   # The package holds the wrappers and a reference to the skill directory the metadata names.

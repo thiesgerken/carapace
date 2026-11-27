@@ -13,9 +13,10 @@ it. This operator guide is not returned by `read_skill`.
    the source roots the agent should read. Omit restrictions for all your
    sources; an explicit empty list is invalid. Do not grant `ingest:write`.
    Ferret uses API-key bearer auth, not OAuth or a browser session cookie.
-3. Store the actual key in the vault and point `bearer` in `flake.nix` at that
-   entry (the bundled reference is `vault/ferret-api-key`). Never put the key in chat
-   or the skill file.
+3. Store the actual key in the vault and bind the skill's `FERRET_API_KEY` slot
+   to that entry in `skills/config.json`:
+   `{"ferret": {"credentials": {"FERRET_API_KEY": "<backend>/<id>"}}}`. Never put the
+   key in chat or the skill file.
 4. Replace the `X, Y, Z` source placeholder in the frontmatter `description`
    with your actual indexed sources. The description is an always-visible
    coverage hint; `ferret list_sources` shows the sources currently authorized
@@ -44,5 +45,5 @@ is already running keeps the catalog it started with.
 
 Normal bootstrap seeds missing bundled skill directories and preserves existing
 directories and user edits. Explicit `reset-assets` overwrites bundled
-customization, including Ferret's endpoint and vault reference in `flake.nix`
+customization, including Ferret's endpoint in `flake.nix`
 and the source description. It never touches `skills/flake.nix`.
