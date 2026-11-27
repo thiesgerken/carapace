@@ -53,7 +53,7 @@
         "error": "Laden fehlgeschlagen",
         "download": "Datei herunterladen",
         "noPreview": "Für diesen Dateityp ist keine Vorschau verfügbar.",
-        "untitledSession": "Sitzung öffnen",
+        "untitledSession": "Session öffnen",
         "copyHash": "Vollständigen Commit-Hash kopieren",
         "copiedHash": "Kopiert",
         "largeFileNotice": "Syntax-Hervorhebung ist für diese Datei deaktiviert — sie ist zu groß.",
@@ -127,7 +127,7 @@
         "costWithEquivalent": "{cost} (≈ {equivalent} Äquivalent)",
         "tabs": {
             "timeline": "Zeitleiste",
-            "sessions": "Sitzungen",
+            "sessions": "Sessions",
             "facts": "Fakten",
             "tasks": "Aufgaben"
         },
@@ -161,7 +161,7 @@
             "cancelled": "abgebrochen"
         },
         "taskKinds": {
-            "session_extract": "Sitzungsextraktion",
+            "session_extract": "Session-Extraktion",
             "week_digest": "Wochen-Digest",
             "month_digest": "Monats-Digest",
             "mirror": "Spiegel"
@@ -302,7 +302,7 @@
             },
             "matching": "{count} Treffer",
             "dismiss": "Ausblenden",
-            "pickPage": "Alle Sitzungen dieser Seite auswählen",
+            "pickPage": "Alle Sessions dieser Seite auswählen",
             "pickSession": "{title} auswählen",
             "columns": {
                 "details": "Details",
@@ -313,13 +313,13 @@
                 "status": "Status",
                 "cost": "Kosten"
             },
-            "untitled": "Unbenannte Sitzung",
+            "untitled": "Unbenannte Session",
             "task": "Aufgabe <status></status>",
             "factsBreakdown": "Du {user} · Personen {social} · Umgebung {surroundings}",
             "expand": "Extraktion von {title} anzeigen",
             "collapse": "Extraktion von {title} ausblenden",
-            "openChat": "Chat-Sitzung {title} öffnen",
-            "empty": "Keine Sitzungen passen zu diesen Filtern.",
+            "openChat": "Chat-Session {title} öffnen",
+            "empty": "Keine Sessions passen zu diesen Filtern.",
             "loadMore": "Mehr laden",
             "runPicked": "{count, plural, one {# Aufgabe} other {# Aufgaben}} ausführen",
             "runNeedsRows": "Ausführen braucht einzeln ausgewählte Zeilen; Neu erzeugen wirkt auf alle Treffer.",
@@ -334,7 +334,7 @@
             "input_format_version": "Eingabeformat geändert"
         },
         "drawer": {
-            "notEligible": "Diese Sitzung gehört nicht zum Gedächtnis (privat, ausgeschlossener Job oder unbekannt).",
+            "notEligible": "Diese Session gehört nicht zum Gedächtnis (privat, ausgeschlossener Job oder unbekannt).",
             "notExtracted": "Noch nicht extrahiert.",
             "taskStatus": "Aufgabe ist <status></status>.",
             "history": "Frühere Versionen",
@@ -369,10 +369,10 @@
             "nextMonth": "Nächster Monat",
             "jumpToMonth": "Monat",
             "monthDigest": "Monats-Digest",
-            "sessionsOnDay": "{count, plural, one {# Sitzung} other {# Sitzungen}}",
-            "empty": "Noch keine Zeiträume. Sie erscheinen, sobald Sitzungen für das Gedächtnis erzeugt wurden.",
+            "sessionsOnDay": "{count, plural, one {# Session} other {# Sessions}}",
+            "empty": "Noch keine Zeiträume. Sie erscheinen, sobald Sessions für das Gedächtnis erzeugt wurden.",
             "pickPeriod": "Woche oder Monat auswählen.",
-            "unknownPeriod": "Dieser Zeitraum hat keine Sitzungen.",
+            "unknownPeriod": "Dieser Zeitraum hat keine Sessions.",
             "badges": {
                 "current": "aktuell",
                 "stale": "veraltet",
@@ -389,7 +389,7 @@
             "generate": "Erzeugen",
             "run": "Ausführen",
             "cancelTask": "Aufgabe abbrechen",
-            "coverageSessions": "{covered}/{total} Sitzungen",
+            "coverageSessions": "{covered}/{total} Sessions",
             "coverageWeeks": "{covered}/{total} Wochen",
             "task": "Aufgabe <status></status>",
             "prompt": "Prompt {version}",
@@ -404,7 +404,7 @@
                 "social": "Personen",
                 "surroundings": "Umgebung"
             },
-            "sourceSessions": "{count, plural, one {Sitzung (#)} other {Sitzungen (#)}}",
+            "sourceSessions": "{count, plural, one {Session (#)} other {Sessions (#)}}",
             "sourceWeeks": "{count, plural, one {Woche (#)} other {Wochen (#)}}",
             "notExtracted": "nicht extrahiert",
             "history": "{count, plural, one {Frühere Version (#)} other {Frühere Versionen (#)}}",
@@ -515,7 +515,7 @@
             "memoryTokensPerDay": "Eingabe-Tokens pro Tag",
             "memoryTokensPerMonth": "Eingabe-Tokens pro Monat",
             "timezone": "Zeitzone",
-            "memoryLow": "Modell für Sitzungsextraktion",
+            "memoryLow": "Modell für Session-Extraktion",
             "memoryHigh": "Modell für Zusammenfassungen",
             "memoryPromptBudget": "Gedächtnis-Tokens",
             "previewPrompts": "Systemprompts ansehen"
@@ -567,9 +567,9 @@
             "agentIcon": "Ein einzelnes Emoji als Favicon und Logo in der Seitenleiste. Leer lassen für Standard.",
             "memoryAutoMode": "Ausstehende Gedächtnis-Aufgaben automatisch ausführen, solange das Budget reicht. Aus heißt: Aufgaben laufen nur, wenn du sie startest.",
             "timezone": "Bestimmt Wochen, Monate und Budgetfenster des Gedächtnisses.",
-            "memoryLow": "memory_low: fasst einzelne Sitzungen zusammen. Ein günstiges Modell reicht.",
+            "memoryLow": "memory_low: fasst einzelne Sessions zusammen. Ein günstiges Modell reicht.",
             "memoryHigh": "memory_high: schreibt Wochen- und Monatszusammenfassungen. Ein stärkeres Modell lohnt sich.",
-            "memoryPromptBudget": "Wie viel aktuelles Gedächtnis der Systemprompt einer neuen Sitzung enthält. Leer nutzt den Serverstandard, 0 schaltet es ab."
+            "memoryPromptBudget": "Wie viel aktuelles Gedächtnis der Systemprompt einer neuen Session enthält. Leer nutzt den Serverstandard, 0 schaltet es ab."
         },
         "chatgpt": {
             "description": "Nutze dein eigenes ChatGPT-Abo für openai-codex-Modelle statt der API-Schlüssel der Plattform. Die Nutzung zählt gegen die Limits deines Abos; Kostenangaben zeigen den entsprechenden API-Preis.",
@@ -660,7 +660,7 @@
             "apiKey": "API-Key",
             "secretReference": "Secret-Referenz",
             "compaction": "Compaction",
-            "memoryLow": "Gedächtnis: Sitzungsextraktion",
+            "memoryLow": "Gedächtnis: Session-Extraktion",
             "memoryHigh": "Gedächtnis: Zusammenfassungen"
         },
         "placeholders": {
@@ -709,9 +709,9 @@
         }
     },
     "home": {
-        "untitledSession": "Unbenannte Sitzung",
+        "untitledSession": "Unbenannte Session",
         "justNow": "gerade eben",
-        "noMemory": "Offene Punkte und der Überblick über die Woche erscheinen hier, sobald das <link>Gedächtnis</link> deine Sitzungen ausgewertet hat.",
+        "noMemory": "Offene Punkte und der Überblick über die Woche erscheinen hier, sobald das <link>Gedächtnis</link> deine Sessions ausgewertet hat.",
         "openLoops": {
             "title": "Offene Punkte",
             "empty": "Nichts offen.",
@@ -726,9 +726,9 @@
             "highlights": "Highlights"
         },
         "notices": {
-            "untitledSession": "Unbenannte Sitzung",
+            "untitledSession": "Unbenannte Session",
             "approval": "Freigabe wartet: {title}",
-            "approvals": "{count} Sitzungen warten auf Freigabe",
+            "approvals": "{count} Sessions warten auf Freigabe",
             "failedTasks": "{count, plural, one {# fehlgeschlagene Gedächtnis-Aufgabe} other {# fehlgeschlagene Gedächtnis-Aufgaben}}",
             "outdatedRecords": "{count, plural, one {# veralteter Gedächtnis-Eintrag} other {# veraltete Gedächtnis-Einträge}}",
             "budgetDay": "Gedächtnis-Budget heute: {used} von {limit}",
@@ -885,7 +885,7 @@
             "preferences": {
                 "label": "Benachrichtigungen senden für",
                 "escalation_pending": "Eskalationen, die Freigabe brauchen",
-                "attended_turn_completed": "Begleitete Sitzungen, wenn ein Turn endet",
+                "attended_turn_completed": "Begleitete Sessions, wenn ein Turn endet",
                 "unattended_turn_completed": "Unbeaufsichtigte Jobs mit erfolgreichem Abschluss",
                 "unattended_turn_failed": "Unbeaufsichtigte Jobs mit Fehler"
             },
@@ -902,8 +902,9 @@
         }
     },
     "newSessionButton": {
-        "label": "Neue Sitzung",
-        "chooseOptions": "Sitzungsoptionen auswählen",
+        "label": "Neu",
+        "title": "Neue Session",
+        "chooseOptions": "Session-Optionen auswählen",
         "private": {
             "enabledTitle": "Privat",
             "enabledDescription": "Nicht ins Wissens-Repository aufnehmen.",
@@ -1197,8 +1198,8 @@
             }
         },
         "budget": {
-            "none": "Keine Sitzungsbudgets konfiguriert.",
-            "title": "Sitzungsbudgets",
+            "none": "Keine Session-Budgets konfiguriert.",
+            "title": "Session-Budgets",
             "table": {
                 "metric": "Metrik",
                 "current": "Aktuell",
@@ -1221,7 +1222,7 @@
     "chatView": {
         "inputDisabled": {
             "archived": "Zuerst aus dem Archiv holen",
-            "unattended": "Diese Sitzung ist unbeaufsichtigt. Forke sie zuerst, um hier weiterzumachen."
+            "unattended": "Diese Session ist unbeaufsichtigt. Forke sie zuerst, um hier weiterzumachen."
         },
         "waiting": {
             "phrases": {
@@ -1258,7 +1259,8 @@
                 "learnsCommands": "Lernt die neuen Befehle auswendig…",
                 "stowsCommands": "Stopft die Befehle in den Panzer…",
                 "awaitsYourGo": "Wartet auf dein Okay…",
-                "waitsItsTurn": "Wartet, bis es dran ist…"
+                "waitsItsTurn": "Wartet, bis es dran ist…",
+                "runsCommand": "Führt den Befehl aus…"
             },
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",
@@ -1271,7 +1273,7 @@
         },
         "empty": {
             "start": "Sende eine Nachricht, um loszulegen",
-            "connectingSession": "Verbinde mit Sitzung…"
+            "connectingSession": "Verbinde mit Session…"
         },
         "errors": {
             "unexpected": "Unerwarteter Fehler",
@@ -1280,23 +1282,21 @@
             "compactRefresh": "Compaction erfolgreich, aber das Aktualisieren des Verlaufs ist fehlgeschlagen. Neu laden, um die Ansicht nach der Compaction zu sehen."
         },
         "confirm": {
-            "wipeSandbox": "Sandbox und ihren Speicher für diese Sitzung löschen? Der Chatverlauf bleibt erhalten.",
-            "scaleDownSandbox": "Sandbox für diese Sitzung herunterfahren? Der Speicher bleibt erhalten.",
-            "deleteSession": "Diese Sitzung löschen? Chatverlauf und Sandbox-Status werden entfernt.",
-            "archiveSession": "Diese Sitzung archivieren? Sie verschwindet aus der Standardliste, setzt ihre Sandbox zurück und bleibt im Wissens-Repository erhalten.",
-            "unarchiveSession": "Diese Sitzung aus dem Archiv holen? Sie kehrt in die aktive Sitzungsliste zurück.",
-            "makePrivate": "Diese Sitzung als privat markieren? Bereits vorhandene Commits im Wissens-Repository bleiben in der Git-Historie bestehen."
+            "wipeSandbox": "Sandbox und ihren Speicher für diese Session löschen? Der Chatverlauf bleibt erhalten.",
+            "scaleDownSandbox": "Sandbox für diese Session herunterfahren? Der Speicher bleibt erhalten.",
+            "deleteSession": "Diese Session löschen? Chatverlauf und Sandbox-Status werden entfernt.",
+            "makePrivate": "Diese Session als privat markieren? Bereits vorhandene Commits im Wissens-Repository bleiben in der Git-Historie bestehen."
         },
         "actions": {
-            "pin": "Sitzung anheften",
+            "pin": "Session anheften",
             "unpin": "Anheftung lösen",
-            "favorite": "Sitzung favorisieren",
+            "favorite": "Session favorisieren",
             "unfavorite": "Favorit entfernen",
-            "archive": "Sitzung archivieren",
-            "unarchive": "Sitzung aus dem Archiv holen",
+            "archive": "Session archivieren",
+            "unarchive": "Session aus dem Archiv holen",
             "includeInRepo": "Ins Repository aufnehmen",
             "keepPrivate": "Privat halten",
-            "delete": "Sitzung löschen"
+            "delete": "Session löschen"
         },
         "badges": {
             "archived": "Archiviert",
@@ -1309,9 +1309,9 @@
             "interactive": "Interaktiv"
         },
         "inspector": {
-            "tabsLabel": "Sitzungsdetails",
+            "tabsLabel": "Session-Details",
             "tabs": {
-                "session": "Sitzung",
+                "session": "Session",
                 "usage": "Nutzung",
                 "environment": "Umgebung",
                 "content": "Inhalte"
@@ -1405,11 +1405,11 @@
             "committedToRepo": "In Wissen übernommen",
             "notCommittedYet": "Noch nicht committed",
             "savedAt": "Gespeichert {timestamp}",
-            "commitDisabledNoHistory": "Diese Sitzung hat noch keinen Gesprächsverlauf.",
+            "commitDisabledNoHistory": "Diese Session hat noch keinen Gesprächsverlauf.",
             "noNewChanges": "{status}. Keine neuen Änderungen zum Committen.",
-            "privateExistingCommits": "Sitzung ist privat. Bereits vorhandene Commits im Wissens-Repository bleiben unverändert.",
-            "privateExcluded": "Sitzung ist privat und wird nicht ins Wissens-Repository committed.",
-            "includedInRepo": "Sitzung wird ins Wissens-Repository aufgenommen.",
+            "privateExistingCommits": "Session ist privat. Bereits vorhandene Commits im Wissens-Repository bleiben unverändert.",
+            "privateExcluded": "Session ist privat und wird nicht ins Wissens-Repository committed.",
+            "includedInRepo": "Session wird ins Wissens-Repository aufgenommen.",
             "badges": {
                 "excluded": "Ausgeschlossen",
                 "missing": "Fehlt",
@@ -1488,7 +1488,7 @@
             "reasoning": "{count} Tokens"
         },
         "actions": {
-            "fork": "Sitzung von hier forken",
+            "fork": "Session von hier forken",
             "retry": "Turn erneut ausführen",
             "continue": "Ab den erledigten Schritten fortsetzen",
             "reset": "Unterhaltung zu diesem Turn zurücksetzen",
@@ -1499,7 +1499,7 @@
                 "success": "Erfolg",
                 "warning": "Warnung"
             },
-            "notice": "Der Agent hat die Aufgabe mit einer Meldung vom Typ {status} beendet. Die Sitzung ist jetzt schreibgeschützt, du kannst sie aber forken um weiter zu chatten."
+            "notice": "Der Agent hat die Aufgabe mit einer Meldung vom Typ {status} beendet. Die Session ist jetzt schreibgeschützt, du kannst sie aber forken um weiter zu chatten."
         }
     },
     "turnMeta": {
@@ -1526,9 +1526,9 @@
             "nameRequired": "Job-Name ist erforderlich.",
             "promptRequired": "Prompt ist erforderlich.",
             "persistentSessionIdRequired": "Wähle eine persistente Session-ID oder deaktiviere die Option.",
-            "persistentSessionMustBeAttended": "Jobs mit persistenter Sitzung müssen beaufsichtigt sein.",
-            "sessionModesRequireFreshSession": "Session-Modi brauchen eine neue Sitzung.",
-            "modelOverridesRequireFreshSession": "Modell-Overrides brauchen eine neue Sitzung.",
+            "persistentSessionMustBeAttended": "Jobs mit persistenter Session müssen beaufsichtigt sein.",
+            "sessionModesRequireFreshSession": "Session-Modi brauchen eine neue Session.",
+            "modelOverridesRequireFreshSession": "Modell-Overrides brauchen eine neue Session.",
             "askAndYoloMutuallyExclusive": "Lese-Modus und YOLO sind gegenseitig ausschließend.",
             "cronEmpty": "Cron-Ausdrücke dürfen nicht leer sein.",
             "cronInvalid": "Cron-Ausdruck ist ungültig: {expression}."
@@ -1554,14 +1554,14 @@
             "created": "Job erstellt.",
             "saved": "Job gespeichert.",
             "deleted": "Job gelöscht.",
-            "runStartedNewSession": "Ausführung in neuer Sitzung {sessionId} gestartet.",
-            "runStartedSession": "Ausführung in Sitzung {sessionId} gestartet."
+            "runStartedNewSession": "Ausführung in neuer Session {sessionId} gestartet.",
+            "runStartedSession": "Ausführung in Session {sessionId} gestartet."
         },
         "actions": {
             "refresh": "Jobs aktualisieren",
             "new": "Neuer Job",
             "clear": "Leeren",
-            "clearPersistentSession": "Persistente Sitzung entfernen",
+            "clearPersistentSession": "Persistente Session entfernen",
             "delete": "Löschen",
             "save": "Speichern",
             "addTrigger": "Trigger hinzufügen",
@@ -1582,19 +1582,19 @@
             "enabled": "Aktiviert",
             "enabledHelp": "Pausierte Jobs bleiben in jobs.yaml, werden aber nie per Cron ausgeführt.",
             "newSession": "Optionen",
-            "newSessionHelp": "Diese Optionen gelten nur für neue Sitzungen, die der Job selbst erstellt.",
+            "newSessionHelp": "Diese Optionen gelten nur für neue Sessions, die der Job selbst erstellt.",
             "unattended": "Unbeaufsichtigt ausführen",
             "unattendedHelp": "Tool-Aufrufe werden nicht an dich eskaliert.",
-            "persistentSession": "Persistente Sitzung",
-            "persistentSessionToggleHelp": "Verwende eine bestehende Sitzung statt bei jedem Lauf eine neue zu starten.",
+            "persistentSession": "Persistente Session",
+            "persistentSessionToggleHelp": "Verwende eine bestehende Session statt bei jedem Lauf eine neue zu starten.",
             "persistentSessionDisabled": "Kann im unbeaufsichtigten Modus nicht verwendet werden",
             "persistentSessionUncheckedHelp": "Aktiviere die Option, um unten eine bestehende Session-ID auszuwählen.",
-            "persistentSessionMissingIdHelp": "Aktiv, aber noch ohne Session-ID. Wähle unten eine bestehende Sitzung aus.",
-            "persistentSessionHelp": "Verwende eine bestehende Sitzung, statt bei jedem Joblauf eine neue zu erstellen.",
-            "persistentSessionActiveHelp": "Aktiv: Diese Session-ID überschreibt die Optionen für neue Sitzungen oben.",
+            "persistentSessionMissingIdHelp": "Aktiv, aber noch ohne Session-ID. Wähle unten eine bestehende Session aus.",
+            "persistentSessionHelp": "Verwende eine bestehende Session, statt bei jedem Joblauf eine neue zu erstellen.",
+            "persistentSessionActiveHelp": "Aktiv: Diese Session-ID überschreibt die Optionen für neue Sessions oben.",
             "models": "Modelle",
-            "modelsHelp": "Optionale job-spezifische Overrides für neue Sitzungen, die dieser Job erstellt.",
-            "modelsDisabled": "Persistente Sitzungen behalten ihre eigene Modellauswahl.",
+            "modelsHelp": "Optionale job-spezifische Overrides für neue Sessions, die dieser Job erstellt.",
+            "modelsDisabled": "Persistente Sessions behalten ihre eigene Modellauswahl.",
             "modelsLinked": "Modelle verknüpft",
             "modelsLinkedHelp": "Verknüpft: Änderungen an einem Modell setzen beide Modelle.",
             "modelsUnlinked": "Modelle getrennt",
@@ -1606,10 +1606,10 @@
             "expression": "Ausdruck",
             "timeZone": "Zeitzone",
             "inputOptional": "Eingabe (optional)",
-            "archivePreviousSessions": "Vorherige Sitzungen archivieren",
-            "archivePreviousSessionsHelp": "Beim Start einer neuen Sitzung alle noch offenen früheren Sitzungen dieses Jobs archivieren.",
+            "archivePreviousSessions": "Vorherige Sessions archivieren",
+            "archivePreviousSessionsHelp": "Beim Start einer neuen Session alle noch offenen früheren Sessions dieses Jobs archivieren.",
             "memoryEnabled": "Ins Gedächtnis aufnehmen",
-            "memoryEnabledHelp": "Sitzungen dieses Jobs fließen wie normale Sitzungen ins Langzeitgedächtnis ein.",
+            "memoryEnabledHelp": "Sessions dieses Jobs fließen wie normale Sessions ins Langzeitgedächtnis ein.",
             "memoryContext": "Gedächtnis als Kontext",
             "memoryContextHelp": "Der Agent des Jobs sieht das jüngste Gedächtnis in seinem Prompt. Kostet bei jedem Lauf Input-Tokens und gibt dem Job Einblick in persönlichen Kontext der letzten Zeit."
         },
@@ -1626,9 +1626,9 @@
             "noTriggers": "Keine Cron-Trigger konfiguriert.",
             "runJob": "Job ausführen",
             "previousInvocations": "Vorherige Ausführungen",
-            "previousInvocationsDescription": "Wähle eine Ausführung, um ihre Sitzung zu öffnen.",
+            "previousInvocationsDescription": "Wähle eine Ausführung, um ihre Session zu öffnen.",
             "saveToViewHistory": "Speichere diesen Job, um den Ausführungsverlauf zu sehen.",
-            "noInvocations": "Noch keine Ausführungen. Aktualisiere die Sitzungen, um neu abgeschlossene Läufe zu laden.",
+            "noInvocations": "Noch keine Ausführungen. Aktualisiere die Sessions, um neu abgeschlossene Läufe zu laden.",
             "ranAt": "Ausgeführt am {timestamp}"
         }
     },
@@ -1637,36 +1637,26 @@
             "justNow": "gerade eben"
         },
         "messageCount": "{count, plural, one {# Nachricht} other {# Nachrichten}}",
-        "unattendedSession": "Unbeaufsichtigte Sitzung",
-        "privateSession": "Private Sitzung",
+        "unattendedSession": "Unbeaufsichtigte Session",
+        "privateSession": "Private Session",
+        "pinnedSession": "Angeheftete Session",
+        "favoriteSession": "Favorisierte Session",
         "knowledgeCommitted": "Alle Änderungen ins Wissens-Repository übernommen",
-        "actions": {
-            "pin": "Sitzung anheften",
-            "unpin": "Sitzung lösen",
-            "favorite": "Sitzung favorisieren",
-            "unfavorite": "Favorit entfernen",
-            "archive": "Sitzung archivieren",
-            "unarchive": "Sitzung aus dem Archiv holen",
-            "delete": "Sitzung löschen",
-            "deleteEmpty": "Leere Sitzung löschen",
-            "shiftSkip": "Shift+Klick überspringt die Bestätigung"
-        },
         "confirm": {
-            "deleteSession": "Diese Sitzung löschen? Chatverlauf und Sandbox-Status werden entfernt.",
-            "deleteUnpushed": "Diese Sitzung hat {count, plural, one {# Commit} other {# Commits}}, die noch nicht ins Wissens-Repository gepusht wurden. Beim Löschen gehen sie verloren. Trotzdem löschen?",
-            "archiveSession": "Diese Sitzung archivieren? Sie verschwindet aus der Standardliste, setzt ihre Sandbox zurück und bleibt im Wissens-Repository erhalten."
+            "deleteSession": "Diese Session löschen? Chatverlauf und Sandbox-Status werden entfernt.",
+            "deleteUnpushed": "Diese Session hat {count, plural, one {# Commit} other {# Commits}}, die noch nicht ins Wissens-Repository gepusht wurden. Beim Löschen gehen sie verloren. Trotzdem löschen?"
         },
         "search": {
-            "placeholder": "Sitzungen durchsuchen",
+            "placeholder": "Sessions durchsuchen",
             "mode": "Suchen in",
             "title": "Titel",
-            "titleHint": "Sitzungstitel durchsuchen",
+            "titleHint": "Session-Titel durchsuchen",
             "fulltext": "Volltext",
             "fulltextHint": "Titel und Chatnachrichten durchsuchen",
             "clear": "Suche leeren",
             "searching": "Suche läuft",
             "failed": "Suche fehlgeschlagen",
-            "noResults": "Keine passenden Sitzungen"
+            "noResults": "Keine passenden Sessions"
         },
         "sections": {
             "today": "Heute",
@@ -1676,12 +1666,13 @@
             "archived": "Archiviert",
             "unknownDate": "Unbekanntes Datum"
         },
-        "empty": "Noch keine Sitzungen",
-        "loadingMore": "Weitere Sitzungen werden geladen",
+        "empty": "Noch keine Sessions",
+        "loadingMore": "Weitere Sessions werden geladen",
         "sandboxUsage": {
-            "warning": "{count} Sandboxen belegt (Warnung ab {warnAt}, maximal {max}). Lösche alte Sitzungen, um Speicher freizugeben.",
-            "warningUnlimited": "{count} Sandboxen belegt (Warnung ab {warnAt}). Lösche alte Sitzungen, um Speicher freizugeben.",
-            "limitReached": "{count}/{max} Sandboxen. Neue Sitzungen können keine Sandbox starten, bis du alte löschst."
+            "warning": "{count} von {max} Sandboxen belegt. Archiviere alte Sessions.",
+            "warningUnlimited": "{count} Sandboxen belegt. Archiviere alte Sessions.",
+            "warnAt": "Warnung ab {warnAt} Sandboxen",
+            "limitReached": "{count}/{max} Sandboxen. Neue Sessions können keine Sandbox starten, bis du alte löschst."
         }
     },
     "git": {
@@ -1689,7 +1680,7 @@
         "noRemote": "Kein Remote konfiguriert",
         "sandbox": {
             "label": "Workspace-Sync",
-            "help": "Synchronisiert die Workspace-Sandbox dieser Sitzung mit deinem Wissens-Repository auf dem Server. Die Zähler zeigen, um wie viele Commits dieser Workspace dem Server-Repo voraus (↑) bzw. hinterher (↓) ist.",
+            "help": "Synchronisiert die Workspace-Sandbox dieser Session mit deinem Wissens-Repository auf dem Server. Die Zähler zeigen, um wie viele Commits dieser Workspace dem Server-Repo voraus (↑) bzw. hinterher (↓) ist.",
             "notRunning": "Sandbox läuft nicht",
             "refresh": "Workspace erneut mit dem Server-Repository abgleichen (holt zuerst neue Commits)",
             "pull": "Commits aus dem Server-Repository in diesen Workspace holen",
@@ -1698,7 +1689,8 @@
         "global": {
             "label": "Wissens-Remote",
             "help": "Synchronisiert dein Wissens-Repository auf dem Server mit seinem externen Git-Remote. Die Zähler zeigen, um wie viele Commits das Server-Repo dem Remote voraus (↑) bzw. hinterher (↓) ist.",
-            "indicatorOutOfSync": "Nicht synchron mit dem Wissens-Remote: {behind} zu holen, {ahead} zu pushen",
+            "outOfSync": "Nicht synchron mit dem Wissens-Remote: {behind} zu holen, {ahead} zu pushen",
+            "sync": "Mit dem Wissens-Remote synchronisieren (erst holen, dann pushen)",
             "refresh": "Server-Repository erneut mit dem Remote abgleichen (holt zuerst neue Commits)",
             "pull": "Commits vom externen Remote ins Server-Repository holen",
             "push": "Commits des Server-Repositorys ins externe Remote übertragen"
@@ -1728,7 +1720,7 @@
             "write": "Schreiben"
         },
         "scopes": {
-            "sessions": "Sitzungen",
+            "sessions": "Sessions",
             "jobs": "Jobs",
             "preferences": "Einstellungen",
             "notifications": "Benachrichtigungen",
@@ -1790,7 +1782,7 @@
             "sentinel": "Sentinel",
             "titler": "Titelgeber",
             "compaction": "Kompaktierung",
-            "session_extract": "Sitzungsextraktion",
+            "session_extract": "Session-Extraktion",
             "week_digest": "Wochen-Digest",
             "month_digest": "Monats-Digest"
         },
@@ -1807,9 +1799,9 @@
         }
     },
     "sessionView": {
-        "menu": "Sitzungsaktionen",
+        "menu": "Session-Aktionen",
         "debug": "Debug-Ansicht",
-        "copyId": "Sitzungs-ID kopieren"
+        "copyId": "Session-ID kopieren"
     },
     "debugView": {
         "backToChat": "Zurück zum Chat",
@@ -1834,7 +1826,7 @@
             "titler": "Titler",
             "compaction": "Compaction"
         },
-        "empty": "Diese Rolle hat in dieser Sitzung noch keine Anfrage gesendet.",
+        "empty": "Diese Rolle hat in dieser Session noch keine Anfrage gesendet.",
         "loadError": "LLM-Kontext konnte nicht geladen werden: {error}",
         "model": "Modell",
         "status": "Status",
@@ -1968,5 +1960,11 @@
         },
         "showAllLines": "{count, plural, one {Ganze Zeile zeigen} other {Alle # Zeilen zeigen}}",
         "showLess": "Weniger zeigen"
+    },
+    "toast": {
+        "archived": "Archiviert",
+        "undo": "Rückgängig",
+        "archiveFailed": "Archivieren fehlgeschlagen",
+        "close": "Schließen"
     }
 }

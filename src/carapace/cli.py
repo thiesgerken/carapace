@@ -23,6 +23,7 @@ from rich.table import Table
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 from .payloads import dict_of_dicts, dict_or_empty, list_of_dicts
+from .span_names import SKILL_BUILD_WAIT_SPAN
 from .usage_display import SUBSCRIPTION_NOTE, category_equivalent_note, equivalent_note, show_equivalent_total
 
 load_dotenv()
@@ -672,7 +673,7 @@ async def _read_server_responses(ws, *, show_tool_events: bool = True) -> None:
                 case "span" if show_tool_events and msg.get("status") == "running":
                     # Only `read_skill` waits for a build. Profile syncs also run on every sandbox start,
                     # where nothing waits for them, so they are not announced.
-                    if (msg.get("kind"), msg.get("name")) == ("skill", "build wait"):
+                    if (msg.get("kind"), msg.get("name")) == ("skill", SKILL_BUILD_WAIT_SPAN):
                         _stop_live()
                         console.print("  [dim]waiting for the skill build…[/dim]")
 

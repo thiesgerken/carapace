@@ -42,6 +42,8 @@ export function NewSessionButton({
       <button
         onClick={() => onCreate(options)}
         disabled={disabled}
+        title={t("title")}
+        aria-label={t("title")}
         className={cn(
           "flex items-center gap-2 rounded-l-lg border border-border px-3 py-2 text-sm transition-colors",
           "bg-background hover:bg-muted",

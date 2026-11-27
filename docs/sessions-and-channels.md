@@ -113,6 +113,7 @@ Important behavior:
 - `ask_mode` and `yolo_mode` are mutually exclusive
 - `unattended` cannot be changed in place; fork the session if you want a different approval mode
 - archived sessions are hidden from the default session list but can still be listed explicitly through the API and shown in the web UI
+- archiving commits the session to knowledge and tears down its sandbox, which can't be taken back, so the web UI holds the request for five seconds behind an "Archived · Undo" toast. Undo in that window, or closing the page, leaves the session as it was
 
 The web UI also exposes turn-level controls on completed assistant turns:
 

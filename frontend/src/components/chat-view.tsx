@@ -66,10 +66,17 @@ import {
   formatBytes,
   sandboxStatusIndicatorClass,
   sandboxStatusKey,
-  shouldConfirmArchiveSession,
   sessionHasKnowledgeChanges,
 } from "@/lib/utils";
-import { applySpanToToolCall, applySpansToToolCalls, dropRunningSpans, runningStep, trackRunningSpan } from "@/lib/tool-call-status";
+import {
+  applySpanToToolCall,
+  applySpansToToolCalls,
+  dropRunningSpans,
+  isEscalationCard,
+  trackRunningSpan,
+  waitingLineState,
+  type EscalationCard,
+} from "@/lib/tool-call-status";
 import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall, streamingCallIndex } from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
@@ -91,6 +98,8 @@ interface ChatViewProps {
   onForkSession?: (session: SessionInfo) => void;
   onOpenJobSettings?: (jobId: string) => void;
   onUpdateSessionAttributes?: (sessionId: string, attributes: SessionAttributesPatch) => Promise<SessionInfo>;
+  /** Archiving goes through the shell's undo window, see `AppShell.onSetSessionArchived`. */
+  onSetSessionArchived?: (sessionId: string, archived: boolean) => Promise<void>;
   onDeleteSession?: () => Promise<void>;
   /** Sent once the session is connected and its history loaded, e.g. typed into the home composer. */
   initialMessage?: string;
@@ -126,6 +135,32 @@ function sandboxStorageLabel(
 function sandboxIdentifier(snapshot: SessionSandboxSnapshot | null): string | null {
   const sandboxId = snapshot?.sandbox_id?.trim();
   return sandboxId ? sandboxId : null;
+}
+
+/** The sandbox's liveness after the id in the session header, with the inspector's details as tooltip. */
+export function SandboxHeaderStatus({
+  sandbox,
+  t,
+}: {
+  sandbox: SessionSandboxSnapshot | null;
+  t: (key: string, values?: Record<string, string | number | Date>) => string;
+}) {
+  if (!sandbox || (sandbox.status === "missing" && !sandbox.storage_present)) return null;
+  const status = t(`sandbox.status.${sandboxStatusKey(sandbox.status)}`);
+  const sandboxId = sandboxIdentifier(sandbox);
+  const details = [
+    status,
+    sandboxStorageLabel(sandbox, t),
+    sandboxId ? `${t("sandbox.fields.id")}: ${sandboxId}` : "",
+    sandbox.last_error ?? "",
+  ].filter(Boolean);
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5" title={details.join("\n")}>
+      <span aria-hidden="true">·</span>
+      <span className={cn("h-2 w-2 shrink-0 rounded-full", sandboxStatusIndicatorClass(sandbox.status))} />
+      {status}
+    </span>
+  );
 }
 
 function thinkingUsageMeta(usage?: TurnUsage | null): {
@@ -999,19 +1034,6 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
   return groupFoldedMessages(groupChildToolCalls(messages));
 }
 
-type EscalationCard = Extract<
-  ChatMessage,
-  { kind: "approval" | "domain_access_approval" | "git_push_approval" | "credential_approval" }
->;
-
-function isEscalationCard(message: ChatMessage): message is EscalationCard {
-  return (
-    message.kind === "approval"
-    || message.kind === "domain_access_approval"
-    || message.kind === "git_push_approval"
-    || message.kind === "credential_approval"
-  );
-}
 
 function escalationRequestId(card: EscalationCard): string {
   return card.kind === "approval" ? card.request.tool_call_id : card.request.request_id;
@@ -1088,6 +1110,7 @@ export function ChatView({
   onForkSession,
   onOpenJobSettings,
   onUpdateSessionAttributes,
+  onSetSessionArchived,
   onDeleteSession,
   initialMessage,
   onInitialMessageSent,
@@ -1702,8 +1725,9 @@ export function ChatView({
           break;
         case "cancelled":
           resetRollbackRef.current = null;
+          // The server closes the turn's open approvals and escalations as denied; nobody can answer them now.
           setMessages((prev) => [
-            ...prev,
+            ...prev.filter((m) => !isEscalationCard(m)),
             { kind: "error", detail: msg.detail, turnTerminal: true, turnId: msg.turn_id },
           ]);
           setLlmActivity(null);
@@ -1819,8 +1843,8 @@ export function ChatView({
   const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
   // The card being written carries the request's counter; the waiting line covers the other phases.
   const streamingCall = waiting ? streamingCallIndex(messages, llmActivity) : -1;
-  // Between model requests the waiting line acts out what the running tool call waits on.
-  const step = waiting ? runningStep(messages) : null;
+  // Between model requests the waiting line acts out what the turn waits on: the user, or a tool call's step.
+  const { awaitsUser, step } = waiting ? waitingLineState(messages) : { awaitsUser: false, step: null };
   const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
 
   function showInspector(open: boolean): void {
@@ -2081,24 +2105,17 @@ export function ChatView({
   }
 
   async function handleToggleArchived() {
-    if (!session || updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes) return;
+    if (!session || updatingSessionAttribute || deletingSession || !onSetSessionArchived) return;
 
-    const nextArchived = !session.attributes.archived;
-    if (nextArchived && !canArchiveSession(session)) {
-      return;
-    }
-    if (nextArchived) {
-      if (shouldConfirmArchiveSession(session) && !window.confirm(t("confirm.archiveSession"))) {
-        return;
-      }
-    } else if (!window.confirm(t("confirm.unarchiveSession"))) {
+    if (!session.attributes.archived) {
+      // Settles only after the undo window, so it doesn't hold the menu's spinner.
+      if (canArchiveSession(session)) void onSetSessionArchived(sessionId, true);
       return;
     }
 
     setUpdatingSessionAttribute("archived");
     try {
-      const updated = await onUpdateSessionAttributes(sessionId, { archived: nextArchived });
-      onSessionUpdate?.(updated);
+      await onSetSessionArchived(sessionId, false);
     } finally {
       setUpdatingSessionAttribute(null);
     }
@@ -2847,6 +2864,7 @@ export function ChatView({
                 {t("memoryChip")}
               </button>
             ) : null}
+            idAccessory={<SandboxHeaderStatus sandbox={sandbox} t={t} />}
           >
             <SessionMenu
               sessionId={sessionId}
@@ -2888,7 +2906,7 @@ export function ChatView({
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+            className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-6"
           >
             <div className="session-chat-content mx-auto max-w-3xl space-y-3">
               {loadingHistory && (
@@ -2966,7 +2984,7 @@ export function ChatView({
                   ),
                 );
               })()}
-              {waiting && <WaitingIndicator activity={llmActivity} step={step} hidden={streamingCall !== -1} />}
+              {waiting && <WaitingIndicator activity={llmActivity} step={step} awaitsUser={awaitsUser} hidden={streamingCall !== -1} />}
               <div ref={bottomRef} />
             </div>
           </div>

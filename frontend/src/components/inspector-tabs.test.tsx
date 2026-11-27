@@ -13,7 +13,7 @@ test("the inspector tabs mark the selected tab and report clicks, in both locale
   try {
     for (const [locale, messages, labels] of [
       ["en", english, ["Session", "Usage", "Environment", "Content"]],
-      ["de", german, ["Sitzung", "Nutzung", "Umgebung", "Inhalte"]],
+      ["de", german, ["Session", "Nutzung", "Umgebung", "Inhalte"]],
     ] as const) {
       const picked: InspectorTab[] = [];
       const view = await renderReact(

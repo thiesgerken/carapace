@@ -21,6 +21,7 @@ from pydantic_ai.messages import (
 
 import carapace.usage as usage_mod
 from carapace.models.session import SessionFork
+from carapace.sandbox.exec_scope import RunningExec
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.usage import InputShapeRatios, LlmRequestLog, LlmRequestRecord, LlmRequestState, ModelUsage
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel, _without_timestamps
@@ -123,6 +124,30 @@ def test_record_tool_call_event_reuses_proxy_domain_row_for_queued_reviewing_and
             "tool_id": queued_tool_id,
         },
     ]
+
+
+def test_domain_verdict_after_its_exec_ended_finishes_the_pending_card(tmp_path: Path, db_factory) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+
+    sid = engine.session_mgr.create_session(user="thies").session_id
+    active = engine.get_or_activate(sid)
+    active.tool_ids["call-exec"] = "tool-exec"
+    notify = engine._make_domain_info_cb(active)
+    running = RunningExec(session_id=sid, command="curl", domains=set(), credentials=set(), tool_call_id="call-exec")
+
+    async def _review() -> None:
+        engine.sandbox_mgr.running_exec.return_value = running
+        notify("example.com", "[sentinel] reviewing", "sentinel")
+        # The exec timed out during the review: the verdict finds no running exec.
+        engine.sandbox_mgr.running_exec.return_value = None
+        notify("example.com", "[sentinel: allow] looks fine", "sentinel", "allow", "looks fine")
+
+    asyncio.run(_review())
+
+    [card] = [e for e in engine.session_mgr.load_events(sid) if e["role"] == "tool_call"]
+    assert card["approval_verdict"] == "allow"
+    assert card["parent_tool_id"] == "tool-exec"
 
 
 def test_fork_session_copies_transcript_and_security_context(tmp_path: Path, db_factory) -> None:

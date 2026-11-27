@@ -81,6 +81,7 @@ export default function ChatPage() {
         onForkSession={shell.onForkSession}
         onOpenJobSettings={shell.onOpenJobSettings}
         onUpdateSessionAttributes={shell.onUpdateSessionAttributes}
+        onSetSessionArchived={shell.onSetSessionArchived}
         onDeleteSession={onActiveDelete}
         initialMessage={pendingStart?.sessionId === activeSessionId ? pendingStart.content : undefined}
         onInitialMessageSent={() => setPendingStart(null)}

@@ -17,6 +17,7 @@ import {
   type AuthUserInfo,
 } from "@/lib/api";
 import { type NewSessionOptions } from "@/components/new-session-button";
+import { overlayArchiving, useDelayedArchive, type DelayedArchive } from "@/hooks/use-delayed-archive";
 import {
   clearChatDraft,
   clearConnection,
@@ -111,6 +112,15 @@ export interface AppShell {
     id: string,
     attributes: NonNullable<Parameters<typeof updateSession>[3]["attributes"]>,
   ) => Promise<SessionInfo>;
+  /** Archiving waits for an undo first (see `pendingArchive`); settles once the change reached the server or was undone. */
+  onSetSessionArchived: (id: string, archived: boolean) => Promise<void>;
+  /** The archive waiting for an undo, if any. Its session already shows as archived. */
+  pendingArchive: Pick<DelayedArchive, "undo" | "commitNow"> | null;
+  /** Sessions to show as archived although the server doesn't know yet; `sessions` already does. */
+  archivingSessionIds: readonly string[];
+  /** The last archive request failed, and the user hasn't dismissed that yet. */
+  archiveFailed: boolean;
+  onDismissArchiveFailure: () => void;
   onDeleteSession: (id: string, options?: { skipUnpushedWarning?: boolean }) => Promise<void>;
   onForkSession: (session: SessionInfo) => void;
   onLoadMore: () => void;
@@ -171,7 +181,6 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
   const loading = creatingSession || refreshingSessions;
   const hasActiveSessionLoaded = activeSessionId != null
     && sessions.some((session) => session.session_id === activeSessionId);
-  const activeSession = sessions.find((session) => session.session_id === activeSessionId) ?? null;
 
   useEffect(() => {
     // Defer to avoid synchronous setState in effect body.
@@ -504,6 +513,40 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     return updated;
   }, [activeSessionId, refreshSandboxUsage, router, server, token]);
 
+  const [archiveFailed, setArchiveFailed] = useState(false);
+  const onDismissArchiveFailure = useCallback(() => setArchiveFailed(false), []);
+  const {
+    pendingSessionId: pendingArchiveId,
+    archivingSessionIds,
+    schedule: scheduleArchive,
+    undo: undoArchive,
+    commitNow: commitArchiveNow,
+    untilSent: untilArchiveSent,
+  } = useDelayedArchive((id) => onUpdateSessionAttributes(id, { archived: true }).catch((error: unknown) => {
+    setArchiveFailed(true);
+    throw error;
+  }));
+  const listedSessions = useMemo(
+    () => sessions.map((session) => overlayArchiving(session, archivingSessionIds)),
+    [archivingSessionIds, sessions],
+  );
+  const activeSession = listedSessions.find((session) => session.session_id === activeSessionId) ?? null;
+  const pendingArchive = useMemo(
+    () => (pendingArchiveId ? { undo: undoArchive, commitNow: commitArchiveNow } : null),
+    [commitArchiveNow, pendingArchiveId, undoArchive],
+  );
+
+  const onSetSessionArchived = useCallback(async (id: string, archived: boolean) => {
+    if (archived) {
+      setArchiveFailed(false);
+      return scheduleArchive(id);
+    }
+    if (id === pendingArchiveId) return undoArchive();
+    // Sent while the archive request still runs, the unarchive could reach the server first.
+    await untilArchiveSent(id);
+    await onUpdateSessionAttributes(id, { archived: false });
+  }, [onUpdateSessionAttributes, pendingArchiveId, scheduleArchive, undoArchive, untilArchiveSent]);
+
   const onSessionUpdate = useCallback((session: SessionInfo) => {
     setSessions((prev) => {
       const next = prev.map((entry) =>
@@ -558,7 +601,7 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onRefreshCurrentUser,
     isAdmin,
     serverVersion,
-    sessions,
+    sessions: listedSessions,
     sandboxUsage,
     activeSessionId,
     activeSession,
@@ -573,6 +616,11 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onOpenJobSettings,
     onShowArchivedSessionsChange,
     onUpdateSessionAttributes,
+    onSetSessionArchived,
+    pendingArchive,
+    archivingSessionIds,
+    archiveFailed,
+    onDismissArchiveFailure,
     onDeleteSession,
     onForkSession,
     onLoadMore,
@@ -603,10 +651,15 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onShowArchivedSessionsChange,
     onTitleUpdate,
     onUpdateSessionAttributes,
+    onSetSessionArchived,
+    pendingArchive,
+    archivingSessionIds,
+    archiveFailed,
+    onDismissArchiveFailure,
     server,
     serverVersion,
     sandboxUsage,
-    sessions,
+    listedSessions,
     sessionListHasMore,
     showArchivedSessions,
     token,
