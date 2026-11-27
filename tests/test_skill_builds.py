@@ -100,17 +100,8 @@ def _write_skills_flake(repo: Path, local: list[str], external: tuple[str, ...] 
     write_skills_flake(repo / "skills", local, external)
 
 
-def _key(repo: Path, name: str, directory: str | None = None) -> str:
-    def object_id(spec: str) -> str:
-        return _git(repo, "rev-parse", f"HEAD:{spec}")
-
-    return skill_builds.build_key(
-        name,
-        object_id("skills/flake.nix"),
-        object_id("skills/flake.lock"),
-        "",
-        object_id(f"skills/{directory or name}") if directory != "" else "",
-    )
+def _key(repo: Path, name: str) -> str:
+    return skill_builds.build_key(name, _git(repo, "rev-parse", "HEAD:skills"))
 
 
 def _commit(repo: Path, message: str) -> None:
@@ -138,7 +129,7 @@ async def _settled(builds: SkillBuilds, repo: Path) -> dict[str, str]:
 
 
 @pytest.mark.anyio
-async def test_a_head_change_builds_only_the_skills_whose_key_changed(repo: Path) -> None:
+async def test_a_change_to_skills_rekeys_every_skill_and_each_build_gets_all_of_it(repo: Path) -> None:
     builder = FakeBuilder()
     builds = SkillBuilds(cast(BuilderClient, builder))
 
@@ -146,24 +137,20 @@ async def test_a_head_change_builds_only_the_skills_whose_key_changed(repo: Path
 
     assert {build.skill: build.state for build in first} == {"notes": "building", "weather": "building"}
     assert await _settled(builds, repo) == {"notes": "succeeded", "weather": "succeeded"}
-    assert sorted(skill for _, skill, _ in builder.built) == ["notes", "weather"]
-    # Each build gets the flake, its lock and its own directory, nothing else of skills/: what its key covers.
-    for _, skill, files in builder.built:
-        assert {name.rstrip("/") for name in files} == {
-            "flake.nix",
-            "flake.lock",
-            skill,
-            f"{skill}/SKILL.md",
-            f"{skill}/flake.nix",
-        }
+    # skillsFlake reads every local skill's flake.nix whichever one is built, so each build gets them all.
+    everything = {"flake.nix", "flake.lock", "notes", "notes/SKILL.md", "notes/flake.nix"}
+    everything |= {"weather", "weather/SKILL.md", "weather/flake.nix", "unlisted", "unlisted/SKILL.md"}
+    for _, _, files in builder.built:
+        assert {name.rstrip("/") for name in files} >= everything
 
     (repo / "skills" / "weather" / "SKILL.md").write_text("---\nname: weather\ndescription: changed\n---\n")
     _commit(repo, "change weather")
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
-    assert len(builder.built) == 3
-    assert builder.built[-1][:2] == (_key(repo, "weather"), "weather")
+    assert sorted((key, skill) for key, skill, _ in builder.built[2:]) == sorted(
+        [(_key(repo, "notes"), "notes"), (_key(repo, "weather"), "weather")]
+    )
 
 
 @pytest.mark.anyio
@@ -179,17 +166,6 @@ async def test_a_lock_change_rekeys_every_skill(repo: Path) -> None:
 
     assert await _settled(builds, repo) == {"notes": "succeeded", "tracker": "succeeded", "weather": "succeeded"}
     assert sorted(skill for _, skill, _ in builder.built[2:]) == ["notes", "tracker", "weather"]
-
-
-@pytest.mark.anyio
-async def test_an_external_skill_is_keyed_without_a_directory(repo: Path) -> None:
-    _write_skills_flake(repo, ["weather"], external=("tracker",))
-    _commit(repo, "external tracker")
-    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
-
-    keys = {build.skill: build.key for build in await builds.ensure_built(repo)}
-
-    assert keys == {"tracker": _key(repo, "tracker", directory=""), "weather": _key(repo, "weather")}
 
 
 @pytest.mark.anyio
@@ -434,15 +410,15 @@ async def test_a_key_no_head_references_is_looked_up_again(repo: Path) -> None:
     builds = SkillBuilds(cast(BuilderClient, builder))
     await builds.ensure_built(repo)
     await _settled(builds, repo)
-    old_weather = _key(repo, "weather")
+    old_keys = {_key(repo, "weather"), _key(repo, "notes")}
+    assert old_keys <= set(builds._results)
 
     (repo / "skills" / "weather" / "flake.nix").write_text("{ outputs = _: { packages = { }; }; }\n")
     _commit(repo, "change weather")
     await builds.sync_roots([repo])
 
-    # The builder may collect the old key, so its remembered result must not outlive the sync.
-    assert old_weather not in builds._results
-    assert _key(repo, "notes") in builds._results
+    # The builder may collect the old keys, so their remembered results must not outlive the sync.
+    assert not old_keys & set(builds._results)
 
 
 @pytest.mark.anyio
@@ -724,32 +700,6 @@ async def test_the_profile_keeps_the_last_succeeded_build_while_skills_rebuild_o
 
 
 @pytest.mark.anyio
-async def test_an_external_skill_gets_only_the_flake_and_its_lock(repo: Path) -> None:
-    _write_skills_flake(repo, [], external=("tracker",))
-    _commit(repo, "only tracker")
-    builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
-    await builds.ensure_built(repo)
-
-    assert await _settled(builds, repo) == {"tracker": "succeeded"}
-    assert [files for _, _, files in builder.built] == [{"flake.nix", "flake.lock"}]
-
-
-@pytest.mark.anyio
-async def test_a_listed_directory_that_is_missing_fails_before_the_builder(repo: Path) -> None:
-    _write_skills_flake(repo, ["weather", "gone"])
-    _commit(repo, "list a skill without its directory")
-    builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
-    await builds.ensure_built(repo)
-    await _settled(builds, repo)
-
-    gone = next(build for build in await builds.ensure_built(repo) if build.skill == "gone")
-    assert gone.state == "failed" and "gone" in gone.detail
-    assert [skill for _, skill, _ in builder.built] == ["weather"]
-
-
-@pytest.mark.anyio
 async def test_a_new_skills_tree_at_head_gets_an_update_check(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
     started: list[Path] = []
@@ -770,22 +720,6 @@ async def test_a_new_skills_tree_at_head_gets_an_update_check(repo: Path, monkey
 
 
 @pytest.mark.anyio
-async def test_a_skill_directory_name_is_no_pattern(repo: Path) -> None:
-    (repo / "skills" / "w*").mkdir()
-    (repo / "skills" / "w*" / "SKILL.md").write_text("---\nname: w\ndescription: d\n---\n")
-    write_skills_flake(repo / "skills", {"w": "w*"})
-    _commit(repo, "a skill directory named like a glob")
-    builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
-    await builds.ensure_built(repo)
-    await _settled(builds, repo)
-
-    assert [{name.rstrip("/") for name in files} for _, _, files in builder.built] == [
-        {"flake.nix", "flake.lock", "w*", "w*/SKILL.md"}
-    ]
-
-
-@pytest.mark.anyio
 async def test_config_json_rekeys_every_skill_and_goes_to_the_builder(repo: Path) -> None:
     builder = FakeBuilder()
     builds = SkillBuilds(cast(BuilderClient, builder))
@@ -799,7 +733,7 @@ async def test_config_json_rekeys_every_skill_and_goes_to_the_builder(repo: Path
 
     assert all(after[name] != before[name] for name in before)
     archived = next(files for _, skill, files in reversed(builder.built) if skill == "weather")
-    assert {"config.json", "flake.nix", "flake.lock", "weather"} <= archived
+    assert {"config.json", "flake.nix", "flake.lock", "weather", "notes"} <= {name.rstrip("/") for name in archived}
     weather = next(build for build in await builds.installable(repo) if build.skill == "weather")
     assert weather.settings == {"CITY": "Berlin"}
 
@@ -854,3 +788,19 @@ async def test_a_wrapper_finds_its_build_by_store_path_then_by_command(repo: Pat
     # A package built in the workspace gets the committed version of its command.
     assert await builds.command_build(repo, workspace, "weather") == weather
     assert await builds.command_build(repo, weather.store_paths[0], "unknown") is None
+
+
+@pytest.mark.anyio
+async def test_a_skill_from_elsewhere_gets_the_local_skills_too(repo: Path) -> None:
+    """Regression: with only the flake, the lock and its own directory, skillsFlake fails every skill while a
+    local one exists, since declaring the local skill's options reads its flake.nix."""
+    _write_skills_flake(repo, ["weather"], external=("tracker",))
+    _commit(repo, "a local and an external skill")
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+
+    assert await _settled(builds, repo) == {"tracker": "succeeded", "weather": "succeeded"}
+    archives = {skill: {name.rstrip("/") for name in files} for _, skill, files in builder.built}
+    assert archives["tracker"] == archives["weather"]
+    assert {"flake.nix", "flake.lock", "weather/flake.nix"} <= archives["tracker"]
