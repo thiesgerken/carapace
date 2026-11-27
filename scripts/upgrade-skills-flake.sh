@@ -191,7 +191,14 @@ EOF
 }
 EOF
 } > flake.nix
-[ -e config.json ] || echo '{}' > config.json
+# As bootstrap seeds it: carapace-cli stays off until its server and API key are configured.
+if [ -e config.json ]; then
+  :
+elif [ -n "$(printf '%s' "$local" | grep '^    carapace-cli = {')" ]; then
+  printf '{\n  "carapace-cli": {\n    "enable": false\n  }\n}\n' > config.json
+else
+  echo '{}' > config.json
+fi
 
 # A flake in a Git repo sees only tracked files. skills/ was clean, so this stages only what the script wrote.
 git add -A .

@@ -302,6 +302,23 @@ assert pkgs.lib.assertMsg (fails
     settings.URL.type = "url";
   }).passthru.carapace
 ) "mkSkill accepted an unknown setting type";
+assert pkgs.lib.assertMsg (fails
+  (skillLib.mkSkill {
+    src = fixture;
+    name = "bad-slot";
+    credentials.TOKEN = {
+      type = "secret";
+      default = "demo/token";
+    };
+  }).passthru.carapace
+) "mkSkill accepted a credential slot with a default";
+assert pkgs.lib.assertMsg (fails
+  (skillLib.mkSkill {
+    src = fixture;
+    name = "bad-skill-wide";
+    needs.credentials.TOKEN = "demo/token";
+  }).passthru.carapace
+) "mkSkill accepted a skill-wide vault path on a skill without commands";
 pkgs.runCommand "skill-wrapper-contract" { } ''
   mkdir stubs
   # Carapace answers with the setting values and credentials as shell code; here a marker stands for them.

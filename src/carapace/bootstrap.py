@@ -107,7 +107,8 @@ def _sync_bundled_skills(knowledge_dir: Path, reset: bool, created: list[str]) -
 
     When *reset* is true, overwrite their files (same as critical knowledge files). A new repo also gets
     the bundled ``skills/flake.nix`` and its lock, which list the skills, and an empty ``skills/config.json``
-    for their settings; an existing repo keeps its own, even on reset.
+    for their settings, which turns ``carapace-cli`` off until it is configured; an existing repo keeps its
+    own, even on reset.
     """
     skills_assets = _ASSETS.joinpath("skills")
     if not skills_assets.is_dir():
