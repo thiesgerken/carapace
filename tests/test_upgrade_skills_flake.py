@@ -101,6 +101,8 @@ def test_an_existing_repo_gets_its_skills_listed(repo: Path, tmp_path: Path) -> 
     assert (tmp_path / "calls").read_text() == "flake lock ./skills\n"
     staged = _git(repo, "diff", "--cached", "--name-status")
     assert "D\tskills/artifacts/SKILL.md" in staged and "A\tskills/flake.lock" in staged
+    assert "A\tskills/config.json" in staged
+    assert "carapace.lib.skillsFlake {" in flake
 
 
 def test_a_repo_that_has_a_skills_flake_is_left_alone(repo: Path, tmp_path: Path) -> None:

@@ -34,8 +34,11 @@ _WEATHER = SkillCommand(
     needs=SkillNeeds(
         domains=["api.example.com"], credentials={"WEATHER_TOKEN": "demo/weather-token"}, tunnels=[], oauth=[]
     ),
+    mcp=False,
 )
-_PLAIN = SkillCommand(description="Offline forecast.", needs=SkillNeeds(domains=[], credentials={}, tunnels=[]))
+_PLAIN = SkillCommand(
+    description="Offline forecast.", needs=SkillNeeds(domains=[], credentials={}, oauth=[], tunnels=[]), mcp=False
+)
 _TRACKER = SkillCommand(
     description="Issues in the example tracker.",
     needs=SkillNeeds(domains=["mcp.example.com"], credentials={}, tunnels=[], oauth=["demo/tracker-oauth"]),

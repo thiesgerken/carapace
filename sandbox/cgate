@@ -4,6 +4,10 @@
 Usage:
     cgate request [--domain D]... [--credential VAULT_PATH]... [--oauth VAULT_PATH]... [--tunnel HOST:PORT]...
                   [--store-path PATH]
+    cgate request --store-path PATH --command NAME
+
+With --command, a skill wrapper asks for what its command needs according to the skill's manifest, and cgate
+prints the skill's settings and credentials as `export` lines for the wrapper to eval.
 
 Exit status: 0 approved, 1 denied or failed (the reason is on stderr), 2 usage error.
 The contract is documented in docs/sandbox.md; generated skill wrappers depend on it.
@@ -15,6 +19,8 @@ import argparse
 import base64
 import json
 import os
+import shlex
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -43,6 +49,7 @@ def cmd_request(args: argparse.Namespace) -> None:
         "oauth": args.oauth,
         "tunnels": args.tunnel,
         "store_path": args.store_path,
+        "command": args.command,
     }
     req = urllib.request.Request(
         f"{base_url}/gate",
@@ -53,14 +60,33 @@ def cmd_request(args: argparse.Namespace) -> None:
     if auth_header:
         req.add_header("Authorization", auth_header)
     try:
-        with urllib.request.urlopen(req):
-            pass
+        with urllib.request.urlopen(req) as response:
+            answer = response.read()
     except urllib.error.HTTPError as e:
         # 403 is a denial by the sentinel or the user, 400/404 a bad request, 502 a tunnel that did not open;
         # their body says why.
         message = e.read().decode() if e.code in (400, 403, 404, 502) else f"{e.code} {e.reason}"
         print(f"error: {message}", file=sys.stderr)
         sys.exit(1)
+    if args.command:
+        print_exports(json.loads(answer))
+
+
+def print_exports(answer: dict) -> None:
+    """The skill's settings and credentials as shell, for the wrapper to eval; nothing reaches the terminal."""
+    lines = [f"export {name}={shlex.quote(_env_value(value))}" for name, value in answer["settings"].items()]
+    for var, vault_path in answer["credentials"].items():
+        # ccred rather than the API here: one place fetches credentials, and it prints why one failed.
+        fetched = subprocess.run(["ccred", "get", vault_path], stdout=subprocess.PIPE, text=True)
+        if fetched.returncode != 0:
+            sys.exit(1)
+        lines.append(f"export {var}={shlex.quote(fetched.stdout.rstrip(chr(10)))}")
+    print("\n".join(lines))
+
+
+def _env_value(value: object) -> str:
+    # JSON spelling for numbers and booleans: 443, true, false.
+    return value if isinstance(value, str) else json.dumps(value)
 
 
 def main() -> None:
@@ -93,9 +119,13 @@ def main() -> None:
         "--tunnel", action="append", default=[], help="HOST:PORT for a client that does not speak HTTP (repeatable)"
     )
     request.add_argument("--store-path", help="The calling wrapper's own Nix store path")
+    request.add_argument("--command", help="The skill command a wrapper runs (with --store-path); prints exports")
 
     args = parser.parse_args(args=None if sys.argv[1:] else ["--help"])
-    if not args.domain and not args.credential and not args.oauth and not args.tunnel:
+    if args.command:
+        if not args.store_path or args.domain or args.credential or args.oauth or args.tunnel:
+            request.error("--command takes --store-path and nothing else")
+    elif not args.domain and not args.credential and not args.oauth and not args.tunnel:
         request.error("nothing requested: give at least one --domain, --credential, --oauth or --tunnel")
     cmd_request(args)
 

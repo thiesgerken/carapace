@@ -59,18 +59,11 @@
     # };
   };
 
+  # Every input but nixpkgs and carapace is a skill; config.json holds the values of their settings.
   outputs =
     { carapace, ... }@inputs:
-    let
-      skills = removeAttrs inputs [
-        "self"
-        "nixpkgs"
-        "carapace"
-      ];
-    in
-    {
-      packages = carapace.lib.forSkillSystems (
-        system: builtins.mapAttrs (_name: skill: skill.packages.${system}.default) skills
-      );
+    carapace.lib.skillsFlake {
+      inherit inputs;
+      config = ./config.json;
     };
 }

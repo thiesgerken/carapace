@@ -29,27 +29,33 @@ from .skills_head import archive_skills, object_id, skills_flake_at_head
 
 
 class SkillNeeds(BaseModel):
-    """What a command declared it needs from outside the sandbox, resolved by `mkSkill`."""
+    """What a command needs from outside the sandbox, resolved for this instance's settings."""
 
     domains: list[str]
     credentials: dict[str, str]
+    oauth: list[str]
     tunnels: list[str]
-    # Added after the first `mkSkill`: a skill pinning an older Carapace has none.
-    oauth: list[str] = []
 
 
 class SkillCommand(BaseModel):
     description: str
     needs: SkillNeeds
-    # An MCP server from `mcpCommands`. Added after the first `mkSkill`: older pins mark none.
-    mcp: bool = False
+    # An MCP server from `mcpCommands`.
+    mcp: bool
 
 
-class SkillMetadata(BaseModel):
-    """`passthru.carapace` of a skill package, as `mkSkill` writes it (docs/skill-flakes.md)."""
+type SettingValue = str | int | bool
 
-    name: str
-    commands: dict[str, SkillCommand]
+
+class SkillManifest(BaseModel):
+    """`manifests.<system>.<skill>` of skills/flake.nix, as `skillsFlake` writes it (docs/skill-flakes.md).
+
+    A skill that skills/config.json turns off has only `enable`.
+    """
+
+    enable: bool
+    settings: dict[str, SettingValue] = {}
+    commands: dict[str, SkillCommand] = {}
 
 
 type BuildState = Literal["building", "succeeded", "failed", "unavailable"]
@@ -62,6 +68,9 @@ class _Outcome:
     commands: dict[str, SkillCommand] = field(default_factory=dict)
     # Why a build failed or is unavailable: the builder's log tail, or what went wrong before it.
     detail: str = ""
+    # False for a skill skills/config.json turns off: it counts as not listed.
+    enabled: bool = True
+    settings: dict[str, SettingValue] = field(default_factory=dict)
     # The skill directory in the store and what the builder read from it; also kept for a failed build.
     skill_dir: str | None = None
     skill_md: str | None = None
@@ -80,6 +89,9 @@ class SkillBuild:
     skill_dir: str | None = None
     skill_md: str | None = None
     skill_files: list[str] = field(default_factory=list)
+    enabled: bool = True
+    # This instance's values, which a command gets as environment variables (`cgate request --command`).
+    settings: dict[str, SettingValue] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +104,8 @@ class _HeadSkill:
     skills_tree: str
     # The skill's directory below skills/; None for a flake from elsewhere.
     directory: str | None
+    # Whether skills/ has a config.json, which the builder gets along for the manifest.
+    config: bool
 
 
 _BUILDING = _Outcome(state="building")
@@ -138,7 +152,20 @@ class SkillBuilds:
         A change to skills/flake.nix or its lock re-keys every skill; without the fallback, every command
         would leave PATH until its rebuild is done, and a failed rebuild would keep it off.
         """
-        return [self._usable(repo_dir, build) for build in await self.ensure_built(repo_dir)]
+        usable = [self._usable(repo_dir, build) for build in await self.ensure_built(repo_dir)]
+        return [build for build in usable if build.enabled]
+
+    async def command_build(self, repo_dir: Path, store_path: str, command: str) -> SkillBuild | None:
+        """The installable build a wrapper belongs to: the one whose package is *store_path* (its `@out@`), else
+        the one with a command named *command*. None when no installable build has that command.
+
+        A package built in the workspace (`nix shell path:./skills/<name>`) is not installed; command names are
+        unique on PATH, so it gets the settings and needs of the committed version of its command. That grants
+        nothing new: the sandbox can run the installed command anyway, and whatever leaves the sandbox still goes
+        through the review of those needs. The same holds for anything else the answer carries (credentials).
+        """
+        builds = [build for build in await self.installable(repo_dir) if command in build.commands]
+        return next((build for build in builds if store_path in build.store_paths), builds[0] if builds else None)
 
     async def refresh(self, repo_dir: Path) -> None:
         """`ensure_built`, then wait briefly until the builder said which of the new keys it built before.
@@ -161,23 +188,31 @@ class SkillBuilds:
         memory and compaction build outside a turn. A turn refreshes it first (`refresh`).
         """
         heads = self._heads.get(repo_dir, [])
-        return [
-            _catalog_entry(skill.name, self.readable(repo_dir, skill.name) or _build(skill, self._known(skill)))
-            for skill in heads
-        ]
+        return [_catalog_entry(skill.name, shown) for skill in heads if (shown := self._shown(repo_dir, skill)).enabled]
 
     def readable(self, repo_dir: Path, name: str) -> SkillBuild | None:
         """The build of *name* whose skill directory the catalog and the sentinel read.
 
         That is the build at head once it has one, and until then the last succeeded build of this attribute:
         a changed skill keeps its description and files until the new ones are there, instead of dropping to
-        "being built" and back. None for a skill whose skill directory was never read.
+        "being built" and back. None for a skill whose skill directory was never read, and for one that is off.
         """
         skill = next((skill for skill in self._heads.get(repo_dir, []) if skill.name == name), None)
         if skill is None:
             return None
+        shown = self._shown(repo_dir, skill)
+        return shown if shown.enabled and shown.skill_dir is not None else None
+
+    def _shown(self, repo_dir: Path, skill: _HeadSkill) -> SkillBuild:
+        """The build at head once it has a skill directory or is off, until then the last succeeded build.
+
+        So a skill that is off stays off while a config change re-keys it, like a changed skill keeps its
+        description until the new one is read.
+        """
         build = _build(skill, self._known(skill))
-        return build if build.skill_dir is not None else self._last_succeeded.get((repo_dir, name))
+        if build.skill_dir is not None or not build.enabled:
+            return build
+        return self._last_succeeded.get((repo_dir, skill.name), build)
 
     async def skill_file(self, build: SkillBuild, path: str) -> bytes | None:
         """A file of *build*'s skill directory; None when it has no such file or no skill directory."""
@@ -296,7 +331,12 @@ async def _build_outcome(
             try:
                 # Only what the key covers: results are shared between users with the same key, so a skill
                 # that reads another directory of skills/ must fail rather than build from someone's tree.
-                paths = ["flake.nix", "flake.lock", *([skill.directory] if skill.directory else [])]
+                paths = [
+                    "flake.nix",
+                    "flake.lock",
+                    *(["config.json"] if skill.config else []),
+                    *([skill.directory] if skill.directory else []),
+                ]
                 archive = await archive_skills(repo_dir, skill.skills_tree, *paths)
             except RuntimeError as exc:
                 return _Outcome(state="failed", detail=str(exc))
@@ -333,18 +373,18 @@ def _read_result(result: BuildResult) -> _Outcome:
             skill_files=result.skill_files,
         )
     try:
-        metadata = SkillMetadata.model_validate(result.metadata)
+        manifest = SkillManifest.model_validate(result.metadata)
     except ValidationError as exc:
-        return _Outcome(
-            state="failed",
-            detail=f"The skill package has no valid passthru.carapace; build it with mkSkill. {exc}",
-        )
+        return _Outcome(state="failed", detail=f"The skill has no valid manifest; see docs/skill-flakes.md. {exc}")
+    if not manifest.enable:
+        return _Outcome(state="succeeded", enabled=False, detail="Turned off in skills/config.json.")
     if result.skill_dir is None:
         return _Outcome(state="failed", detail=_NO_SKILL_DIR)
     return _Outcome(
         state="succeeded",
         store_paths=result.store_paths,
-        commands=metadata.commands,
+        commands=manifest.commands,
+        settings=manifest.settings,
         skill_dir=result.skill_dir,
         skill_md=result.skill_md,
         skill_files=result.skill_files,
@@ -368,6 +408,8 @@ def _build(skill: _HeadSkill, outcome: _Outcome) -> SkillBuild:
         skill_dir=outcome.skill_dir,
         skill_md=outcome.skill_md,
         skill_files=outcome.skill_files,
+        enabled=outcome.enabled,
+        settings=outcome.settings,
     )
 
 
@@ -398,17 +440,23 @@ async def _skills_at_head(repo_dir: Path) -> list[_HeadSkill]:
     for skill in head.skills:
         # A missing directory keys as empty; archiving it then fails and says why.
         directory = await object_id(repo_dir, f"{head.tree}:{skill.directory}") if skill.directory else ""
-        key = build_key(skill.name, head.flake, head.lock, directory)
+        key = build_key(skill.name, head.flake, head.lock, head.config, directory)
         local = str(skill.directory) if skill.directory is not None else None
-        skills.append(_HeadSkill(name=skill.name, key=key, skills_tree=head.tree, directory=local))
+        skills.append(
+            _HeadSkill(name=skill.name, key=key, skills_tree=head.tree, directory=local, config=bool(head.config))
+        )
     return skills
 
 
-def build_key(skill: str, flake: str, lock: str, directory: str) -> str:
-    """What a skill's build depends on: its attribute, the Git ids of skills/flake.nix and its lock, and of
-    its own directory (empty for a flake from elsewhere, which the lock pins).
+def build_key(skill: str, flake: str, lock: str, config: str, directory: str) -> str:
+    """What a skill's build depends on: its attribute, the Git ids of skills/flake.nix, its lock and
+    skills/config.json (empty without one), and of its own directory (empty for a flake from elsewhere,
+    which the lock pins).
 
     Editing one local skill re-keys only that skill, so the others keep their results and stay on PATH.
+    A change to config.json re-keys every skill, but builds nothing new: the packages do not depend on it,
+    only the manifests the builder evaluates again.
     """
     # Exactly what the builder gets (`_build_outcome` archives these paths), so a key cannot hide a change.
-    return hashlib.sha256("\0".join([skill, flake, lock, directory]).encode()).hexdigest()
+    # A config.json change re-evaluates every manifest; key on each skill's entry if that ever gets slow.
+    return hashlib.sha256("\0".join([skill, flake, lock, config, directory]).encode()).hexdigest()

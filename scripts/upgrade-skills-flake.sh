@@ -9,7 +9,8 @@
 #   gets a flake of a few lines; a flake whose mkSkill has no `src` gets `src = ./.;`.
 # - A skill that needs setting up first (web, ferret) and that only bootstrap ever touched, or whose
 #   SKILL.md still sets `disabled: true`, is written as a commented-out input.
-# - Every input follows the repo's nixpkgs and carapace. Then `nix flake lock` writes skills/flake.lock.
+# - Every input follows the repo's nixpkgs and carapace. An empty skills/config.json holds the settings,
+#   then `nix flake lock` writes skills/flake.lock.
 set -eu
 
 # Bundled with Carapace and taken from its main branch (src/carapace/assets/skills/flake.nix).
@@ -180,23 +181,17 @@ EOF
   cat <<'EOF'
   };
 
+  # Every input but nixpkgs and carapace is a skill; config.json holds the values of their settings.
   outputs =
     { carapace, ... }@inputs:
-    let
-      skills = removeAttrs inputs [
-        "self"
-        "nixpkgs"
-        "carapace"
-      ];
-    in
-    {
-      packages = carapace.lib.forSkillSystems (
-        system: builtins.mapAttrs (_name: skill: skill.packages.${system}.default) skills
-      );
+    carapace.lib.skillsFlake {
+      inherit inputs;
+      config = ./config.json;
     };
 }
 EOF
 } > flake.nix
+[ -e config.json ] || echo '{}' > config.json
 
 # A flake in a Git repo sees only tracked files. skills/ was clean, so this stages only what the script wrote.
 git add -A .

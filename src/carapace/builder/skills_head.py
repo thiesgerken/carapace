@@ -16,6 +16,8 @@ class SkillsFlakeAtHead:
     tree: str
     flake: str
     lock: str
+    # skills/config.json, the values of the skills' settings; empty without one.
+    config: str
     lock_text: str
     skills: list[ListedSkill]
 
@@ -27,12 +29,13 @@ async def skills_flake_at_head(repo_dir: Path) -> SkillsFlakeAtHead | None:
     lock = await object_id(repo_dir, "HEAD:skills/flake.lock")
     if not (tree and flake and lock):
         return None
+    config = await object_id(repo_dir, "HEAD:skills/config.json")
     try:
         lock_text = (await _git(repo_dir, "cat-file", "blob", lock)).decode()
         skills = parse_skills_lock(lock_text)
     except (SkillsFlakeError, UnicodeDecodeError):
         return None
-    return SkillsFlakeAtHead(tree=tree, flake=flake, lock=lock, lock_text=lock_text, skills=skills)
+    return SkillsFlakeAtHead(tree=tree, flake=flake, lock=lock, config=config, lock_text=lock_text, skills=skills)
 
 
 async def archive_skills(repo_dir: Path, tree: str, *paths: str) -> bytes:

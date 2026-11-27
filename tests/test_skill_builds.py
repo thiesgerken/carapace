@@ -24,11 +24,14 @@ from carapace.spans import TurnTrace, attach
 from tests.skills_flake import write_skills_flake
 
 _METADATA = {
+    "enable": True,
     "name": "weather",
+    "settings": {"CITY": "Berlin"},
     "commands": {
         "weather": {
             "description": "Current weather",
-            "needs": {"domains": ["api.example.com"], "credentials": {}, "tunnels": []},
+            "mcp": False,
+            "needs": {"domains": ["api.example.com"], "credentials": {}, "oauth": [], "tunnels": []},
         }
     },
 }
@@ -49,7 +52,8 @@ class FakeBuilder:
             skill=skill,
             state="succeeded",
             store_paths=[f"/nix/store/{key[:32]}-skill"],
-            metadata=_METADATA,
+            # One command per skill, named after it, as command names are unique on PATH.
+            metadata=_METADATA | {"commands": {skill: _METADATA["commands"]["weather"]}},
             skill_dir=f"/nix/store/{key[32:64]}-skill-src",
             skill_md=self.files["SKILL.md"].decode(),
             skill_files=sorted(self.files),
@@ -104,6 +108,7 @@ def _key(repo: Path, name: str, directory: str | None = None) -> str:
         name,
         object_id("skills/flake.nix"),
         object_id("skills/flake.lock"),
+        "",
         object_id(f"skills/{directory or name}") if directory != "" else "",
     )
 
@@ -230,7 +235,7 @@ async def test_a_failed_build_is_reported_with_its_log(repo: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_a_package_without_mkskill_metadata_counts_as_failed(repo: Path) -> None:
+async def test_a_skill_without_a_manifest_counts_as_failed(repo: Path) -> None:
     builder = FakeBuilder()
     builder.answer = lambda key, skill: BuildResult(
         key=key, skill=skill, state="succeeded", store_paths=["/nix/store/x"], metadata=None
@@ -242,7 +247,7 @@ async def test_a_package_without_mkskill_metadata_counts_as_failed(repo: Path) -
     states = {build.skill: (build.state, build.detail) for build in await builds.ensure_built(repo)}
 
     assert states["weather"][0] == "failed"
-    assert "build it with mkSkill" in states["weather"][1]
+    assert "no valid manifest" in states["weather"][1]
 
 
 @pytest.mark.anyio
@@ -778,3 +783,74 @@ async def test_a_skill_directory_name_is_no_pattern(repo: Path) -> None:
     assert [{name.rstrip("/") for name in files} for _, _, files in builder.built] == [
         {"flake.nix", "flake.lock", "w*", "w*/SKILL.md"}
     ]
+
+
+@pytest.mark.anyio
+async def test_config_json_rekeys_every_skill_and_goes_to_the_builder(repo: Path) -> None:
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    before = {build.skill: build.key for build in await builds.ensure_built(repo)}
+    await _settled(builds, repo)
+
+    (repo / "skills" / "config.json").write_text('{"weather": {"settings": {"CITY": "Berlin"}}}\n')
+    _commit(repo, "configure weather")
+    after = {build.skill: build.key for build in await builds.ensure_built(repo)}
+    await _settled(builds, repo)
+
+    assert all(after[name] != before[name] for name in before)
+    archived = next(files for _, skill, files in reversed(builder.built) if skill == "weather")
+    assert {"config.json", "flake.nix", "flake.lock", "weather"} <= archived
+    weather = next(build for build in await builds.installable(repo) if build.skill == "weather")
+    assert weather.settings == {"CITY": "Berlin"}
+
+
+@pytest.mark.anyio
+async def test_a_skill_turned_off_counts_as_not_listed(repo: Path) -> None:
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+    weather = next(build for build in await builds.installable(repo) if build.skill == "weather")
+
+    (repo / "skills" / "config.json").write_text('{"weather": {"enable": false}}\n')
+    _commit(repo, "turn weather off")
+    on = builder.answer
+    builder.answer = lambda key, skill: (
+        BuildResult(key=key, skill=skill, state="succeeded", metadata={"enable": False})
+        if skill == "weather"
+        else on(key, skill)
+    )
+    await builds.refresh(repo)
+    await _settled(builds, repo)
+
+    assert [build.skill for build in await builds.installable(repo)] == ["notes"]
+    assert [info.name for info in builds.catalog(repo)] == ["notes"]
+    assert builds.readable(repo, "weather") is None
+    assert await builds.command_build(repo, weather.store_paths[0], "weather") is None
+    off = await builds.wait_built(repo, "weather")
+    assert off is not None and not off.enabled and off.detail == "Turned off in skills/config.json."
+
+    # Another config change re-keys it: while it builds, it stays off instead of showing up as broken.
+    (repo / "skills" / "config.json").write_text('{"notes": {"enable": true}, "weather": {"enable": false}}\n')
+    _commit(repo, "touch config")
+    release = _held(builder)
+    await builds.ensure_built(repo)
+    assert [info.name for info in builds.catalog(repo)] == ["notes"]
+    assert builds.readable(repo, "weather") is None
+    assert [build.skill for build in await builds.installable(repo)] == ["notes"]
+    release.set()
+    await _settled(builds, repo)
+
+
+@pytest.mark.anyio
+async def test_a_wrapper_finds_its_build_by_store_path_then_by_command(repo: Path) -> None:
+    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+    weather = next(build for build in await builds.installable(repo) if build.skill == "weather")
+    workspace = f"/nix/store/{'z' * 32}-skill-weather"
+
+    assert await builds.command_build(repo, weather.store_paths[0], "weather") == weather
+    # A package built in the workspace gets the committed version of its command.
+    assert await builds.command_build(repo, workspace, "weather") == weather
+    assert await builds.command_build(repo, weather.store_paths[0], "unknown") is None

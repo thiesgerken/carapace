@@ -44,6 +44,7 @@ from .context import (
     RewindEntry,
     SentinelVerdict,
     SessionSecurity,
+    SkillCommandOrigin,
     ToolCallEntry,
     ToolResultEntry,
     UnattendedSentinelVerdict,
@@ -239,11 +240,18 @@ def _boundary_origin(command: str, *, follow_up: bool) -> str:
     return f"Running exec: {command}"
 
 
-def _store_path_line(store_path: str | None) -> str:
+def _store_path_line(store_path: str | None, origin: SkillCommandOrigin | None) -> str:
     if store_path is None:
         return "Caller store path: not given."
-    # ponytail: no comparison with the build for the current head yet; it needs the head's build results here.
-    return f"Caller store path: {store_path} (matches the build for the current head: unknown)"
+    if origin is None:
+        # ponytail: a request with explicit flags is not compared with the installed builds; only --command is.
+        return f"Caller store path: {store_path} (matches the build for the current head: unknown)"
+    source = f"the needs of command {origin.command} in the manifest of the installed skill {origin.skill}"
+    if origin.installed:
+        return f"Caller store path: {store_path}, the installed build of skill {origin.skill}; requested: {source}."
+    return (
+        f"Caller store path: {store_path}, not an installed build (e.g. one from the workspace); requested: {source}."
+    )
 
 
 def _format_action_log(entries: list[Any]) -> str:
@@ -855,7 +863,7 @@ class Sentinel:
                     "TCP tunnels (non-HTTP connections through the proxy; each one also allows its host as a domain): "
                     + ", ".join(request.tunnels)
                 )
-            prompt_parts.append(_store_path_line(request.store_path))
+            prompt_parts.append(_store_path_line(request.store_path, request.origin))
             prompt_parts.append(_boundary_origin(command, follow_up=follow_up))
             prompt_parts.append("One verdict for everything listed; an approval holds until this exec ends.")
 
