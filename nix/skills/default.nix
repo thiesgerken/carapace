@@ -63,15 +63,12 @@ let
     skills: values: system:
     let
       packages = lib.mapAttrs (_: skill: skill.packages.${system}.default) skills;
-      # Checked by name only: evaluating the other skills would read their flakes, and one broken skill
-      # must not fail the others.
-      unknown = lib.attrNames (removeAttrs values (lib.attrNames skills));
+      # A config.json entry of a skill that is not listed is ignored here; the server reports it.
       manifest =
         attr: package:
-        assert lib.assertMsg (unknown == [ ])
-          "skills/config.json: ${lib.concatStringsSep ", " unknown} is not a skill that skills/flake.nix lists";
         let
-          # The module system over this skill alone, for the same reason.
+          # The module system over this skill alone: one over all of them would read every skill's flake for
+          # each manifest, and one broken skill must not fail the others.
           evaluated = lib.evalModules {
             modules = [
               { options.skills.${attr} = skillOptions attr package; }

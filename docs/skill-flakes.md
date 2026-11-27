@@ -121,7 +121,7 @@ The values of the skills' [settings](#settings) and the bindings of their [crede
 }
 ```
 
-`skillsFlake` reads it into the Nix module system, once per skill: a skill's manifest evaluates only its own options, `enable` (default `true`) and `settings.<NAME>` with the declared type, against its own entry, so it never reads another skill's flake. A key that names no skill the flake lists is checked by name and fails every skill's manifest. A setting the skill does not declare fails only that skill, with the module system's message naming the option, and so does a value of the wrong type, and so does a required setting without a value: `skill weather: no value for its setting CITY; set it in skills/config.json`. A skill that is off needs no values.
+`skillsFlake` reads it into the Nix module system, once per skill: a skill's manifest evaluates only its own options, `enable` (default `true`) and `settings.<NAME>` with the declared type, against its own entry, so it never reads another skill's flake. An entry for a skill the flake does not list (say, its input was removed and the entry forgotten) is ignored there, so the other skills keep working; the server reports it on the Knowledge view of `skills/` and in `read_skill` and `list_skills`. A setting the skill does not declare fails only that skill, with the module system's message naming the option, and so does a value of the wrong type, and so does a required setting without a value: `skill weather: no value for its setting CITY; set it in skills/config.json`. A skill that is off needs no values.
 
 A change to `config.json` re-evaluates every skill's manifest but builds nothing: the packages do not depend on it, so every instance of a skill runs the same build.
 
