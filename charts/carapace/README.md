@@ -101,7 +101,9 @@ helm upgrade carapace oci://ghcr.io/thiesgerken/charts/carapace -n carapace
 helm uninstall carapace -n carapace
 ```
 
-> PVCs are **not** deleted on uninstall to protect your data. Remove them manually with `kubectl delete pvc carapace-data -n carapace` if desired.
+> `helm uninstall` keeps the data PVC (`<release>-data`), the Postgres PVC and its generated password Secret (`<release>-postgres`), and the Bitwarden PVCs (`<release>-bitwarden-<name>`): they carry `helm.sh/resource-policy: keep`, so a reinstall under the same release name finds them again. Remove them by hand if you want the data gone, e.g. `kubectl delete pvc carapace-data carapace-postgres -n carapace` and `kubectl delete secret carapace-postgres -n carapace`.
+>
+> The builder's Nix store PVC (rebuildable build results) is deleted, and the per-session sandbox PVCs go with their StatefulSets, which the server creates and Kubernetes garbage-collects with their owner (unless `CARAPACE_SANDBOX_K8S_OWNER_REF=false`).
 
 ## Database
 
@@ -119,10 +121,10 @@ Three options:
   > directory, so move between majors with `pg_dump`/restore into a fresh data directory,
   > not by bumping the tag alone.
 
-  > **GitOps (Argo CD / Flux): use `postgres.auth.existingSecret`.** The auto-generate
+  > **GitOps (Argo CD, Kustomize `helmCharts`): use `postgres.auth.existingSecret`.** The auto-generate
   > path relies on Helm `lookup`, which returns nothing when manifests are rendered with
-  > `helm template`. Argo CD/Flux then regenerate a fresh random password on every sync,
-  > but Postgres only applies the password at initdb — so the running DB keeps the old one
+  > `helm template`. These tools then regenerate a fresh random password on every sync,
+  > but Postgres only applies the password at initdb, so the running DB keeps the old one
   > and the server crashes with `password authentication failed for user "carapace"`.
   > Point `postgres.auth.existingSecret` at a Secret you manage (SealedSecret, External
   > Secrets, …) containing `postgres-password` and `database-url`
@@ -149,7 +151,9 @@ All images default to the chart's `appVersion` tag. Release charts use the relea
 
 ### Injecting secrets and environment variables
 
-Apart from the generated builder token (`<release>-builder`) and the bundled Postgres password, the chart creates no Secret resources. Manage the others externally and reference them:
+Apart from the generated builder token (`<release>-builder`) and the bundled Postgres password, the chart creates no Secret resources. Both generated values are reused across upgrades through a Helm `lookup`, which `helm template` cannot resolve: rendered that way (Argo CD, Kustomize `helmCharts`), every render gets a new random value. For the builder token that means server and builder disagree as soon as one of them restarts without the other, and builds fail with `401 Invalid builder token`. Under GitOps, set `postgres.auth.existingSecret` (see [Database](#database)) and `builder.auth.existingSecret` (a Secret with the key `token`, in both the release and the builder namespace).
+
+Manage all other Secrets externally and reference them:
 
 ```yaml
 # values.yaml
@@ -290,7 +294,7 @@ The Bitwarden CLI binds to the fixed localhost-only internal port `8088` inside 
 | `builder.namespace`                                    | `""` (`<release namespace>-builder`) | Namespace of the in-cluster builder                            |
 | `builder.createNamespace`                              | `true`                           | Create that namespace with Pod Security `privileged`                |
 | `builder.externalUrl` / `builder.externalCacheUrl`     | `""`                             | A builder outside the cluster, with `builder.enabled: false`        |
-| `builder.auth.existingSecret`                          | `""` (generated)                 | Secret with the builder token under `token`                         |
+| `builder.auth.existingSecret`                          | `""` (generated)                 | Secret with the builder token under `token`, in both namespaces; set it under GitOps |
 | `builder.persistence.size`                             | `20Gi`                           | The builder's Nix store                                             |
 | `builder.upstreamCaches`                               | `[]` (cache.nixos.org)           | Binary caches the builder substitutes from                          |
 | `builder.egress.allowedCidrs`                          | `[]`                             | Private CIDRs the builder may reach, e.g. a substituter in your network |

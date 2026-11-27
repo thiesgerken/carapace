@@ -6,6 +6,8 @@ metadata:
   labels:
     {{- include "carapace.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
+  annotations:
+    helm.sh/resource-policy: keep
   {{- with .Values.postgres.persistence.finalizers }}
   finalizers:
     {{- toYaml . | nindent 4 }}
