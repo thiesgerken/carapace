@@ -118,6 +118,8 @@ Every listed skill has an origin (`./<dir>` for a local skill, its flake referen
 
 The check runs whenever the `skills/` tree at `HEAD` differs from the one the last check covered (a push, a pull or a new lock; session and memory commits leave it alone), once a day, and on demand: the Knowledge view of `skills/` lists every skill with its origin, locked rev and the last check's verdict, and has a "Check for updates" button (`POST /api/knowledge/skills/updates/check`, then `GET /api/knowledge/skills`). Results live in the server's memory; a restart checks again. The agent sees the same in `read_skill` and `list_skills`, never in the skill catalog: the catalog is part of the cached prompt prefix, and a daily check must not change it.
 
+An available update has an "Update" button (`POST /api/knowledge/skills/<name>/update`). The server commits the lock from that check, but only the skill's part of it: `nix flake update` also re-locks outdated local skills on the way, and those stay as they were. The commit is authored by the logged-in user and skips the sentinel, since the human acts. It is then pushed to the remote and built, as after a sandbox push. If `skills/` changed since the check, or `skills/flake.lock` changes while committing, nothing is committed and the button reports why.
+
 ## Reading a skill as a security event
 
 A `read_skill` call is not reviewed and lands in the action log like any other tool call, so the sentinel knows which skill the agent has in mind when the next boundary request arrives. Reading grants nothing.

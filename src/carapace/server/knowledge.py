@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,9 +18,9 @@ from ..api_keys import Access, Scope
 from ..artifacts import artifact_index, artifact_title, is_artifact_slug
 from ..auth import UserIdentity
 from ..builder.skill_builds import BuildState, RetryRefusedError, SkillBuilds, SkillCommand
-from ..builder.skill_updates import SkillUpdates, UpdateState
+from ..builder.skill_updates import SkillUpdates, UpdateRefusedError, UpdateState
 from ..builder.skills_head import skills_flake_at_head
-from ..git.store import GitStore
+from ..git.store import ConcurrentChangeError, GitStore
 from ..knowledge import contained_target
 from ..models.git import FileCommit
 from ..models.skills import SkillCarapaceConfig
@@ -433,6 +434,39 @@ async def check_skill_updates(
     """Start an update check of the user's skills; poll `GET /knowledge/skills` until `checking` is false."""
     root = server._knowledge_repo_registry.get_for_user(user.username).knowledge_dir.resolve()
     server._skill_builds.updates.start(root)
+    return await skill_sources(server._skill_builds.updates, root)
+
+
+def _commit_author(user: UserIdentity) -> str:
+    """The user as a commit author. Without `<` and `>`, which would turn --author into a search pattern."""
+    name = re.sub("[<>]", "", user.display_name or user.username)
+    email = re.sub("[<>]", "", user.email or f"{user.username}@carapace")
+    return f"{name} <{email}>"
+
+
+@router.post("/knowledge/skills/{name}/update")
+async def update_skill(
+    name: str,
+    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.write))],
+) -> KnowledgeSkillSources:
+    """Commit the update the last check found for skill *name*, then push and build as after a sandbox push.
+
+    The user acts, so the commit is theirs and skips the sentinel.
+    """
+    handle = server._knowledge_repo_registry.get_for_user(user.username)
+    root = handle.knowledge_dir.resolve()
+    try:
+        pending = await server._skill_builds.updates.pending_update(root, name)
+        await handle.git_store.commit_replacing(
+            "skills/flake.lock",
+            pending.lock_text,
+            unchanged={"skills": pending.base_tree},
+            message=pending.message,
+            author=_commit_author(user),
+        )
+    except (UpdateRefusedError, ConcurrentChangeError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await server._after_push(user.username)
     return await skill_sources(server._skill_builds.updates, root)
 
 

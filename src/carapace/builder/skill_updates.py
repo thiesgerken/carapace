@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -46,6 +46,24 @@ class UpdateCheck:
     skills: dict[str, SkillUpdate]
     # Why nothing could be checked (no builder, builder unreachable); empty otherwise.
     error: str = ""
+    # Per available skill, the lock `nix flake update <skill>` would write: applying an update commits
+    # that skill's part of it.
+    locks: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class PendingUpdate:
+    """skills/flake.lock with one skill updated, to commit if HEAD still has the skills/ it was made from."""
+
+    # The skills/ tree at HEAD it was made from: a push in between, of the lock or anything the lock
+    # describes, makes it stale.
+    base_tree: str
+    lock_text: str
+    message: str
+
+
+class UpdateRefusedError(Exception):
+    """The update cannot be applied as asked; the message says why."""
 
 
 def compare(name: str, current: dict[str, Any], updated: dict[str, Any]) -> SkillUpdate:
@@ -65,6 +83,50 @@ def compare(name: str, current: dict[str, Any], updated: dict[str, Any]) -> Skil
         available_rev=after["locked"].get("rev"),
         available_at=datetime.fromtimestamp(modified, UTC) if modified is not None else None,
     )
+
+
+def graft(current: dict[str, Any], updated: dict[str, Any], name: str) -> dict[str, Any]:
+    """*current* with input *name* and its own inputs taken from *updated*, every other input untouched.
+
+    `nix flake update <name>` also re-locks other inputs whose flake.nix changed, so its lock cannot be
+    committed as a whole when only one skill is to change.
+    """
+    root = current["root"]
+    nodes = dict(current["nodes"])
+    nodes[root] = {**nodes[root], "inputs": {k: v for k, v in nodes[root]["inputs"].items() if k != name}}
+    nodes = _reachable(nodes, root)
+    renamed: dict[str, str] = {}
+
+    def copy(node_id: str) -> str:
+        if node_id not in renamed:
+            new_id = node_id
+            while new_id in nodes:
+                new_id += "_"
+            renamed[node_id] = new_id
+            # Stored before recursing, so the id is taken for the nodes below.
+            nodes[new_id] = entry = dict(updated["nodes"][node_id])
+            if "inputs" in entry:
+                entry["inputs"] = {k: t if isinstance(t, list) else copy(t) for k, t in entry["inputs"].items()}
+        return renamed[node_id]
+
+    nodes[root]["inputs"][name] = copy(updated["nodes"][updated["root"]]["inputs"][name])
+    return {**current, "nodes": nodes}
+
+
+def _reachable(nodes: dict[str, Any], root: str) -> dict[str, Any]:
+    seen: set[str] = set()
+    pending = [root]
+    while pending:
+        node_id = pending.pop()
+        if node_id not in seen:
+            seen.add(node_id)
+            pending += [t for t in nodes[node_id].get("inputs", {}).values() if not isinstance(t, list)]
+    return {key: value for key, value in nodes.items() if key in seen}
+
+
+def _lock_json(lock: dict[str, Any]) -> str:
+    """As Nix writes flake.lock, so a commit changes only what changed."""
+    return json.dumps(lock, indent=2, sort_keys=True) + "\n"
 
 
 def _resolved(lock: dict[str, Any], name: str) -> dict[str, Any]:
@@ -142,6 +204,19 @@ class SkillUpdates:
         if latest is None or latest.skills_tree != skills_tree:
             self.start(repo_dir)
 
+    async def pending_update(self, repo_dir: Path, name: str) -> PendingUpdate:
+        """The lock that takes the update the last check found for *name*, made from the lock at HEAD."""
+        check = self._checks.get(repo_dir)
+        update = check.skills.get(name) if check else None
+        if check is None or update is None or update.state != "available":
+            raise UpdateRefusedError(f"The last check found no update for {name}.")
+        head = await skills_flake_at_head(repo_dir)
+        if head is None or head.tree != check.skills_tree:
+            raise UpdateRefusedError("skills/ changed since the last check; check for updates again.")
+        lock = graft(json.loads(head.lock_text), check.locks[name], name)
+        rev = f" to {update.available_rev[:7]}" if update.available_rev else ""
+        return PendingUpdate(base_tree=head.tree, lock_text=_lock_json(lock), message=f"⬆️ skills: update {name}{rev}")
+
     async def wait(self, repo_dir: Path) -> None:
         if (task := self._running.get(repo_dir)) is not None:
             await asyncio.shield(task)
@@ -176,14 +251,18 @@ class SkillUpdates:
             return UpdateCheck(head.tree, now, {}, error=f"The skill builder is unavailable: {exc}")
         current = json.loads(head.lock_text)
         skills: dict[str, SkillUpdate] = {}
+        locks: dict[str, dict[str, Any]] = {}
         for name in names:
             update = result.inputs.get(name)
             if update is None or update.lock is None:
                 log = update.log_tail if update else "the builder did not answer for it"
                 skills[name] = SkillUpdate(state="failed", detail=log)
             else:
-                skills[name] = compare(name, current, json.loads(update.lock))
-        return UpdateCheck(head.tree, now, skills)
+                updated = json.loads(update.lock)
+                skills[name] = compare(name, current, updated)
+                if skills[name].state == "available":
+                    locks[name] = updated
+        return UpdateCheck(head.tree, now, skills, locks=locks)
 
 
 def _log_crash(task: asyncio.Task[None], repo_dir: Path) -> None:
