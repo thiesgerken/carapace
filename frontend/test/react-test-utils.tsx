@@ -15,7 +15,9 @@ type SavedGlobals = {
   navigator?: typeof globalThis.navigator;
   localStorage?: typeof globalThis.localStorage;
   sessionStorage?: typeof globalThis.sessionStorage;
+  Element?: typeof globalThis.Element;
   HTMLElement?: typeof globalThis.HTMLElement;
+  HTMLMetaElement?: typeof globalThis.HTMLMetaElement;
   Node?: typeof globalThis.Node;
   Event?: typeof globalThis.Event;
   MouseEvent?: typeof globalThis.MouseEvent;
@@ -44,7 +46,9 @@ export function installDom(url = "https://carapace.example.test/"): () => void {
     navigator: globalThis.navigator,
     localStorage: globalThis.localStorage,
     sessionStorage: globalThis.sessionStorage,
+    Element: globalThis.Element,
     HTMLElement: globalThis.HTMLElement,
+    HTMLMetaElement: globalThis.HTMLMetaElement,
     Node: globalThis.Node,
     Event: globalThis.Event,
     MouseEvent: globalThis.MouseEvent,
@@ -62,7 +66,9 @@ export function installDom(url = "https://carapace.example.test/"): () => void {
   setGlobal("navigator", dom.window.navigator as typeof globalThis.navigator);
   setGlobal("localStorage", dom.window.localStorage as typeof globalThis.localStorage);
   setGlobal("sessionStorage", dom.window.sessionStorage as typeof globalThis.sessionStorage);
+  setGlobal("Element", dom.window.Element as typeof globalThis.Element);
   setGlobal("HTMLElement", dom.window.HTMLElement as typeof globalThis.HTMLElement);
+  setGlobal("HTMLMetaElement", dom.window.HTMLMetaElement as typeof globalThis.HTMLMetaElement);
   setGlobal("Node", dom.window.Node as typeof globalThis.Node);
   setGlobal("Event", dom.window.Event as typeof globalThis.Event);
   setGlobal("MouseEvent", dom.window.MouseEvent as typeof globalThis.MouseEvent);

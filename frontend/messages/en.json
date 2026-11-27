@@ -902,7 +902,8 @@
         }
     },
     "newSessionButton": {
-        "label": "New session",
+        "label": "New",
+        "title": "New session",
         "chooseOptions": "Choose session options",
         "private": {
             "enabledTitle": "Private",
@@ -1258,7 +1259,8 @@
                 "learnsCommands": "Learns the new commands by heart…",
                 "stowsCommands": "Stuffs the commands into its shell…",
                 "awaitsYourGo": "Waits for your go…",
-                "waitsItsTurn": "Waits its turn…"
+                "waitsItsTurn": "Waits its turn…",
+                "runsCommand": "Runs the command…"
             },
             "seconds": "{seconds} s",
             "minutes": "{minutes} min {seconds} s",
@@ -1283,8 +1285,6 @@
             "wipeSandbox": "Wipe the sandbox and its storage for this session? Chat history will stay.",
             "scaleDownSandbox": "Scale down the sandbox for this session? Storage will be kept.",
             "deleteSession": "Delete this session? Chat history and sandbox state will be removed.",
-            "archiveSession": "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo.",
-            "unarchiveSession": "Unarchive this session? It will return to the active session list.",
             "makePrivate": "Mark this session private? Existing knowledge commits will remain in git history."
         },
         "actions": {
@@ -1639,22 +1639,12 @@
         "messageCount": "{count, plural, one {# message} other {# messages}}",
         "unattendedSession": "Unattended session",
         "privateSession": "Private session",
+        "pinnedSession": "Pinned session",
+        "favoriteSession": "Favorite session",
         "knowledgeCommitted": "All changes committed to knowledge",
-        "actions": {
-            "pin": "Pin session",
-            "unpin": "Unpin session",
-            "favorite": "Favorite session",
-            "unfavorite": "Remove favorite",
-            "archive": "Archive session",
-            "unarchive": "Unarchive session",
-            "delete": "Delete session",
-            "deleteEmpty": "Delete empty session",
-            "shiftSkip": "Shift+click to skip confirmation"
-        },
         "confirm": {
             "deleteSession": "Delete this session? Chat history and sandbox state will be removed.",
-            "deleteUnpushed": "This session has {count, plural, one {# commit} other {# commits}} not yet pushed to your knowledge repo. Deleting it will discard them. Delete anyway?",
-            "archiveSession": "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo."
+            "deleteUnpushed": "This session has {count, plural, one {# commit} other {# commits}} not yet pushed to your knowledge repo. Deleting it will discard them. Delete anyway?"
         },
         "search": {
             "placeholder": "Search sessions",
@@ -1679,8 +1669,9 @@
         "empty": "No sessions yet",
         "loadingMore": "Loading more sessions",
         "sandboxUsage": {
-            "warning": "{count} sandboxes retained (warning at {warnAt}, max {max}). Delete old sessions to free storage.",
-            "warningUnlimited": "{count} sandboxes retained (warning at {warnAt}). Delete old sessions to free storage.",
+            "warning": "{count} of {max} sandboxes in use. Archive old sessions.",
+            "warningUnlimited": "{count} sandboxes in use. Archive old sessions.",
+            "warnAt": "Warning from {warnAt} sandboxes",
             "limitReached": "{count}/{max} sandboxes. New sessions can't start a sandbox until you delete old ones."
         }
     },
@@ -1698,7 +1689,8 @@
         "global": {
             "label": "Knowledge remote",
             "help": "Sync between your knowledge repository on the server and its external git remote. Counts show commits the server repo is ahead (↑) and behind (↓) the remote.",
-            "indicatorOutOfSync": "Not in sync with the knowledge remote: {behind} to pull, {ahead} to push",
+            "outOfSync": "Not in sync with the knowledge remote: {behind} to pull, {ahead} to push",
+            "sync": "Sync with the knowledge remote (pull, then push)",
             "refresh": "Re-check the server repository against the remote (fetches first)",
             "pull": "Pull commits from the external remote into the server repository",
             "push": "Push the server repository's commits to the external remote"
@@ -1968,5 +1960,11 @@
         },
         "showAllLines": "{count, plural, one {Show the whole line} other {Show all # lines}}",
         "showLess": "Show less"
+    },
+    "toast": {
+        "archived": "Archived",
+        "undo": "Undo",
+        "archiveFailed": "Archiving failed",
+        "close": "Close"
     }
 }

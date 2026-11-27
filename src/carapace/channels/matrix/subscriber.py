@@ -10,6 +10,7 @@ from loguru import logger
 
 from ...models.session import SessionBudget
 from ...models.tooling import ToolResult
+from ...span_names import SKILL_BUILD_WAIT_SPAN
 from ...spans import SpanNotice
 from ...usage import LlmContextStatus, LlmRequestState, LlmSource
 from ...ws_models import ApprovalRequest, ToolCallStream, TurnUsage
@@ -136,7 +137,7 @@ class MatrixSubscriber:
     async def on_span(self, notice: SpanNotice) -> None:
         # Only `read_skill` waits for a build. Profile syncs also run on every sandbox start, where
         # nothing waits for them, so they are not announced.
-        build_wait = (notice.kind, notice.name, notice.status) == ("skill", "build wait", "running")
+        build_wait = (notice.kind, notice.name, notice.status) == ("skill", SKILL_BUILD_WAIT_SPAN, "running")
         if build_wait and self._channel._verbose.get(self._room_id, True):
             await self._channel._send_notice(self._room_id, "⏳ Waiting for the skill build…")
 

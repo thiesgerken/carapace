@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
-import { BookOpen, Brain, LogOut, Settings2, type LucideIcon } from "lucide-react";
+import { BookOpen, Brain, Loader2, LogOut, RefreshCw, Settings2, type LucideIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { GlobalGitIndicator, useGlobalGit } from "@/components/git-sync";
+import { AheadBehind, type GlobalGit, useGlobalGit } from "@/components/git-sync";
 import { VersionBadge, versionMismatch } from "@/components/version-badge";
 import { useDismiss } from "@/hooks/use-dismiss";
 import type { AuthUserInfo } from "@/lib/api";
@@ -41,7 +41,44 @@ function isActiveRoute(pathname: string | null, href: string): boolean {
   return pathname === href || (pathname?.startsWith(`${href}/`) ?? false);
 }
 
-/** The bottom of the sidebar: the account row, whose menu holds the app navigation, the GitHub link and logout. */
+/** Shown only while the knowledge repo needs attention: out of sync with its remote, mid-sync, or after a failed sync. */
+function KnowledgeSyncRow({ git, onNavigate }: { git: GlobalGit; onNavigate: () => void }) {
+  const t = useTranslations();
+  const behind = git.counts?.behind ?? 0;
+  const ahead = git.counts?.ahead ?? 0;
+  const syncing = git.busy !== null;
+  const failure = git.outcome && !git.outcome.ok ? git.outcome : null;
+  if (!syncing && !failure && (git.configured !== true || (behind === 0 && ahead === 0))) return null;
+  return (
+    <div className="flex h-8 items-center gap-2 px-2 text-xs text-muted-foreground">
+      <Link
+        href="/knowledge"
+        onClick={onNavigate}
+        title={failure ? failure.detail || failure.errorLabel : t("git.global.outOfSync", { behind, ahead })}
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="shrink-0">{t("navigation.knowledge")}</span>
+        {failure ? (
+          <span className="truncate text-destructive">{failure.errorLabel}</span>
+        ) : (
+          <AheadBehind counts={{ ahead, behind }} upToDateLabel={t("git.upToDate")} />
+        )}
+      </Link>
+      <button
+        type="button"
+        onClick={git.sync}
+        disabled={syncing || git.loading}
+        title={t("git.global.sync")}
+        aria-label={t("git.global.sync")}
+        className="rounded-md p-1 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+      </button>
+    </div>
+  );
+}
+
+/** The bottom of the sidebar: the knowledge sync row and the account row, whose menu holds the app navigation, the GitHub link and logout. */
 export function SidebarFooter({
   server,
   token,
@@ -73,79 +110,80 @@ export function SidebarFooter({
 
   return (
     // Below md the drawer is fixed to the viewport, so the body's safe-area padding does not reach it.
-    <div ref={menuRef} className="relative px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:pb-2">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        title={t("account.openMenu")}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-semibold text-accent-foreground">
-          {accountInitial(currentUser)}
-        </span>
-        <span className="min-w-0 flex-1 truncate font-medium">{accountName}</span>
-        {/* What the closed menu hides but should not wait for it: an out-of-sync knowledge remote and a stale frontend. */}
-        <GlobalGitIndicator git={globalGit} />
-        {versionMismatch(frontendVersion, backendVersion) ? (
-          <VersionBadge frontendVersion={frontendVersion} backendVersion={backendVersion} textClassName="sr-only" />
-        ) : null}
-      </button>
-
-      {open ? (
-        <div
-          role="menu"
-          aria-label={t("account.menu")}
-          className="absolute inset-x-3 bottom-full z-50 mb-1 rounded-lg border border-border bg-background p-1 text-foreground shadow-lg"
+    <div className="px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:pb-2">
+      <KnowledgeSyncRow git={globalGit} onNavigate={onNavigate} />
+      <div ref={menuRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen((current) => !current)}
+          title={t("account.openMenu")}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {NAV_ITEMS.map(({ href, labelKey, icon: Icon }) => {
-            const active = isActiveRoute(pathname, href);
-            return (
-              <Link
-                key={href}
-                role="menuitem"
-                href={href}
-                onClick={() => {
-                  setOpen(false);
-                  onNavigate();
-                }}
-                aria-current={active ? "page" : undefined}
-                className={cn(menuItemClassName, active && "bg-primary/10 hover:bg-primary/10")}
-              >
-                <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
-                <span className="flex-1">{t(`navigation.${labelKey}`)}</span>
-                {href === "/knowledge" ? <GlobalGitIndicator git={globalGit} /> : null}
-              </Link>
-            );
-          })}
-          <div role="separator" className="my-1 h-px bg-border" />
-          <a
-            role="menuitem"
-            href={githubUrl}
-            target="_blank"
-            rel="noreferrer"
-            onClick={() => setOpen(false)}
-            className={menuItemClassName}
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-semibold text-accent-foreground">
+            {accountInitial(currentUser)}
+          </span>
+          <span className="min-w-0 flex-1 truncate font-medium">{accountName}</span>
+          {/* What the closed menu hides but should not wait for it: a stale frontend. */}
+          {versionMismatch(frontendVersion, backendVersion) ? (
+            <VersionBadge frontendVersion={frontendVersion} backendVersion={backendVersion} textClassName="sr-only" />
+          ) : null}
+        </button>
+
+        {open ? (
+          <div
+            role="menu"
+            aria-label={t("account.menu")}
+            className="absolute inset-x-0 bottom-full z-50 mb-1 rounded-lg border border-border bg-background p-1 text-foreground shadow-lg"
           >
-            <GitHubIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate">{t("navigation.github")}</span>
-            <VersionBadge frontendVersion={frontendVersion} backendVersion={backendVersion} className="shrink-0" />
-          </a>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onDisconnect();
-            }}
-            className={menuItemClassName}
-          >
-            <LogOut className="h-4 w-4 shrink-0 text-muted-foreground" />
-            {t("account.logout")}
-          </button>
-        </div>
-      ) : null}
+            {NAV_ITEMS.map(({ href, labelKey, icon: Icon }) => {
+              const active = isActiveRoute(pathname, href);
+              return (
+                <Link
+                  key={href}
+                  role="menuitem"
+                  href={href}
+                  onClick={() => {
+                    setOpen(false);
+                    onNavigate();
+                  }}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(menuItemClassName, active && "bg-primary/10 hover:bg-primary/10")}
+                >
+                  <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+                  <span className="flex-1">{t(`navigation.${labelKey}`)}</span>
+                </Link>
+              );
+            })}
+            <div role="separator" className="my-1 h-px bg-border" />
+            <a
+              role="menuitem"
+              href={githubUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setOpen(false)}
+              className={menuItemClassName}
+            >
+              <GitHubIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">{t("navigation.github")}</span>
+              <VersionBadge frontendVersion={frontendVersion} backendVersion={backendVersion} className="shrink-0" />
+            </a>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onDisconnect();
+              }}
+              className={menuItemClassName}
+            >
+              <LogOut className="h-4 w-4 shrink-0 text-muted-foreground" />
+              {t("account.logout")}
+            </button>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

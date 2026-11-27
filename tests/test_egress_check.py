@@ -88,7 +88,12 @@ def listener() -> Iterator[tuple[socket.socket, list[bytes]]]:
             except OSError:
                 return
             with conn:
-                conn.recv(4096)
+                # The whole request before answering: bash's stdout is line-buffered, so the probe's printf
+                # arrives in one write per line, and closing with a line unread resets the connection, which
+                # can discard the reply before the probe reads it.
+                request = b""
+                while b"\r\n\r\n" not in request and (chunk := conn.recv(4096)):
+                    request += chunk
                 conn.sendall(replies[0] if replies else b"")
 
     threading.Thread(target=serve, daemon=True).start()
