@@ -36,21 +36,32 @@ const plateIndex = (i: number) => ({ "--plate": i }) as CSSProperties;
 
 const SQUIGGLE = "q1-2.5 2 0t2 0 2 0 2 0";
 
+/**
+ * *children* scaled by *scale* around (*x*, *y*), the point where the tortoise holds the prop, so a pose still
+ * reads at 32 to 40 px. A wrapper of its own: the CSS animations transform the groups inside it, about origins
+ * in their own boxes, which the scale carries along.
+ */
+const enlarged = (x: number, y: number, scale: number, children: ReactNode) => (
+  // `view-box`: globals.css gives every element a `fill-box`, which would scale it about its own corner.
+  <g style={VIEW_BOX} transform={`translate(${x} ${y}) scale(${scale}) translate(${-x} ${-y})`}>{children}</g>
+);
+const VIEW_BOX: CSSProperties = { transformBox: "view-box" };
+
 // What a pose holds or shows besides the tortoise itself, drawn on top of it.
 const PROPS: Partial<Record<TortoisePose, ReactNode>> = {
-  munch: (
+  munch: enlarged(161, 74, 2,
     <g className="leaf">
       <path fill="#6bbf59" d="M161 74Q170 56 186 62Q178 82 161 74Z" />
       <path d="M162 73 182 63" stroke="#3f8a33" strokeWidth="1.4" fill="none" />
-    </g>
+    </g>,
   ),
-  glass: (
+  glass: enlarged(157, 74, 1.9,
     <g className="glass">
       <line x1="157" y1="74" x2="166" y2="62" stroke={WOOD} strokeWidth="4" strokeLinecap="round" />
       <circle className="lens stroke-muted-foreground" cx="173" cy="52" r="11" strokeWidth="2.5" />
-    </g>
+    </g>,
   ),
-  book: (
+  book: enlarged(158, 92, 1.9,
     <g stroke={PAPER_EDGE} strokeWidth="1">
       <path fill="#8c3b3b" stroke="none" d="M172 66 156 63 156 90 172 92 188 90 188 63Z" />
       <path fill={PAPER} d="M172 64Q165 60 158 62L158 87Q165 85 172 89Z" />
@@ -58,9 +69,9 @@ const PROPS: Partial<Record<TortoisePose, ReactNode>> = {
       <path stroke="#b5ab96" strokeWidth="1.4" strokeLinecap="round" d="M161 68H169M161 73H169M161 78H167M175 68H183M175 73H183M175 78H181" />
       {/* The page that turns, over its resting copy. */}
       <path className="turning-page" fill="#fff" d="M172 64Q179 60 186 62L186 87Q179 85 172 89Z" />
-    </g>
+    </g>,
   ),
-  hourglass: (
+  hourglass: enlarged(165, 98, 1.25,
     <g className="hourglass">
       <rect fill={WOOD} x="165" y="54" width="22" height="4" rx="1.5" />
       <rect fill={WOOD} x="165" y="96" width="22" height="4" rx="1.5" />
@@ -69,40 +80,46 @@ const PROPS: Partial<Record<TortoisePose, ReactNode>> = {
       <path className="sand-top" fill={SAND} d="M170.5 61 181.5 61Q180 71 176 76Q172 71 170.5 61Z" />
       <path className="sand-bottom" fill={SAND} d="M170 95 182 95Q180 86 176 84Q172 86 170 95Z" />
       <line className="stream" x1="176" y1="76" x2="176" y2="94" stroke={SAND} strokeWidth="1.4" />
-    </g>
+    </g>,
   ),
   think: (
-    <g className="fill-muted stroke-muted-foreground" strokeWidth="1">
-      <circle cx="152" cy="38" r="2.5" />
-      <circle cx="159" cy="28" r="4" />
-      <g className="puff">
+    <g className="fill-muted stroke-muted-foreground" strokeWidth="1.6">
+      <circle cx="156" cy="44" r="3" />
+      <circle cx="163" cy="36" r="4.5" />
+      {/* Moved right of the head: enlarged where it was, the cloud would leave the top of the viewBox. */}
+      <g transform="translate(18 5)">{enlarged(170, 9, 1.8, <g className="puff">
         <ellipse cx="170" cy="9" rx="17" ry="11" />
         <circle className="dot fill-muted-foreground stroke-none" cx="162" cy="9" r="2.4" />
         <circle className="dot fill-muted-foreground stroke-none" cx="170" cy="9" r="2.4" />
         <circle className="dot fill-muted-foreground stroke-none" cx="178" cy="9" r="2.4" />
-      </g>
+      </g>)}</g>
     </g>
   ),
   turbo: (
     <>
-      <g className="flame">
-        <path fill="#f08a24" d="M19 84Q8 73 -2 84Q8 95 19 84Z" />
-        <path fill="#ffd34d" d="M17 84Q10 79 5 84Q10 89 17 84Z" />
-      </g>
-      <path className="speed-lines stroke-muted-foreground" strokeWidth="2.5" strokeLinecap="round" d="M8 46H20M6 58H16M10 70H18" />
+      {enlarged(19, 84, 1.6,
+        <g className="flame">
+          <path fill="#f08a24" d="M19 84Q8 73 -2 84Q8 95 19 84Z" />
+          <path fill="#ffd34d" d="M17 84Q10 79 5 84Q10 89 17 84Z" />
+        </g>,
+      )}
+      {/* Thicker than before but not enlarged: scaled, they would run past the box's left edge. They end at the shell. */}
+      <path className="speed-lines stroke-muted-foreground" strokeWidth="4" strokeLinecap="round" d="M14 38H32M9 52H24M11 66H20" />
     </>
   ),
   snail: (
     <g className="snail">
+      {enlarged(40, 106, 1.7, <>
       <path fill="#d9c6a0" d="M6 106Q8 101 16 101L32 101Q36 101 37 96Q38 93 40 96L40 106Z" />
       <path d="M37.5 96 35.5 89M39.5 96 42 90" stroke="#d9c6a0" strokeWidth="1.6" strokeLinecap="round" />
       <circle cx="35.5" cy="89" r="1.4" fill={EYE} />
       <circle cx="42" cy="90" r="1.4" fill={EYE} />
       <circle cx="22" cy="93" r="9" fill="#c98b4a" />
       <path d="M22 93m-1 0a1.5 1.5 0 1 1 3 0a3.5 3.5 0 1 1-7 0a5.5 5.5 0 1 1 11 0" stroke={WOOD} strokeWidth="1.4" fill="none" />
+      </>)}
     </g>
   ),
-  scribble: (
+  scribble: enlarged(152, 70, 1.85,
     <>
       <rect fill={PAPER} stroke={PAPER_EDGE} strokeWidth="1.5" x="164" y="54" width="22" height="34" rx="2" />
       <g stroke={GRAPHITE} strokeWidth="1.6" strokeLinecap="round" fill="none">
@@ -115,22 +132,22 @@ const PROPS: Partial<Record<TortoisePose, ReactNode>> = {
         <line x1="152" y1="69" x2="166" y2="63.6" stroke="#e9b949" strokeWidth="4" />
         <line x1="166" y1="63.6" x2="169.5" y2="62.2" stroke={GRAPHITE} strokeWidth="2.4" />
       </g>
-    </>
+    </>,
   ),
-  wrench: (
+  wrench: enlarged(151, 70, 1.75,
     <>
       <g className="wrench" stroke={STEEL} strokeLinecap="round" fill="none">
         <line x1="151" y1="70" x2="173" y2="58.5" strokeWidth="5" />
         <path d="M181.9 54.1A5 5 0 1 1 177.9 50.1" strokeWidth="4.5" />
       </g>
       <path className="clank stroke-muted-foreground" strokeWidth="2" strokeLinecap="round" d="M184 42 187 37M185 50 190 49M179 38 180 33" />
-    </>
+    </>,
   ),
   sleep: (
-    <g className="fill-muted-foreground font-mono font-semibold" fontSize="18">
-      <text className="z" x="126" y="44">z</text>
-      <text className="z" x="138" y="32">z</text>
-      <text className="z" x="150" y="20">Z</text>
+    <g className="fill-muted-foreground font-mono font-semibold">
+      <text className="z" x="128" y="46" fontSize="24">z</text>
+      <text className="z" x="144" y="32" fontSize="28">z</text>
+      <text className="z" x="162" y="20" fontSize="32">Z</text>
     </g>
   ),
 };
@@ -143,7 +160,7 @@ export function Tortoise({ pose, className }: { pose: TortoisePose; className?: 
   const walking = WALKING.has(pose);
   return (
     <svg
-      viewBox="6 -6 184 118"
+      viewBox="6 -6 213 118"
       aria-hidden="true"
       data-pose={pose}
       className={cn("tortoise", `tortoise-${pose}`, walking && "tortoise-walking", className)}

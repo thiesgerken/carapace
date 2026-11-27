@@ -129,7 +129,8 @@ export function streamingCallIndex(messages: ChatMessage[], activity: LlmActivit
   return messages.findLastIndex((m) => isOpen(m) && m.argsStreaming === true);
 }
 
-function isOpen(message: ChatMessage): message is ToolCallMessage {
+/** A card whose args the model is still writing: only the live transcript has it, the history doesn't yet. */
+export function isOpen(message: ChatMessage): message is ToolCallMessage {
   return message.kind === "tool_call" && message.argsText !== undefined && !message.notRun;
 }
 

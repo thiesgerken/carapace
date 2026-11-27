@@ -458,7 +458,7 @@ body {
 .tortoise-hourglass .sand-bottom { transform-origin: 50% 100%; transform: scaleY(0.75); }
 .tortoise-scribble .ink { stroke-dasharray: 1; }
 .tortoise-scribble .pencil { transform-origin: 0% 100%; }
-.tortoise-snail .snail { transform: translateX(128px); }
+.tortoise-snail .snail { transform: translateX(176px); }
 .tortoise-peek .head { transform: translate(-14px, 3px); }
 .tortoise-sleep .head { transform: translate(-30px, 6px); }
 .tortoise-sleep .plate { fill: color-mix(in oklch, var(--tortoise-plate) 75%, var(--background)); }
@@ -538,7 +538,7 @@ body {
 @keyframes tortoise-nod { to { transform: rotate(-4deg); } }
 @keyframes tortoise-flame { from { transform: scaleX(1); } to { transform: scaleX(0.55); } }
 @keyframes tortoise-speed { from { transform: translateX(4px); opacity: 1; } to { transform: translateX(-6px); opacity: 0; } }
-@keyframes tortoise-overtake { 0% { transform: translateX(-12px); opacity: 0; } 6%, 92% { opacity: 1; } 100% { transform: translateX(150px); opacity: 0; } }
+@keyframes tortoise-overtake { 0% { transform: translateX(30px); opacity: 0; } 6%, 92% { opacity: 1; } 100% { transform: translateX(186px); opacity: 0; } }
 @keyframes tortoise-pencil {
   0% { transform: translateX(0) rotate(0deg); } 30% { transform: translateX(8px) rotate(0deg); }
   33.3% { transform: translateX(0) rotate(25deg); } 63% { transform: translateX(8px) rotate(25deg); }
