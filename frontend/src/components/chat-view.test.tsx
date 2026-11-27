@@ -214,3 +214,24 @@ test("after a reconnect the chat catches up from the history on a result the soc
   assert.equal(exec.kind === "tool_call" && exec.loading, true);
   assert.equal(exec.kind === "tool_call" && exec.runningSpans?.[0]?.name, "ensure");
 });
+
+test("a reconnect in the middle of a reply keeps what the model has written so far at the end", () => {
+  // The history gets narration only once a model response finishes, so it lacks the text in flight.
+  const history: HistoryMessage[] = [
+    { role: "user", content: "summarize the skill" },
+    { role: "tool_call", content: "", tool: "read_skill", args: { skill_name: "weather" }, detail: "", tool_id: "tool-1" },
+    { role: "tool_result", content: "", tool: "read_skill", tool_id: "tool-1", result: "# weather" },
+  ];
+  const live: ChatMessage[] = [
+    { kind: "user", content: "summarize the skill" },
+    { kind: "tool_call", tool: "read_skill", args: { skill_name: "weather" }, detail: "", loading: false, toolId: "tool-1" },
+    { kind: "thinking_streaming", content: "The skill has one command" },
+    { kind: "streaming", content: "The weather skill gives you" },
+  ];
+
+  const caughtUp = catchUpFromHistory(live, history, []);
+  assert.deepEqual(caughtUp.map((m) => m.kind), ["user", "tool_call", "thinking_streaming", "streaming"]);
+  assert.equal(caughtUp[1].kind === "tool_call" && caughtUp[1].result, "# weather");
+  // Last, so the next token appends to it rather than starting a new reply with only the tail.
+  assert.deepEqual(caughtUp.at(-1), { kind: "streaming", content: "The weather skill gives you" });
+});

@@ -77,7 +77,18 @@ import {
   waitingLineState,
   type EscalationCard,
 } from "@/lib/tool-call-status";
-import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall, streamingCallIndex } from "@/lib/live-tool-calls";
+import {
+  appendStreamedArgs,
+  completeStreamedCall,
+  dropOpenCalls,
+  endStreamedCall,
+  isOpen,
+  keepUnrunCalls,
+  markUnrunCalls,
+  replaceStreamedCall,
+  startStreamedCall,
+  streamingCallIndex,
+} from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 import { SessionArtifactsSection } from "./session-artifacts-section";
@@ -1035,16 +1046,22 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
 }
 
 
+// What the model is still writing: the history gets narration only once its response finishes.
+const isInFlight = (m: ChatMessage) => m.kind === "streaming" || m.kind === "thinking_streaming" || isOpen(m);
+
 /**
  * The chat re-projected from the saved *history*, keeping the live not-run cards and putting the still
- * *running* spans back on their cards: after a reconnect, the history has what the socket missed.
+ * *running* spans back on their cards: after a reconnect, the history has what the socket missed. The live
+ * tail the model is still writing stays at the end, so its next tokens append to it.
  */
 export function catchUpFromHistory(
   live: ChatMessage[],
   history: HistoryMessage[],
   running: Iterable<SpanUpdate>,
 ): ChatMessage[] {
-  return applySpansToToolCalls(keepUnrunCalls(live, projectHistoryToMessages(history)), running);
+  const inFlight = live.slice(live.findLastIndex((m) => !isInFlight(m)) + 1);
+  const settled = live.slice(0, live.length - inFlight.length);
+  return [...applySpansToToolCalls(keepUnrunCalls(settled, projectHistoryToMessages(history)), running), ...inFlight];
 }
 
 function escalationRequestId(card: EscalationCard): string {
