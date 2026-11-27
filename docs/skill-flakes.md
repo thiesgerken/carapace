@@ -125,6 +125,8 @@ The values of the skills' [settings](#settings) and the bindings of their [crede
 
 A change to `config.json` re-evaluates every skill's manifest but builds nothing: the packages do not depend on it, so every instance of a skill runs the same build.
 
+The Knowledge view of `skills/` edits it too: each skill's "Settings" opens a form with its declared settings (the default as the placeholder), its current values, its credential slots and an on/off switch. A slot is bound by typing or picking a password-manager entry's vault path; the list comes from `GET /api/knowledge/credentials?q=`, names and paths only, never values. The collapsed row marks a skill that lacks a required value ("Needs configuration") or has an unbound slot ("Credential not bound"). Saving commits that skill's entry as the logged-in user, sorted and indented so the diff shows only what changed, and pushes it; the commit skips the sentinel, since the human acts. A save made from a form older than the current `config.json` is refused, not merged. The server checks a value against the declared type (`str`, `int`, `bool`, exactly as the Nix options take them) and a binding against `<backend>/<id>` before committing; anything else Nix rejects shows as the skill's evaluation error in the same form.
+
 ## Commands and what they need
 
 `mkSkill { name, src, commands ? { }, needs ? { }, settings ? { }, credentials ? { } }` builds the package. `src` is the skill directory, normally `./.`: it becomes a store path of its own, referenced by the package, so the sandbox gets `SKILL.md`, scripts and references together with the commands. Each command has:
