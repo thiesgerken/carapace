@@ -212,9 +212,11 @@ export function SkillSourcesPanel({ server }: { server: string }) {
         <tbody>
           {sources.skills.map((skill) => {
             const skillConfig = config?.skills.find((entry) => entry.name === skill.name);
-            const needsConfig = skillConfig?.settings?.some((setting) => setting.missing) ?? false;
+            // A skill that is off needs neither: Nix asks it for no values, and nothing runs its commands.
+            const active = skillConfig?.enabled ?? false;
+            const needsConfig = active && (skillConfig?.settings?.some((setting) => setting.missing) ?? false);
             // Every declared slot is needed by some command, so an unbound one refuses part of the skill.
-            const unbound = skillConfig?.credentials?.some((slot) => slot.binding === null) ?? false;
+            const unbound = active && (skillConfig?.credentials?.some((slot) => slot.binding === null) ?? false);
             return (
               <Fragment key={skill.name}>
                 <tr className="border-b border-border/60 align-top last:border-0">
