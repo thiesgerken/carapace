@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket, WebSocketException, status
@@ -248,7 +249,7 @@ def _enforce_scope(ctx: AuthContext, scope: Scope, access: Access) -> UserIdenti
     return ctx.identity
 
 
-def require(scope: Scope, access: Access):
+def require(scope: Scope, access: Access) -> Callable[[AuthContext], Awaitable[UserIdentity]]:
     """Build a dependency that requires the given scope/access for API keys.
 
     Cookie sessions bypass scope checks (full access), except ``admin`` which always
