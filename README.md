@@ -60,7 +60,7 @@ Who doesn't want a personal assistant? OpenClaw showed that this is achievable w
   <img src="docs/assets/screenshots/pancake_web.png" width="1000">
 </p>
 
-<p align="center"><em>A web search skill is bundled, ready once you bind its Brave Search API key. Tool calls and any outbound access is monitored by another agent. Credentials are provided on-demand only.</em></p>
+<p align="center"><em>A web search skill is bundled: bind its Brave Search API key and turn it on in <code>skills/config.json</code>. Tool calls and any outbound access is monitored by another agent. Credentials are provided on-demand only.</em></p>
 
 <br>
 
