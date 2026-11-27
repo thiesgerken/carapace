@@ -82,6 +82,7 @@
             }
         },
         "skillConfig": {
+            "fullLog": "Vollständiges Log",
             "credentials": "Zugangsdaten",
             "unbound": "nicht verknüpft",
             "unbind": "Verknüpfung lösen",
