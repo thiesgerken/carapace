@@ -182,10 +182,9 @@ class MatrixChannel:
         logger.info(f"Matrix: tracking {len(self._room_sessions)} room(s)")
 
         # Register event callbacks AFTER the initial sync so backlog is not replayed.
-        # type: ignore comments needed due to nio's non-generic callback type.
-        self._client.add_event_callback(self._on_message, nio.RoomMessageText)  # type: ignore[arg-type]
-        self._client.add_event_callback(self._on_reaction, nio.ReactionEvent)  # type: ignore[arg-type]
-        self._client.add_event_callback(self._on_invite, nio.InviteMemberEvent)  # type: ignore[arg-type]
+        self._client.add_event_callback(self._on_message, nio.RoomMessageText)
+        self._client.add_event_callback(self._on_reaction, nio.ReactionEvent)
+        self._client.add_event_callback(self._on_invite, nio.InviteMemberEvent)
 
         self._sync_task = asyncio.create_task(self._sync_loop())
         logger.info("Matrix sync loop started")

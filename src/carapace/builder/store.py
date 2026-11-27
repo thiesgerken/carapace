@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -47,7 +47,7 @@ class SkillStore:
         self._gc_lock = asyncio.Lock()
 
     @asynccontextmanager
-    async def locked(self, key: str) -> AsyncIterator[None]:
+    async def locked(self, key: str) -> AsyncGenerator[None]:
         async with self._locks[key]:
             yield
 

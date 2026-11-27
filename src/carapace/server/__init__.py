@@ -52,7 +52,7 @@ from ..database.engine import SessionFactory, create_engine_and_factory, run_mig
 from ..git.flake_lock import summarize_lock_change
 from ..git.http import GitHttpHandler
 from ..jobs import JobsScheduler, JobsStore
-from ..knowledge import KnowledgeRepoRegistry
+from ..knowledge import KnowledgeRepoHandle, KnowledgeRepoRegistry
 from ..llm import ModelFactory, make_model_factory
 from ..memory.handlers import DigestHandler, MirrorHandler, SessionExtractHandler
 from ..memory.models import DigestLevel, TaskKind
@@ -555,7 +555,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     def resolve_session_owner(session_id: str) -> str:
         return session_mgr.load_meta(session_id).user
 
-    def knowledge_repo_for_session(session_id: str):
+    def knowledge_repo_for_session(session_id: str) -> KnowledgeRepoHandle:
         return _knowledge_repo_registry.get_for_session(session_id, resolve_session_owner)
 
     def prompt_prefix_for_user(user: str) -> str:
@@ -871,7 +871,7 @@ def _should_disable_cache(path: str, method: str) -> bool:
 
 
 @app.middleware("http")
-async def add_cache_control_headers(request: Request, call_next) -> Response:
+async def add_cache_control_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     response = await call_next(request)
     if _should_disable_cache(request.url.path, request.method):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"

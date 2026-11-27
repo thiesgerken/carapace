@@ -5,6 +5,7 @@ import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
+from typing import Protocol
 
 from loguru import logger
 
@@ -22,7 +23,19 @@ type DomainNotifyCallback = Callable[[str, str, ApprovalSource | None, ApprovalV
 type EnsureSessionCallback = Callable[[str], Awaitable[SessionContainer]]
 type RecreateSessionCallback = Callable[[str], Awaitable[SessionContainer]]
 type LogContainerTailCallback = Callable[[str, str], Awaitable[None]]
-type ExecInContainerCallback = Callable[..., Awaitable[ExecResult]]
+
+
+class ExecInContainerCallback(Protocol):
+    async def __call__(
+        self,
+        sc: SessionContainer,
+        command: str,
+        timeout: int = ...,
+        *,
+        workdir: str | None = ...,
+        stdin: bytes | None = ...,
+    ) -> ExecResult: ...
+
 
 # Kills every process in the sandbox except PID 1 (the container's `sleep infinity`) and
 # prints how many live ones it found. Only bash builtins, since a fork would count itself.

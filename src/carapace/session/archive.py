@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -77,7 +77,7 @@ class SessionArchiveService:
         return lock
 
     @asynccontextmanager
-    async def _locked_session(self, session_id: str):
+    async def _locked_session(self, session_id: str) -> AsyncGenerator[None]:
         lock = self._get_session_lock(session_id)
         self._session_lock_refs[session_id] = self._session_lock_refs.get(session_id, 0) + 1
         try:

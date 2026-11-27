@@ -521,7 +521,7 @@ async def _render_approval_request(data: dict[str, Any]) -> tuple[bool, str | No
 # --- WebSocket chat loop ---
 
 
-async def _read_until_done(ws) -> None:
+async def _read_until_done(ws: websockets.asyncio.client.ClientConnection) -> None:
     """Drain server messages until a terminal response (done/cancelled/error) arrives."""
     while True:
         raw = await ws.recv()
@@ -615,7 +615,9 @@ async def _chat_loop(ws_url: str, *, headers: dict[str, str]) -> None:
         await ws.close()
 
 
-async def _read_server_responses(ws, *, show_tool_events: bool = True) -> None:
+async def _read_server_responses(
+    ws: websockets.asyncio.client.ClientConnection, *, show_tool_events: bool = True
+) -> None:
     """Read and render server messages until a terminal response (done/command_result/error)."""
     streamed = ""
     live: Live | None = None
@@ -775,7 +777,7 @@ def chat(
         -1, "--history", "-H", help="Number of past messages to show on resume (-1 = all, 0 = none)"
     ),
     force: bool = typer.Option(False, "--force", help="Bypass the interactive-terminal check"),
-):
+) -> None:
     """Start an interactive chat session with the carapace server."""
     if api_key and (username or password):
         raise typer.BadParameter("pass either --api-key or --user/--password, not both")

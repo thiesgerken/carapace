@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 
-from ..database.engine import SessionFactory
+from ..database.engine import SessionFactory, affected_rows
 from ..database.models import NotificationSubscriptionRow
 from .models import NotificationPreferences, NotificationSubscription
 
@@ -66,7 +66,7 @@ class NotificationStore:
             result = db.execute(
                 delete(NotificationSubscriptionRow).where(NotificationSubscriptionRow.id == subscription_id)
             )
-            return result.rowcount > 0  # type: ignore[missing-attribute]
+            return affected_rows(result) > 0
 
     def cleanup_expired(self, *, now: datetime | None = None) -> list[str]:
         current = now or datetime.now(tz=UTC)
