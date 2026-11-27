@@ -1,9 +1,11 @@
 name: Release
 
-# Presswerk's push run / candidate run flow (https://presswerk.dev/guide/github-actions/). A push to
-# main prepares the release commit, pushes it and dispatches this workflow with it as the candidate.
-# The candidate run verifies exactly that commit and only then publishes it. Pushes made with
-# GITHUB_TOKEN start no workflow runs, hence the dispatch.
+# A push to main prepares the release commit with Presswerk (https://presswerk.dev/guide/github-actions/),
+# pushes it, verifies exactly that commit and only then publishes it, all in the same run. Presswerk's
+# documented flow dispatches a separate candidate run instead. That run would wait in the concurrency
+# group, where GitHub cancels a waiting run as soon as a newer one queues, so a merge right after a
+# release would drop the candidate and block every later release until someone re-dispatches it.
+# Dispatching a candidate by hand recovers a release whose run failed or was cancelled.
 on:
   push:
     branches: [main]
@@ -17,7 +19,8 @@ on:
 permissions:
   contents: read
 
-# One release at a time. A stale push run's push of its release commit is rejected (no force).
+# One release at a time. A newer push replacing a waiting push run loses nothing, since the newer run
+# releases everything on main. A stale push run's push of its release commit is rejected (no force).
 concurrency: presswerk-release
 
 jobs:
@@ -25,8 +28,9 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
-      actions: write
       contents: write
+    outputs:
+      candidate: ${{ steps.prepare.outputs.candidate }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -38,8 +42,8 @@ jobs:
         with:
           name: thiesgerken
       - name: Prepare the release commit
+        id: prepare
         env:
-          GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -53,20 +57,23 @@ jobs:
           nix run --inputs-from . presswerk -- prepare
           if test "$(git rev-parse HEAD)" != "$GITHUB_SHA"; then
             git push origin HEAD:main
-            gh workflow run release.yml --ref main -f candidate="$(git rev-parse HEAD)"
+            echo "candidate=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           fi
 
   # Pushes the Nix images and the chart to Cachix, where the publish job fetches them.
+  # prepare is skipped on a dispatch, so only its failure or an empty candidate stops this job.
   verify:
-    if: github.event_name == 'workflow_dispatch'
+    needs: prepare
+    if: ${{ !failure() && !cancelled() && (inputs.candidate || needs.prepare.outputs.candidate) }}
     uses: ./.github/workflows/nix-verify.yml
     with:
-      ref: ${{ inputs.candidate }}
+      ref: ${{ inputs.candidate || needs.prepare.outputs.candidate }}
     secrets:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
   publish:
-    needs: verify
+    needs: [prepare, verify]
+    if: ${{ !failure() && !cancelled() && needs.verify.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -74,7 +81,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ inputs.candidate }}
+          ref: ${{ inputs.candidate || needs.prepare.outputs.candidate }}
           fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:

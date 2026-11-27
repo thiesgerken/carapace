@@ -114,7 +114,7 @@ data/                  # runtime data directory (config, sessions, notifications
 - Verification loads all images, runs `scripts/smoke-images.py`, and uploads verified archives without registry write permissions.
 - `prek` stays a separate job because its hooks fetch from the network.
 - Trusted `workflow_run` PR publication checks open-PR/same-repo/same-SHA provenance before publishing archives and charts.
-- `release.yml` releases every push to `main` with Presswerk (declared in the flake's `presswerk.default`): the push run prepares and pushes the release commit, the dispatched candidate run verifies it with `nix-verify.yml` and publishes tag, Nix images, chart and GitHub Release from Cachix.
+- `release.yml` releases every push to `main` with Presswerk (declared in the flake's `presswerk.default`): the push run prepares and pushes the release commit, verifies it with `nix-verify.yml` and publishes tag, Nix images, chart and GitHub Release from Cachix.
 - Python 3.14 comes from pinned nixpkgs; Python dependencies come from `uv.lock` via uv2nix. Nix is the single build/check definition for application images.
 
 ## Key conventions
