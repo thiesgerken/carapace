@@ -31,7 +31,7 @@ carapace is a self-hosted AI agent with a web UI, CLI, and Matrix channel for op
 ## Highlights
 
 - 🛡️ Sentinel-gated boundary. Whatever a command wants from outside the sandbox is reviewed by a dedicated security agent that keeps session context, not a static allowlist spreadsheet.
-- ❄️ Nix-based skills. carapace's own builder builds a skill's commands from its pinned `flake.lock`, and sandboxes only substitute the finished store paths from the builder's cache. Nothing is installed at run time and dependencies don't drift, so skills break less often. The images are built with Nix too. See [docs/skill-flakes.md](docs/skill-flakes.md).
+- ❄️ Nix-based skills you can share. Every skill is a flake input of the knowledge repo's `skills/flake.nix`, and one `skills/flake.lock` pins the whole set. A skill from another knowledge repo or any public flake is one input line away, pinned to a tag or rev or following a branch, and the Knowledge view shows when upstream moved and applies the update with one click. Settings and credential slots, bound per instance in `skills/config.json`, keep skills free of instance specifics. carapace's own builder builds the commands, and sandboxes only substitute the finished store paths from its cache: nothing is installed at run time and dependencies don't drift, so skills break less often. The images are built with Nix too. See [docs/skill-flakes.md](docs/skill-flakes.md) and [docs/sharing-skills.md](docs/sharing-skills.md).
 - ☸️ Kubernetes-ready sandboxes. Docker and Kubernetes runtimes are both supported, with StatefulSet-backed sandbox sessions, per-session PVCs, idle-to-zero scaling, and an optional warm pool of prestarted base sandboxes for faster Kubernetes claims.
 - 🗃️ Git-native per-user knowledge repos. `SOUL.md`, `USER.md`, `SECURITY.md`, skills, and archived sessions live in files you can inspect, diff, sync, and push upstream.
 - 🚫 No-direct-internet sandboxes. Sandbox workloads do not get ambient internet access; outbound traffic is forced through the proxy path.
@@ -60,7 +60,7 @@ Who doesn't want a personal assistant? OpenClaw showed that this is achievable w
   <img src="docs/assets/screenshots/pancake_web.png" width="1000">
 </p>
 
-<p align="center"><em>A web search skill is bundled out of the box. Tool calls and any outbound access is monitored by another agent. Credentials are provided on-demand only.</em></p>
+<p align="center"><em>A web search skill is bundled: bind its Brave Search API key and turn it on in <code>skills/config.json</code>. Tool calls and any outbound access is monitored by another agent. Credentials are provided on-demand only.</em></p>
 
 <br>
 
@@ -106,7 +106,7 @@ carapace treats long-term agent state as a repository, not as an opaque internal
 
 - The agent's policy lives in `SECURITY.md`.
 - Its personality and user model live in `SOUL.md` and `USER.md`.
-- Skills are plain files in AgentSkills format, plus a Nix flake for the skills that have commands.
+- Skills are listed in `skills/flake.nix`: your own as directories in AgentSkills format, each a Nix flake (a few lines for one with only instructions), others as inputs from their repos. Their settings and credential bindings live in `skills/config.json`.
 - Durable context is markdown and other plain files on disk.
 - Session histories can be archived into the owning user's knowledge repo and pushed upstream.
 - Long-term memory is mirrored into `memory/` as Markdown, with provenance in every file.
@@ -169,6 +169,7 @@ See [docs/architecture.md](docs/architecture.md) for the diagrams and fuller arc
 | [docs/security.md](docs/security.md)                           | Sentinel policy model, boundary requests, audit trail, and approvals       |
 | [docs/skills.md](docs/skills.md)                               | AgentSkills support, `read_skill`, builds, and bundled skills              |
 | [docs/skill-flakes.md](docs/skill-flakes.md)                   | Writing a skill flake: commands, their needs, MCP servers, uv and npm      |
+| [docs/sharing-skills.md](docs/sharing-skills.md)               | Consuming and publishing skills across repos, pinning, and Renovate        |
 | [docs/builder.md](docs/builder.md)                             | The skill builder: API, binary cache, GC, and deployment                   |
 | [docs/credentials.md](docs/credentials.md)                     | Vault-backed credentials, `ccred`, and the approval flow                   |
 | [docs/jobs.md](docs/jobs.md)                                   | Saved jobs, cron scheduling, persistent-session jobs, and job API          |

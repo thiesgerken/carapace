@@ -108,6 +108,8 @@ Every skill `skills/flake.nix` lists is built by the [builder](builder.md), each
 
 ## Updates
 
+Skills can come from other repositories too: [sharing-skills.md](sharing-skills.md) covers consuming and publishing them, pinning or following, and Renovate for lock updates.
+
 Every listed skill has an origin (`./<dir>` for a local skill, its flake reference otherwise) and, for a skill from elsewhere, the rev and date `skills/flake.lock` pins. An update check tells whether something newer is there, with one mechanism for both kinds:
 
 - The builder runs `nix flake update <skill> --output-lock-file <tmp>` on a copy of `skills/` at `HEAD`, once per skill, and the server compares that skill's part of the resulting lock with the repo's (its node and the inputs nested under it).
