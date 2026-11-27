@@ -71,7 +71,7 @@ const PROPS: Partial<Record<TortoisePose, ReactNode>> = {
       <path className="turning-page" fill="#fff" d="M172 64Q179 60 186 62L186 87Q179 85 172 89Z" />
     </g>,
   ),
-  hourglass: enlarged(165, 102, 2,
+  hourglass: enlarged(165, 98, 1.25,
     <g className="hourglass">
       <rect fill={WOOD} x="165" y="54" width="22" height="4" rx="1.5" />
       <rect fill={WOOD} x="165" y="96" width="22" height="4" rx="1.5" />
