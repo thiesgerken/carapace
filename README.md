@@ -169,6 +169,7 @@ See [docs/architecture.md](docs/architecture.md) for the diagrams and fuller arc
 | [docs/security.md](docs/security.md)                           | Sentinel policy model, boundary requests, audit trail, and approvals       |
 | [docs/skills.md](docs/skills.md)                               | AgentSkills support, `read_skill`, builds, and bundled skills              |
 | [docs/skill-flakes.md](docs/skill-flakes.md)                   | Writing a skill flake: commands, their needs, MCP servers, uv and npm      |
+| [docs/sharing-skills.md](docs/sharing-skills.md)               | Consuming and publishing skills across repos, pinning, and Renovate        |
 | [docs/builder.md](docs/builder.md)                             | The skill builder: API, binary cache, GC, and deployment                   |
 | [docs/credentials.md](docs/credentials.md)                     | Vault-backed credentials, `ccred`, and the approval flow                   |
 | [docs/jobs.md](docs/jobs.md)                                   | Saved jobs, cron scheduling, persistent-session jobs, and job API          |
