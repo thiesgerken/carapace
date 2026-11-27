@@ -37,6 +37,15 @@ class UpstreamCache(BaseModel):
     public_key: str
 
 
+class SettingDeclaration(BaseModel):
+    """A setting a skill declares (`mkSkill { settings }`), independent of any instance's value."""
+
+    type: Literal["str", "int", "bool"]
+    description: str = ""
+    # None when the setting has no default; Nix's str, int and bool admit no null.
+    default: str | int | bool | None = None
+
+
 class BuildResult(BaseModel):
     key: BuildKey
     skill: SkillName
@@ -52,6 +61,9 @@ class BuildResult(BaseModel):
     skill_files: list[str] = []
     # The end of the evaluation and build output, for showing why a build failed.
     log_tail: str = ""
+    # The package's setting declarations, evaluated without this instance's values, so they are there when
+    # the manifest fails for a missing or wrong value; None when the package itself does not evaluate.
+    declared_settings: dict[str, SettingDeclaration] | None = None
 
 
 class InputUpdate(BaseModel):

@@ -18,6 +18,7 @@ from ..api_keys import Access, Scope
 from ..artifacts import artifact_index, artifact_title, is_artifact_slug
 from ..auth import UserIdentity
 from ..builder.skill_builds import BuildState, RetryRefusedError, SkillBuilds, SkillCommand
+from ..builder.skill_config import ConfigRefusedError, ConfigValue, config_at_head, config_text, with_skill_entry
 from ..builder.skill_updates import SkillUpdates, UpdateRefusedError, UpdateState
 from ..builder.skills_head import skills_flake_at_head
 from ..git.store import ConcurrentChangeError, GitStore
@@ -468,6 +469,131 @@ async def update_skill(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await server._after_push(user.username)
     return await skill_sources(server._skill_builds.updates, root)
+
+
+class KnowledgeSkillSetting(BaseModel):
+    name: str
+    type: Literal["str", "int", "bool"]
+    description: str
+    default: ConfigValue | None
+    # From skills/config.json; None when it sets none.
+    value: ConfigValue | None
+    # Neither a value nor a default: the skill fails to evaluate until one is set.
+    missing: bool
+
+
+class KnowledgeSkillConfig(BaseModel):
+    name: str
+    enabled: bool
+    state: BuildState
+    # Why the skill failed to evaluate or build, Nix's word on the values included.
+    detail: str
+    # None while the skill's declarations are not known yet (building, or a package that does not evaluate).
+    settings: list[KnowledgeSkillSetting] | None
+
+
+class KnowledgeSkillsConfig(BaseModel):
+    # The Git id of skills/config.json at HEAD ("" without one); a change names it as its base.
+    base: str
+    skills: list[KnowledgeSkillConfig]
+
+
+class SkillConfigChange(BaseModel):
+    base: str
+    enable: bool
+    # None resets a setting to its default.
+    settings: dict[str, ConfigValue | None] = {}
+
+
+async def skills_config(builds: SkillBuilds, repo_dir: Path) -> KnowledgeSkillsConfig:
+    """Every skill skills/flake.nix lists at HEAD with what it declares and what config.json sets."""
+    head = await config_at_head(repo_dir)
+    skills: list[KnowledgeSkillConfig] = []
+    for build in await builds.ensure_built(repo_dir):
+        entry = head.values.get(build.skill, {})
+        values = entry.get("settings", {})
+        declared = builds.declared_settings(repo_dir, build)
+        settings = (
+            None
+            if declared is None
+            else [
+                KnowledgeSkillSetting(
+                    name=name,
+                    type=declaration.type,
+                    description=declaration.description,
+                    default=declaration.default,
+                    value=values.get(name),
+                    missing=name not in values and declaration.default is None,
+                )
+                for name, declaration in sorted(declared.items())
+            ]
+        )
+        skills.append(
+            KnowledgeSkillConfig(
+                name=build.skill,
+                enabled=entry.get("enable", True) is not False,
+                state=build.state,
+                detail=build.detail if build.state == "failed" else "",
+                settings=settings,
+            )
+        )
+    return KnowledgeSkillsConfig(base=head.blob, skills=skills)
+
+
+@router.get("/knowledge/skills/config")
+async def get_skills_config(
+    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.read))],
+) -> KnowledgeSkillsConfig:
+    root = server._knowledge_repo_registry.get_for_user(user.username).knowledge_dir.resolve()
+    try:
+        return await skills_config(server._skill_builds, root)
+    except ConfigRefusedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.put("/knowledge/skills/{name}/config")
+async def put_skill_config(
+    name: str,
+    change: SkillConfigChange,
+    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.write))],
+) -> KnowledgeSkillsConfig:
+    """Commit *name*'s entry in skills/config.json as the user, then push and evaluate as after a sandbox push.
+
+    *base* is the config.json the form was made from: anything committed since is not overwritten.
+    """
+    handle = server._knowledge_repo_registry.get_for_user(user.username)
+    root = handle.knowledge_dir.resolve()
+    builds = server._skill_builds
+    try:
+        head = await config_at_head(root)
+        if change.base != head.blob:
+            raise ConcurrentChangeError("skills/config.json changed since this form was loaded; reload it.")
+        build = next((build for build in await builds.ensure_built(root) if build.skill == name), None)
+        if build is None:
+            raise HTTPException(status_code=404, detail=f"skills/flake.nix lists no skill {name}")
+        config = with_skill_entry(
+            head.values,
+            name,
+            enable=change.enable,
+            settings=change.settings,
+            declared=builds.declared_settings(root, build),
+        )
+        text = config_text(config)
+        if text != head.text:
+            await handle.git_store.commit_replacing(
+                "skills/config.json",
+                text,
+                unchanged={"skills/config.json": head.blob},
+                message=f"🔧 skills: configure {name}",
+                author=_commit_author(user),
+            )
+    except ConfigRefusedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ConcurrentChangeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if text != head.text:
+        await server._after_push(user.username)
+    return await skills_config(builds, root)
 
 
 @router.get("/knowledge/browse", response_model=None)
