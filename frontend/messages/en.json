@@ -95,6 +95,8 @@
                 "update": "Update"
             },
             "update": {
+                "apply": "Update",
+                "applying": "Updating…",
                 "unchecked": "Not checked",
                 "current": "Up to date",
                 "available": "Update available",

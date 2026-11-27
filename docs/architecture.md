@@ -163,7 +163,7 @@ The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives me
 | `show_artifact` | Reference a pushed artifact in chat; the chat always shows its current version |
 | `read_tool_output` | Return the original output of an earlier tool call whose output was compacted |
 
-Persistent writes to workspace files, skills, and archived session snapshots happen via `git commit` + `git push` inside the sandbox. Each push is evaluated by the security sentinel through a pre-receive hook, so persistent knowledge changes do not bypass the sentinel.
+Persistent writes to workspace files, skills, and archived session snapshots happen via `git commit` + `git push` inside the sandbox. Each push is evaluated by the security sentinel through a pre-receive hook, so the agent's persistent knowledge changes do not bypass the sentinel. The server's own commits (session archives, the memory mirror, bootstrap seeding) and the ones a user makes in the UI, such as [applying a skill update](skills.md#updates), go in without that review: they do not come from the agent.
 Skill commands are built by the builder and are on `PATH` in every session; they ask for the domains and credentials they declare when they start (`cgate`, `ccred`), and the sentinel reviews those requests per `exec` (see [skills.md](skills.md)).
 
 ### Security Module

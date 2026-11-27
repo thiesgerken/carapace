@@ -95,6 +95,8 @@
                 "update": "Update"
             },
             "update": {
+                "apply": "Aktualisieren",
+                "applying": "Aktualisiere…",
                 "unchecked": "Nicht geprüft",
                 "current": "Aktuell",
                 "available": "Update verfügbar",
