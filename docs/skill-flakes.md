@@ -205,7 +205,8 @@ nix eval --json 'path:skills#manifests.x86_64-linux.weather'
   "skillDir": "/nix/store/…-skill-weather-src",
   "settings": { "CITY": "Berlin", "UNITS": "metric" },
   "credentials": {
-    "WEATHER_TOKEN": { "type": "secret", "description": "A weather API token", "binding": "personal/weather-token" }
+    "WEATHER_TOKEN": { "type": "secret", "description": "A weather API token", "binding": "personal/weather-token" },
+    "CALENDAR": { "type": "oauth", "description": "The calendar's OAuth entry", "binding": null }
   },
   "commands": {
     "weather": {
@@ -213,7 +214,7 @@ nix eval --json 'path:skills#manifests.x86_64-linux.weather'
       "needs": {
         "domains": ["berlin.weather.example"],
         "credentials": { "WEATHER_TOKEN": "personal/weather-token" },
-        "oauth": [],
+        "oauth": { "CALENDAR": null },
         "tunnels": []
       },
       "mcp": false
@@ -224,11 +225,11 @@ nix eval --json 'path:skills#manifests.x86_64-linux.weather'
 
 - `settings` are this instance's values, from `skills/config.json` or the declared defaults.
 - `credentials` are the declared slots with their bindings from `skills/config.json`, `null` while unbound.
-- `needs` is resolved for those values: the skill-wide default with the command's override applied, every kind present, and `credentials` mapping each slot the command needs to its binding (or `null`).
+- `needs` is resolved for those values: the skill-wide default with the command's override applied, every kind present, and `credentials` and `oauth` mapping each slot the command needs to its binding (or `null`).
 - `skillDir` is the store path of `src`. The evaluation already copies it into the store, so the builder reads `SKILL.md` from it before the commands are built.
 - `commands` has one entry per wrapper in `bin/`, under the same name. `mcp` is `true` for a command made by `mcpCommands`; `read_skill` lists its tools.
 - A skill that `config.json` turns off has the manifest `{ "enable": false }`. It is not built, and Carapace treats it like a skill that is not listed.
-- `skillsFlake` writes the manifest from what `mkSkill` declares in `passthru.carapace` (the settings, the credential slots, the commands) and `passthru.carapaceNeeds` (the needs for given setting values). Fields are only ever added.
+- `skillsFlake` writes the manifest from what `mkSkill` declares in `passthru.carapace` (the settings, the credential slots, the commands) and `passthru.carapaceNeeds` (the needs for given setting values). Both sides come from the same helpers (every skill follows the skills flake's `carapace`), so the shape changes with them; the server reads the manifest of the helpers the repo pins.
 
 ## Skills with only instructions
 

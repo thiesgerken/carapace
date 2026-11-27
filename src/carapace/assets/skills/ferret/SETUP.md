@@ -6,23 +6,23 @@ it. This operator guide is not returned by `read_skill`.
 
 ## Manual opt-in
 
-1. Set the skill's `FERRET_URL` setting to your deployment's HTTPS `/mcp` URL
-   in `skills/config.json`: `{"ferret": {"settings": {"FERRET_URL": "https://…/mcp"}}}`. The deployment must include Ferret MCP support and route that
+1. Note your deployment's HTTPS `/mcp` URL; step 5 sets it as the skill's
+   `FERRET_URL` setting. The deployment must include Ferret MCP support and route that
    endpoint to Ferret.
 2. Create a Ferret API key with only `search:read`. Optionally restrict it to
    the source roots the agent should read. Omit restrictions for all your
    sources; an explicit empty list is invalid. Do not grant `ingest:write`.
    Ferret uses API-key bearer auth, not OAuth or a browser session cookie.
-3. Store the actual key in the vault and bind the skill's `FERRET_API_KEY` slot
-   to that entry in `skills/config.json`:
-   `{"ferret": {"credentials": {"FERRET_API_KEY": "<backend>/<id>"}}}`. Never put the
-   key in chat or the skill file.
+3. Store the actual key in the vault and note its `<backend>/<id>` path. Never put
+   the key in chat or the skill file.
 4. Replace the `X, Y, Z` source placeholder in the frontmatter `description`
    with your actual indexed sources. The description is an always-visible
    coverage hint; `ferret list_sources` shows the sources currently authorized
    for the key.
-5. Uncomment the `ferret` input in `skills/flake.nix`, run `nix flake lock ./skills`,
-   commit and push. The builder builds the skill, and a new session lists it in
+5. In one commit, because `skills/config.json` may only name skills that
+   `skills/flake.nix` lists: uncomment the `ferret` input in `skills/flake.nix`, add
+   `{"ferret": {"settings": {"FERRET_URL": "https://…/mcp"}, "credentials": {"FERRET_API_KEY": "<backend>/<id>"}}}`
+   to `skills/config.json`, run `nix flake lock ./skills`, commit and push. The builder builds the skill, and a new session lists it in
    its catalog.
 
 The `ferret` command runs the MCP bridge in the sandbox. Each time it starts it

@@ -210,6 +210,16 @@ in
       };
       declaredSettings = checkSettings name settings;
       declaredCredentials = checkCredentials name settings credentials;
+      # An MCP command's URL setting, checked here because only mkSkill sees the settings.
+      checkedCommands = lib.mapAttrs (
+        cmd: command:
+        let
+          setting = command.urlSetting or null;
+        in
+        assert lib.assertMsg (setting == null || (declaredSettings.${setting}.type or null) == "str")
+          "skill ${name}, command ${cmd}: urlSetting ${toString setting} needs a setting of type str: declare settings.${toString setting} = { type = \"str\"; description = \"…\"; } in mkSkill";
+        command
+      ) commands;
       slotNames = type: lib.attrNames (lib.filterAttrs (_: slot: slot.type == type) declaredCredentials);
       # Every command gets every slot of its type unless the needs say otherwise.
       slotDefaults = {
@@ -226,7 +236,7 @@ in
           needsOf "skill ${name}, command ${cmd}" declaredCredentials (
             slotDefaults // withSettings values needs
           ) (command // { needs = withSettings values (command.needs or { }); })
-        ) commands;
+        ) checkedCommands;
       # Whether a command asks Carapace before it runs: for its settings, or for needs it has or may have.
       gated =
         cmd: command:
@@ -249,7 +259,7 @@ in
               inherit (command) description;
               # `read_skill` runs `<cmd> --list-tools` for an MCP server, so the agent sees its tools.
               mcp = command.mcp or false;
-            }) commands;
+            }) checkedCommands;
           };
           # Each command's needs for the given setting values; checked when `skillsFlake` resolves them.
           carapaceNeeds = commandNeeds;
@@ -268,7 +278,7 @@ in
               pkgs.writeText "${cmd}-wrapper" (wrapper (command // { name = cmd; }) (gated cmd command))
             } $out/bin/${cmd} --subst-var out
             chmod +x $out/bin/${cmd}
-          '') commands
+          '') checkedCommands
         )
       );
 
@@ -307,11 +317,7 @@ in
         // lib.optionalAttrs (bearer != null) { credentials = [ bearer ]; }
         // lib.optionalAttrs (oauth != null) { oauth = [ oauth ]; };
       fixedDomains = lib.optional (url != null) (mcpHost where url);
-      settingDomains =
-        settings:
-        assert lib.assertMsg (settings ? ${urlSetting})
-          "${where}: urlSetting names no setting of the skill: declare settings.${urlSetting} = { type = \"str\"; … } in mkSkill";
-        [ (mcpHost "${where} (setting ${urlSetting})" settings.${urlSetting}) ];
+      settingDomains = settings: [ (mcpHost "${where} (setting ${urlSetting})" settings.${urlSetting}) ];
     in
     assert lib.assertMsg (
       lib.count (x: x != null) [
@@ -332,8 +338,10 @@ in
         urlSetting
       ])
       "${where}: bearer and oauth name credential slots of the skill and urlSetting one of its settings, not a vault path or URL";
+    # On the command itself, so a `needs` override of the domains cannot skip it.
+    assert url == null || builtins.isString (mcpHost where url);
     {
-      inherit description;
+      inherit description urlSetting;
       mcp = true;
       # Slot and setting values arrive as environment variables (`cgate request --command`); an OAuth slot
       # holds the entry's vault path, for `ccred get --access-token`.
@@ -347,7 +355,12 @@ in
       );
       needs =
         if urlSetting != null then
-          settings: derived (settingDomains settings) // withSettings settings needs
+          # Checked whatever the needs override: the bridge connects to this URL either way.
+          settings:
+          let
+            domains = settingDomains settings;
+          in
+          builtins.deepSeq domains (derived domains // withSettings settings needs)
         else if lib.isFunction needs then
           settings: derived fixedDomains // needs settings
         else
