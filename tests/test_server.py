@@ -3912,26 +3912,32 @@ def _skill_with(monkeypatch, commands: dict[str, SkillCommand]) -> None:
 
 
 def _command(**needs: object) -> SkillCommand:
-    empty: dict[str, object] = {"domains": [], "credentials": {}, "oauth": [], "tunnels": []}
+    empty: dict[str, object] = {"domains": [], "credentials": {}, "oauth": {}, "tunnels": []}
     return SkillCommand(description="", needs=SkillNeeds.model_validate(empty | needs), mcp=False)
 
 
 def test_gate_reviews_a_skill_commands_needs_and_answers_with_its_settings(client, auth_headers, monkeypatch):
     sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
     sentinel, _, running = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
-    _skill_with(monkeypatch, {"weather": _command(domains=["berlin.example.com"], credentials={"TOKEN": "demo/t"})})
+    weather = _command(domains=["berlin.example.com"], credentials={"TOKEN": "demo/t"}, oauth={"CAL": "demo/cal"})
+    _skill_with(monkeypatch, {"weather": weather})
 
     resp = TestClient(sandbox_app).post(
         "/gate", json={"store_path": _STORE_PATH, "command": "weather"}, headers=_sandbox_basic_auth(sid)
     )
 
     assert resp.status_code == 200
-    assert resp.json() == {"settings": {"CITY": "Berlin", "PORT": 443}, "credentials": {"TOKEN": "demo/t"}}
+    assert resp.json() == {
+        "settings": {"CITY": "Berlin", "PORT": 443},
+        "credentials": {"TOKEN": "demo/t"},
+        "oauth": {"CAL": "demo/cal"},
+    }
     request = sentinel.evaluate_upfront_request.await_args.args[1]
     assert (request.domains, [c.vault_path for c in request.credentials]) == (["berlin.example.com"], ["demo/t"])
     assert request.store_path == _STORE_PATH
     assert request.origin == SkillCommandOrigin(skill="weather", command="weather", installed=True)
-    assert running.credentials == {("demo/t", "password")}
+    assert [token.vault_path for token in request.access_tokens] == ["demo/cal"]
+    assert running.credentials == {("demo/t", "password"), ("demo/cal", "oauth_access_token")}
 
 
 def test_gate_answers_a_command_without_needs_without_a_review(client, auth_headers, monkeypatch):
@@ -3943,7 +3949,21 @@ def test_gate_answers_a_command_without_needs_without_a_review(client, auth_head
         "/gate", json={"store_path": _STORE_PATH, "command": "weather"}, headers=_sandbox_basic_auth(sid)
     )
 
-    assert resp.json() == {"settings": {"CITY": "Berlin", "PORT": 443}, "credentials": {}}
+    assert resp.json() == {"settings": {"CITY": "Berlin", "PORT": 443}, "credentials": {}, "oauth": {}}
+    sentinel.evaluate_upfront_request.assert_not_awaited()
+
+
+def test_gate_refuses_a_command_whose_oauth_slot_is_unbound(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    sentinel, _, _ = _gate_setup(monkeypatch, sid, SentinelVerdict(decision="allow", explanation="fits"))
+    _skill_with(monkeypatch, {"weather": _command(domains=["berlin.example.com"], oauth={"CAL": None})})
+
+    resp = TestClient(sandbox_app).post(
+        "/gate", json={"store_path": _STORE_PATH, "command": "weather"}, headers=_sandbox_basic_auth(sid)
+    )
+
+    assert resp.status_code == 403
+    assert resp.text.startswith("weather: credential slot CAL is not bound")
     sentinel.evaluate_upfront_request.assert_not_awaited()
 
 

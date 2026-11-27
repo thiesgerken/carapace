@@ -110,9 +110,8 @@ let
     assert lib.assertMsg (
       clashes == [ ]
     ) "${where}: names used for a setting and a credential slot: ${lib.concatStringsSep ", " clashes}";
-    assert lib.assertMsg (
-      badTypes == [ ]
-    ) "${where}: credential slots need type = \"secret\" or \"oauth\": ${lib.concatStringsSep ", " badTypes}";
+    assert lib.assertMsg (badTypes == [ ])
+      "${where}: credential slots need type = \"secret\" or \"oauth\": ${lib.concatStringsSep ", " badTypes}";
     assert lib.assertMsg (extraKeys == [ ])
       "${where}: credential slots take only type and description, a binding goes into skills/config.json: ${lib.concatStringsSep ", " extraKeys}";
     lib.mapAttrs (_: slot: { description = ""; } // slot) credentials;
@@ -137,6 +136,19 @@ let
     + ''
       exec ${command.exec} "$@"
     '';
+
+  # The host of an MCP server's URL. A host name and an optional port: no userinfo, whose `u@` would become
+  # the declared domain, and no IP literal, which the proxy's domain review does not cover. HTTPS only,
+  # since tokens go along.
+  mcpHost =
+    where: url:
+    let
+      authority = builtins.match "https://([A-Za-z0-9.-]+)(:[0-9]+)?([/?#].*)?" url;
+      host = if authority == null then null else builtins.head authority;
+    in
+    assert lib.assertMsg (host != null && builtins.match "[0-9.]+" host == null)
+      "${where}: the URL must be https://<host name>[:port][/path], without userinfo or IP address: ${url}";
+    host;
 
   # Only the named files of the skill directory, so a derivation built from them survives code edits.
   lockFiles =
@@ -211,9 +223,9 @@ in
         values:
         lib.mapAttrs (
           cmd: command:
-          needsOf "skill ${name}, command ${cmd}" declaredCredentials (slotDefaults // withSettings values needs) (
-            command // { needs = withSettings values (command.needs or { }); }
-          )
+          needsOf "skill ${name}, command ${cmd}" declaredCredentials (
+            slotDefaults // withSettings values needs
+          ) (command // { needs = withSettings values (command.needs or { }); })
         ) commands;
       # Whether a command asks Carapace before it runs: for its settings, or for needs it has or may have.
       gated =
@@ -262,13 +274,14 @@ in
 
   # Commands for MCP servers, one per attribute, for `mkSkill.commands`: `<name> --list-tools`,
   # `<name> <tool> --flag …`. They run the `mcp` bridge from the sandbox image; what they need follows
-  # from the server: the URL's host, and the credential of `bearer` (a credential slot of the skill, holding
-  # a token) or `oauth` (a vault entry Carapace refreshes, whose access token the bridge fetches itself). A stdio server declares its own
-  # `needs`, which also override the derived ones per kind; the skill-wide `needs` do not apply.
+  # from the server: the URL's host, and the credential slot of `bearer` (type secret, a token) or `oauth`
+  # (type oauth, an entry Carapace refreshes, whose access token the bridge fetches itself). The URL is fixed
+  # (`url`) or this instance's value of one of the skill's settings (`urlSetting`). A stdio server declares
+  # its own `needs`, which also override the derived ones per kind; the skill-wide `needs` do not apply.
   #
   #   commands = skill.mcpCommands {
-  #     tracker = { url = "https://mcp.example.com/mcp"; oauth = "personal/tracker"; description = "…"; };
-  #     search = { url = "https://search.example.com/mcp"; bearer = "SEARCH_TOKEN"; description = "…"; };
+  #     tracker = { url = "https://mcp.example.com/mcp"; oauth = "TRACKER_OAUTH"; description = "…"; };
+  #     search = { urlSetting = "SEARCH_URL"; bearer = "SEARCH_TOKEN"; description = "…"; };
   #     notes = { command = "${notes}/bin/notes-mcp"; description = "…"; };
   #   };
   mcpCommands = lib.mapAttrs (
@@ -276,6 +289,7 @@ in
     {
       description,
       url ? null,
+      urlSetting ? null,
       command ? null,
       bearer ? null,
       oauth ? null,
@@ -283,42 +297,61 @@ in
     }:
     let
       where = "MCP server ${name}";
-      # A host name and an optional port: no userinfo, whose `u@` would become the declared domain, and no
-      # IP literal, which the proxy's domain review does not cover. HTTPS only, since tokens go along.
-      authority =
-        if url == null then null else builtins.match "https://([A-Za-z0-9.-]+)(:[0-9]+)?([/?#].*)?" url;
-      host = if authority == null then null else builtins.head authority;
+      # Every kind set, so the skill-wide needs do not leak into the server's command.
+      derived =
+        domains:
+        noNeeds
+        // {
+          inherit domains;
+        }
+        // lib.optionalAttrs (bearer != null) { credentials = [ bearer ]; }
+        // lib.optionalAttrs (oauth != null) { oauth = [ oauth ]; };
+      fixedDomains = lib.optional (url != null) (mcpHost where url);
+      settingDomains =
+        settings:
+        assert lib.assertMsg (settings ? ${urlSetting})
+          "${where}: urlSetting names no setting of the skill: declare settings.${urlSetting} = { type = \"str\"; … } in mkSkill";
+        [ (mcpHost "${where} (setting ${urlSetting})" settings.${urlSetting}) ];
     in
     assert lib.assertMsg (
-      (url == null) != (command == null)
-    ) "${where}: set exactly one of url and command";
-    assert lib.assertMsg (url == null || (host != null && builtins.match "[0-9.]+" host == null))
-      "${where}: url must be https://<host name>[:port][/path], without userinfo or IP address: ${toString url}";
-    assert lib.assertMsg (
-      command == null || (bearer == null && oauth == null)
-    ) "${where}: bearer and oauth apply to url; a stdio server takes credentials through needs";
+      lib.count (x: x != null) [
+        url
+        urlSetting
+        command
+      ] == 1
+    ) "${where}: set exactly one of url, urlSetting and command";
+    assert lib.assertMsg (command == null || (bearer == null && oauth == null))
+      "${where}: bearer and oauth apply to an HTTP server; a stdio server takes credentials through needs";
     assert lib.assertMsg (
       bearer == null || oauth == null
     ) "${where}: set at most one of bearer and oauth";
-    assert lib.assertMsg (bearer == null || isIdentifier bearer)
-      "${where}: bearer names a credential slot of the skill (credentials.<NAME> in mkSkill), not a vault path: ${toString bearer}";
+    assert lib.assertMsg
+      (lib.all (field: field == null || isIdentifier field) [
+        bearer
+        oauth
+        urlSetting
+      ])
+      "${where}: bearer and oauth name credential slots of the skill and urlSetting one of its settings, not a vault path or URL";
     {
       inherit description;
       mcp = true;
+      # Slot and setting values arrive as environment variables (`cgate request --command`); an OAuth slot
+      # holds the entry's vault path, for `ccred get --access-token`.
       exec = lib.concatStringsSep " " (
         [ "mcp --name ${lib.escapeShellArg name}" ]
         ++ lib.optional (url != null) "--url ${lib.escapeShellArg url}"
+        ++ lib.optional (urlSetting != null) "--url \"\$${urlSetting}\""
         ++ lib.optional (command != null) "--stdio ${lib.escapeShellArg command}"
         ++ lib.optional (bearer != null) "--bearer-env ${bearer}"
-        ++ lib.optional (oauth != null) "--oauth ${lib.escapeShellArg oauth}"
+        ++ lib.optional (oauth != null) "--oauth \"\$${oauth}\""
       );
-      # Every kind set, so the skill-wide needs do not leak into the server's command.
       needs =
-        noNeeds
-        // lib.optionalAttrs (url != null) { domains = [ host ]; }
-        // lib.optionalAttrs (bearer != null) { credentials = [ bearer ]; }
-        // lib.optionalAttrs (oauth != null) { oauth = [ oauth ]; }
-        // needs;
+        if urlSetting != null then
+          settings: derived (settingDomains settings) // withSettings settings needs
+        else if lib.isFunction needs then
+          settings: derived fixedDomains // needs settings
+        else
+          derived fixedDomains // needs;
     }
   );
 

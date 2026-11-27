@@ -1,13 +1,13 @@
 # Ferret setup
 
 Ferret is bundled but not listed in `skills/flake.nix`, so it is off by default.
-Configure your copy in this directory (`flake.nix` and `SKILL.md`) before listing
+Configure it in `skills/config.json` and its `SKILL.md` before listing
 it. This operator guide is not returned by `read_skill`.
 
 ## Manual opt-in
 
-1. In `flake.nix`, replace `https://ferret.example.invalid/mcp` with your
-   deployment's HTTPS `/mcp` URL. The deployment must include Ferret MCP support and route that
+1. Set the skill's `FERRET_URL` setting to your deployment's HTTPS `/mcp` URL
+   in `skills/config.json`: `{"ferret": {"settings": {"FERRET_URL": "https://…/mcp"}}}`. The deployment must include Ferret MCP support and route that
    endpoint to Ferret.
 2. Create a Ferret API key with only `search:read`. Optionally restrict it to
    the source roots the agent should read. Omit restrictions for all your
@@ -45,5 +45,4 @@ is already running keeps the catalog it started with.
 
 Normal bootstrap seeds missing bundled skill directories and preserves existing
 directories and user edits. Explicit `reset-assets` overwrites bundled
-customization, including Ferret's endpoint in `flake.nix`
-and the source description. It never touches `skills/flake.nix`.
+customization, including the source description. It never touches `skills/flake.nix`.

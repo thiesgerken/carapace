@@ -137,7 +137,7 @@ A change to `config.json` re-evaluates every skill's manifest but builds nothing
 
 - `domains`: host names, or `*.` plus a name of at least two labels.
 - `credentials`: the skill's [credential slots](#credential-slots) the command gets, as a list of their names; every slot unless the skill-wide `needs` or the command says otherwise. A vault path here (the form `credentials.VAR = "<vault path>"`) fails the evaluation: vault paths belong in `skills/config.json`.
-- `oauth`: vault paths of OAuth entries whose access token the command fetches itself with `ccred get --access-token`, as the MCP bridge does. Declared up front, exported nothing. Until OAuth entries become credential slots too ([#656](https://github.com/thiesgerken/carapace/issues/656)), this is the one place a skill flake names a vault path.
+- `oauth`: the skill's OAuth slots the command uses, as a list of their names (every one by default). The command gets each as the vault path of its entry, no secret, and fetches the access token itself with `ccred get --access-token "$SLOT"`, as the MCP bridge does. A vault path here fails the evaluation.
 - `tunnels`: `"host:port"` with an exact host name (not an IP address) and a port from 1 to 65535, for clients that do not speak HTTP. Requested with `cgate request --tunnel` and open when the command starts; see [sandbox.md](sandbox.md#tunnels).
 
 A command with needs or a skill with settings gets a wrapper that first asks Carapace for itself by name, then runs the command:
@@ -177,7 +177,10 @@ A skill names the secrets it needs, never where they are stored:
 
 ```nix
 credentials.WEATHER_TOKEN = { type = "secret"; description = "A weather API token"; };
+credentials.CALENDAR = { type = "oauth"; description = "The calendar's OAuth entry"; };
 ```
+
+A `secret` slot holds a value the command gets as is (a token, a key). An `oauth` slot names an [OAuth entry](#oauth): the command gets the entry's vault path and asks Carapace for a short-lived access token; the refresh token never enters the sandbox.
 
 `skills/config.json` binds each slot to a password-manager entry, by the vault path `ccred get` takes:
 
@@ -264,11 +267,17 @@ An MCP server becomes a command like any other: `<server> --list-tools`, `<serve
 default = skill.mkSkill {
   name = "tracker";
   credentials.NOTES_TOKEN = { type = "secret"; description = "The notes server's token"; };
+  credentials.TRACKER_OAUTH = { type = "oauth"; description = "The tracker's OAuth entry"; };
+  settings.WIKI_URL = { type = "str"; description = "The wiki's MCP endpoint"; };
   commands = skill.mcpCommands {
     tracker = {
       url = "https://mcp.example.com/mcp";
-      oauth = "personal/tracker-oauth";
+      oauth = "TRACKER_OAUTH";
       description = "Issues in the example tracker";
+    };
+    wiki = {
+      urlSetting = "WIKI_URL";
+      description = "This instance's wiki";
     };
     notes = {
       command = "${notesServer}/bin/notes-mcp --stdio";
@@ -279,15 +288,15 @@ default = skill.mkSkill {
 };
 ```
 
-- `url` (streamable HTTP) or `command` (a shell command that starts the server on stdio), exactly one. The URL must be `https://` with a host name: no `http://`, since tokens go along, and no user info or IP address, which the domain review cannot express. A mistake fails the evaluation.
-- For an HTTP server, `bearer` names a credential slot of the skill whose value is sent as `Authorization: Bearer`, and `oauth` names an OAuth entry (see below). At most one; neither applies to stdio, which takes its credentials as environment variables through `needs`.
-- `needs` is derived from the server: the URL's host, and the `bearer` slot or the `oauth` entry. The skill-wide `needs` do not apply. A `needs` given here overrides the derived one per kind.
+- `url` (streamable HTTP, fixed), `urlSetting` (streamable HTTP, the value of one of the skill's [settings](#settings), so each instance points it at its own server) or `command` (a shell command that starts the server on stdio), exactly one. The URL must be `https://` with a host name: no `http://`, since tokens go along, and no user info or IP address, which the domain review cannot express. A mistake fails the evaluation, for `urlSetting` that of the manifest, naming the setting.
+- For an HTTP server, `bearer` names a credential slot of the skill whose value is sent as `Authorization: Bearer`, and `oauth` names an OAuth slot (see below). At most one; neither applies to stdio, which takes its credentials as environment variables through `needs`.
+- `needs` is derived from the server: the URL's host (for `urlSetting` from this instance's value), and the `bearer` or `oauth` slot. The skill-wide `needs` do not apply. A `needs` given here overrides the derived one per kind.
 
 `read_skill` shows the agent each server's tools by running `<server> --list-tools` in the sandbox, reviewed like any call of the command; nothing is cached. The commands run the `mcp` bridge from the sandbox image, one connection per call; a server that keeps state between calls does not work. The bridge turns the tool's input schema into flags (see the [contract](sandbox.md#mcp)). `mcp --url …` also works directly in the sandbox, without a skill: the proxy then reviews the domain when the bridge connects.
 
 ### OAuth
 
-The vault entry of an OAuth server holds the OAuth state as a compact JSON object:
+An `oauth` slot is bound in `skills/config.json` to a vault entry that holds the OAuth state as a compact JSON object:
 
 ```json
 {"token_url":"https://issuer.example.com/oauth2/token","client_id":"...","client_secret":"...","refresh_token":"...","access_token":"...","expires_at":1750000000,"scope":"..."}

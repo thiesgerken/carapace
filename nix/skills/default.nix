@@ -98,6 +98,7 @@ let
               // {
                 needs = needs // {
                   credentials = lib.genAttrs needs.credentials (slot: cfg.credentials.${slot});
+                  oauth = lib.genAttrs needs.oauth (slot: cfg.credentials.${slot});
                 };
               }
             ) package.passthru.carapace.commands;

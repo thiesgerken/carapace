@@ -27,7 +27,7 @@ from carapace.sandbox.skill_profile import KILLER_MARKER, SYNC_PID_FILE, SkillPr
 from carapace.session.manager import SessionManager, SessionMeta
 from tests.runtime_mocks import make_runtime_mock
 
-_NEEDS = SkillNeeds(domains=[], credentials={}, oauth=[], tunnels=[])
+_NEEDS = SkillNeeds(domains=[], credentials={}, oauth={}, tunnels=[])
 _IMAGE = "carapace-sandbox:latest"
 
 

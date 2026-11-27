@@ -144,7 +144,7 @@ A skill with `commands` or `mcp` gets a `flake.nix` and a `flake.lock` next to i
 | `credentials` with `base64` | the command decodes the value itself |
 | `credentials` with neither `env_var` nor `file` | nothing: the agent fetches them with `ccred get <vault path>` when it needs them |
 | `commands` (`name`, `command`) | `mkSkill { commands.<name> = { exec = …; description = …; }; }`. A `uv run --directory …` becomes `"${skill.uvEnv { root = ./.; }}/bin/<script>"` |
-| `mcp` (HTTP, `auth.type: bearer` or `oauth`) | `skill.mcpCommands { <name> = { url = …; bearer = "<SLOT>"; description = …; }; }` with a credential slot `<SLOT>` bound in `skills/config.json` (or `oauth = "<vault path>"`). The URL must be `https://` with a host name: `http://` and IP addresses fail the evaluation. `description` is required ([skill-flakes.md](skill-flakes.md#mcp-servers)) |
+| `mcp` (HTTP, `auth.type: bearer` or `oauth`) | `skill.mcpCommands { <name> = { url = …; bearer = "<SLOT>"; description = …; }; }` with a credential slot `<SLOT>` bound in `skills/config.json` (or `oauth = "<SLOT>"` with a slot of type `oauth`). A URL that differs per instance goes into a setting: `urlSetting = "<SETTING>"` instead of `url`. The URL must be `https://` with a host name: `http://` and IP addresses fail the evaluation. `description` is required ([skill-flakes.md](skill-flakes.md#mcp-servers)) |
 | `mcp` (stdio, `command`) | `skill.mcpCommands { <name> = { command = …; description = …; needs.credentials = [ "<SLOT>" ]; }; }` |
 | `hints` | stays in the frontmatter |
 | `disabled` | gone: leave the skill out of `skills/flake.nix` |
