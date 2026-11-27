@@ -49,15 +49,6 @@ class SkillCommand(BaseModel):
 type SettingValue = str | int | bool
 
 
-class CredentialSlot(BaseModel):
-    """A credential slot a skill declares, with this instance's binding."""
-
-    type: Literal["secret"]
-    description: str
-    # A vault path, as `ccred get` takes it; None until skills/config.json binds the slot.
-    binding: str | None
-
-
 class SkillManifest(BaseModel):
     """`manifests.<system>.<skill>` of skills/flake.nix, as `skillsFlake` writes it (docs/skill-flakes.md).
 
@@ -66,7 +57,6 @@ class SkillManifest(BaseModel):
 
     enable: bool
     settings: dict[str, SettingValue] = {}
-    credentials: dict[str, CredentialSlot] = {}
     commands: dict[str, SkillCommand] = {}
 
 
@@ -83,7 +73,6 @@ class _Outcome:
     # False for a skill skills/config.json turns off: it counts as not listed.
     enabled: bool = True
     settings: dict[str, SettingValue] = field(default_factory=dict)
-    credentials: dict[str, CredentialSlot] = field(default_factory=dict)
     # The skill directory in the store and what the builder read from it; also kept for a failed build.
     skill_dir: str | None = None
     skill_md: str | None = None
@@ -105,7 +94,6 @@ class SkillBuild:
     enabled: bool = True
     # This instance's values, which a command gets as environment variables (`cgate request --command`).
     settings: dict[str, SettingValue] = field(default_factory=dict)
-    credentials: dict[str, CredentialSlot] = field(default_factory=dict)
 
     def unbound(self, command: str) -> list[str]:
         """The credential slots *command* needs that skills/config.json does not bind."""
@@ -403,7 +391,6 @@ def _read_result(result: BuildResult) -> _Outcome:
         store_paths=result.store_paths,
         commands=manifest.commands,
         settings=manifest.settings,
-        credentials=manifest.credentials,
         skill_dir=result.skill_dir,
         skill_md=result.skill_md,
         skill_files=result.skill_files,
@@ -413,10 +400,11 @@ def _read_result(result: BuildResult) -> _Outcome:
 def unbound_slot_hint(skill: str, slots: list[str]) -> str:
     """Why a command cannot run yet, and the `skills/config.json` entry that fixes it."""
     example = json.dumps({skill: {"credentials": {slot: "<backend>/<id>" for slot in slots}}})
-    return (
-        f"{skill}: credential slot {', '.join(slots)} is not bound; "
-        f"bind it to a password-manager entry in skills/config.json: {example}"
-    )
+    if len(slots) == 1:
+        problem = f"credential slot {slots[0]} is not bound; bind it to a password-manager entry"
+    else:
+        problem = f"credential slots {', '.join(slots)} are not bound; bind them to password-manager entries"
+    return f"{skill}: {problem} in skills/config.json: {example}"
 
 
 _NO_SKILL_DIR = (
@@ -438,7 +426,6 @@ def _build(skill: _HeadSkill, outcome: _Outcome) -> SkillBuild:
         skill_files=outcome.skill_files,
         enabled=outcome.enabled,
         settings=outcome.settings,
-        credentials=outcome.credentials,
     )
 
 

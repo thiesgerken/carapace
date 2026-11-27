@@ -96,6 +96,14 @@ let
           "oauth"
         ]
       ) names;
+      # Anything else (a `default` vault path, say) would carry instance data in the flake.
+      extraKeys = lib.filter (
+        slot:
+        removeAttrs credentials.${slot} [
+          "type"
+          "description"
+        ] != { }
+      ) names;
     in
     assert lib.assertMsg (badNames == [ ])
       "${where}: credential slot names must be shell identifiers: ${lib.concatStringsSep ", " badNames}";
@@ -105,6 +113,8 @@ let
     assert lib.assertMsg (
       badTypes == [ ]
     ) "${where}: credential slots need type = \"secret\" or \"oauth\": ${lib.concatStringsSep ", " badTypes}";
+    assert lib.assertMsg (extraKeys == [ ])
+      "${where}: credential slots take only type and description, a binding goes into skills/config.json: ${lib.concatStringsSep ", " extraKeys}";
     lib.mapAttrs (_: slot: { description = ""; } // slot) credentials;
 
   # `needs` may depend on the skill's settings: a function from their values to the needs.
@@ -165,7 +175,8 @@ in
   #     name = "weather";
   #     src = ./.;
   #     settings.CITY = { type = "str"; description = "City to report on"; default = "Berlin"; };
-  #     needs = { domains = [ "api.example.com" ]; credentials.WEATHER_TOKEN = "personal/weather"; };
+  #     credentials.WEATHER_TOKEN = { type = "secret"; description = "A weather API token"; };
+  #     needs.domains = [ "api.example.com" ];
   #     commands.weather = { exec = "${env}/bin/weather"; description = "Current weather"; };
   #     commands.weather-offline = { exec = "..."; description = "..."; needs = { domains = [ ]; }; };
   #   }
@@ -188,18 +199,21 @@ in
       declaredSettings = checkSettings name settings;
       declaredCredentials = checkCredentials name settings credentials;
       slotNames = type: lib.attrNames (lib.filterAttrs (_: slot: slot.type == type) declaredCredentials);
-      # Unless the skill-wide needs say otherwise, every command gets every slot.
+      # Every command gets every slot of its type unless the needs say otherwise.
+      slotDefaults = {
+        credentials = slotNames "secret";
+        oauth = slotNames "oauth";
+      };
+      skillWideNeeds = lib.optionalAttrs (!lib.isFunction needs) (
+        needsOf "skill ${name}" declaredCredentials slotDefaults { inherit needs; }
+      );
       commandNeeds =
         values:
         lib.mapAttrs (
           cmd: command:
-          needsOf "skill ${name}, command ${cmd}" declaredCredentials (
-            {
-              credentials = slotNames "secret";
-              oauth = slotNames "oauth";
-            }
-            // withSettings values needs
-          ) (command // { needs = withSettings values (command.needs or { }); })
+          needsOf "skill ${name}, command ${cmd}" declaredCredentials (slotDefaults // withSettings values needs) (
+            command // { needs = withSettings values (command.needs or { }); }
+          )
         ) commands;
       # Whether a command asks Carapace before it runs: for its settings, or for needs it has or may have.
       gated =
@@ -217,7 +231,8 @@ in
             inherit name;
             skillDir = "${skillDir}";
             settings = declaredSettings;
-            credentials = declaredCredentials;
+            # Forcing it checks the skill-wide needs too, which no command checks in a skill without commands.
+            credentials = builtins.seq skillWideNeeds declaredCredentials;
             commands = lib.mapAttrs (_: command: {
               inherit (command) description;
               # `read_skill` runs `<cmd> --list-tools` for an MCP server, so the agent sees its tools.

@@ -17,7 +17,14 @@ from pydantic_ai.usage import RunUsage
 from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps
 from carapace.agent.tools import create_agent
-from carapace.builder.skill_builds import BuildState, SkillBuild, SkillBuilds, SkillCommand, SkillNeeds
+from carapace.builder.skill_builds import (
+    BuildState,
+    SkillBuild,
+    SkillBuilds,
+    SkillCommand,
+    SkillNeeds,
+    unbound_slot_hint,
+)
 from carapace.builder.skill_updates import SkillUpdate, UpdateCheck
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
@@ -339,3 +346,10 @@ async def test_an_unbound_credential_slot_says_how_to_bind_it(tmp_path: Path) ->
         'skills/config.json: {"weather": {"credentials": {"WEATHER_TOKEN": "<backend>/<id>"}}} '
         "Until then, the commands that need it are refused." in result
     )
+
+
+def test_several_unbound_slots_are_named_in_the_plural() -> None:
+    hint = unbound_slot_hint("weather", ["A", "B"])
+
+    assert hint.startswith("weather: credential slots A, B are not bound; bind them to password-manager entries")
+    assert '{"weather": {"credentials": {"A": "<backend>/<id>", "B": "<backend>/<id>"}}}' in hint
