@@ -12,8 +12,8 @@ In short: credentials are consumed inside the sandbox, not returned to the user-
 
 ## Backends
 
-Backends are configured on each user record under `config.credentials`. Sessions use the credential backends owned by
-their session user.
+Backends are configured on each user record under `config.credentials` (shown as YAML below). Sessions use the credential
+backends owned by their session user.
 
 ```yaml
 users:
@@ -51,7 +51,7 @@ Supported backend types:
 
 For a standalone Kubernetes `bw serve` Pod, keep `bw serve` bound to localhost inside that Pod and expose an nginx
 proxy with HTTP Basic Auth. Configure the matching `basic_auth` block on the user's Bitwarden backend. carapace redacts
-the proxy password from auth/admin API responses, but stores it in the user's local `auth/users.yaml` config.
+the proxy password from auth/admin API responses, but stores it in the user's `config` column in the database.
 
 Each credential is addressed by `vault_path` as `<backend>/<id>`, for example:
 

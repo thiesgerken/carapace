@@ -64,7 +64,7 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 
 ## The skills flake
 
-`skills/flake.nix` at the top of the knowledge repo is the only list of skills. Every input except `nixpkgs` and `carapace` is a skill, named by its attribute; a skill's `name` in `mkSkill` or in its frontmatter does not matter. A new knowledge repo gets this one, listing the bundled skills that need no setup (shortened):
+`skills/flake.nix` at the top of the knowledge repo is the only list of skills. Every input except `nixpkgs` and `carapace` is a skill, named by its attribute; a skill's `name` in `mkSkill` or in its frontmatter does not matter. A new knowledge repo gets one that lists every bundled skill; shortened, and with a local skill added, it looks like this:
 
 ```nix
 {

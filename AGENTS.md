@@ -49,7 +49,7 @@ src/carapace/          # main package
   auth.py              # Bearer token generation and validation
   bootstrap.py         # first-run directory and file seeding
   config.py            # configuration loading
-  models.py            # Pydantic models and dataclasses
+  models/              # Pydantic models and dataclasses
   ws_models.py         # WebSocket message protocol models
   usage.py             # token usage tracking (ModelUsage, UsageTracker)
   spans.py             # timing spans of a running turn (TurnTrace, span(), attach_sandbox_call)
@@ -57,7 +57,8 @@ src/carapace/          # main package
   prompt_prefix.py     # shared system prompt prefix (AGENTS/SOUL/USER.md, skill catalog)
   prompt_preview.py    # what every LLM role sends, split into sections (GET /api/prompts/preview)
   skills.py            # skill list from skills/flake.lock, SKILL.md frontmatter
-  credentials.py       # password-manager-backed credentials
+  credentials/         # password-manager-backed credentials (Bitwarden, file, OAuth refresh)
+  database/            # SQLAlchemy tables, engine and Alembic migrations (SQLite by default)
   agent/
     __init__.py        # re-exports (create_agent, build_system_prompt, run_agent_turn)
     tools.py           # Pydantic AI agent definition and tools
@@ -96,7 +97,7 @@ frontend/              # Next.js web UI (React 19, Tailwind CSS 4)
   src/components/      # React components (chat, sidebar, approval flow)
   src/hooks/           # custom hooks (WebSocket connection)
 tests/                 # pytest tests
-data/                  # runtime data directory (config, sessions, notifications, knowledge repo)
+data/                  # runtime data directory (SQLite database, session files, auth secrets, knowledge repos)
 ```
 
 ## Testing

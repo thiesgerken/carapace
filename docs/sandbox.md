@@ -101,9 +101,10 @@ The knowledge repo is cloned directly into `/workspace/` on first start. On cont
 
 All outbound traffic from sandbox containers is routed through the carapace server's HTTP forward proxy:
 
-- Containers receive only `HTTP_PROXY` / `HTTPS_PROXY` environment variables pointing to the proxy
+- Containers get the proxy URL with the session's credentials in it (`http://<session_id>:<token>@<server>:3128`) in `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, their lowercase forms, `PIP_PROXY` and `npm_config_proxy` / `npm_config_https_proxy`. `NO_PROXY` exempts the server address and loopback
 - No direct internet access — enforced by Docker network isolation or Kubernetes NetworkPolicy
-- The proxy uses per-session token-based authentication (injected as `Proxy-Authorization` via environment setup script)
+- The proxy authenticates every request by those per-session credentials, which clients send as `Proxy-Authorization: Basic`. At container start, `setup-proxy.sh` also writes the proxy URL into the git, pip and npm configs
+- The rest of the sandbox env: `GIT_REPO_URL` and `CARAPACE_API_URL` (the sandbox API, with the same credentials), `CARAPACE_SESSION_ID`, and with a builder configured `NIX_CONFIG` ([below](#builder-cache)). Every `exec` gets this env as well, since a claimed warm-pool sandbox was started without it
 - No DNS: the sandbox cannot resolve any name itself (see below)
 
 ### No DNS from the sandbox

@@ -163,7 +163,7 @@ below); the command takes no numbers. The optional focus is free text appended t
 request (after the material, so it does not split the cached prompt prefix). The reply shows tokens
 before/after and a breakdown of what was compacted.
 
-The same lives in the chat's **Usage** card: **Compact** runs `/compact`, and the "…" button opens a
+The same lives in the chat inspector's **Usage** tab: **Compact** runs `/compact`, and the "…" button opens a
 dialog with a dry run from the planners (no LLM call): the last request's provider-reported input
 tokens against the agent model's compaction threshold and context window, the thinking parts, turns and tool outputs that would go,
 and the estimated size afterwards without the summaries, whose size is unknown until they are
@@ -172,7 +172,7 @@ written. It takes a focus and runs `/compact [focus]`; its collapsed *Debug* sec
 
 ## Configuration
 
-Compaction is configured per platform in **Settings → Platform** (admin only). Values are stored in
+Compaction is configured per platform in **Settings → Admin → Models** (admin only). Values are stored in
 the DB-backed platform settings (the `agent` scalar row), not a config file:
 
 | Setting | Where | Default | Meaning |
@@ -204,7 +204,7 @@ other roles with `/model compaction NAME` (and `/model NAME` switches all four r
 
 ## Viewing compaction in the UI
 
-The main view always shows the **original, uncompacted** conversation — compaction is surfaced as a
+The main view always shows the **original, uncompacted** conversation. Compaction is surfaced as a
 subtle marker plus an on-demand peek at what the model actually sees, never by hiding the originals.
 
 - **Compacted tool rows** outside a fold show a `compacted` badge; expanding the row reveals a **"Model sees"**

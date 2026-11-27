@@ -6,7 +6,7 @@ Persistent context is ordinary content in the Git-backed knowledge repo: top-lev
 
 ## Workspace files
 
-Top-level Markdown files in the knowledge repo define the agent's identity, user context, and policy. They are cloned into each session sandbox at `/workspace/` and loaded into the agent's system prompt at session start. They also lead the prompts of compaction and [long-term memory](memory.md#persona-context), see [system prompt loading](#system-prompt-loading).
+Top-level Markdown files in the knowledge repo define the agent's identity, user context, and policy. They are cloned into each session sandbox at `/workspace/` and loaded into system prompts at session start (`SECURITY.md` into the sentinel's, the others into the agent's). The agent's files also lead the prompts of compaction and [long-term memory](memory.md#persona-context), see [system prompt loading](#system-prompt-loading).
 
 | File          | Purpose                                                                            | Agent-writable?                      |
 | ------------- | ---------------------------------------------------------------------------------- | ------------------------------------ |
@@ -19,7 +19,7 @@ Top-level Markdown files in the knowledge repo define the agent's identity, user
 
 When session commit/autosave is enabled, conversation snapshots are written into the knowledge repo under `sessions/YYYY/MM/<session_id>/conversation.json`. These archives are plain files, so the agent can search them with tools such as `rg` when it needs prior context.
 
-Session runtime state still lives under `$CARAPACE_DATA_DIR/sessions/`; archived session files are the Git-backed copy intended for long-term recall and review.
+Session runtime state lives in carapace's database (see [sessions-and-channels.md](sessions-and-channels.md#session-persistence)); archived session files are the Git-backed copy intended for long-term recall and review.
 
 ## Memory mirror
 

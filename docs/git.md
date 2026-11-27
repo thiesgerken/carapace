@@ -6,7 +6,7 @@ Each user can optionally connect an upstream remote so their knowledge repo is s
 
 ## Configuration
 
-Add a `git` section to the owning user record in `$CARAPACE_DATA_DIR/auth/users.yaml`:
+Each user's settings live in the `config` column of their user record in the database. Add a `git` section there (shown as YAML):
 
 ```yaml
 users:
@@ -57,16 +57,16 @@ For every enabled user, startup runs the same sequence against that user's repo:
 
 Users without a remote still get a local Git-backed repo. They skip the remote add, pull, and upstream push steps.
 
-If the pull fails (unreachable remote, bad credentials, or a pull that would need a non-fast-forward merge), carapace logs the error and keeps serving that user's local repo as it is, skipping steps 4 and 5. It never guesses how to reconcile local and remote state, and one user's broken remote does not keep the server from starting. Seeding is skipped because a seed commit on a repo that never adopted the remote branch would fork its history. Once the remote is fixed, sync with `/pull` (a restart also seeds anything still missing).
+If the pull fails (unreachable remote, bad credentials, or a pull that would need a non-fast-forward merge), carapace logs the error and keeps serving that user's local repo as it is, skipping steps 4 and 5. It never guesses how to reconcile local and remote state, and one user's broken remote does not keep the server from starting. Seeding is skipped because a seed commit on a repo that never adopted the remote branch would fork its history. Once the remote is fixed, sync with **Pull** in the knowledge remote panel (`POST /api/git/pull`); a restart also seeds anything still missing.
 
 ## Adding or changing a remote on an existing instance
 
-If you add or change `config.git.remote` for a user after the server is already running:
+If you add or change a user's `git` settings while the server is running (Settings -> Account, or `PATCH /api/admin/users/{username}`):
 
-1. Restart the server. Startup reinitializes only that user's repo runtime, registers the new remote, pulls, and pushes any new bootstrap files if needed.
+1. Saving applies them right away to that user's repo only: carapace registers the new remote (or removes it), pulls the configured branch, and reapplies the Git identity in that user's running sandboxes. If this fails, the save is rejected and the previous settings stay in place. A save through the admin API also seeds missing bootstrap files and pushes them.
 2. Running sandboxes are not hot-migrated. They keep the clone they already have.
 3. New sessions for that user clone the refreshed repo.
-4. To explicitly sync an existing sandbox, use the `/pull` slash command inside one of that user's sessions.
+4. To sync an existing sandbox with the server repo, use **Pull** in the session's workspace sync controls, or `/reload` for a fresh clone.
 
 ## Sandbox Git workflow
 
@@ -89,28 +89,35 @@ The standalone source lives in `src/carapace/git/pre_receive.py` and must not im
 
 ### Git identity
 
-Commits made inside a sandbox use a per-session identity derived from the owning user's `author` template:
+Commits made inside a sandbox use an identity filled from the owning user's `author` template, with `%h` set to the sandbox's hostname (the short container id on Docker, the pod name on Kubernetes) and `%s` to the session ID. With the default template that is:
 
 ```text
-carapace Session <session-id> <session-id@carapace.local>
+carapace <carapace@<sandbox-hostname>>
 ```
 
-This makes it easy to trace which session produced which commit in the repo history.
+A `commit-msg` hook in `/workspace` also appends a `carapace-session: <session-id>` trailer to every commit, so the repo history shows which session produced which commit.
 
 The identity is set as global git config in the sandbox, so it also applies to other repos the agent clones. It is reapplied whenever the sandbox runtime may be fresh (create, warm-pool claim, resume, or recovery after the container restarted), because `~/.gitconfig` does not survive a container restart.
 
-## Slash commands
+## Syncing from the UI and API
 
-| Command   | Description                                                                                                                                                   |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/pull`   | Fetch and fast-forward merge from the session owner's upstream remote into that user's server repo. Re-scans that user's skills afterwards.                   |
-| `/push`   | Push the session owner's server repo to that user's upstream remote. Fails if no remote is configured.                                                        |
-| `/reload` | Destroy the session's sandbox and re-create it on the next command. The new sandbox reclones the same owner's repo and picks up any changes pulled or pushed. |
+The web UI has two Git sync panels with refresh, pull, and push buttons: **Workspace sync** in the chat view and **Knowledge remote** on the knowledge page. They call these endpoints:
+
+| Endpoint                                      | Method | Description                                                                               |
+| --------------------------------------------- | ------ | ----------------------------------------------------------------------------------------- |
+| `/api/sessions/{session_id}/sandbox/git`      | `GET`  | Ahead/behind status of the sandbox `/workspace` clone against the owner's server repo.    |
+| `/api/sessions/{session_id}/sandbox/git/pull` | `POST` | Fast-forward pull from the server repo into the sandbox clone.                            |
+| `/api/sessions/{session_id}/sandbox/git/push` | `POST` | Push the sandbox clone to the server repo. Goes through the sentinel like any agent push. |
+| `/api/git/status`                             | `GET`  | Ahead/behind status of the user's server repo against their upstream remote.              |
+| `/api/git/pull`                               | `POST` | Fetch and fast-forward merge from the user's upstream remote into their server repo.      |
+| `/api/git/push`                               | `POST` | Push the user's server repo to their upstream remote. Fails if no remote is configured.   |
+
+The `/reload` slash command destroys the session's sandbox and re-creates it on the next command. The new sandbox reclones the same owner's repo and picks up any changes pulled or pushed.
 
 ## Local-only mode
 
 If a user has no `config.git.remote` set, that user still gets a local Git-backed repo for sandbox clones and security-gated pushes.
 
-- `/pull` and `/push` in that user's sessions report that no external remote is configured.
+- Pulling from or pushing to the upstream remote (`/api/git/pull`, `/api/git/push`) reports that no external remote is configured.
 - Another user's remote does not change this user's behavior.
 - Users with a remote and users without one can coexist on the same server without conflict.
