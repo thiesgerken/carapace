@@ -5844,3 +5844,72 @@ def test_credential_search_lists_the_users_entries_without_values(
     assert response.json() == [{"vault_path": "personal/weather", "name": "Weather API", "description": ""}]
     registry.search.assert_awaited_once_with("weath")
     srv._credential_registry_for_user.assert_awaited_once_with("thies")
+
+
+_KNOWLEDGE_KEY = [
+    ApiKeyGrant(scope=Scope.knowledge, access=Access.read),
+    ApiKeyGrant(scope=Scope.knowledge, access=Access.write),
+]
+
+
+def test_an_api_key_cannot_list_vault_entries_or_bind_a_slot(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, blob = _configured_repo("{}\n")
+    _weather_with_settings(monkeypatch)
+    monkeypatch.setattr(srv, "_after_push", AsyncMock())
+    headers = _api_key_headers("thies", _KNOWLEDGE_KEY)
+    git_store = srv._knowledge_repo_registry.get_for_user("thies").git_store
+
+    listing = client.get("/api/knowledge/credentials", headers=headers)
+    binding = client.put(
+        "/api/knowledge/skills/weather/config",
+        headers=headers,
+        json={"base": blob, "enable": True, "credentials": {"API_KEY": "personal/weather"}},
+    )
+    setting = client.put(
+        "/api/knowledge/skills/weather/config",
+        headers=headers,
+        json={"base": blob, "enable": True, "settings": {"DAYS": 3}},
+    )
+
+    assert (listing.status_code, binding.status_code, setting.status_code) == (403, 403, 200)
+    git_store.commit_replacing.assert_awaited_once()
+    assert '"DAYS": 3' in git_store.commit_replacing.await_args.args[1]
+
+
+def test_a_save_that_changes_nothing_commits_no_empty_config(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _configured_repo("{}\n")
+    subprocess.run(["git", "-C", str(root), "rm", "-q", "skills/config.json"], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "no config"],
+        check=True,
+    )
+    _weather_with_settings(monkeypatch)
+    git_store = srv._knowledge_repo_registry.get_for_user("thies").git_store
+
+    response = client.put(
+        "/api/knowledge/skills/weather/config",
+        headers=auth_headers,
+        json={"base": "", "enable": True, "settings": {"CITY": None}},
+    )
+
+    assert response.status_code == 200 and response.json()["base"] == ""
+    git_store.commit_replacing.assert_not_awaited()
+
+
+def test_a_malformed_entry_is_refused_not_a_crash(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, blob = _configured_repo('{"weather": {"settings": ["CITY"]}}\n')
+    _weather_with_settings(monkeypatch)
+
+    listed = client.get("/api/knowledge/skills/config", headers=auth_headers)
+    saved = client.put(
+        "/api/knowledge/skills/weather/config", headers=auth_headers, json={"base": blob, "enable": False}
+    )
+
+    assert (listed.status_code, saved.status_code) == (409, 422)
+    assert "entry of weather in skills/config.json is malformed" in saved.json()["detail"]

@@ -13,6 +13,9 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from loguru import logger
+from pydantic import ValidationError
+
 from .models import BuildResult, InputUpdate, SkillDeclarations
 from .skill_dir import SkillFileError, checked_skill_dir, list_files, read_file
 
@@ -114,7 +117,8 @@ def _failed(
 async def _declarations(source: Path, system: str, skill: str) -> SkillDeclarations | None:
     """What the package declares, which needs no values: what the Knowledge view offers to configure.
 
-    None when it does not evaluate; the manifest's evaluation then fails too and its log says why.
+    None when it does not evaluate, in which case the manifest's evaluation fails too and its log says why,
+    or when it is not what `SkillDeclarations` describes.
     """
     code, stdout, _ = await _run(
         "nix",
@@ -127,7 +131,12 @@ async def _declarations(source: Path, system: str, skill: str) -> SkillDeclarati
     )
     if code != 0:
         return None
-    return SkillDeclarations.model_validate_json(stdout)
+    try:
+        return SkillDeclarations.model_validate_json(stdout)
+    except ValidationError as exc:
+        # Helpers newer than this builder (another setting type, say): the form waits, the build goes on.
+        logger.warning(f"Skill {skill} declares what this builder cannot read: {exc}")
+        return None
 
 
 def _skill_docs(metadata: object) -> _SkillDocs:

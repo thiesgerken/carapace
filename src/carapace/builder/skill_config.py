@@ -88,13 +88,23 @@ def with_skill_entry(
             raise ConfigRefusedError(
                 f"{skill}'s credential slot {slot} takes a vault path <backend>/<id>, not {path!r}."
             )
-    current = config.get(skill, {})
+    current = skill_entry(config, skill)
     entry = {key: value for key, value in current.items() if key not in ("enable", "settings", "credentials")}
     entry |= _merged(current, "settings", settings) | _merged(current, "credentials", credentials)
     if not enable:
         entry["enable"] = False
     rest = {name: value for name, value in config.items() if name != skill}
     return {**rest, skill: entry} if entry else rest
+
+
+def skill_entry(config: dict[str, Any], skill: str) -> dict[str, Any]:
+    """*skill*'s entry, `{}` without one; refused unless it and its parts are JSON objects."""
+    entry = config.get(skill, {})
+    if not isinstance(entry, dict) or any(
+        not isinstance(entry.get(part, {}), dict) for part in ("settings", "credentials")
+    ):
+        raise ConfigRefusedError(f"The entry of {skill} in skills/config.json is malformed; fix it in the repo.")
+    return entry
 
 
 def _merged(entry: dict[str, Any], part: str, changes: dict[str, Any]) -> dict[str, Any]:

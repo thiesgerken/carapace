@@ -18,7 +18,14 @@ from ..api_keys import Access, Scope
 from ..artifacts import artifact_index, artifact_title, is_artifact_slug
 from ..auth import UserIdentity
 from ..builder.skill_builds import BuildState, RetryRefusedError, SkillBuilds, SkillCommand
-from ..builder.skill_config import ConfigRefusedError, ConfigValue, config_at_head, config_text, with_skill_entry
+from ..builder.skill_config import (
+    ConfigRefusedError,
+    ConfigValue,
+    config_at_head,
+    config_text,
+    skill_entry,
+    with_skill_entry,
+)
 from ..builder.skill_updates import SkillUpdates, UpdateRefusedError, UpdateState
 from ..builder.skills_head import skills_flake_at_head
 from ..credentials import CredentialBackendError
@@ -31,7 +38,7 @@ from ..session.manager import SessionManager
 from ..session.sent_files import INLINE_MIME_TYPES, guess_mime
 from ..skills import SkillDocumentError, SkillsFlakeError, parse_skill_document, read_skills_flake
 from .artifact_rendering import artifact_headers
-from .auth import require
+from .auth import AuthContext, current_auth_context, require, require_browser_session
 from .state import server_module
 
 server = server_module()
@@ -525,7 +532,7 @@ async def skills_config(builds: SkillBuilds, repo_dir: Path) -> KnowledgeSkillsC
     head = await config_at_head(repo_dir)
     skills: list[KnowledgeSkillConfig] = []
     for build in await builds.ensure_built(repo_dir):
-        entry = head.values.get(build.skill, {})
+        entry = skill_entry(head.values, build.skill)
         values = entry.get("settings", {})
         bindings = entry.get("credentials", {})
         declarations = builds.declarations(repo_dir, build)
@@ -586,11 +593,18 @@ async def put_skill_config(
     name: str,
     change: SkillConfigChange,
     user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.write))],
+    auth: Annotated[AuthContext, Depends(current_auth_context)],
 ) -> KnowledgeSkillsConfig:
     """Commit *name*'s entry in skills/config.json as the user, then push and evaluate as after a sandbox push.
 
-    *base* is the config.json the form was made from: anything committed since is not overwritten.
+    *base* is the config.json the form was made from: anything committed since is not overwritten. Binding a
+    credential slot takes a browser session: an API key, such as the one carapace-cli has in a sandbox, would
+    otherwise hand a skill any vault entry without the sentinel seeing it.
     """
+    if change.credentials and auth.grants is not None:
+        raise HTTPException(
+            status_code=403, detail="Binding a credential slot needs a browser session, not an API key."
+        )
     handle = server._knowledge_repo_registry.get_for_user(user.username)
     root = handle.knowledge_dir.resolve()
     builds = server._skill_builds
@@ -609,11 +623,12 @@ async def put_skill_config(
             credentials=change.credentials,
             declarations=builds.declarations(root, build),
         )
-        text = config_text(config)
-        if text != head.text:
+        # By content: a save that changes nothing makes no commit, also where config.json is missing.
+        changed = config != head.values
+        if changed:
             await handle.git_store.commit_replacing(
                 "skills/config.json",
-                text,
+                config_text(config),
                 unchanged={"skills/config.json": head.blob},
                 message=f"🔧 skills: configure {name}",
                 author=_commit_author(user),
@@ -622,19 +637,20 @@ async def put_skill_config(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ConcurrentChangeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if text != head.text:
+    if changed:
         await server._after_push(user.username)
     return await skills_config(builds, root)
 
 
 @router.get("/knowledge/credentials")
 async def search_credentials(
-    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.read))],
+    user: Annotated[UserIdentity, Depends(require_browser_session)],
     q: str = "",
 ) -> list[CredentialMetadata]:
     """The user's password-manager entries matching *q*, to bind a skill's credential slot: metadata, no values.
 
-    No sentinel review, unlike the sandbox's listing: the user asks, about their own vault.
+    No sentinel review, unlike the sandbox's listing, since the user asks about their own vault; so a browser
+    session only, never an API key that may sit in a sandbox.
     """
     registry = await server._credential_registry_for_user(user.username)
     try:

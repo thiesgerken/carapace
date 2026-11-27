@@ -17,7 +17,7 @@ import pytest
 import carapace.server as srv
 from carapace.builder import skill_builds, skills_head
 from carapace.builder.client import BuilderClient
-from carapace.builder.models import BuildResult, UpdatedLocks
+from carapace.builder.models import BuildResult, SettingDeclaration, SkillDeclarations, UpdatedLocks
 from carapace.builder.skill_builds import SkillBuilds
 from carapace.builder.skill_updates import UpdateCheck
 from carapace.spans import TurnTrace, attach
@@ -870,3 +870,24 @@ async def test_a_wrapper_finds_its_build_by_store_path_then_by_command(repo: Pat
     # A package built in the workspace gets the committed version of its command.
     assert await builds.command_build(repo, workspace, "weather") == weather
     assert await builds.command_build(repo, weather.store_paths[0], "unknown") is None
+
+
+@pytest.mark.anyio
+async def test_declarations_outlive_a_rekey_even_from_a_build_that_failed(repo: Path) -> None:
+    declared = SkillDeclarations(settings={"CITY": SettingDeclaration(type="str")}, credentials={})
+    builder = FakeBuilder()
+    builder.answer = lambda key, skill: BuildResult(
+        key=key, skill=skill, state="failed", log_tail="no value for CITY", declarations=declared
+    )
+    builds = SkillBuilds(cast(BuilderClient, builder))
+    await builds.ensure_built(repo)
+    await _settled(builds, repo)
+
+    (repo / "skills" / "config.json").write_text('{"weather": {"settings": {"CITY": "Kiel"}}}\n')
+    _commit(repo, "configure weather")
+    held = _held(builder)
+    weather = next(build for build in await builds.ensure_built(repo) if build.skill == "weather")
+
+    assert weather.state == "building" and weather.declarations is None
+    assert builds.declarations(repo, weather) == declared
+    held.set()

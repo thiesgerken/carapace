@@ -176,6 +176,23 @@ async def test_a_manifest_failing_for_a_missing_value_still_has_the_declarations
     )
 
 
+async def test_declarations_this_builder_cannot_read_leave_the_build_alone(
+    directory: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = _nix(directory)
+
+    async def newer_helpers(*args: str) -> tuple[int, str, str]:
+        if "--apply" in args:
+            return 0, json.dumps({"settings": {"RATIO": {"type": "float"}}, "credentials": {}}), ""
+        return await run(*args)
+
+    monkeypatch.setattr(nix, "_run", newer_helpers)
+
+    result = await _build(tmp_path)
+
+    assert (result.state, result.declarations) == ("succeeded", None)
+
+
 def test_the_api_serves_files_of_a_stored_build(directory: str, tmp_path: Path) -> None:
     store = SkillStore(tmp_path / "state", GRACE)
     store.save(BuildResult(key=KEY, skill="demo", state="succeeded", skill_dir=directory))

@@ -144,6 +144,9 @@ class SkillBuilds:
         self._looked_up: dict[str, asyncio.Event] = {}
         # The last succeeded build of each (repo, attribute), used while its key builds or failed.
         self._last_succeeded: dict[tuple[Path, str], SkillBuild] = {}
+        # The last declarations each (repo, attribute) had, from whatever state: what the form offers while
+        # its key evaluates again, even for a skill that never succeeded.
+        self._last_declarations: dict[tuple[Path, str], SkillDeclarations] = {}
 
     async def ensure_built(self, repo_dir: Path) -> list[SkillBuild]:
         """The build state of every skill skills/flake.nix lists at the head of *repo_dir*.
@@ -180,14 +183,12 @@ class SkillBuilds:
         return next((build for build in builds if store_path in build.store_paths), builds[0] if builds else None)
 
     def declarations(self, repo_dir: Path, build: SkillBuild) -> SkillDeclarations | None:
-        """What *build*'s skill declares, or its last succeeded build's while it re-keys.
+        """What *build*'s skill declares, or what it last declared while it re-keys.
 
         A config.json change re-keys every skill: without the fallback, every form would empty out until
         the manifests are evaluated again.
         """
-        if build.declarations is not None:
-            return build.declarations
-        return self._usable(repo_dir, build).declarations
+        return build.declarations or self._last_declarations.get((repo_dir, build.skill))
 
     async def refresh(self, repo_dir: Path) -> None:
         """`ensure_built`, then wait briefly until the builder said which of the new keys it built before.
@@ -303,9 +304,13 @@ class SkillBuilds:
         listed = {build.skill for build in builds}
         for repo, name in [key for key in self._last_succeeded if key[0] == repo_dir and key[1] not in listed]:
             del self._last_succeeded[(repo, name)]
+        for repo, name in [key for key in self._last_declarations if key[0] == repo_dir and key[1] not in listed]:
+            del self._last_declarations[(repo, name)]
         for build in builds:
             if build.state == "succeeded":
                 self._last_succeeded[(repo_dir, build.skill)] = build
+            if build.declarations is not None:
+                self._last_declarations[(repo_dir, build.skill)] = build.declarations
 
     def _usable(self, repo_dir: Path, build: SkillBuild) -> SkillBuild:
         if build.state == "succeeded":
