@@ -258,9 +258,11 @@ rev=$(git rev-parse vX.Y.Z^{commit})
 for flake in src/carapace/assets/skills/flake.nix src/carapace/assets/skills/*/flake.nix; do
   nix flake lock "path:$(dirname "$flake")" --override-input carapace "github:thiesgerken/carapace/$rev?dir=nix/skills"
 done
-# The bundled skills the seeded skills/flake.nix takes from carapace.
-for name in $(sed -n 's|.*url = "github:thiesgerken/carapace?dir=src/carapace/assets/skills/\([a-z-]*\)";|\1|p' src/carapace/assets/skills/flake.nix); do
-  nix flake lock path:src/carapace/assets/skills --override-input "$name" "github:thiesgerken/carapace/$rev?dir=src/carapace/assets/skills/$name"
+# The bundled skills the seeded skills/flake.nix takes from carapace, by attribute and directory
+# (carapace-cli lives in skills/carapace).
+awk '/^    [a-z-]+ = \{$/ { attr = $1 } match($0, /dir=src\/carapace\/assets\/skills\/[a-z-]+/) { print attr, substr($0, RSTART + 31, RLENGTH - 31) }' \
+  src/carapace/assets/skills/flake.nix | while read -r attr dir; do
+  nix flake lock path:src/carapace/assets/skills --override-input "$attr" "github:thiesgerken/carapace/$rev?dir=src/carapace/assets/skills/$dir"
 done
 ```
 

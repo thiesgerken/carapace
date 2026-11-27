@@ -1,7 +1,6 @@
 ---
 name: ferret
-# Before listing it in skills/flake.nix, list your actual indexed sources in this description as a coverage hint.
-# Operator setup: SETUP.md (configure the endpoint and vault reference first).
+# Operator setup: SETUP.md (the endpoint and API key in skills/config.json; a local copy to name your sources here).
 description: >-
   Search engine for almost all of the user's important data.
   Searches X, Y, Z (TODO: add specific sources here!).

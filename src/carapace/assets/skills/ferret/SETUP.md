@@ -1,8 +1,7 @@
 # Ferret setup
 
-Ferret is bundled but not listed in `skills/flake.nix`, so it is off by default.
-Configure it in `skills/config.json` and its `SKILL.md` before listing
-it. This operator guide is not returned by `read_skill`.
+Ferret is bundled and listed in `skills/flake.nix`, but the seeded
+`skills/config.json` turns it off until it is configured there. This operator guide is not returned by `read_skill`.
 
 ## Manual opt-in
 
@@ -15,14 +14,15 @@ it. This operator guide is not returned by `read_skill`.
    Ferret uses API-key bearer auth, not OAuth or a browser session cookie.
 3. Store the actual key in the vault and note its `<backend>/<id>` path. Never put
    the key in chat or the skill file.
-4. Replace the `X, Y, Z` source placeholder in the frontmatter `description`
-   with your actual indexed sources. The description is an always-visible
-   coverage hint; `ferret list_sources` shows the sources currently authorized
-   for the key.
-5. In one commit, because `skills/config.json` may only name skills that
-   `skills/flake.nix` lists: uncomment the `ferret` input in `skills/flake.nix`, add
-   `{"ferret": {"settings": {"FERRET_URL": "https://…/mcp"}, "credentials": {"FERRET_API_KEY": "<backend>/<id>"}}}`
-   to `skills/config.json`, run `nix flake lock ./skills`, commit and push. The builder builds the skill, and a new session lists it in
+4. Optionally, name your actual indexed sources in the frontmatter `description`,
+   an always-visible coverage hint (`ferret list_sources` shows the sources the
+   key may read). The bundled skill comes from Carapace's `main`, so this needs a
+   local copy: copy `src/carapace/assets/skills/ferret` from the Carapace repo into
+   `skills/ferret`, replace the `X, Y, Z` placeholder, and point the `ferret` input
+   in `skills/flake.nix` at `path:./ferret`, then `nix flake lock ./skills`.
+5. In `skills/config.json`, replace ferret's `"enable": false` with
+   `{"settings": {"FERRET_URL": "https://…/mcp"}, "credentials": {"FERRET_API_KEY": "<backend>/<id>"}}`,
+   commit and push. The builder builds the skill, and a new session lists it in
    its catalog.
 
 The `ferret` command runs the MCP bridge in the sandbox. Each time it starts it
@@ -40,9 +40,6 @@ metasearch or routine code navigation. Agents can answer from indexed text or
 optionally follow origin links with source-specific skills for freshness or
 actions.
 
-Being listed in `skills/flake.nix` controls the catalog and builds. A session that
-is already running keeps the catalog it started with.
-
-Normal bootstrap seeds missing bundled skill directories and preserves existing
-directories and user edits. Explicit `reset-assets` overwrites bundled
-customization, including the source description. It never touches `skills/flake.nix`.
+Being listed in `skills/flake.nix` and on in `skills/config.json` controls the
+catalog and builds. A session that is already running keeps the catalog it
+started with.
