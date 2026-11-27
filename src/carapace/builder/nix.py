@@ -13,7 +13,10 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .models import BuildResult, InputUpdate
+from loguru import logger
+from pydantic import ValidationError
+
+from .models import BuildResult, InputUpdate, SkillDeclarations
 from .skill_dir import SkillFileError, checked_skill_dir, list_files, read_file
 
 LOG_TAIL_CHARS = 16_000
@@ -92,7 +95,13 @@ class _SkillDocs:
 _NO_DOCS = _SkillDocs()
 
 
-def _failed(key: str, skill: str, log: str, docs: _SkillDocs = _NO_DOCS) -> BuildResult:
+def _failed(
+    key: str,
+    skill: str,
+    log: str,
+    docs: _SkillDocs = _NO_DOCS,
+    declarations: SkillDeclarations | None = None,
+) -> BuildResult:
     return BuildResult(
         key=key,
         skill=skill,
@@ -101,7 +110,33 @@ def _failed(key: str, skill: str, log: str, docs: _SkillDocs = _NO_DOCS) -> Buil
         skill_dir=docs.skill_dir,
         skill_md=docs.skill_md,
         skill_files=docs.skill_files,
+        declarations=declarations,
     )
+
+
+async def _declarations(source: Path, system: str, skill: str) -> SkillDeclarations | None:
+    """What the package declares, which needs no values: what the Knowledge view offers to configure.
+
+    None when it does not evaluate, in which case the manifest's evaluation fails too and its log says why,
+    or when it is not what `SkillDeclarations` describes.
+    """
+    code, stdout, _ = await _run(
+        "nix",
+        "eval",
+        "--json",
+        "--no-update-lock-file",
+        f"path:{source}#packages.{system}.{skill}.passthru.carapace",
+        "--apply",
+        "c: { inherit (c) settings credentials; }",
+    )
+    if code != 0:
+        return None
+    try:
+        return SkillDeclarations.model_validate_json(stdout)
+    except ValidationError as exc:
+        # Helpers newer than this builder (another setting type, say): the form waits, the build goes on.
+        logger.warning(f"Skill {skill} declares what this builder cannot read: {exc}")
+        return None
 
 
 def _skill_docs(metadata: object) -> _SkillDocs:
@@ -130,21 +165,22 @@ async def build_skill(source: Path, key: str, skill: str, system: str, roots: Pa
     """
     if not (source / "flake.lock").is_file():
         return _failed(key, skill, "skills/flake.lock is missing. The builder never writes lock files; commit one.")
+    declarations = await _declarations(source, system, skill)
     # The manifest first: it fails fast on a mistake in the declarations or settings, before any build runs.
     code, stdout, eval_log = await _run(
         "nix", "eval", "--json", "--no-update-lock-file", f"path:{source}#manifests.{system}.{skill}"
     )
     if code != 0:
         missing = "does not provide attribute 'manifests" in eval_log
-        return _failed(key, skill, (_NO_MANIFESTS if missing else "") + eval_log)
+        return _failed(key, skill, (_NO_MANIFESTS if missing else "") + eval_log, declarations=declarations)
     metadata = json.loads(stdout)
     if isinstance(metadata, dict) and metadata.get("enable") is False:
-        return BuildResult(key=key, skill=skill, state="succeeded", metadata=metadata)
+        return BuildResult(key=key, skill=skill, state="succeeded", metadata=metadata, declarations=declarations)
     package = f"path:{source}#packages.{system}.{skill}"
     try:
         docs = _skill_docs(metadata)
     except (SkillFileError, OSError, UnicodeDecodeError) as exc:
-        return _failed(key, skill, f"Cannot read the skill directory: {exc}")
+        return _failed(key, skill, f"Cannot read the skill directory: {exc}", declarations=declarations)
     code, stdout, build_log = await _run(
         "nix",
         "build",
@@ -157,7 +193,7 @@ async def build_skill(source: Path, key: str, skill: str, system: str, roots: Pa
         package,
     )
     if code != 0:
-        return _failed(key, skill, build_log, docs)
+        return _failed(key, skill, build_log, docs, declarations)
     store_paths = [path for built in json.loads(stdout) for path in built["outputs"].values()]
     return BuildResult(
         key=key,
@@ -169,6 +205,7 @@ async def build_skill(source: Path, key: str, skill: str, system: str, roots: Pa
         skill_dir=docs.skill_dir,
         skill_md=docs.skill_md,
         skill_files=docs.skill_files,
+        declarations=declarations,
     )
 
 

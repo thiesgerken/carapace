@@ -3,8 +3,8 @@ import test from "node:test";
 import { NextIntlClientProvider } from "next-intl";
 
 import messages from "../../messages/en.json";
-import { click, flushReact, installDom, renderReact, runInAct } from "../../test/react-test-utils";
-import type { KnowledgeSkillSources } from "@/lib/api";
+import { click, flushReact, installDom, renderReact, runInAct, setInputValue } from "../../test/react-test-utils";
+import type { KnowledgeSkillsConfig, KnowledgeSkillSources } from "@/lib/api";
 
 import { SkillSourcesPanel } from "./skill-sources-panel";
 
@@ -48,13 +48,17 @@ const checked: KnowledgeSkillSources = {
   ],
 };
 
+const noConfig: KnowledgeSkillsConfig = { base: "", skills: [] };
+
 test("the skill list shows origin, locked rev and the update verdict, and starts a check", async () => {
   const restore = installDom();
   const originalFetch = globalThis.fetch;
   const requests: string[] = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = init?.method ?? "GET";
-    requests.push(`${method} ${new URL(String(input)).pathname}`);
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith("/config")) return Response.json(noConfig);
+    requests.push(`${method} ${path}`);
     return Response.json(method === "POST" ? { ...checked, checking: true } : checked);
   }) as typeof fetch;
 
@@ -98,7 +102,9 @@ test("an available update has an Update button; a refused update shows the serve
   const requests: string[] = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = init?.method ?? "GET";
-    requests.push(`${method} ${new URL(String(input)).pathname}`);
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith("/config")) return Response.json(noConfig);
+    requests.push(`${method} ${path}`);
     if (method === "POST") {
       return Response.json({ detail: "skills/flake.lock changed in the meantime; nothing was committed" }, { status: 409 });
     }
@@ -120,6 +126,82 @@ test("an available update has an Update button; a refused update shows the serve
 
     assert.deepEqual(requests, ["GET /api/knowledge/skills", "POST /api/knowledge/skills/tracker/update"]);
     assert.match(view.container.textContent ?? "", /changed in the meantime/);
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
+
+test("a skill missing a setting or a binding says so, and saving commits only what changed against config.json's version", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  const puts: { path: string; body: unknown }[] = [];
+  const config: KnowledgeSkillsConfig = {
+    base: "c".repeat(40),
+    skills: [
+      {
+        name: "tracker",
+        enabled: true,
+        state: "failed",
+        detail: "error: skill tracker: no value for its setting DAYS; set it in skills/config.json",
+        settings: [
+          { name: "CITY", type: "str", description: "City", default: "Berlin", value: "Kiel", missing: false },
+          { name: "DAYS", type: "int", description: "Days ahead", default: null, value: null, missing: true },
+        ],
+        credentials: [{ name: "API_KEY", type: "secret", description: "Weather API key", binding: null }],
+      },
+    ],
+  };
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    if (init?.method === "PUT") {
+      puts.push({ path, body: JSON.parse(String(init.body)) });
+      return Response.json({ ...config, base: "d".repeat(40) });
+    }
+    if (path.endsWith("/credentials")) return Response.json([{ vault_path: "personal/weather", name: "Weather", description: "" }]);
+    return Response.json(path.endsWith("/config") ? config : checked);
+  }) as typeof fetch;
+
+  try {
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <SkillSourcesPanel server={SERVER} />
+      </NextIntlClientProvider>,
+    );
+    await flushReact();
+    const text = () => view.container.textContent ?? "";
+    assert.match(text(), /Needs configuration/);
+    assert.match(text(), /Credential not bound/);
+
+    const settings = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Settings");
+    assert.ok(settings);
+    await click(settings);
+    // Nix's own word on the values, in the same table.
+    assert.match(text(), /no value for its setting DAYS/);
+    const days = view.container.querySelector<HTMLInputElement>("#skill-setting-DAYS");
+    assert.ok(days);
+    await setInputValue(days, "3");
+    await flushReact();
+    // The datalist offers the user's entries by vault path.
+    assert.ok(view.container.querySelector('datalist option[value="personal/weather"]'));
+    const apiKey = view.container.querySelector<HTMLInputElement>("#skill-credential-API_KEY");
+    assert.ok(apiKey);
+    await setInputValue(apiKey, "personal/weather");
+    const save = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Save");
+    assert.ok(save);
+    await click(save);
+    await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    assert.deepEqual(puts, [
+      { path: "/api/knowledge/skills/tracker/config", body: {
+          base: "c".repeat(40),
+          enable: true,
+          settings: { DAYS: 3 },
+          credentials: { API_KEY: "personal/weather" },
+        },
+      },
+    ]);
     await view.unmount();
   } finally {
     globalThis.fetch = originalFetch;

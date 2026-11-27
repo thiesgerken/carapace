@@ -24,7 +24,7 @@ from ..models.skills import SkillInfo
 from ..skills import SkillDocumentError, parse_skill_document
 from ..spans import span
 from .client import BuilderClient, BuilderSystemMismatchError
-from .models import BuildResult
+from .models import BuildResult, SkillDeclarations
 from .skill_updates import SkillUpdates
 from .skills_head import archive_skills, object_id, skills_flake_at_head
 
@@ -78,6 +78,7 @@ class _Outcome:
     skill_dir: str | None = None
     skill_md: str | None = None
     skill_files: list[str] = field(default_factory=list)
+    declarations: SkillDeclarations | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +96,9 @@ class SkillBuild:
     enabled: bool = True
     # This instance's values, which a command gets as environment variables (`cgate request --command`).
     settings: dict[str, SettingValue] = field(default_factory=dict)
+    # What the skill declares, for the Knowledge view to offer: also there for a failed or turned-off build,
+    # None while building or when the package did not evaluate.
+    declarations: SkillDeclarations | None = None
 
     def unbound(self, command: str) -> list[str]:
         """The credential slots *command* needs that skills/config.json does not bind."""
@@ -140,6 +144,9 @@ class SkillBuilds:
         self._looked_up: dict[str, asyncio.Event] = {}
         # The last succeeded build of each (repo, attribute), used while its key builds or failed.
         self._last_succeeded: dict[tuple[Path, str], SkillBuild] = {}
+        # The last declarations each (repo, attribute) had, from whatever state: what the form offers while
+        # its key evaluates again, even for a skill that never succeeded.
+        self._last_declarations: dict[tuple[Path, str], SkillDeclarations] = {}
 
     async def ensure_built(self, repo_dir: Path) -> list[SkillBuild]:
         """The build state of every skill skills/flake.nix lists at the head of *repo_dir*.
@@ -174,6 +181,14 @@ class SkillBuilds:
         """
         builds = [build for build in await self.installable(repo_dir) if command in build.commands]
         return next((build for build in builds if store_path in build.store_paths), builds[0] if builds else None)
+
+    def declarations(self, repo_dir: Path, build: SkillBuild) -> SkillDeclarations | None:
+        """What *build*'s skill declares, or what it last declared while it re-keys.
+
+        A config.json change re-keys every skill: without the fallback, every form would empty out until
+        the manifests are evaluated again.
+        """
+        return build.declarations or self._last_declarations.get((repo_dir, build.skill))
 
     async def refresh(self, repo_dir: Path) -> None:
         """`ensure_built`, then wait briefly until the builder said which of the new keys it built before.
@@ -289,9 +304,13 @@ class SkillBuilds:
         listed = {build.skill for build in builds}
         for repo, name in [key for key in self._last_succeeded if key[0] == repo_dir and key[1] not in listed]:
             del self._last_succeeded[(repo, name)]
+        for repo, name in [key for key in self._last_declarations if key[0] == repo_dir and key[1] not in listed]:
+            del self._last_declarations[(repo, name)]
         for build in builds:
             if build.state == "succeeded":
                 self._last_succeeded[(repo_dir, build.skill)] = build
+            if build.declarations is not None:
+                self._last_declarations[(repo_dir, build.skill)] = build.declarations
 
     def _usable(self, repo_dir: Path, build: SkillBuild) -> SkillBuild:
         if build.state == "succeeded":
@@ -372,6 +391,7 @@ def _log_crash(task: asyncio.Task[None], skill: _HeadSkill) -> None:
 
 
 def _read_result(result: BuildResult) -> _Outcome:
+    declarations = result.declarations
     if result.state == "failed":
         return _Outcome(
             state="failed",
@@ -379,16 +399,21 @@ def _read_result(result: BuildResult) -> _Outcome:
             skill_dir=result.skill_dir,
             skill_md=result.skill_md,
             skill_files=result.skill_files,
+            declarations=declarations,
         )
     try:
         manifest = SkillManifest.model_validate(result.metadata)
     except ValidationError as exc:
-        return _Outcome(state="failed", detail=f"The skill has no valid manifest; see docs/skill-flakes.md. {exc}")
+        detail = f"The skill has no valid manifest; see docs/skill-flakes.md. {exc}"
+        return _Outcome(state="failed", detail=detail, declarations=declarations)
     if not manifest.enable:
-        return _Outcome(state="succeeded", enabled=False, detail="Turned off in skills/config.json.")
+        return _Outcome(
+            state="succeeded", enabled=False, detail="Turned off in skills/config.json.", declarations=declarations
+        )
     if result.skill_dir is None:
-        return _Outcome(state="failed", detail=_NO_SKILL_DIR)
+        return _Outcome(state="failed", detail=_NO_SKILL_DIR, declarations=declarations)
     return _Outcome(
+        declarations=declarations,
         state="succeeded",
         store_paths=result.store_paths,
         commands=manifest.commands,
@@ -428,6 +453,7 @@ def _build(skill: _HeadSkill, outcome: _Outcome) -> SkillBuild:
         skill_files=outcome.skill_files,
         enabled=outcome.enabled,
         settings=outcome.settings,
+        declarations=outcome.declarations,
     )
 
 

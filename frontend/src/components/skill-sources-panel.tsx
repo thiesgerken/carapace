@@ -1,13 +1,25 @@
 "use client";
 
-import { ArrowUpCircle, CircleAlert, CircleCheck, CircleDashed, GitBranch, Loader2, RefreshCw } from "lucide-react";
+import { ArrowUpCircle, CircleAlert, CircleCheck, CircleDashed, GitBranch, Loader2, RefreshCw, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useLocale, useTranslations } from "next-intl";
 
-import { applySkillUpdate, checkSkillUpdates, fetchSkillSources, type KnowledgeSkillSource, type KnowledgeSkillSources } from "@/lib/api";
+import {
+  applySkillUpdate,
+  checkSkillUpdates,
+  fetchSkillsConfig,
+  fetchSkillSources,
+  saveSkillConfig,
+  type KnowledgeSkillsConfig,
+  type KnowledgeSkillSource,
+  type KnowledgeSkillSources,
+  type SkillConfigValue,
+} from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
 import { knowledgeBrowseHref } from "@/lib/knowledge-links";
+
+import { SkillConfigForm } from "./skill-config-form";
 
 const POLL_MS = 2000;
 
@@ -78,6 +90,50 @@ export function SkillSourcesPanel({ server }: { server: string }) {
   const [sources, setSources] = useState<KnowledgeSkillSources | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState<string | null>(null);
+  const [config, setConfig] = useState<KnowledgeSkillsConfig | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSkillsConfig(server)
+      .then((next) => !cancelled && setConfig(next))
+      .catch((err) => !cancelled && setError(err instanceof Error ? err.message : String(err)));
+    return () => {
+      cancelled = true;
+    };
+  }, [server]);
+
+  // A saved change is evaluated again: follow it, so Nix's verdict on the values shows up here.
+  useEffect(() => {
+    if (!config?.skills.some((skill) => skill.state === "building")) return;
+    const timer = window.setTimeout(async () => {
+      try {
+        setConfig(await fetchSkillsConfig(server));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    }, POLL_MS);
+    return () => window.clearTimeout(timer);
+  }, [config, server]);
+
+  async function save(
+    name: string,
+    enable: boolean,
+    settings: Record<string, SkillConfigValue | null>,
+    credentials: Record<string, string | null>,
+  ) {
+    if (!config) return;
+    setError(null);
+    setSaving(name);
+    try {
+      setConfig(await saveSkillConfig(server, name, { base: config.base, enable, settings, credentials }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(null);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -155,36 +211,86 @@ export function SkillSourcesPanel({ server }: { server: string }) {
           </tr>
         </thead>
         <tbody>
-          {sources.skills.map((skill) => (
-            <tr key={skill.name} className="border-b border-border/60 align-top last:border-0">
-              <td className="py-2 pr-3">
-                <div className="font-medium">
-                  {skill.path ? (
-                    <Link href={knowledgeBrowseHref(skill.path)} className="underline-offset-2 hover:underline">
-                      {skill.name}
-                    </Link>
-                  ) : (
-                    skill.name
-                  )}
-                </div>
-                {/* Origin and what is locked under the name, so the verdict keeps its column on a phone. */}
-                <code className="mt-0.5 block break-all font-mono text-muted-foreground" title={t("columns.origin")}>
-                  {skill.origin}
-                </code>
-                <div className="mt-0.5 text-muted-foreground" title={t("columns.locked")}>
-                  {skill.path ? t("local") : <Rev rev={skill.locked_rev} at={skill.locked_at} locale={locale} />}
-                </div>
-              </td>
-              <td className="py-2">
-                <UpdateCell
-                  skill={skill}
-                  locale={locale}
-                  applying={applying !== null}
-                  onApply={() => apply(skill.name)}
-                />
-              </td>
-            </tr>
-          ))}
+          {sources.skills.map((skill) => {
+            const skillConfig = config?.skills.find((entry) => entry.name === skill.name);
+            // A skill that is off needs neither: Nix asks it for no values, and nothing runs its commands.
+            const active = skillConfig?.enabled ?? false;
+            const needsConfig = active && (skillConfig?.settings?.some((setting) => setting.missing) ?? false);
+            // Every declared slot is needed by some command, so an unbound one refuses part of the skill.
+            const unbound = active && (skillConfig?.credentials?.some((slot) => slot.binding === null) ?? false);
+            return (
+              <Fragment key={skill.name}>
+                <tr className="border-b border-border/60 align-top last:border-0">
+                  <td className="py-2 pr-3">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
+                      {skill.path ? (
+                        <Link href={knowledgeBrowseHref(skill.path)} className="underline-offset-2 hover:underline">
+                          {skill.name}
+                        </Link>
+                      ) : (
+                        skill.name
+                      )}
+                      {skillConfig && !skillConfig.enabled ? (
+                        <span className="rounded bg-muted px-1.5 text-[11px] font-normal text-muted-foreground">{t("off")}</span>
+                      ) : null}
+                      {needsConfig ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-normal text-warning">
+                          <CircleAlert className="h-3 w-3" />
+                          {t("needsConfig")}
+                        </span>
+                      ) : null}
+                      {unbound ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-normal text-warning">
+                          <CircleAlert className="h-3 w-3" />
+                          {t("credentialUnbound")}
+                        </span>
+                      ) : null}
+                      {skillConfig ? (
+                        <button
+                          type="button"
+                          aria-expanded={open === skill.name}
+                          onClick={() => setOpen(open === skill.name ? null : skill.name)}
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground hover:bg-muted"
+                        >
+                          <SlidersHorizontal className="h-3 w-3" />
+                          {t("configure")}
+                        </button>
+                      ) : null}
+                    </div>
+                    {/* Origin and what is locked under the name, so the verdict keeps its column on a phone. */}
+                    <code className="mt-0.5 block break-all font-mono text-muted-foreground" title={t("columns.origin")}>
+                      {skill.origin}
+                    </code>
+                    <div className="mt-0.5 text-muted-foreground" title={t("columns.locked")}>
+                      {skill.path ? t("local") : <Rev rev={skill.locked_rev} at={skill.locked_at} locale={locale} />}
+                    </div>
+                  </td>
+                  <td className="py-2">
+                    <UpdateCell
+                      skill={skill}
+                      locale={locale}
+                      applying={applying !== null}
+                      onApply={() => apply(skill.name)}
+                    />
+                  </td>
+                </tr>
+                {open === skill.name && skillConfig && config ? (
+                  <tr className="border-b border-border/60">
+                    <td colSpan={2} className="pb-3">
+                      {/* Keyed by config.json's version: a save, or anyone's commit, starts the form afresh. */}
+                      <SkillConfigForm
+                        server={server}
+                        key={config.base}
+                        skill={skillConfig}
+                        saving={saving === skill.name}
+                        onSave={(enable, settings, credentials) => save(skill.name, enable, settings, credentials)}
+                      />
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </section>
