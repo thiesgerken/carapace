@@ -5601,6 +5601,8 @@ def test_the_skill_list_shows_origins_and_an_update_check_on_request(
     root = srv._knowledge_repo_registry.get_for_user("thies").knowledge_dir
     _make_skill("weather")
     write_skills_flake(root / "skills", ["weather"], external=["tracker"])
+    # Left behind when a skill's input was removed: reported, never failing the listed skills.
+    (root / "skills" / "config.json").write_text('{"gone": {"enable": false}}\n')
     git = ["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@example.com"]
     subprocess.run([*git, "init", "-q"], check=True)
     subprocess.run([*git, "add", "-A"], check=True)
@@ -5628,6 +5630,7 @@ def test_the_skill_list_shows_origins_and_an_update_check_on_request(
         ("weather", "skills/weather", "./weather"),
     ]
     assert listed["skills"][0]["locked_rev"] == "2" * 40
+    assert listed["config_error"].startswith("skills/config.json has entries for gone,")
     assert (listed["checked_at"], listed["checking"]) == (None, False)
     assert (response.status_code, started) == (200, [root.resolve()])
     assert checked["checked_at"] is not None

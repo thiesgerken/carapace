@@ -1965,6 +1965,7 @@ export interface KnowledgeSkillSources {
   checking: boolean;
   /** Why the last check could not run at all. */
   check_error: string | null;
+  config_error: string | null;
 }
 
 export async function fetchSkillSources(server: string): Promise<KnowledgeSkillSources> {

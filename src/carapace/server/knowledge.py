@@ -160,6 +160,8 @@ class KnowledgeSkillSources(BaseModel):
     checking: bool
     # Why the last check could not run at all (no builder, builder unreachable).
     check_error: str | None
+    # A mistake in skills/config.json that no single skill reports (entries of skills that are not listed).
+    config_error: str | None
 
 
 class ArtifactSession(BaseModel):
@@ -419,6 +421,7 @@ async def skill_sources(updates: SkillUpdates, repo_dir: Path) -> KnowledgeSkill
         checked_at=check.checked_at if check is not None else None,
         checking=updates.running(repo_dir),
         check_error=(check.error or None) if check is not None else None,
+        config_error=head.config_error if head is not None else None,
     )
 
 

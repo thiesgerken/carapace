@@ -334,6 +334,26 @@ async def test_the_agent_reads_where_a_skill_comes_from_and_whether_it_has_an_up
 
 
 @pytest.mark.anyio
+async def test_a_config_entry_of_a_skill_that_is_not_listed_is_reported_with_every_skill(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    write_skills_flake(tmp_path / "skills", [], external=["weather"])
+    (tmp_path / "skills" / "config.json").write_text('{"gone": {"enable": false}, "weather": {}}\n')
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    commit = ["git", "-C", str(tmp_path), "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "x"]
+    subprocess.run(commit, check=True)
+    deps = _deps(tmp_path, [_build("weather", "succeeded", weather=_PLAIN)])
+    cast(Any, deps.skill_builds).updates = MagicMock(latest=MagicMock(return_value=None))
+
+    result = await _read_skill(deps, "weather")
+
+    assert "# Commands\n- `weather`: Offline forecast." in result
+    assert result.endswith(
+        "skills/config.json has entries for gone, which skills/flake.nix does not list: "
+        "remove them, or list the skills again."
+    )
+
+
+@pytest.mark.anyio
 async def test_an_unbound_credential_slot_says_how_to_bind_it(tmp_path: Path) -> None:
     unbound = _WEATHER.model_copy(
         update={"needs": _WEATHER.needs.model_copy(update={"credentials": {"WEATHER_TOKEN": None}})}

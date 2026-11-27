@@ -49,8 +49,10 @@ together.
 
 ## File layout
 
+In the Carapace repo; a knowledge repo lists it as the input `carapace-cli`:
+
 ```text
-skills/carapace/
+src/carapace/assets/skills/carapace/
   SKILL.md         # agent instructions
   REFERENCE.md     # this file
   flake.nix        # the CARAPACE_HOST setting, the CARAPACE_API_KEY slot, the `carapace` command
