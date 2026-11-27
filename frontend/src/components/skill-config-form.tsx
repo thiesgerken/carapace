@@ -15,6 +15,15 @@ export function changedSettings(settings: KnowledgeSkillSetting[], draft: Draft)
   );
 }
 
+/**
+ * The message of Nix's last `error:` line: what went wrong, without the trace above it. Lines Nix marks
+ * `error (ignored):` are noise from its caches. A log without such a line is shown as it is.
+ */
+export function nixError(log: string): string {
+  const errors = log.split("\n").filter((line) => /^\s*error: /.test(line));
+  return errors.length > 0 ? errors[errors.length - 1].trim().replace(/^error: /, "") : log.trim();
+}
+
 function SettingInput({
   setting,
   value,
@@ -117,7 +126,15 @@ export function SkillConfigForm({
         <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} className="h-4 w-4" />
         {t("enabled")}
       </label>
-      {skill.detail ? <pre className="whitespace-pre-wrap break-words text-xs text-destructive">{skill.detail}</pre> : null}
+      {skill.detail ? (
+        <div className="space-y-1 text-xs">
+          <p className="break-words font-mono text-destructive">{nixError(skill.detail)}</p>
+          <details>
+            <summary className="cursor-pointer text-muted-foreground">{t("fullLog")}</summary>
+            <pre className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">{skill.detail}</pre>
+          </details>
+        </div>
+      ) : null}
       {skill.settings === null ? (
         <p className="text-muted-foreground">{t("notKnownYet")}</p>
       ) : settings.length === 0 ? (
