@@ -94,7 +94,7 @@ git push
 # then restart the server
 ```
 
-`example` is no longer bundled; the helper examples in [`nix/skills/examples`](../nix/skills/examples) replace it. Re-seeded skills come with their shipped defaults. A vault path you had changed in the old frontmatter now goes into `skills/config.json` as the binding of the skill's credential slot (`web`: `BRAVE_API_KEY`; `carapace-cli`: `CARAPACE_API_KEY`, plus its server domain as the setting `CARAPACE_HOST`; see [skill-flakes.md](skill-flakes.md#credential-slots)). Copies you had changed beyond that need converting like your own skills (below).
+`example` is no longer bundled; the helper examples in [`nix/skills/examples`](../nix/skills/examples) replace it. Re-seeded skills come with their shipped defaults. A vault path you had changed in the old frontmatter now goes into `skills/config.json` as the binding of the skill's credential slot (`web`: `BRAVE_API_KEY`; `carapace-cli`: `CARAPACE_API_KEY`, plus its server domain as the setting `CARAPACE_HOST`; see [skill-flakes.md](skill-flakes.md#credential-slots)). `ferret`'s endpoint is the setting `FERRET_URL` and its key the slot `FERRET_API_KEY`. Copies you had changed beyond that need converting like your own skills (below).
 
 `CARAPACE_RESET_ASSETS=true` overwrites the copies of `carapace`, `web` and `ferret` and `SECURITY.md` in place, but leaves files that the new versions no longer have (`setup.sh`, the old `pyproject.toml` of `carapace`). Prefer deleting the copies.
 
@@ -144,7 +144,7 @@ A skill with `commands` or `mcp` gets a `flake.nix` and a `flake.lock` next to i
 | `credentials` with `base64` | the command decodes the value itself |
 | `credentials` with neither `env_var` nor `file` | nothing: the agent fetches them with `ccred get <vault path>` when it needs them |
 | `commands` (`name`, `command`) | `mkSkill { commands.<name> = { exec = …; description = …; }; }`. A `uv run --directory …` becomes `"${skill.uvEnv { root = ./.; }}/bin/<script>"` |
-| `mcp` (HTTP, `auth.type: bearer` or `oauth`) | `skill.mcpCommands { <name> = { url = …; bearer = "<SLOT>"; description = …; }; }` with a credential slot `<SLOT>` bound in `skills/config.json` (or `oauth = "<vault path>"`). The URL must be `https://` with a host name: `http://` and IP addresses fail the evaluation. `description` is required ([skill-flakes.md](skill-flakes.md#mcp-servers)) |
+| `mcp` (HTTP, `auth.type: bearer` or `oauth`) | `skill.mcpCommands { <name> = { url = …; bearer = "<SLOT>"; description = …; }; }` with a credential slot `<SLOT>` bound in `skills/config.json` (or `oauth = "<SLOT>"` with a slot of type `oauth`). A URL that differs per instance goes into a setting: `urlSetting = "<SETTING>"` instead of `url`. The URL must be `https://` with a host name: `http://` and IP addresses fail the evaluation. `description` is required ([skill-flakes.md](skill-flakes.md#mcp-servers)) |
 | `mcp` (stdio, `command`) | `skill.mcpCommands { <name> = { command = …; description = …; needs.credentials = [ "<SLOT>" ]; }; }` |
 | `hints` | stays in the frontmatter |
 | `disabled` | gone: leave the skill out of `skills/flake.nix` |

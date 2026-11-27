@@ -39,16 +39,18 @@ from tests.skills_flake import write_skills_flake
 _WEATHER = SkillCommand(
     description="Current weather.",
     needs=SkillNeeds(
-        domains=["api.example.com"], credentials={"WEATHER_TOKEN": "demo/weather-token"}, tunnels=[], oauth=[]
+        domains=["api.example.com"], credentials={"WEATHER_TOKEN": "demo/weather-token"}, tunnels=[], oauth={}
     ),
     mcp=False,
 )
 _PLAIN = SkillCommand(
-    description="Offline forecast.", needs=SkillNeeds(domains=[], credentials={}, oauth=[], tunnels=[]), mcp=False
+    description="Offline forecast.", needs=SkillNeeds(domains=[], credentials={}, oauth={}, tunnels=[]), mcp=False
 )
 _TRACKER = SkillCommand(
     description="Issues in the example tracker.",
-    needs=SkillNeeds(domains=["mcp.example.com"], credentials={}, tunnels=[], oauth=["demo/tracker-oauth"]),
+    needs=SkillNeeds(
+        domains=["mcp.example.com"], credentials={}, tunnels=[], oauth={"TRACKER_OAUTH": "demo/tracker-oauth"}
+    ),
     mcp=True,
 )
 _TOOLS = "search\tFind issues by text\ncreate\tOpen an issue\n"

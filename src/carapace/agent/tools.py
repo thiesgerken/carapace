@@ -239,7 +239,7 @@ def _command_docs(commands: dict[str, SkillCommand]) -> str:
         asks = [
             *(f"domain {domain}" for domain in needs.domains),
             *(f"credential {path or 'UNBOUND'} as ${variable}" for variable, path in needs.credentials.items()),
-            *(f"OAuth access token of {path}" for path in needs.oauth),
+            *(f"OAuth access token of {path or 'UNBOUND'} as ${slot}" for slot, path in needs.oauth.items()),
             *(f"tunnel {tunnel}" for tunnel in needs.tunnels),
         ]
         line = f"- `{name}`: {command.description}"

@@ -1245,12 +1245,14 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
     if unbound := build.unbound(body.command):
         return _boundary_denied(unbound_slot_hint(build.skill, unbound))
     needs = build.commands[body.command].needs
-    credentials = {variable: path for variable, path in needs.credentials.items() if path is not None}
-    if needs.domains or credentials or needs.oauth or needs.tunnels:
+    # Unbound slots were refused above.
+    credentials = {slot: path for slot, path in needs.credentials.items() if path is not None}
+    oauth = {slot: path for slot, path in needs.oauth.items() if path is not None}
+    if needs.domains or credentials or oauth or needs.tunnels:
         declared = UpfrontRequestBody(
             domains=needs.domains,
             credentials=sorted(set(credentials.values())),
-            oauth=needs.oauth,
+            oauth=sorted(set(oauth.values())),
             tunnels=needs.tunnels,
             store_path=body.store_path,
         )
@@ -1261,7 +1263,9 @@ async def gate_request(request: Request, body: UpfrontRequestBody) -> Response:
         if reviewed.status_code != 200:
             return reviewed
     # Settings are no secrets, but they only go to the wrapper, like the credentials it then fetches.
-    return JSONResponse({"settings": build.settings, "credentials": credentials})
+    # An OAuth slot goes to the command as its vault path, no secret: the refresh token stays here, and the
+    # access token comes from `ccred get --access-token`, approved by this review.
+    return JSONResponse({"settings": build.settings, "credentials": credentials, "oauth": oauth})
 
 
 async def _review_upfront(
