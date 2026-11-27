@@ -32,6 +32,7 @@ def make_runtime_mock() -> MagicMock:
     runtime.list_pool_sandboxes = AsyncMock(return_value={})
     runtime.list_egress_probes = AsyncMock(return_value={})
     runtime.claim_warm_sandbox = AsyncMock(return_value=False)
+    runtime.sandbox_hostname = MagicMock(side_effect=lambda container_id: container_id)
     runtime.inspect_sandbox = AsyncMock(
         side_effect=lambda _session_id, _name, container_id=None: SandboxInspection(
             exists=container_id is not None,

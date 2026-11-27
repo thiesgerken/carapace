@@ -637,6 +637,10 @@ class DockerRuntime(ContainerRuntime):
         if result.exit_code != 0:
             raise RuntimeError(f"stdout log write failed: {result.output}")
 
+    def sandbox_hostname(self, container_id: str) -> str:
+        # Sandboxes are created without an explicit hostname, so Docker uses the short container id.
+        return container_id[:12]
+
     async def get_ip(self, container_id: str, network: str) -> str | None:
         def _get_ip() -> str | None:
             try:

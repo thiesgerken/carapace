@@ -60,6 +60,16 @@ class ConcurrentChangeError(RuntimeError):
     """A file changed between reading it and committing a new version of it."""
 
 
+def parse_author(template: str, *, session_id: str, hostname: str) -> tuple[str, str]:
+    """Fill a git author template (``%s`` → *session_id*, ``%h`` → *hostname*) and split it into (name, email)."""
+    filled = template.replace("%s", session_id).replace("%h", hostname)
+    # Expected format: "Name <email>"
+    if "<" in filled and filled.endswith(">"):
+        name, _, email = filled.rpartition("<")
+        return name.strip(), email.rstrip(">").strip()
+    return filled, f"{session_id}@carapace"
+
+
 class GitStore:
     """Thin wrapper around Git CLI for managing the knowledge repo.
 
@@ -149,16 +159,7 @@ class GitStore:
         logger.debug("Installed pre-receive hook")
 
     def _parse_author(self, session_id: str) -> tuple[str, str]:
-        """Parse the author template into (name, email).
-
-        Supported placeholders: ``%s`` → *session_id*, ``%h`` → hostname.
-        """
-        filled = self.author_template.replace("%s", session_id).replace("%h", socket.gethostname())
-        # Expected format: "Name <email>"
-        if "<" in filled and filled.endswith(">"):
-            name, _, email = filled.rpartition("<")
-            return name.strip(), email.rstrip(">").strip()
-        return filled, f"{session_id}@carapace"
+        return parse_author(self.author_template, session_id=session_id, hostname=socket.gethostname())
 
     async def commit(self, paths: list[str], message: str, *, session_id: str = "server") -> bool:
         """Stage the given paths and commit. Returns True if a commit was made."""

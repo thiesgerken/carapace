@@ -6,7 +6,7 @@ import base64
 import contextlib
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -397,6 +397,21 @@ class TestSandboxManagerProxyEnv:
         mgr._session_tokens["sess-1"] = "tok"
         mgr._cleanup_tracking("sess-1")
         assert mgr.verify_session_token("sess-1", "tok") is False
+
+
+@pytest.mark.anyio
+async def test_git_identity_fills_in_the_sandbox_hostname(tmp_path: Path, db_factory):
+    runtime = make_runtime_mock()
+    runtime.sandbox_hostname = MagicMock(return_value="3f2a1b4c5d6e")
+    runtime.exec = AsyncMock(return_value=ExecResult(stdout="", exit_code=0, output=""))
+    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
+
+    await mgr._session_lifecycle.setup_git_identity("container-1", "sess-1")
+
+    runtime.sandbox_hostname.assert_called_once_with("container-1")
+    assert runtime.exec.await_args.args[1] == (
+        "git config --global user.name carapace && git config --global user.email carapace@3f2a1b4c5d6e"
+    )
 
 
 @pytest.mark.anyio
