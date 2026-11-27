@@ -77,7 +77,18 @@ import {
   waitingLineState,
   type EscalationCard,
 } from "@/lib/tool-call-status";
-import { appendStreamedArgs, completeStreamedCall, dropOpenCalls, endStreamedCall, keepUnrunCalls, markUnrunCalls, replaceStreamedCall, startStreamedCall, streamingCallIndex } from "@/lib/live-tool-calls";
+import {
+  appendStreamedArgs,
+  completeStreamedCall,
+  dropOpenCalls,
+  endStreamedCall,
+  isOpen,
+  keepUnrunCalls,
+  markUnrunCalls,
+  replaceStreamedCall,
+  startStreamedCall,
+  streamingCallIndex,
+} from "@/lib/live-tool-calls";
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 import { SessionArtifactsSection } from "./session-artifacts-section";
@@ -1035,6 +1046,24 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
 }
 
 
+// What the model is still writing: the history gets narration only once its response finishes.
+const isInFlight = (m: ChatMessage) => m.kind === "streaming" || m.kind === "thinking_streaming" || isOpen(m);
+
+/**
+ * The chat re-projected from the saved *history*, keeping the live not-run cards and putting the still
+ * *running* spans back on their cards: after a reconnect, the history has what the socket missed. The live
+ * tail the model is still writing stays at the end, so its next tokens append to it.
+ */
+export function catchUpFromHistory(
+  live: ChatMessage[],
+  history: HistoryMessage[],
+  running: Iterable<SpanUpdate>,
+): ChatMessage[] {
+  const inFlight = live.slice(live.findLastIndex((m) => !isInFlight(m)) + 1);
+  const settled = live.slice(0, live.length - inFlight.length);
+  return [...applySpansToToolCalls(keepUnrunCalls(settled, projectHistoryToMessages(history)), running), ...inFlight];
+}
+
 function escalationRequestId(card: EscalationCard): string {
   return card.kind === "approval" ? card.request.tool_call_id : card.request.request_id;
 }
@@ -1830,10 +1859,23 @@ export function ChatView({
     clearToolLoading();
     setWaiting(false);
   }, [clearToolLoading]);
+  // The server doesn't resend what it broadcast while the socket was down (a call's result, a finished
+  // turn), so the chat catches up from the saved history. The same sequence guard as `done`'s refetch.
+  const onWsReconnect = useCallback(() => {
+    const refetchSeq = ++doneRefetchSeqRef.current;
+    fetchHistory(server, token, sessionId)
+      .then((history) => {
+        if (refetchSeq !== doneRefetchSeqRef.current) return;
+        setMessages((prev) => catchUpFromHistory(prev, history, runningSpansRef.current.values()));
+      })
+      .catch(() => {
+        // Refetch failed: the cards keep what they had; the next `done` or a reload fills them in.
+      });
+  }, [server, token, sessionId]);
   const presenceClientId = useRef(getPresenceClientId()).current;
   const webSocketTicket = useWebSocketTicket(server, token);
   const url = webSocketTicket ? wsUrl(server, sessionId, token, presenceClientId, webSocketTicket) : null;
-  const { status, send } = useWebSocket(url, onMessage, onWsDisconnect);
+  const { status, send } = useWebSocket(url, onMessage, onWsDisconnect, onWsReconnect);
   useSessionPresence(server, token, sessionId, status, presenceClientId);
   useEffect(() => {
     sendRef.current = send;

@@ -186,8 +186,9 @@ export function WaitingIndicator({
   const stalled = !awaitsUser && agent !== null && now - lastProgressAt >= STALL_MS;
 
   return (
-    <div hidden={hidden} className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
-      <Tortoise pose={stalled ? "sleep" : pose} className="h-6 w-auto shrink-0" />
+    <div hidden={hidden} className="flex items-center gap-2.5 px-2 text-xs text-muted-foreground">
+      {/* 32 px: the size the props in tortoise.tsx are drawn for, big enough to tell the poses apart. */}
+      <Tortoise pose={stalled ? "sleep" : pose} className="h-8 w-auto shrink-0" />
       {phrase && (
         <span className="text-shimmer" style={{ animationDelay: shimmerDelay }}>
           {t(`phrases.${phrase}`)}

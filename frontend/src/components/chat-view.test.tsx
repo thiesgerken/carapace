@@ -7,6 +7,7 @@ import english from "../../messages/en.json";
 import {
   SandboxHeaderStatus,
   appendEscalationCard,
+  catchUpFromHistory,
   countSubmittedUserMessages,
   isTurnActionMessage,
   isUnattendedInputLocked,
@@ -14,6 +15,7 @@ import {
   projectHistoryToMessages,
 } from "./chat-view";
 import { turnTimelineHref } from "./message";
+import type { ChatMessage, HistoryMessage } from "@/lib/types";
 
 test("countSubmittedUserMessages ignores slash commands", () => {
   assert.equal(
@@ -186,4 +188,50 @@ test("the header's sandbox status shows liveness with details as tooltip, and no
 
   assert.equal(renderToStaticMarkup(<SandboxHeaderStatus sandbox={{ exists: false, status: "missing", storage_present: false }} t={t} />), "");
   assert.equal(renderToStaticMarkup(<SandboxHeaderStatus sandbox={null} t={t} />), "");
+});
+
+test("after a reconnect the chat catches up from the history on a result the socket missed", () => {
+  // The disconnect stopped the spinner; the result was broadcast while the socket was down.
+  const live: ChatMessage[] = [
+    { kind: "user", content: "read the weather skill" },
+    { kind: "tool_call", tool: "read_skill", args: { skill_name: "weather" }, detail: "", loading: false, toolId: "tool-1" },
+  ];
+  const history: HistoryMessage[] = [
+    { role: "user", content: "read the weather skill" },
+    { role: "tool_call", content: "", tool: "read_skill", args: { skill_name: "weather" }, detail: "", tool_id: "tool-1", model_tool_call_id: "call_1" },
+    { role: "tool_result", content: "", tool: "read_skill", tool_id: "tool-1", result: "# weather\n\nThe commands are on PATH." },
+    { role: "tool_call", content: "", tool: "exec", args: { command: "weather" }, detail: "", tool_id: "tool-2", model_tool_call_id: "call_2" },
+  ];
+  const span = {
+    type: "span", turn_id: "t1", span_id: "s1", kind: "sandbox", name: "ensure", status: "running",
+    started_at: "2026-11-27T12:00:00Z", tool_call_id: "call_2", replayed: true,
+  } as const;
+
+  const [, skill, exec] = catchUpFromHistory(live, history, [span]);
+  assert.equal(skill.kind === "tool_call" && skill.result, "# weather\n\nThe commands are on PATH.");
+  assert.equal(skill.kind === "tool_call" && skill.loading, false);
+  // The call that still runs spins again with its replayed step.
+  assert.equal(exec.kind === "tool_call" && exec.loading, true);
+  assert.equal(exec.kind === "tool_call" && exec.runningSpans?.[0]?.name, "ensure");
+});
+
+test("a reconnect in the middle of a reply keeps what the model has written so far at the end", () => {
+  // The history gets narration only once a model response finishes, so it lacks the text in flight.
+  const history: HistoryMessage[] = [
+    { role: "user", content: "summarize the skill" },
+    { role: "tool_call", content: "", tool: "read_skill", args: { skill_name: "weather" }, detail: "", tool_id: "tool-1" },
+    { role: "tool_result", content: "", tool: "read_skill", tool_id: "tool-1", result: "# weather" },
+  ];
+  const live: ChatMessage[] = [
+    { kind: "user", content: "summarize the skill" },
+    { kind: "tool_call", tool: "read_skill", args: { skill_name: "weather" }, detail: "", loading: false, toolId: "tool-1" },
+    { kind: "thinking_streaming", content: "The skill has one command" },
+    { kind: "streaming", content: "The weather skill gives you" },
+  ];
+
+  const caughtUp = catchUpFromHistory(live, history, []);
+  assert.deepEqual(caughtUp.map((m) => m.kind), ["user", "tool_call", "thinking_streaming", "streaming"]);
+  assert.equal(caughtUp[1].kind === "tool_call" && caughtUp[1].result, "# weather");
+  // Last, so the next token appends to it rather than starting a new reply with only the tail.
+  assert.deepEqual(caughtUp.at(-1), { kind: "streaming", content: "The weather skill gives you" });
 });

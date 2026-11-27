@@ -12,17 +12,25 @@ const RECONNECT_DELAYS = [500, 1000, 2000, 4000];
 // accepts the socket then immediately drops it (half-ready after a restart).
 const STABLE_CONNECTION_MS = 5000;
 
+/**
+ * A session WebSocket that reconnects on its own. *onReconnect* runs when a connection opens after an
+ * earlier one dropped: whatever the server sent in between is lost, so the caller catches up then.
+ */
 export function useWebSocket(
   url: string | null,
   onMessage: (msg: ServerMessage) => void,
   onDisconnect?: () => void,
+  onReconnect?: () => void,
 ) {
   const [status, setStatus] = useState<Status>("disconnected");
   const wsRef = useRef<WebSocket | null>(null);
   const onMessageRef = useRef(onMessage);
   const onDisconnectRef = useRef(onDisconnect);
+  const onReconnectRef = useRef(onReconnect);
   useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
   useEffect(() => { onDisconnectRef.current = onDisconnect; }, [onDisconnect]);
+  useEffect(() => { onReconnectRef.current = onReconnect; }, [onReconnect]);
+  const everOpenedRef = useRef(false);
   const retriesRef = useRef(0);
   const unmountedRef = useRef(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -55,6 +63,8 @@ export function useWebSocket(
       opened = true;
       openedAt = Date.now();
       setStatus("connected");
+      if (everOpenedRef.current) onReconnectRef.current?.();
+      everOpenedRef.current = true;
       // Do NOT reset retries here: a connection that opens then immediately
       // drops must keep backing off. Reset happens in onclose once the socket
       // has stayed open past STABLE_CONNECTION_MS.
@@ -103,6 +113,7 @@ export function useWebSocket(
   useEffect(() => {
     unmountedRef.current = false;
     retriesRef.current = 0;
+    everOpenedRef.current = false;
     // Defer to avoid synchronous setState in effect body
     const timer = setTimeout(() => connect(), 0);
 
