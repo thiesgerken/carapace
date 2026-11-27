@@ -187,8 +187,8 @@ export function WaitingIndicator({
 
   return (
     <div hidden={hidden} className="flex items-center gap-2.5 px-2 text-xs text-muted-foreground">
-      {/* At 40 px the props (hourglass, glass, book) are big enough to read the pose. */}
-      <Tortoise pose={stalled ? "sleep" : pose} className="h-10 w-auto shrink-0" />
+      {/* 32 px: the size the props in tortoise.tsx are drawn for, big enough to tell the poses apart. */}
+      <Tortoise pose={stalled ? "sleep" : pose} className="h-8 w-auto shrink-0" />
       {phrase && (
         <span className="text-shimmer" style={{ animationDelay: shimmerDelay }}>
           {t(`phrases.${phrase}`)}
