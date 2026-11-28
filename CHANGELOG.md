@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.203.2 (2026-11-28)
+
+### 🐛 Fix a bug
+
+- fix: drop the IPv4-mapped prefix the API server rejects from the builder egress policy
+
+### 📝 Add or update documentation
+
+- docs: name Kustomize helmCharts like the rest of the docs
+- docs: Flux runs a real Helm upgrade, so lookup works there
+- docs: warn that GitOps renders regenerate the builder token
+
 ## v0.203.1 (2026-11-28)
 
 ### 🐛 Fix a bug
