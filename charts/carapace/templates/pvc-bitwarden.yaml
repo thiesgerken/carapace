@@ -12,6 +12,8 @@ metadata:
   labels:
     {{- include "carapace.labels" $ | nindent 4 }}
     app.kubernetes.io/component: bitwarden
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   accessModes:
     - ReadWriteOnce

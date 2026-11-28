@@ -389,16 +389,7 @@ async def chat_ws(
 
     for pa in list(active.pending_approval_requests):
         with contextlib.suppress(Exception):
-            await _send(
-                websocket,
-                ApprovalRequest(
-                    tool_call_id=pa["tool_call_id"],
-                    tool=pa.get("tool", ""),
-                    args=pa.get("args", {}),
-                    explanation=pa.get("explanation", ""),
-                    risk_level=pa.get("risk_level", ""),
-                ),
-            )
+            await _send(websocket, ApprovalRequest.model_validate(pa))
     for pp in list(active.pending_escalations):
         with contextlib.suppress(Exception):
             if pp.get("kind") == "git_push":

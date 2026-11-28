@@ -230,7 +230,7 @@ uv run pytest
 uvx ruff check src/
 npm --prefix frontend run lint
 npm --prefix frontend test
-helm lint charts/carapace
+helm lint charts/carapace --set postgres.image.tag=19-alpine
 ```
 
 `prek run` remains separate because its hooks fetch from the network.

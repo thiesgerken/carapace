@@ -4,6 +4,8 @@ metadata:
   name: {{ .Release.Name }}-data
   labels:
     {{- include "carapace.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
   {{- with .Values.persistence.data.finalizers }}
   finalizers:
     {{- toYaml . | nindent 4 }}

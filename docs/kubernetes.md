@@ -18,7 +18,7 @@ Upgrading an install from before skill flakes? Follow [Upgrading to skill flakes
 ```bash
 # 1. Create a secret with your API key and bootstrap admin password (or use an ExternalSecret / SealedSecret).
 #    The ANTHROPIC_API_KEY line is optional: drop it and the server still starts, so an admin can
-#    configure the model catalog under Settings -> Admin -> Platform first.
+#    configure the model catalog under Settings -> Admin -> Models first.
 kubectl create namespace carapace
 kubectl label namespace carapace pod-security.kubernetes.io/enforce=baseline
 kubectl create secret generic carapace-secrets -n carapace \
@@ -118,7 +118,7 @@ Set **`CARAPACE_SANDBOX_K8S_OWNER_REF=false`** to omit `ownerReferences` entirel
 
 ### Idle lifecycle
 
-When a session is idle (configurable timeout, default 60 min), the StatefulSet is scaled to **0 replicas**. The PVC is retained (`whenScaled: Retain`), preserving the workspace and all session files. When the session resumes, the StatefulSet is scaled back to 1 replica — the pod mounts the existing PVC, so no git clone is needed. Anything kept outside the PVC is gone; the skill commands come back with the profile sync (see [sandbox.md](sandbox.md#container-lifecycle)).
+When a session is idle (`CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES`, default 60 min; the chart sets 960 through `sandbox.idleTimeoutMinutes`), the StatefulSet is scaled to **0 replicas**. The PVC is retained (`whenScaled: Retain`), preserving the workspace and all session files. When the session resumes, the StatefulSet is scaled back to 1 replica; the pod mounts the existing PVC, so no git clone is needed. Anything kept outside the PVC is gone; the skill commands come back with the profile sync (see [sandbox.md](sandbox.md#container-lifecycle)).
 
 If `CARAPACE_SANDBOX_WARM_POOL_SIZE` is greater than `0`, the server also keeps that many unattached generic warm sandboxes ready. New sessions can claim one of those prestarted StatefulSets instead of waiting for a full cold start. After a successful claim, carapace immediately refills the pool toward the configured target. The claimed sandbox keeps its original unique `sandbox_id` such as `pool-3f9c…`, which is persisted in the session snapshot and shown in the web UI's sandbox inspector. If a claim fails (for example the knowledge repo clone fails), the claimed pool StatefulSet is deleted and the session falls back to a cold-created sandbox. StatefulSets that are already being deleted are ignored when resolving a session's sandbox. Two live StatefulSets labelled with the same session are treated as an error for that session only: starting its sandbox fails until one of them is removed manually, while other sessions are unaffected. Startup orphan cleanup removes every StatefulSet of a deleted session.
 
@@ -172,7 +172,7 @@ env:
   #   value: ""  # optional SA for sandbox pods
 ```
 
-When `CARAPACE_SANDBOX_RUNTIME` is unset or `docker` (the default), nothing changes — the server uses the Docker socket as before.
+When `CARAPACE_SANDBOX_RUNTIME` is unset or `docker` (the default), the server uses the Docker socket.
 
 The Helm chart sets the session-list cache URL automatically when bundled Redis is enabled. For an external Redis, configure `CARAPACE_CACHE_REDIS_URL` through `extraEnv` or `envFrom`:
 
@@ -226,23 +226,20 @@ bitwarden:
         existingSecret: carapace-bitwarden-alice-basic-auth
 ```
 
-Configure the matching Bitwarden backend in **Settings** -> **Account** -> **Credentials** for the owning user. The equivalent backing user config is:
+Configure the matching Bitwarden backend in **Settings** -> **Account** -> **Credentials** for the owning user (or as an admin through `PATCH /api/admin/users/alice`, under `config.credentials`). It stores this in the user's config:
 
 ```yaml
-users:
-  alice:
-    config:
-      credentials:
-        backends:
-          vault:
-            type: bitwarden
-            url: http://carapace-bitwarden-alice
-            basic_auth:
-              username: alice
-              password: user-specific-random-proxy-password
+credentials:
+  backends:
+    vault:
+      type: bitwarden
+      url: http://carapace-bitwarden-alice
+      basic_auth:
+        username: alice
+        password: user-specific-random-proxy-password
 ```
 
-Keep the username/password in the carapace user config aligned with the htpasswd entry in the proxy Secret. carapace redacts the proxy password from admin API responses, but the local `auth/users.yaml` still stores it so the server can authenticate to nginx.
+Keep the username/password in the carapace user config aligned with the htpasswd entry in the proxy Secret. carapace redacts the proxy password from admin API responses, but stores it in the user's config in the database (`users.config`) so the server can authenticate to nginx.
 
 See [credentials.md](credentials.md) for backend behavior, exposure controls, and credential access auditing.
 
@@ -282,7 +279,7 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 
 ## Storage
 
-The server uses a single RWO PVC (`carapace-data`) for its own data (config, sessions, knowledge repo). Sandbox sessions each get a dedicated RWO PVC via StatefulSet `volumeClaimTemplates`:
+The server uses a single RWO PVC (`carapace-data`) for its own files (per-session files, knowledge repos, generated keys, and the SQLite database when no Postgres is configured). Sandbox sessions each get a dedicated RWO PVC via StatefulSet `volumeClaimTemplates`:
 
 | Consumer            | Volume                                | Mount path   | Mode |
 | ------------------- | ------------------------------------- | ------------ | ---- |
@@ -294,6 +291,8 @@ The server uses a single RWO PVC (`carapace-data`) for its own data (config, ses
 Sandbox pods have **no access** to the server's data PVC. The per-session PVC is mounted twice with `subPath`s (`workspace` and `tmp`) so workspace contents and temp files survive StatefulSet scale-down without a second claim. The workspace is populated via `git clone` from the server's Git HTTP backend on first start. Changes are persisted back via `git push`.
 
 The per-session PVC size is configurable via `sandbox.sessionPvc.size` in the Helm values (default: 1Gi).
+
+`helm uninstall` keeps the data, Postgres and Bitwarden PVCs (they carry `helm.sh/resource-policy: keep`) and deletes the builder's; see the [chart README](../charts/carapace/README.md#uninstall).
 
 ## Database
 
@@ -307,15 +306,23 @@ with an external-URL (`database.url`) or SQLite-on-the-data-PVC option. See the
 > only changes when you change it. A new major does not start on the old data directory:
 > upgrade with `pg_dump`/restore into a fresh data directory.
 
-> **GitOps (Argo CD): set `postgres.auth.existingSecret`.** When `postgres.auth` has no
-> password, the chart auto-generates one and reuses it across upgrades via a Helm `lookup`.
-> `lookup` returns nothing under `helm template`, which is how Argo CD and `kustomize build
-> --enable-helm` render manifests — so they regenerate a fresh random password on every
-> sync. Postgres only sets the password at initdb, so the running DB keeps the old one and
-> the server crashloops with `password authentication failed for user "carapace"`. Provide a
-> stable Secret instead (SealedSecret / External Secrets) as in step 2 of the quick start,
-> with keys `postgres-password` and `database-url`
+> **GitOps (Argo CD, Kustomize `helmCharts`): set `postgres.auth.existingSecret`.** When `postgres.auth`
+> has no password, the chart auto-generates one and reuses it across upgrades via a Helm
+> `lookup`. `lookup` returns nothing under `helm template`, which is how these tools
+> render manifests, so they regenerate a fresh random password on every sync. Postgres
+> only sets the password at initdb, so the running DB keeps the old one and the server
+> crashloops with `password authentication failed for user "carapace"`. Provide a stable
+> Secret instead (SealedSecret / External Secrets) as in step 2 of the quick start, with
+> keys `postgres-password` and `database-url`
 > (`postgresql+psycopg://carapace@<release>-postgres:5432/carapace`, password omitted).
+
+> **GitOps: also set `builder.auth.existingSecret`.** The generated builder token Secret
+> (`<release>-builder`) reuses its value through the same `lookup`, so `helm template`
+> renders a new random token on every sync. Server and builder read the token at pod
+> start, so they keep working until one of them restarts without the other; from then on
+> the builder rejects the server's requests with `401 Invalid builder token`. Create a
+> Secret with the key `token` in both the release and the builder namespace and point
+> `builder.auth.existingSecret` at it (see [builder](builder.md#kubernetes)).
 
 Runtime platform settings — the model catalog and scalar `agent`/`sessions` config edited in
 the admin UI — also live in the database (`models` + `platform_settings` tables). A fresh DB
@@ -373,12 +380,12 @@ The builder needs `privileged` and gets its own namespace for it, `<release name
 
 ## RBAC
 
-The server needs a ServiceAccount with permissions to manage pods and StatefulSets in its namespace:
+The server needs a ServiceAccount with permissions to manage pods and StatefulSets in its namespace. The chart's Role (`templates/rbac.yaml`) grants:
 
 ```yaml
 rules:
   - apiGroups: [""]
-    resources: ["pods", "pods/exec"]
+    resources: ["pods", "pods/exec", "pods/log"] # pods/log: readiness waits for a marker in the sandbox log
     verbs: ["create", "get", "list", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -409,10 +416,10 @@ Labels and `argocd.argoproj.io/tracking-id` keep sandboxes associated with the a
 
 ## Customization
 
-- **StorageClass**: set `persistence.data.storageClassName`, `sandbox.sessionPvc.storageClass`, or `bitwarden.persistence.storageClassName` in your values (each defaults to the cluster default)
+- **StorageClass**: set `persistence.data.storageClassName`, `postgres.persistence.storageClassName`, `sandbox.sessionPvc.storageClass`, `builder.persistence.storageClassName`, or `bitwarden.persistence.storageClassName` in your values (each defaults to the cluster default)
 - **Ingress**: the chart uses Gateway API `HTTPRoute`. Set `ingress.parentRefs` to match your Gateway.
 - **Image tags**: pinned to `appVersion` by default; override with `image.tag`, `frontend.image.tag`, `sandbox.image.tag`
 - **Resources**: sensible defaults are included; override `resources` / `frontend.resources` as needed
 - **Priority class**: set `priorityClassName` to apply to all pods (server, frontend, sandbox)
 - **Image CSP**: the frontend sends `Content-Security-Policy: img-src 'self' data: blob:`. If the API is served from another origin, add it to `frontend.csp.imgSrcExtra`; the chart mounts a ConfigMap snippet and rolls the frontend when it changes. Compose uses a mounted nginx snippet instead (see [quickstart](quickstart.md#2-pull-and-start)).
-- **PVC protection**: set `persistence.data.finalizers` and `bitwarden.persistence.finalizers` to `["kubernetes.io/pvc-protection"]` to guard against accidental deletion
+- **PVC protection**: set `persistence.data.finalizers`, `postgres.persistence.finalizers` and `bitwarden.persistence.finalizers` to `["kubernetes.io/pvc-protection"]` to guard against accidental deletion

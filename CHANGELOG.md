@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v0.203.0 (2026-11-28)
+
+### ✨ Introduce new features
+
+- feat: fetch skill inputs from private repositories
+
+### 🔒️ Fix security or privacy issues
+
+- fix: require a narHash on skill lock entries, and other review fixes
+
 ## v0.202.0 (2026-11-28)
 
 ### ✨ Introduce new features

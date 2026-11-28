@@ -4,27 +4,32 @@ Sessions are the core abstraction in carapace. They are decoupled from any speci
 
 ## Session model
 
-Each session has a `SessionState` stored on disk:
+Each session has a `SessionState` (`models/session.py`), stored in the `state` column of its `sessions` row:
 
 ```python
 class SessionState(BaseModel):
     session_id: str
-    channel_type: str           # "cli" | "matrix" | "web" | ...
+    channel_type: str           # "web" | "cli" | "matrix" | "job"
     channel_ref: str | None     # channel-specific ID (room_id, etc.)
     title: str | None           # auto-generated after first messages
     agent_model_name: str | None
     sentinel_model_name: str | None
     title_model_name: str | None
-  attributes: SessionAttributes  # private / archived / pinned / favorite / unattended / ask_mode / yolo_mode
+    compaction_model_name: str | None
+    attributes: SessionAttributes  # private / archived / pinned / favorite / unattended / ask_mode / yolo_mode
     approved_operations: list[str]
     budget: SessionBudget
     created_at: datetime
     last_active: datetime
-  latest_job_run: SessionJobRunContext | None
+    latest_job_run: SessionJobRunContext | None
     knowledge_last_committed_at: datetime | None
     knowledge_last_archive_path: str | None
     knowledge_last_export_hash: str | None
     knowledge_last_commit_trigger: str | None
+    forked_from: SessionFork | None
+    memory: MemorySnapshot | None        # frozen memory block of the agent prompt
+    skill_catalog: list[SkillInfo] | None  # frozen skill catalog of the agent prompt
+    compacted_through: datetime | None
 ```
 
 Each session also has an `ActiveSession` in-memory object (when loaded) that holds:
@@ -37,31 +42,38 @@ Each session also has an `ActiveSession` in-memory object (when loaded) that hol
 
 ## Session persistence
 
-Sessions are stored on disk at `$CARAPACE_DATA_DIR/sessions/<session_id>/`:
+Sessions are stored in carapace's database (`database/models.py`), one table per kind of state, all keyed by session ID:
 
-| File           | Contents                                                                                                  |
-| -------------- | --------------------------------------------------------------------------------------------------------- |
-| `state.yaml`   | Session metadata (SessionState)                                                                           |
-| `history.yaml` | Raw Pydantic AI message history used as model conversation state                                          |
-| `events.yaml`  | User-facing session transcript and event stream (messages, tool calls/results, approvals, slash commands) |
-| `usage.yaml`   | Token usage breakdown by model                                                                            |
-| `audit.yaml`   | Security audit trail (sentinel verdicts, decisions)                                                       |
+| Table                  | Contents                                                                                                  |
+| ---------------------- | --------------------------------------------------------------------------------------------------------- |
+| `sessions`             | Session metadata (`SessionState`, plus queryable columns such as owner, title, archived) and the latest sandbox snapshot |
+| `session_history`      | Raw Pydantic AI message history used as model conversation state                                          |
+| `session_events`       | User-facing session transcript and event stream (messages, tool calls/results, approvals, slash commands) |
+| `session_usage`        | Token usage breakdown by model                                                                            |
+| `session_llm_requests` | Log of every LLM request (see [debug-view.md](debug-view.md))                                             |
+| `session_llm_contexts` | Latest LLM context per role (see [debug-view.md](debug-view.md#roles-and-slots))                           |
+| `session_spans`        | Timing spans of finished turns (see [debug-view.md](debug-view.md#timeline))                              |
+| `session_compaction`   | Compaction summary tree (see [compaction.md](compaction.md#data-model))                                   |
+| `session_audit`        | Security audit trail (sentinel verdicts, decisions)                                                       |
+| `session_sentinel`, `session_action_log` | Sentinel state: shadow conversation and action log                                      |
+
+`$CARAPACE_DATA_DIR/sessions/<session_id>/` holds a session's files: sent and uploaded files (`files/`), the Docker runtime's workspace (`workspace/`), and the in-flight LLM request (`llm_activity.yaml`). Deleting a session removes its rows (by foreign-key cascade) and this directory.
 
 Sessions persist across server restarts. The sentinel state (action log and shadow conversation) is persisted too and loaded when a session is reactivated, so the sentinel continues where it stopped (see [security.md](security.md#sentinel-state)).
 
-`history.yaml` and `events.yaml` serve different purposes:
+History and events serve different purposes:
 
-- `history.yaml` stores the full `ModelMessage` sequence that is fed back into Pydantic AI on the next turn. This is the model-side conversation state.
-- `events.yaml` stores the normalized session transcript used by the UI and APIs. It includes items that do not belong in model history, such as slash commands, approval requests/responses, and other operational events.
-- The REST history endpoint reads `events.yaml` as the user-facing transcript source.
-- Retry, reset, fork, and knowledge export align both files by completed turns, but they do not collapse them into a single source of truth.
+- The history (`session_history`) stores the full `ModelMessage` sequence that is fed back into Pydantic AI on the next turn. This is the model-side conversation state.
+- The events (`session_events`) store the normalized session transcript used by the UI and APIs. It includes items that do not belong in model history, such as slash commands, approval requests/responses, and other operational events.
+- The REST history endpoint reads the events as the user-facing transcript source.
+- Retry, reset, fork, and knowledge export align both by completed turns, but they do not collapse them into a single source of truth.
 
 ### Failed turns
 
-A turn that ends early (cancelled, blocked by a session budget, unusable model, or an unexpected error) is closed in both files:
+A turn that ends early (cancelled, blocked by a session budget, unusable model, or an unexpected error) is closed in both the history and the events:
 
-- `history.yaml` gets a synthetic failed return for every tool call still in flight, then the terminal message as the turn's final model response, so the model sees on the next turn that the previous one did not complete.
-- `events.yaml` gets a synthetic `tool_result` (`exit_code` 130) for every tool call of this turn still waiting for a result (calls an earlier turn left open are not touched), then a `role: "error"` event with the terminal message. The error event ends the turn like a final assistant answer does: retry, reset, fork, and compaction treat it as the turn boundary, and the web UI renders it as an error both live and after a reload.
+- The history gets a synthetic failed return for every tool call still in flight, then the terminal message as the turn's final model response, so the model sees on the next turn that the previous one did not complete.
+- The events get a synthetic `tool_result` (`exit_code` 130) for every tool call of this turn still waiting for a result (calls an earlier turn left open are not touched), then a `role: "error"` event with the terminal message. The error event ends the turn like a final assistant answer does: retry, reset, fork, and compaction treat it as the turn boundary, and the web UI renders it as an error both live and after a reload.
 - Access decisions (`proxy_domain`, `credential_access`, and `git_push` events, nested under the tool call that triggered them) and denied tool calls never get a `tool_result`, so a failed turn never adds synthetic results for them.
 
 A budget stop names the `/budget` command that raises each reached limit, e.g. `/budget cost N`.
@@ -74,7 +86,7 @@ carapace can optionally commit session histories into the Git-backed knowledge r
 - Session snapshots are written under `<knowledge_dir>/sessions/YYYY/MM/<session_id>/conversation.json` by default
 - The payload is built from the normalized session event log, so it includes user messages, assistant replies, tool calls, tool results, approvals, and event timestamps
 - A forked session's snapshot has `session.forked_from` (`session_id`, `event_count`): its first `event_count` history entries are copies of the source's, with the source's timestamps. Readers that index archives (e.g. search) skip them so each turn appears once, under the session it was written in. Other snapshots don't have the key.
-- Existing sessions continue to live primarily under `$CARAPACE_DATA_DIR/sessions/<session_id>/`
+- Sessions themselves live primarily in the database (see [Session persistence](#session-persistence))
 
 ### Privacy model
 
@@ -126,7 +138,7 @@ Retry and reset are WebSocket actions; fork is a REST action.
 
 ### Session budgets
 
-`SessionBudget` caps a session's totals: input tokens, output tokens, actual and equivalent cost in USD (see below), and tool calls. It also holds the autonomy limit (see below). A new session starts from the user's default budget (**Settings** -> **Account**) if it sets any limit, otherwise from the platform default (**Settings** -> **Admin** -> **Platform**). Once one of the totals is reached, the next LLM call ends the turn with a "Session budget reached" error.
+`SessionBudget` caps a session's totals: input tokens, output tokens, actual and equivalent cost in USD (see below), and tool calls. It also holds the autonomy limit (see below). A new session starts from the user's default budget (**Settings** -> **Account**) if it sets any limit, otherwise from the platform default (**Settings** -> **Admin** -> **Models**). Once one of the totals is reached, the next LLM call ends the turn with a "Session budget reached" error.
 
 Per session, limits change in two places, which share one parser (`parse_budget_limit`) and one setter (`SessionEngine.update_session_budget`):
 
@@ -176,7 +188,7 @@ As a stopgap for model loops the per-tool-call streak doesn't see (e.g. calls th
 
 ## Jobs and job-linked sessions
 
-Jobs are now a built-in feature. They can create fresh job sessions or reuse a persistent attended session, and the resulting session records the latest job run metadata in `latest_job_run`.
+Jobs are a built-in feature. They can create fresh job sessions or reuse a persistent attended session, and the resulting session records the latest job run metadata in `latest_job_run`.
 
 See [jobs.md](jobs.md) for the job definition format, scheduler behavior, and REST API.
 
@@ -188,7 +200,7 @@ See [notifications.md](notifications.md) for the full backend model, config, del
 
 Short version:
 
-- subscriptions live under `$CARAPACE_DATA_DIR/notifications/subscriptions/`
+- subscriptions live in the `notification_subscriptions` table
 - delivery is filtered by per-device preferences and suppressed while a session is actively handled
 - active handling is driven by shared web, CLI, and Matrix presence
 - pending notifications are cleared again when the user returns to the session
@@ -251,7 +263,7 @@ The primary interactive channel. A Next.js web app connects to the carapace serv
 
 Message `type` values, JSON fields, authentication, and what the server sends on a **fresh connect** (including replay of pending approvals and escalations) are documented in **[websocket-session.md](websocket-session.md)**.
 
-Authentication uses the `carapace_session` cookie issued by `POST /api/auth/login`. The optional WebSocket query parameters are `client_id`, used to keep interactive presence stable across reconnects, and `observe=true` for a connection that only watches the session and registers no presence (the debug view).
+The web UI authenticates with a `ticket` query parameter from `POST /api/auth/ws-ticket`; the `carapace_session` cookie issued by `POST /api/auth/login` and an `api_key` query parameter work too. The optional WebSocket query parameters are `client_id`, used to keep interactive presence stable across reconnects, and `observe=true` for a connection that only watches the session and registers no presence (the debug view).
 
 For presence tracking, the frontend also posts REST heartbeats and may attach a stable `client_id` query parameter to the WebSocket so reconnects map back to the same interactive client.
 
@@ -285,7 +297,7 @@ At server startup, a channel that fails to start (unreachable homeserver, failed
 
 If the homeserver invalidates the channel's access token while it runs (`M_UNKNOWN_TOKEN`), the channel logs in again with the configured password and keeps syncing. Without a password it stops syncing until the Matrix settings are saved with one.
 
-> **Note**: The Matrix channel currently uses plain-text messaging (no E2EE). See [plans/channels.md](plans/channels.md) for E2EE plans.
+> **Note**: The Matrix channel currently uses plain-text messaging (no E2EE).
 
 ---
 
@@ -303,18 +315,19 @@ Slash commands are the user's control interface for managing sessions. Interacti
 | `/retitle`                                      | Regenerate session title, or set it explicitly                 |
 | `/budget`                                       | Show or update session budgets: tokens, actual and equivalent cost, tool calls, autonomy |
 | `/usage`                                        | Show token usage breakdown with cost estimates                 |
-| `/pull`                                         | Pull from external Git remote (if configured)                  |
-| `/push`                                         | Push to external Git remote (if configured)                    |
+| `/compact [focus]`                              | Compact the history; the summaries keep what `focus` names (see [compaction.md](compaction.md#the-compact-command)) |
+| `/uncompact`                                    | Undo compaction: rebuild the full history from the transcript (debug aid) |
 | `/reload`                                       | Reset sandbox — destroy container + workspace, fresh git clone |
-| `/models`                                       | View all models (agent, sentinel, title) and available options |
-| `/model [NAME\|reset]`                          | View or switch all models together                             |
-| `/model [agent\|sentinel\|title] [NAME\|reset]` | View or switch one model role                                  |
+| `/models`                                       | View all models (agent, sentinel, title, compaction) and available options |
+| `/model [all] [NAME\|reset]`                    | View or switch all models together                             |
+| `/model [agent\|sentinel\|title\|compaction] [NAME\|reset]` | View or switch one model role                   |
+
+Pulling from and pushing to an external Git remote are not slash commands; the web UI does them over REST (`POST /api/git/pull`, `POST /api/git/push`).
 
 ### WebSocket-only commands
 
 | Command           | Effect                     |
 | ----------------- | -------------------------- |
-| `/quit` / `/exit` | Close WebSocket chat       |
 | `/quit` / `/exit` | Close WebSocket connection |
 
 The WebSocket protocol also supports non-slash turn controls for retry and reset. See [websocket-session.md](websocket-session.md).
@@ -350,7 +363,7 @@ A separate approval flow handles domain requests from sandbox containers:
 1. Sandbox container makes an outbound request through the proxy
 2. Proxy checks the domain against what the running exec has been approved for
 3. If unknown, proxy calls the sentinel via the security module
-4. If sentinel escalates, a `ProxyApprovalRequest` is sent to subscribers
+4. If sentinel escalates, a `DomainAccessApprovalRequest` is sent to subscribers
 5. User decides (allow/deny)
 6. Decision is applied and the proxy responds
 

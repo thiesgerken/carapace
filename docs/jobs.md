@@ -1,22 +1,22 @@
 # Jobs
 
-carapace can run saved jobs on demand or on a cron schedule. Jobs are a first-class server feature with REST endpoints, a web UI, and persistent definitions stored on disk.
+carapace can run saved jobs on demand or on a cron schedule. Jobs are a first-class server feature with REST endpoints, a web UI, and persistent definitions stored in the database.
 
 ## Overview
 
 Jobs let you save a prompt plus execution mode and optional model overrides, then run it:
 
 - manually from the web UI or REST API
-- automatically from cron triggers in `jobs.yaml`
+- automatically from cron triggers
 - either in a fresh unattended session or in a reused attended session
 
-Definitions live in `$CARAPACE_DATA_DIR/jobs.yaml`.
+Definitions live in the `jobs` database table, one row per job, owned by the user who created it.
 
 Each execution records lightweight run context in the target session so the UI can show which job triggered it, when it ran, and any invocation payload that was supplied.
 
 ## Storage model
 
-Jobs are stored in YAML as:
+A job definition looks like this (shown as YAML; API responses also carry the owning `user`):
 
 ```yaml
 jobs:
@@ -79,7 +79,7 @@ Notes:
 
 - `expression` must be a valid cron expression.
 - `timezone` is optional. If omitted, UTC is used.
-- The scheduler tracks the last sweep time and backfills missed cron ticks up to an internal limit, so short outages do not necessarily drop every run.
+- The scheduler tracks the last sweep time and backfills cron ticks missed between two sweeps up to an internal limit. The sweep time is kept in memory only, so ticks that fall into a server downtime are not run after the restart.
 - Setting `enabled: false` disables scheduling without deleting the job definition.
 
 ## Fresh session vs persistent session
@@ -148,7 +148,7 @@ Job-linked sessions also show recent job metadata in the chat view.
 
 | Endpoint                 | Method   | Purpose               |
 | ------------------------ | -------- | --------------------- |
-| `/api/jobs`              | `GET`    | List all jobs         |
+| `/api/jobs`              | `GET`    | List your jobs        |
 | `/api/jobs`              | `POST`   | Create a job          |
 | `/api/jobs/{job_id}`     | `GET`    | Fetch one job         |
 | `/api/jobs/{job_id}`     | `PUT`    | Replace a job         |
@@ -175,7 +175,7 @@ curl -X POST \
 The server runs an internal scheduler loop that:
 
 - wakes periodically
-- loads `jobs.yaml`
+- loads the enabled jobs from the database
 - computes due cron runs
 - starts job executions one by one
 

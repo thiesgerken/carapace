@@ -4,7 +4,7 @@ carapace can run models on a user's own ChatGPT subscription instead of a platfo
 
 ## Admin setup
 
-Register Codex models in the catalog under **Settings** -> **Admin** -> **Platform** like any other provider, with provider `openai-codex`:
+Register Codex models in the catalog under **Settings** -> **Admin** -> **Models** like any other provider, with provider `openai-codex`:
 
 ```yaml
 agent:

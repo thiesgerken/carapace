@@ -9,11 +9,14 @@ For the broader notification backend, including presence, suppression, and push 
 - **URL:** `ws://<host>/api/chat/{session_id}` or `wss://…` for HTTPS deployments.
 - Optional query parameter: `client_id=<stable-client-id>` to let reconnects map to the same interactive presence source.
 - Optional query parameter: `observe=true` for a connection that only watches the session (the [debug view](debug-view.md)). It registers no presence, so it never suppresses notifications.
-- **Auth:** the same `carapace_session` HttpOnly cookie issued by `POST /api/auth/login` for the web UI and CLI.
+- **Auth:** one of
+  - `ticket=<ticket>` query parameter, from `POST /api/auth/ws-ticket` (needs the session cookie). The web UI uses this.
+  - the `carapace_session` HttpOnly cookie issued by `POST /api/auth/login` (the CLI after a login).
+  - `api_key=<key>` query parameter; the key needs `sessions` write scope.
 
-If the cookie is missing, expired, revoked, or belongs to a different user than the session owner, the server closes the socket with policy violation (`1008`) before accepting.
+If no credential is valid, or an API key lacks the scope, the server closes the socket with policy violation (`1008`) before accepting.
 
-If `session_id` does not exist on disk, the server closes with code **4004** and reason `Session not found` before completing the handshake.
+If `session_id` does not exist or belongs to another user, the server closes with code **4004** and reason `Session not found` before completing the handshake.
 
 ## What the web UI does besides WebSocket
 
@@ -55,14 +58,14 @@ All messages are JSON objects with a `type` field. Invalid types or bodies yield
 
 | `type`                | Purpose                                                | Fields                                           |
 | --------------------- | ------------------------------------------------------ | ------------------------------------------------ |
-| `message`             | User text; starts an agent turn if not a slash command | `content` (string)                               |
-| `approval_response`   | Answer to `approval_request`                           | `tool_call_id`, `approved` (bool)                |
-| `escalation_response` | Answer to domain / git-push / credential escalation    | `request_id`, `decision` (`"allow"` \| `"deny"`) |
+| `message`             | User text; starts an agent turn if not a slash command | `content` (string), optional `attachments`       |
+| `approval_response`   | Answer to `approval_request`                           | `tool_call_id`, `approved` (bool), optional `message` |
+| `escalation_response` | Answer to domain / git-push / credential escalation    | `request_id`, `decision` (`"allow"` \| `"deny"`), optional `message` |
 | `cancel`              | Cancel the in-flight agent turn                        | (none)                                           |
 | `retry_latest_turn`   | Rewind the latest completed turn and run it again      | (none)                                           |
 | `reset_to_turn`       | Rewind the session to a completed turn boundary        | `event_index`                                    |
 
-Empty `content` after trim is ignored. Slash commands (see below) are handled in the WebSocket handler without starting a full agent turn, except `/quit` / `/exit` which close the socket.
+A message with empty `content` after trim and no attachments is ignored. The slash commands of the server's catalog (`SLASH_COMMANDS`, see [sessions-and-channels.md](sessions-and-channels.md#slash-commands)) are handled without starting an agent turn; `/quit` / `/exit` close the socket (code `1000`). Any other text starting with `/` goes to the agent as a normal message. In an archived session, `message`, `retry_latest_turn` and `reset_to_turn` get an `error` until it is unarchived.
 
 ## Server → client messages
 
@@ -78,18 +81,19 @@ Each message is one JSON object with a `type` field.
 | `tool_call_delta`                | Next piece of that call's args                      | `tool_call_id`, `args_delta` (raw JSON text, append in order)                                    |
 | `tool_call_end`                  | Model stopped writing the call                      | `tool_call_id`, `aborted`                                                                        |
 | `tool_call`                      | Tool started / security notification                | `tool`, `args`, `detail`; optional `approval_source`, `approval_verdict`, `approval_explanation`, `approval_comment` |
-| `tool_result`                    | Tool finished                                       | `tool`, `result`, `exit_code`                                                                    |
+| `tool_result`                    | Tool finished                                       | `tool`, `result`, `exit_code`; optional `files` (sent files)                                     |
 | `approval_request`               | A **tool** call is held at the autonomy limit       | `tool_call_id`, `tool`, `args`, `explanation`                                                    |
 | `domain_access_approval_request` | Sentinel escalated **proxy domain** access          | `request_id`, `domain`, `command`                                                                |
 | `git_push_approval_request`      | Sentinel escalated **git push**                     | `request_id`, `ref`, `explanation`, `changed_files`                                              |
 | `credential_approval_request`    | Sentinel escalated **credential** access or an up-front request | `request_id`, `vault_paths`, `names`, `descriptions`, `domains`, `explanation`       |
-| `done`                           | Agent turn finished                                 | `content` (final assistant text), `turn_id`, optional `usage`, optional `final_status`           |
+| `done`                           | Agent turn finished                                 | `content` (final assistant text), `turn_id`, optional `thinking`, `usage`, `final_status`        |
 | `command_result`                 | Slash command or turn-control acknowledgement       | `command`, `data` (arbitrary)                                                                    |
-| `error`                          | Parse error, unknown command, busy agent, etc.      | `detail`, `turn_terminal`; on the error that ended a turn also its `turn_id`                     |
+| `error`                          | Parse error, busy agent, archived session, failed turn, etc. | `detail`, `turn_terminal`; on the error that ended a turn also its `turn_id`; optional `traceback` |
 | `cancelled`                      | Turn cancelled after `cancel`                       | `detail` (default explains cancellation), `turn_id`                                              |
-| `session_title`                  | Title changed                                       | `title`                                                                                          |
+| `session_title`                  | Title changed                                       | `title`, optional `usage`                                                                        |
+| `llm_context`                    | An LLM role's latest context changed status         | `role`, `request_id`, `status` (see [debug-view.md](debug-view.md#api))                          |
 | `span`                           | A span of the running turn started or ended; on connect, its open spans | `turn_id`, `span_id`, `kind`, `name`, `status`, `started_at`, `tool_call_id`, `replayed`; LLM bars included (see [debug-view.md](debug-view.md#websocket)) |
-| `user_message`                   | Echo: user line from this client or another channel | `content`                                                                                        |
+| `user_message`                   | Echo: user line from this client or another channel | `content`, `attachments`                                                                         |
 
 ### `llm_activity`
 
@@ -206,7 +210,7 @@ long args stay cheap.
 
 Present when something decided about the call. An agent tool call that just runs has neither, since none is reviewed by itself (see [Tool calls](security.md#tool-calls)).
 
-- `approval_source`: `sentinel` \| `user` \| `bypass` \| `autonomy` \| `unknown`, plus `safe-list` and `skill` in history from older versions
+- `approval_source`: `sentinel` \| `user` \| `bypass` \| `autonomy` \| `policy` \| `unknown`, plus `safe-list` and `skill` in history from older versions
 - `approval_verdict`: `allow` \| `deny` \| `escalate`
 - `approval_comment`: what the sentinel told the agent about a git push it allowed (see [Sentinel comments](security.md#sentinel-comments))
 
@@ -215,6 +219,8 @@ Present when something decided about the call. An agent tool call that just runs
 **`skill`** — only in sessions from before skills were read instead of activated: the action was covered by a skill's context grant.
 
 **`bypass`** — a boundary request or push was allowed without sentinel evaluation because the session is in YOLO mode.
+
+**`policy`** — the proxy refused a private or internal destination by its destination policy, without asking the sentinel (see [Internal destinations](sandbox.md#internal-destinations)).
 
 ## Turn-control messages
 
