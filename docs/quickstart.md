@@ -43,6 +43,7 @@ This starts:
 
 - **Proxy** at `http://localhost:3001`, serving the frontend and routing `/api` to the backend container internally
 - **Redis** for mandatory session-list caching
+- **Postgres** as the database, in the `pgdata` volume
 - **Skill builder**, which builds skill flakes for the server ([builder](builder.md)); its Nix store lives in the `builder-nix` volume
 - **Sandbox image** is pulled with the other images
 
@@ -69,9 +70,9 @@ The frontend listens on 8080 internally. If your API is on another origin, mount
 set $csp_img_src "img-src 'self' data: blob: https://api.example.com";
 ```
 
-Mount it read-only at `/etc/nginx/csp.d/img-src.conf` in the frontend service (see the commented Compose example). No snippet is needed for the default same-origin deployment. `CARAPACE_CSP_IMG_SRC_EXTRA` is no longer supported.
+Mount it read-only at `/etc/nginx/csp.d/img-src.conf` in the frontend service (see the commented Compose example). No snippet is needed for the default same-origin deployment.
 
-See [auth.md](auth.md) for the full user-file format, admin API, and session-cookie behavior.
+See [auth.md](auth.md) for users, the admin API, and session-cookie behavior.
 
 ## 3. Connect via CLI (optional)
 
@@ -83,16 +84,16 @@ You can also set `CARAPACE_USER` and `CARAPACE_PASSWORD` for the CLI.
 
 ## 4. Configure from Settings
 
-Most first-run configuration now lives in the web UI:
+Most first-run configuration lives in the web UI:
 
-- **Settings** -> **Admin** -> **Platform** manages the model catalog, platform default agent/sentinel/title models, OpenAI-compatible base URLs, OpenRouter API keys, reasoning options, and default session budget.
+- **Settings** -> **Admin** -> **Models** manages the model catalog, platform default agent/sentinel/title models, OpenAI-compatible base URLs, OpenRouter API keys, reasoning options, and default session budget.
 - **Settings** -> **Admin** -> **Users** manages local users, roles, passwords, profile fields, enabled/disabled state, and assignment of existing single-user data.
 - **Settings** -> **Account** manages each user's default models and budget, ChatGPT subscription for `openai-codex` models ([details](chatgpt-subscription.md)), Matrix channel, Git remote, and credential backends.
 - **Settings** -> **Jobs** manages saved jobs and schedules.
 
-The old mental model was “edit `data/config.yaml`, then restart”. There is no `config.yaml` anymore: operator/bootstrap config comes from environment variables (`CARAPACE_DATA_DIR`, `CARAPACE_DATABASE_URL`, `CARAPACE_AUTH_COOKIE__SECURE`, …) and platform settings live in the database, edited through Settings. The UI keeps write-only secrets out of API responses.
+There is no `config.yaml`: operator/bootstrap config comes from environment variables (`CARAPACE_DATA_DIR`, `CARAPACE_DATABASE_URL`, `CARAPACE_AUTH_COOKIE__SECURE`, …) and platform settings live in the database, edited through Settings. The UI keeps write-only secrets out of API responses.
 
-On first start, carapace seeds runtime files under `data/` and bootstraps one Git-backed knowledge repo per enabled user under `data/knowledges/<normalized-user>/`. The equivalent backing-file shape for platform defaults is:
+On first start, carapace seeds runtime files under `data/` and bootstraps one Git-backed knowledge repo per enabled user under `data/knowledges/<normalized-user>/`. The platform defaults edited under **Models** have this shape (shown as YAML):
 
 ```yaml
 agent:
@@ -106,7 +107,11 @@ agent:
   #   cost_usd: 5.00             # billed per token
   #   equivalent_cost_usd: 20.00 # list price, subscription usage included
   #   autonomous_tool_calls: 100  # the platform default when the whole block is omitted
+```
 
+The session commit flow runs on built-in defaults that no UI, API route or environment variable changes:
+
+```yaml
 sessions:
   commit:
     enabled: true
@@ -116,23 +121,23 @@ sessions:
     autosave_inactivity_hours: 4
     # When true, deleting a session also removes its current committed snapshot from the knowledge repo.
     delete_from_knowledge_on_session_delete: true
-
-cache:
-  # Override this only if Redis is not reachable at the default URL.
-  redis_url: redis://redis:6379/0
 ```
 
-Session histories always live primarily under `data/sessions/<session_id>/`. The `sessions.commit.*` settings control a secondary commit flow into the owning user's knowledge repo so the agent can refer back to past conversations later.
+The Redis URL is the environment variable `CARAPACE_CACHE_REDIS_URL` (Compose sets `redis://redis:6379/0`).
+
+Session histories live in the database. The `sessions.commit.*` defaults drive a secondary commit flow into the owning user's knowledge repo so the agent can refer back to past conversations later.
 
 By default the knowledge root is `data/knowledges/`. Each enabled user gets a repo at `data/knowledges/<normalized-user>/`, initialized independently on startup. If a user has a Git remote configured, carapace adds that remote and pulls its configured branch before seeding any missing bootstrap files into that user's repo.
 
 In the web UI, public sessions expose a "Commit to knowledge" action. Private sessions do not. Autosave uses the same privacy rule: only public, inactive sessions are eligible.
 
-### Optional: enable notification delivery backend
+### Optional: configure notification delivery
 
 Full backend behavior and API details live in [notifications.md](notifications.md).
 
 carapace can auto-generate a VAPID keypair on startup and reuse it from `data/notifications/vapid_private_key.pem` if you do not configure one explicitly.
+
+Notification delivery is on by default and configured through `CARAPACE_NOTIFICATIONS_*` environment variables, with `__` for nested keys (e.g. `CARAPACE_NOTIFICATIONS_DEFAULT_PREFERENCES__UNATTENDED_TURN_COMPLETED=true`). The settings and their defaults:
 
 ```yaml
 notifications:
@@ -303,7 +308,7 @@ If you use the file backend, add the key to your secrets file:
 echo "brave-api-key=your-brave-search-api-key" >> data/secrets.env
 ```
 
-The simplest backend for that is a file credential backend named `vault` that points at `data/secrets.env`, which makes the key `vault/brave-api-key`. Bind the slot to it in `skills/config.json` of your knowledge repo, `{"web": {"credentials": {"BRAVE_API_KEY": "vault/brave-api-key"}}}`, and list `web` in `skills/flake.nix` (uncomment its input, then `nix flake lock ./skills`).
+The simplest backend for that is a file credential backend named `vault` that points at `data/secrets.env`, which makes the key `vault/brave-api-key`. Bind the slot to it in `skills/config.json` of your knowledge repo and turn the skill on there by dropping its `"enable": false`: `{"web": {"credentials": {"BRAVE_API_KEY": "vault/brave-api-key"}}}`.
 
 You can get a Brave Search API key at <https://brave.com/search/api/>.
 

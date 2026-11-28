@@ -5,14 +5,14 @@ This document describes carapace's notification backend as it exists today.
 Current status:
 
 - Subscription storage, presence tracking, routing, suppression, clearing, and Web Push delivery are implemented on the backend.
-- The web frontend already reports interactive presence for active sessions.
-- The web frontend now registers a service worker, can create browser push subscriptions from Preferences, and can receive `notification_clear` payloads to close matching notifications.
+- The web frontend reports interactive presence for active sessions.
+- The web frontend registers a service worker, can create browser push subscriptions from Preferences, and can receive `notification_clear` payloads to close matching notifications.
 
 ## Overview
 
 The notification system has two separate concerns:
 
-- subscription and delivery state, stored under `$CARAPACE_DATA_DIR/notifications/`
+- subscription and delivery state: subscriptions in the `notification_subscriptions` database table, the generated VAPID key under `$CARAPACE_DATA_DIR/notifications/`
 - interactive presence, tracked in memory so the server can suppress or clear notifications when a session is already being handled
 
 The backend currently emits notifications for:
@@ -25,7 +25,7 @@ The backend currently emits notifications for:
 
 ## Subscription model
 
-Push subscriptions are stored as YAML files at `$CARAPACE_DATA_DIR/notifications/subscriptions/<subscription_id>.yaml`.
+Push subscriptions are stored in the `notification_subscriptions` database table, one row per subscription, unique per user and endpoint.
 
 Each subscription records:
 
@@ -96,7 +96,7 @@ Pending notification ids are cleared when the session becomes active again, incl
 
 ## Delivery behavior
 
-The Web Push sender uses `pywebpush` with VAPID configuration from the platform config. Browser subscriptions and per-user notification ownership are managed through the web UI and notification APIs.
+The Web Push sender uses `pywebpush` with the VAPID settings from the notifications config. Browser subscriptions and per-user notification ownership are managed through the web UI and notification APIs.
 
 Behavior:
 
@@ -125,27 +125,25 @@ Clicking a turn-outcome notification opens `/?session=<id>&event=<event_index>` 
 
 ## Configuration
 
-Notification config lives under `notifications:` in the platform backing config. The defaults work for local deployments; carapace can generate and persist a VAPID keypair automatically.
+Notification config comes from environment variables with the `CARAPACE_NOTIFICATIONS_` prefix (nested fields use `__`). The defaults work for local deployments; carapace can generate and persist a VAPID keypair automatically.
 
-```yaml
-notifications:
-  enabled: true
-  presence_ttl_seconds: 60
-  subscription_ttl_days: 30
-  # Optional. If omitted, carapace generates and persists a private key automatically.
-  # vapid_private_key: "<private-key-pem>"
-  # Optional. Defaults to "mailto:carapace@localhost".
-  # vapid_subject: "mailto:you@example.com"
-  send_timeout_seconds: 10
-  retry_attempts: 2
-  retry_backoff_seconds: 1.0
-  max_payload_bytes: 4096
-  delivery_ttl_seconds: 600
-  default_preferences:
-    escalation_pending: true
-    attended_turn_completed: true
-    unattended_turn_completed: false
-    unattended_turn_failed: true
+```bash
+CARAPACE_NOTIFICATIONS_ENABLED=true
+CARAPACE_NOTIFICATIONS_PRESENCE_TTL_SECONDS=60
+CARAPACE_NOTIFICATIONS_SUBSCRIPTION_TTL_DAYS=30
+# Optional. If omitted, carapace generates and persists a private key automatically.
+# CARAPACE_NOTIFICATIONS_VAPID_PRIVATE_KEY="<private-key-pem>"
+# Optional. Defaults to "mailto:carapace@localhost".
+# CARAPACE_NOTIFICATIONS_VAPID_SUBJECT="mailto:you@example.com"
+CARAPACE_NOTIFICATIONS_SEND_TIMEOUT_SECONDS=10
+CARAPACE_NOTIFICATIONS_RETRY_ATTEMPTS=2
+CARAPACE_NOTIFICATIONS_RETRY_BACKOFF_SECONDS=1.0
+CARAPACE_NOTIFICATIONS_MAX_PAYLOAD_BYTES=4096
+CARAPACE_NOTIFICATIONS_DELIVERY_TTL_SECONDS=600
+CARAPACE_NOTIFICATIONS_DEFAULT_PREFERENCES__ESCALATION_PENDING=true
+CARAPACE_NOTIFICATIONS_DEFAULT_PREFERENCES__ATTENDED_TURN_COMPLETED=true
+CARAPACE_NOTIFICATIONS_DEFAULT_PREFERENCES__UNATTENDED_TURN_COMPLETED=false
+CARAPACE_NOTIFICATIONS_DEFAULT_PREFERENCES__UNATTENDED_TURN_FAILED=true
 ```
 
 VAPID behavior:
@@ -157,7 +155,7 @@ VAPID behavior:
 
 ## API
 
-Notification subscription and presence endpoints use the same `carapace_session` cookie auth as the rest of the server.
+Notification subscription and presence endpoints use the same auth as the rest of the server: the `carapace_session` cookie, or an API key with the `notifications` scope (`read` to list subscriptions, `write` otherwise). The VAPID public key endpoint needs no auth.
 
 ### Public config
 
@@ -169,7 +167,7 @@ Notification subscription and presence endpoints use the same `carapace_session`
 
 | Endpoint                                                         | Method   | Purpose                                      |
 | ---------------------------------------------------------------- | -------- | -------------------------------------------- |
-| `/api/notifications/subscriptions`                               | `GET`    | List subscriptions for the current owner key |
+| `/api/notifications/subscriptions`                               | `GET`    | List subscriptions of the current user       |
 | `/api/notifications/subscriptions`                               | `POST`   | Create or update a push subscription         |
 | `/api/notifications/subscriptions/{subscription_id}`             | `DELETE` | Delete a subscription                        |
 | `/api/notifications/subscriptions/{subscription_id}/preferences` | `PATCH`  | Update per-device preferences                |
@@ -203,7 +201,6 @@ The web client also posts REST presence heartbeats alongside the WebSocket conne
 ## Current limitations
 
 - Browser push still depends on secure-context support in the current browser or installed PWA.
-- If VAPID keys are not configured on the server, the frontend can render the subscription controls but cannot complete Web Push registration.
 - Notification clicks currently route back into the session view, but there is no richer in-app notification center or foreground toast layer yet.
 
 ## Related docs

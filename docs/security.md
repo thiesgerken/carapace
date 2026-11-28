@@ -94,7 +94,7 @@ The autonomy limit (see [sessions-and-channels.md](sessions-and-channels.md)) pa
 
 ## The sentinel agent
 
-The sentinel is a Pydantic AI agent with its own LLM model, configured from **Settings** -> **Admin** -> **Platform** (`agent.sentinel_model` in the backing config). It has two key properties:
+The sentinel is a Pydantic AI agent with its own LLM model, configured from **Settings** -> **Admin** -> **Models** (`agent.sentinel_model` in the backing config). It has two key properties:
 
 ### Shadow conversation
 
@@ -153,9 +153,9 @@ The action log serves as the sentinel's primary source of truth. Raw tool result
 
 This action log is distinct from both runtime session transcripts:
 
-- `history.yaml` stores the raw model conversation state (`ModelMessage` history) for the main agent.
-- `events.yaml` stores the user-facing session transcript and operational events used by the UI, retry/reset/fork flows, and knowledge export.
-- `audit.yaml` stores security decisions and sentinel verdicts for auditability.
+- the history (`session_history` table) stores the raw model conversation state (`ModelMessage` history) for the main agent.
+- the events (`session_events` table) store the user-facing session transcript and operational events used by the UI, retry/reset/fork flows, and knowledge export.
+- the audit log (`session_audit` table) stores security decisions and sentinel verdicts for auditability.
 
 ## Boundary requests
 
@@ -191,7 +191,7 @@ This protects against leftovers, accidental or naive. It does not stop an agent 
 
 ## Audit log
 
-Every security decision is written to a per-session audit log file at `$CARAPACE_DATA_DIR/sessions/<session_id>/audit.yaml`. Each entry includes:
+Every security decision is written to the per-session audit log, the `session_audit` table. Each entry includes:
 
 - Timestamp
 - Whether it was a tool call, proxy domain request, credential request, or git push (an up-front request is written as one entry per domain and credential)
@@ -229,7 +229,7 @@ Limits: the probe needs `bash`, `timeout` and `getent` in the sandbox image. Its
 
 ## Skill builder
 
-The [builder](builder.md) evaluates and builds every user's skill flakes. Its input is committed content of a user's server-side knowledge repo. Pushes from a sandbox are reviewed by the sentinel, but content also arrives through the startup pull, `/pull` from an upstream remote, bootstrap seeding and the Knowledge UI. So builder input is as trusted as that user, not sentinel-reviewed.
+The [builder](builder.md) evaluates and builds every user's skill flakes. Its input is committed content of a user's server-side knowledge repo. Pushes from a sandbox are reviewed by the sentinel, but content also arrives through the startup pull, a pull from an upstream remote (`POST /api/git/pull`), bootstrap seeding and the Knowledge UI. So builder input is as trusted as that user, not sentinel-reviewed.
 
 - **What a malicious skill flake can do on the builder.** Fixed-output derivations and fetches during evaluation have network access, so a flake can leak what it can read. For a build the server sends only `skills/flake.nix`, its lock and the skill's own directory, so that is the skill itself; an update check gets the whole `skills/` of that one user and fetches into a throwaway store, so nothing it locks reaches the binary cache. `skills/flake.lock` itself may name no absolute `path:`, `file:` or `git+file:` input, nested ones included, and every entry but a local skill's needs a `narHash`. The builder holds no skill credentials. A user's knowledge remote token reaches it with that user's builds and update checks, for the `nix` processes of that request ([fetch credentials](builder.md#fetch-credentials)); pure evaluation cannot read it, and it is redacted from their output. Evaluation can use it, though: every flake the user lists, a third-party skill included, is evaluated with the token in git's environment, so it can `builtins.fetchGit` whatever that token reads on that forge and leak it through a fixed-output fetch. Listing someone else's skill extends that trust to it; pin it and read its flake, as for any input (the sentinel reviews lock changes pushed from a sandbox). On Kubernetes its egress is limited to public addresses (plus `builder.egress.allowedCidrs`), so a flake cannot reach the cluster, the node or the LAN ([egress](builder.md#egress-on-kubernetes)); under Compose its egress is unrestricted. Accepted risk.
 - **One store for all users.** Builds run in the Nix build sandbox and can only produce their own outputs, so they cannot read other users' sources in the store. The store itself is shared: through the [binary cache](builder.md#binary-cache) a sandbox can fetch another user's skill paths if it knows their hash, sources fetched from private repositories included, and a build whose lock names a private input with its exact `narHash` uses the stored copy without a fetch ([private repositories](sharing-skills.md#private-repositories)). Accepted risk: store hashes are not guessable, a `narHash` is known only to whoever can read a lock that uses the input, and credentials never enter the store.
@@ -249,7 +249,7 @@ Like proxy domains, the sentinel can escalate a git push to the user for approva
 
 If a push is denied, `git push` fails in the sandbox and the pre-receive hook prints the reason (`Push rejected: Sentinel denied this operation. ...`), which the agent reads in git's output.
 
-If an external remote is configured (`config.git.remote` in the owning user record), a successful push from the sandbox is automatically forwarded to the remote. Users can also trigger this manually with the `/push` slash command.
+If an external remote is configured (`config.git.remote` in the owning user record), a successful push from the sandbox is automatically forwarded to the remote. Users can also push manually from the web UI (`POST /api/git/push`).
 
 If the sentinel escalates a domain request, it is forwarded to the user through their channel (WebSocket, Matrix).
 

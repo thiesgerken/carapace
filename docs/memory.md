@@ -318,7 +318,7 @@ Clicking a session expands its **extraction**: all schema fields, facts by categ
 
 `/memory/sessions?session=<id>` expands a session directly.
 
-In the chat, the session's inspector (the right-hand column, or **Details** on mobile) has a collapsible **Memory** card: the extraction state (current, outdated with reason, not extracted), an unfinished task's status, the abstract, the facts by category with their sources, and a link to the session in the Memory tab. Sessions memory doesn't cover (private, excluded jobs) show no card. Sessions with a current extraction also show a **Memory** chip in the chat header, which opens the card.
+In the chat, the **Content** tab of the session's inspector (the right-hand column, or **Details** on mobile) has a collapsible **Memory** card: the extraction state (current, outdated with reason, not extracted), an unfinished task's status, the abstract, the facts by category with their sources, and a link to the session in the Memory tab. Sessions memory doesn't cover (private, excluded jobs) show no card. Sessions with a current extraction also show a **Memory** chip in the chat header, which opens the card.
 
 ### Facts
 

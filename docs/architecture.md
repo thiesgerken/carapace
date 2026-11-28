@@ -125,7 +125,7 @@ rendering constraints, navigation risk, and authoring workflow.
 
 ### Session Engine
 
-The central coordinator. Receives inbound messages from all channel subscribers (WebSocket, Matrix), manages session lifecycle, routes approval requests, runs agent turns, and broadcasts results back to subscribers. `session/engine.py` is now the lifecycle and dependency-wiring facade; model selection, slash commands, approvals, transcript helpers, turn execution, and usage/budget logic live in focused `session/` modules. See [sessions-and-channels.md](sessions-and-channels.md).
+The central coordinator. Receives inbound messages from all channel subscribers (WebSocket, Matrix), manages session lifecycle, routes approval requests, runs agent turns, and broadcasts results back to subscribers. `session/engine.py` is the lifecycle and dependency-wiring facade; model selection, slash commands, approvals, transcript helpers, turn execution, and usage/budget logic live in focused `session/` modules. See [sessions-and-channels.md](sessions-and-channels.md).
 
 ### Memory Service
 
@@ -141,7 +141,7 @@ The package keeps strict boundaries:
 
 ### Session Manager
 
-Handles session persistence — creating, loading, saving, listing, and deleting sessions on disk. Each session's state, history, events, usage, and audit trail are stored as YAML files under `$CARAPACE_DATA_DIR/sessions/<session_id>/`. (Note: `$CARAPACE_DATA_DIR` holds config and sessions only; knowledge files live in a separate Git-backed knowledge directory.)
+Handles session persistence: creating, loading, saving, listing, and deleting sessions. Each session's state, history, events, usage, LLM requests, spans, compaction tree, sandbox snapshot, and audit trail are rows in the SQL database (`database/models.py`). `$CARAPACE_DATA_DIR/sessions/<session_id>/` holds only files: those the agent sent with `send_file` (`files/`), the state of an LLM request in flight (`llm_activity.yaml`), and on Docker the sandbox workspace. Knowledge files live in the separate Git-backed knowledge repos.
 
 ### Agent Loop
 
@@ -158,7 +158,7 @@ The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives me
 | `read`        | Read a file or list a directory inside the sandbox                        |
 | `write`       | Write content to a file in the sandbox                                    |
 | `str_replace` | Search-and-replace edit of a file in the sandbox                          |
-| `exec`        | Run a shell command in the sandbox (default timeout: 30s)                 |
+| `exec`        | Run a shell command in the sandbox (timeout: 3600s)                       |
 | `send_file`   | Copy a sandbox file into the session for the user to view or download     |
 | `show_artifact` | Reference a pushed artifact in chat; the chat always shows its current version |
 | `read_tool_output` | Return the original output of an earlier tool call whose output was compacted |
@@ -206,20 +206,29 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | -------------- | --------------------------------------------------------------------------------------------- |
 | `__init__.py`  | Package version helper (`get_version`).                                                       |
 | `__main__.py`  | `python -m carapace` entry point; delegates to the server CLI entry point.                    |
+| `api_keys.py`  | API keys: scopes, grants, and their database store.                                           |
+| `artifact_shares.py` | Public share tokens for artifacts and their database store.                             |
 | `artifacts.py` | Artifact lookup in a knowledge repo: slug validation, `index.html` resolution, and its title. |
-| `auth.py`      | File-backed users, password hashing, signed session cookies, and bootstrap admin handling.    |
+| `auth.py`      | Database-backed users, password hashing, signed session cookies, and bootstrap admin handling. |
 | `bootstrap.py` | First-run data and knowledge directory seeding, including bundled knowledge files and skills. |
-| `cache.py`     | In-memory cache for paginated session-list responses.                                         |
+| `cache.py`     | Redis cache for paginated session-list responses.                                             |
 | `cli.py`       | Thin terminal client for REST and WebSocket session interaction.                              |
 | `codex_auth.py` | Per-user ChatGPT subscription credentials, login flow, and `openai-codex` providers.         |
-| `config.py`    | Configuration path resolution, YAML loading, and workspace-file loading helpers.              |
-| `jobs.py`      | Job file persistence, cron scheduling, and job-run prompt construction.                       |
+| `config.py`    | Config construction from env vars, knowledge path resolution, and workspace-file loading.     |
+| `jobs.py`      | Job persistence in the database, cron scheduling, and job-run prompt construction.            |
 | `knowledge.py` | Per-user knowledge repo registry and `contained_target`, the guard for reads inside a repo.   |
 | `llm.py`       | Pydantic AI model factory and model settings helpers.                                         |
 | `payloads.py`  | Defensive helpers for coercing untrusted payload shapes.                                      |
+| `platform_store.py` | Database store for platform settings and the model catalog.                              |
 | `prompt_prefix.py` | System prompt prefix shared by the agent, compaction and memory tasks (see [persistent context](persistent-context.md#system-prompt-loading)). |
+| `prompt_preview.py` | What every LLM role sends, split into sections with token counts.                        |
 | `skills.py`    | The skill list from `skills/flake.lock` and frontmatter parsing.                               |
+| `span_names.py` | Span names clients match on (dependency-free for the CLI).                                   |
+| `spans.py`     | Timing spans of a running turn (`TurnTrace`, `span()`, `attach_sandbox_call`).                |
 | `usage.py`     | Usage tracking, cost estimation, budget gauges, and LLM request activity records.             |
+| `usage_display.py` | How `/usage` presents actual and equivalent cost, for the CLI and the Matrix channel.     |
+| `user_defaults.py` | A user's effective default models and budgets for new sessions, jobs and memory.          |
+| `usernames.py` | Username normalization.                                                                       |
 | `ws_models.py` | WebSocket protocol models and client-message parser.                                          |
 
 ### Agent package
@@ -227,8 +236,12 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | Module              | Responsibility                                                                                                                         |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `agent/__init__.py` | Re-exports agent creation and turn runner APIs.                                                                                        |
+| `agent/autonomy.py` | Autonomy limit: caps the tool calls the agent attempts since the last human interaction.                                               |
 | `agent/deps.py`     | Pydantic AI dependency model injected into agent tools.                                                                                |
+| `agent/history_compaction.py` | Compaction inside an agent run, so a long autonomous turn never outgrows the context window.                                 |
 | `agent/loop.py`     | Channel-agnostic single-turn runner, streaming callbacks, and deferred tool approval retry loop.                                       |
+| `agent/sentinel_comments.py` | Hands the sentinel's comments on allowed pushes to the agent.                                                                 |
+| `agent/tool_stream.py` | Streams tool calls to clients while the model is still writing them.                                                                |
 | `agent/tools.py`    | Agent construction, system prompt assembly, and registered tools (`list_skills`, `read_skill`, `read`, `write`, `str_replace`, `exec`, `send_file`, `show_artifact`, `read_tool_output`). |
 
 ### Channels package
@@ -249,15 +262,30 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `credentials/__init__.py`  | Credential registry facade and builder exports.             |
 | `credentials/bitwarden.py` | Bitwarden backend using a running `bw serve` API.           |
 | `credentials/file.py`      | File-backed credential backend for local/dev secrets.       |
+| `credentials/oauth.py`     | OAuth state in the vault: refreshes it, hands sandboxes only the access token. |
 | `credentials/protocol.py`  | Backend protocols and shared credential backend types.      |
 | `credentials/registry.py`  | Multi-backend credential registry and backend construction. |
+
+### Database package
+
+| Module                 | Responsibility                                                           |
+| ---------------------- | ------------------------------------------------------------------------ |
+| `database/__init__.py` | Re-exports the declarative base, engine factory and migration runner.    |
+| `database/base.py`     | Declarative base and the JSON/UTC column types.                          |
+| `database/engine.py`   | Database URL resolution (SQLite or Postgres), engine and session factory, Alembic migrations. |
+| `database/models.py`   | ORM tables for users, sessions, jobs, notifications, API keys, platform settings, and memory. |
+| `database/cli.py`      | Command that upgrades the schema.                                        |
+| `database/alembic/`    | Alembic migrations.                                                      |
 
 ### Git package
 
 | Module            | Responsibility                                                           |
 | ----------------- | ------------------------------------------------------------------------ |
 | `git/__init__.py` | Git integration facade.                                                  |
+| `git/diff.py`     | Paths a push touches.                                                    |
+| `git/flake_lock.py` | Plain-text summary of the inputs a push changes in a `flake.lock`, for the sentinel. |
 | `git/http.py`     | Sandbox-facing Git Smart HTTP backend wrapper around `git http-backend`. |
+| `git/pre_receive.py` | The pre-receive hook, run standalone by Git with only the standard library. |
 | `git/store.py`    | Knowledge repo initialization, commit/push/pull, and hook management.    |
 
 ### Memory package
@@ -271,6 +299,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `memory/digest_input.py` | Pure rendering of extractions or weekly digests into the digest input text.                           |
 | `memory/coverage.py`     | Pure coverage of a digest (which source records it consumed) and the hash that marks it stale.        |
 | `memory/prompts.py`      | Prompt templates and their computed `prompt_version`s.                                                 |
+| `memory/prompt_block.py` | The memory block of the main agent's system prompt.                                                    |
 | `memory/budget.py`       | Pure spend windows, budget gate and estimate math.                                                     |
 | `memory/llm.py`          | Single-shot pydantic-ai calls for extractions and digests, with usage and cost.                       |
 | `memory/handlers.py`     | `TaskHandler` protocol and one handler per task kind (extract, week, month, mirror).                  |
@@ -285,24 +314,28 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 
 | Module                  | Responsibility                                                         |
 | ----------------------- | ---------------------------------------------------------------------- |
-| `models/__init__.py`    | Compatibility facade re-exporting model types.                         |
+| `models/__init__.py`    | Package marker only.                                                   |
+| `models/compaction.py`  | Compaction summary tree persisted alongside a session's history.       |
 | `models/config.py`      | Runtime configuration models and secret resolution.                    |
 | `models/credentials.py` | Credential metadata, declarations, and registry protocol models.       |
+| `models/git.py`         | Git status and action result models for the UI.                        |
 | `models/jobs.py`        | Scheduled job configuration models.                                    |
+| `models/matrix.py`      | Matrix channel configuration and token file models.                    |
 | `models/session.py`     | Session state, attributes, budgets, job-run context, and audit models. |
 | `models/skills.py`      | Skill catalog and carapace-specific skill metadata models.             |
 | `models/tooling.py`     | Tool callback/result types and tool-argument normalization.            |
+| `models/user.py`        | Per-user settings: credentials, channels, git, default models, memory. |
 
 ### Notifications package
 
 | Module                      | Responsibility                                                    |
 | --------------------------- | ----------------------------------------------------------------- |
-| `notifications/__init__.py` | Notification facade exports.                                      |
+| `notifications/__init__.py` | Package marker only.                                              |
 | `notifications/models.py`   | Web push subscription, preference, delivery, and presence models. |
 | `notifications/presence.py` | Short-lived active-client presence registry.                      |
 | `notifications/router.py`   | Notification dispatch and clear-routing logic.                    |
 | `notifications/sender.py`   | Web Push sender implementation.                                   |
-| `notifications/store.py`    | Notification subscription persistence and owner-key derivation.   |
+| `notifications/store.py`    | Notification subscription persistence in the database.            |
 | `notifications/vapid.py`    | VAPID key generation, loading, and public-key derivation.         |
 
 ### Sandbox package
@@ -325,7 +358,8 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `sandbox/runtime.py`           | Abstract runtime protocol and shared sandbox runtime types.                                |
 | `sandbox/session_lifecycle.py` | Container lifecycle state and ensure/cleanup/reload operations.                            |
 | `sandbox/skill_profile.py`     | Keeps each sandbox's skill profile (the skill commands on `PATH`) at its owner's head.     |
-| `sandbox/state.py`             | Persisted sandbox snapshot models and load/save helpers.                                   |
+| `sandbox/snapshot.py`          | The persisted sandbox snapshot model.                                                      |
+| `sandbox/state.py`             | Load/save of the sandbox snapshot on the session row, and per-user sandbox counts.         |
 
 ### Builder package
 
@@ -339,6 +373,10 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `builder/client.py`       | The server's side of the builder API.                                                  |
 | `builder/skill_builds.py` | Server side: which skills are built, building or failed (per build key), and their commands. |
 | `builder/profile.py`      | What a sandbox's skill profile should hold: built skills minus colliding command names. |
+| `builder/skill_config.py` | `skills/config.json` as the Knowledge view edits it, one skill's entry at a time.      |
+| `builder/skill_dir.py`    | A built skill's directory in the store: its `SKILL.md`, file list and single files.    |
+| `builder/skill_updates.py` | Whether a skill has something newer than `skills/flake.lock` pins.                   |
+| `builder/skills_head.py`  | `skills/` of a knowledge repo at HEAD, read from Git objects for builds and update checks. |
 
 ### Security package
 
@@ -353,12 +391,24 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | Module                    | Responsibility                                                                                                                        |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `server/__init__.py`      | FastAPI app facade, startup/shutdown lifecycle, shared state, REST routes not yet split out, internal API, sandbox API, and `main()`. |
-| `server/auth.py`          | Login/logout, cookie-session FastAPI dependencies, WebSocket auth, and admin user-management routes.                                  |
+| `server/api_keys.py`      | API key create, list, and revoke routes.                                                                                              |
+| `server/artifact_rendering.py` | CSP sandbox headers for artifact pages.                                                                                          |
+| `server/artifacts.py`     | Artifact share controls and the anonymous public artifact route.                                                                      |
+| `server/auth.py`          | Login/logout, cookie-session and API-key FastAPI dependencies, WebSocket auth, and admin user-management routes.                      |
 | `server/codex_auth.py`    | ChatGPT subscription status, login, and disconnect routes.                                                                            |
+| `server/history.py`       | Session history, LLM contexts and requests, turn list and turn timeline routes.                                                       |
+| `server/jobs.py`          | Job CRUD and run routes.                                                                                                              |
+| `server/knowledge.py`     | Knowledge repo browsing, skill builds, updates and config, credentials list, and artifact pages.                                      |
 | `server/home.py`          | Home page routes (`/api/home`): open loops and their dismissal, the week so far and notices from `MemoryService` and the engine's active sessions. |
 | `server/memory.py`        | Long-term memory routes (`/api/memory`): status, tasks, sessions, periods, facts; delegates to `MemoryService`.                       |
 | `server/notifications.py` | Notification subscription, test, and presence routes.                                                                                 |
+| `server/platform_settings.py` | Admin platform settings routes (model catalog, defaults, provider keys).                                                          |
+| `server/prompts.py`       | Prompt preview route (`/api/prompts/preview`).                                                                                        |
+| `server/runtime.py`       | Per-user knowledge Git runtime and Matrix channel management.                                                                         |
+| `server/session_sandbox.py` | Sandbox usage, start, stop, wipe, upload and sent-file download routes.                                                             |
+| `server/sessions.py`      | Session CRUD, search, fork, knowledge commit, usage, artifacts, and sandbox/knowledge git routes.                                     |
 | `server/state.py`         | Helper for extracted route modules to access the mutable `carapace.server` facade.                                                    |
+| `server/user_settings.py` | User settings routes (credential backends, Matrix, git, default models).                                                              |
 | `server/websocket.py`     | Chat WebSocket route, `WebSocketSubscriber`, and small web-facing metadata/model routes.                                              |
 
 ### Session package
@@ -368,11 +418,18 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `session/__init__.py`        | Session package facade.                                                                                                          |
 | `session/approvals.py`       | Security approval callbacks, escalations, and tool-call event recording.                                                         |
 | `session/archive.py`         | Session-to-knowledge archive/commit/delete service.                                                                              |
+| `session/attachments.py`     | The hidden preamble that tells the agent about user-uploaded files.                                                              |
 | `session/commands.py`        | Slash-command handling for `SessionEngine`.                                                                                      |
+| `session/compaction.py`      | Pure compaction strategies over the model history.                                                                               |
+| `session/compaction_engine.py` | Engine mixin that compacts a session's history, by `/compact` or automatically inside a run.                                   |
+| `session/compaction_summarizer.py` | LLM summaries for compaction (folded turns, large tool outputs).                                                           |
 | `session/engine.py`          | Public session engine facade, lifecycle management, dependency wiring, subscribers, retry/reset/fork APIs, and title generation. |
-| `session/manager.py`         | On-disk session persistence for state, history, events, usage, sandbox snapshots, and LLM activity.                              |
+| `session/escalation_waiters.py` | Routes escalation answers to the callbacks waiting for them.                                                                  |
+| `session/manager.py`         | Database-backed session persistence for state, history, events, usage, spans, sandbox snapshots, and LLM activity.               |
 | `session/model_selection.py` | Available model catalog and per-session model override logic.                                                                    |
 | `session/open_approvals.py`  | Detection and system denial of approval requests whose turn ended without a decision.                                            |
+| `session/sent_files.py`      | Storage for files the agent sends the user with `send_file`.                                                                     |
+| `session/timeline.py`        | Turn list and turn timeline read model (spans joined with LLM requests).                                                         |
 | `session/titler.py`          | Lightweight LLM title generation.                                                                                                |
 | `session/transcript.py`      | Transcript/history helpers for retry, reset, fork, and unattended-output normalization.                                          |
 | `session/turns.py`           | Agent-turn execution, cancellation/failure handling, and subscriber notifications.                                               |
@@ -394,18 +451,18 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 
 ## Server port architecture
 
-carapace runs three separate listener ports for security isolation:
+carapace runs four separate listener ports for security isolation:
 
 | Port                | Bind address                   | Auth                                 | Purpose                                                                               |
 | ------------------- | ------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| 8321 (public API)   | `CARAPACE_SERVER_HOST`         | HttpOnly session cookie              | REST API, WebSocket — used by the frontend and CLI                                    |
-| 8322 (sandbox API)  | `CARAPACE_SERVER_SANDBOX_HOST` | HTTP Basic Auth (`session_id:token`) | Git HTTP backend + credential endpoints (`/credentials`) — used by sandbox containers |
+| 8321 (public API)   | `CARAPACE_SERVER_HOST`         | HttpOnly session cookie or API key   | REST API, WebSocket — used by the frontend and CLI                                    |
+| 8322 (sandbox API)  | `CARAPACE_SERVER_SANDBOX_HOST` | HTTP Basic Auth (`session_id:token`) | Git HTTP backend (`/git/`), credentials (`/credentials`, `/oauth-token`) and `cgate` (`/gate`) — used by sandbox containers |
 | 8320 (internal API) | `127.0.0.1`                    | None (loopback only)                 | Sentinel callback — used by the pre-receive hook                                      |
 | 3128 (proxy)        | `CARAPACE_SERVER_SANDBOX_HOST` | Proxy-Authorization Basic Auth       | HTTP forward proxy — used by sandbox containers for outbound traffic                  |
 
 Both bind addresses default to `127.0.0.1`; the server image sets them to `0.0.0.0`. See [sandbox.md](sandbox.md#server-address) for the address sandboxes connect to.
 
-Sandbox containers can only reach ports 3128 (proxy) and 8322 (sandbox API). The public API (8321) and internal API (8320) are unreachable from sandboxes — enforced by Docker's internal network or Kubernetes NetworkPolicy.
+The internal API (8320) binds to loopback, so no sandbox reaches it. On Kubernetes the NetworkPolicy lets sandboxes reach only ports 3128 (proxy) and 8322 (sandbox API). Docker's internal network only cuts sandboxes off from the internet: with the main API bound to `0.0.0.0` (as in the server image), the public API (8321) is reachable on the server's address on the sandbox network, where it asks for a session cookie or API key like from any other client.
 
 ## Data flow example
 
@@ -449,7 +506,7 @@ sequenceDiagram
 
 carapace runs as a Docker container with the Docker socket mounted (to orchestrate sandbox containers), alongside a Next.js web frontend.
 
-[`docker-compose.yml`](../docker-compose.yml) runs the server, frontend, Postgres, Redis, the Bitwarden CLI and the [skill builder](builder.md) (`builder-init` and `builder`); the server orchestrates sandbox containers on the internal `carapace-sandbox-<instance>` network (see [instances](sandbox.md#instances)).
+[`docker-compose.yml`](../docker-compose.yml) runs the server, frontend, a Traefik reverse proxy, Postgres, Redis, the Bitwarden CLI and the [skill builder](builder.md) (`builder-init` and `builder`); the server orchestrates sandbox containers on the internal `carapace-sandbox-<instance>` network (see [instances](sandbox.md#instances)).
 
 For Kubernetes deployments, the Docker socket is replaced by in-cluster Kubernetes API access — see [kubernetes.md](kubernetes.md).
 
@@ -457,7 +514,7 @@ The `$CARAPACE_DATA_DIR` environment variable (defaults to `./data`) points to t
 
 ## Configuration
 
-Platform configuration (model catalog, agent/sentinel/title defaults, session budget, session-commit settings) is stored in the **database** (`models` + `platform_settings` tables) and edited from **Settings** -> **Admin** -> **Platform**. The built-in default model shape:
+Platform configuration (model catalog, agent/sentinel/title defaults, session budget) is stored in the **database** (`models` + `platform_settings` tables) and edited from **Settings** -> **Admin** -> **Models**. The built-in default model shape:
 
 ```yaml
 agent:
@@ -503,7 +560,7 @@ Operator/bootstrap configuration comes entirely from **environment variables** (
 | sandbox | `CARAPACE_SANDBOX_` | `CARAPACE_SANDBOX_RUNTIME`, `CARAPACE_SANDBOX_K8S_NAMESPACE`, `CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS` |
 | builder | `CARAPACE_BUILDER_` | `CARAPACE_BUILDER_URL`, `CARAPACE_BUILDER_CACHE_URL`, `CARAPACE_BUILDER_TOKEN` |
 
-Session commit settings (DB-backed, edited via the Platform UI) control how conversation histories are copied into the knowledge repo:
+Session commit settings control how conversation histories are copied into the knowledge repo. No UI, API route or environment variable sets them, so they always have the built-in defaults shown in [quickstart.md](quickstart.md#4-configure-from-settings):
 
 - `sessions.commit.enabled`: master switch for the feature
 - `sessions.commit.path_prefix`: subtree inside the knowledge repo where `conversation.json` files are written
@@ -513,7 +570,7 @@ Session commit settings (DB-backed, edited via the Platform UI) control how conv
 
 LLM API keys are provided as standard environment variables (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENROUTER_API_KEY`, etc.) or configured on model rows that support per-row keys.
 
-Credential backends are configured per user under `config.credentials`. Sandbox credential requests resolve the session
+Credential backends are configured per user under `config.credentials` (part of the user's database row). Sandbox credential requests resolve the session
 owner before listing or fetching credentials:
 
 ```yaml
@@ -557,4 +614,4 @@ Resolution priority: `raw` > `env` > `file`. Exactly one source should be set. `
 
 Secret fields are optional (`Secret | None`). When omitted, the feature that requires the secret is simply unavailable.
 
-Scheduled jobs are configured separately in `$CARAPACE_DATA_DIR/jobs.yaml`; see [jobs.md](jobs.md).
+Scheduled jobs are stored in the database (`jobs` table) and managed through `/api/jobs` and the web UI; see [jobs.md](jobs.md).

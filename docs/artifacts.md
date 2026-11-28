@@ -23,7 +23,7 @@ yourself.
 ## Browsing and chat references
 
 The knowledge browser marks artifact directories with the artifact icon (lucide
-`AppWindow`, the same one the chat, the session sidebar and the viewer use) and uses
+`AppWindow`, the same one the chat, the session inspector and the viewer use) and uses
 `index.html`'s `<title>` as their label beside the slug. Only the artifact's
 `index.html` renders in a sandboxed iframe, with controls to inspect its source or
 open it in a new tab. Other HTML files browse normally. The normal knowledge
@@ -70,7 +70,7 @@ no session references. History is read once per artifact view, not for listing r
 
 ## Session artifacts
 
-The chat's detail sidebar has an **Artifacts** section below **Knowledge** that lists the
+The **Content** tab of the chat's inspector has an **Artifacts** section below **Memory** that lists the
 session artifacts: the artifacts whose `index.html` this session changed through its own
 commits. Referencing an artifact with `show_artifact` doesn't make it a session artifact.
 Each entry shows the title, **new** if the session created it, and when
@@ -82,7 +82,7 @@ hidden while the list is empty.
 `GET /api/sessions/<session_id>/artifacts` computes the list on every call from one
 `git log --no-renames --name-status` over `artifacts/`, narrowed with `--grep` and then
 matched exactly on the `carapace-session: <id>` trailer. Nothing is cached or recorded at
-push time. The sidebar loads it when it opens and again after every finished turn.
+push time. The section loads it when it opens and again after every finished turn.
 
 ## Rendering policy
 
@@ -122,9 +122,10 @@ obfuscated code; it does not prevent document navigation.
 
 ## Sharing
 
-The full-screen artifact viewer has a **Share publicly** switch. Enabling it asks for
-confirmation that anyone with the link can see the page, including future agent
-changes. While sharing is on, the view shows the public link and a copy action.
+Every view of a knowledge artifact (the full-screen viewer, the knowledge browser
+and `show_artifact` in the chat) has a **Share publicly** switch in its toolbar.
+Enabling it asks for confirmation that anyone with the link can see the page,
+including future agent changes. While sharing is on, the view shows the public link and a copy action.
 Sharing is controlled by the authenticated user, not by files in the knowledge
 repository.
 

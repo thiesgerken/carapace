@@ -6,7 +6,8 @@ what came back. Terms follow [GLOSSARY.md](../GLOSSARY.md).
 
 ## Using it
 
-The **Chat | Debug** switch in the session header opens `/?session=<ID>&view=debug`. The tabs come
+**Debug view** in the session menu (the ⋯ in the session header) opens `/?session=<ID>&view=debug`,
+and **Back to chat** returns to the chat. The tabs come
 in two groups: **Turns** opens by default and shows where a turn's time went (see
 [Turns tab](#turns-tab)). After it, under **Requests:**, comes one tab per role (on a phone that
 group takes its own line). Each role tab shows the role's **Requests** table and its latest request:
