@@ -10,6 +10,7 @@ from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.test import TestModel
 
 from carapace.builder.skill_builds import SkillBuilds
+from carapace.builder.skill_updates import no_fetch_credentials
 from carapace.config import build_config
 from carapace.llm import SlotLimitedModel
 from carapace.security.sentinel import Sentinel, SentinelDeps
@@ -102,7 +103,7 @@ def test_sentinel_requests_take_an_llm_slot(tmp_path: Path) -> None:
             model="test:model",
             user="thies",
             knowledge_dir=tmp_path,
-            skill_builds=SkillBuilds(None),
+            skill_builds=SkillBuilds(None, no_fetch_credentials),
             llm_slots=slots,
             model_factory=lambda _name, *, user: TestModel(),
         )

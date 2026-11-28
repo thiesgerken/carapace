@@ -21,9 +21,16 @@ from loguru import logger
 
 from ..skills import ListedSkill
 from .client import BuilderClient, BuilderSystemMismatchError
+from .models import FetchCredential
 from .skills_head import archive_skills, skills_flake_at_head
 
 type UpdateState = Literal["current", "available", "outdated", "failed"]
+# What fetching a knowledge repo's skill inputs may present: its owner's knowledge remote token.
+type FetchCredentials = Callable[[Path], FetchCredential | None]
+
+
+def no_fetch_credentials(_repo_dir: Path) -> FetchCredential | None:
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,8 +182,9 @@ def _rev(rev: str | None, at: datetime | None) -> str:
 
 
 class SkillUpdates:
-    def __init__(self, builder: BuilderClient | None) -> None:
+    def __init__(self, builder: BuilderClient | None, fetch_credentials: FetchCredentials) -> None:
         self._builder = builder
+        self._fetch_credentials = fetch_credentials
         self._checks: dict[Path, UpdateCheck] = {}
         self._running: dict[Path, asyncio.Task[None]] = {}
 
@@ -245,7 +253,9 @@ class SkillUpdates:
             return UpdateCheck(head.tree, now, {}, error="No skill builder is configured (CARAPACE_BUILDER_URL).")
         names = [skill.name for skill in head.skills]
         try:
-            result = await self._builder.check_updates(await archive_skills(repo_dir, head.tree), names)
+            result = await self._builder.check_updates(
+                await archive_skills(repo_dir, head.tree), names, self._fetch_credentials(repo_dir)
+            )
         except (httpx.HTTPError, BuilderSystemMismatchError) as exc:
             logger.warning(f"Cannot check the skills of {repo_dir} for updates: {type(exc).__name__}: {exc}")
             return UpdateCheck(head.tree, now, {}, error=f"The skill builder is unavailable: {exc}")

@@ -12,8 +12,8 @@ The build API listens on port 8330. Every route except `/healthz` requires `Auth
 | `GET /info` | `{"system": "x86_64-linux", "cache_public_keys": ["carapace-builder-1:…", "cache.nixos.org-1:…"]}`: the Nix system the builder builds for, and the keys sandboxes trust for its [cache](#binary-cache) |
 | `GET /builds/{key}` | The stored result for a build key, or 404 |
 | `GET /builds/{key}/files/{path}` | A file of that build's skill directory, as raw bytes. 404 for a missing file or a result without a skill directory, 400 for a path out of the directory, a symlink, a directory or a file over 1 MiB |
-| `PUT /builds/{key}?skill=<name>` | Body: the `skills/` directory as a tar archive (gzip or plain), e.g. `git archive HEAD:skills`. Builds skill `<name>`, stores and returns the result. `&retry=true` builds a key again whose stored result failed |
-| `POST /updates?input=<name>&input=…` | Body: the `skills/` directory as a tar archive. Runs `nix flake update <name> --output-lock-file <tmp>` for each input on its own and returns `{"inputs": {"<name>": {"lock": "…", "log_tail": "…"}}}`: the lock that update would write, or `null` with the log when it failed. Stores nothing ([update checks](skills.md#updates)) |
+| `PUT /builds/{key}?skill=<name>` | Multipart body: `archive`, the `skills/` directory as a tar archive (gzip or plain), e.g. `git archive HEAD:skills`, and optionally `fetch_credential` ([fetch credentials](#fetch-credentials)). Builds skill `<name>`, stores and returns the result. `&retry=true` builds a key again whose stored result failed |
+| `POST /updates?input=<name>&input=…` | Multipart body as for builds. Runs `nix flake update <name> --output-lock-file <tmp>` for each input on its own and returns `{"inputs": {"<name>": {"lock": "…", "log_tail": "…"}}}`: the lock that update would write, or `null` with the log when it failed. Stores nothing ([update checks](skills.md#updates)) |
 | `PUT /roots` | Body: `{"keys": [...]}`, the build keys of the skills at the current heads (see [garbage collection](#garbage-collection)). 204 |
 | `POST /gc` | Runs garbage collection now and returns `{"dropped": [keys], "log_tail": "…"}` |
 
@@ -35,6 +35,15 @@ A result:
 ```
 
 `state` is `succeeded` or `failed`. A failed result has no store paths, and `log_tail` holds the end of the evaluation and build output (16k characters) that says why. Failed results are stored like successful ones.
+
+### Fetch credentials
+
+`fetch_credential` is `{"host": "git.example.org", "token": "…"}`: the token of the requesting user's [knowledge remote](git.md#authentication), for that remote's host. The server sends it when the remote is HTTPS and has a token. It is a form field next to the archive, never part of the URL, which access logs record. The builder passes it to the `nix` processes of that one request only, not to the daemon and not to any build:
+
+- **`git+https` inputs:** Nix fetches them with the `git` CLI, which ignores Nix's `access-tokens` and `netrc-file`. The builder sets `http.https://<host>/.extraHeader` (an `Authorization: Basic` header with the username `x-access-token`, as for the knowledge remote) in git's environment config (`GIT_CONFIG_COUNT`), so git presents it to that host only.
+- **`github:` inputs** go through GitHub's API, which only takes Nix's `access-tokens`. When the host is `github.com`, the builder adds `access-tokens = github.com=<token>` to the process's `NIX_CONFIG`. Other hosts get no `access-tokens`, because Nix's GitLab fetcher prints a token without a `PAT:` prefix in a warning.
+
+That split was tested against a private GitHub repository with the image's Nix (2.34). An update check also gets a fetcher cache of its own next to its throwaway store: when a fetch fails, Nix falls back to the Git clone it cached and locks its newest commit, so a shared cache would hand the head of a private repository to anyone who names its URL. The token never reaches a result: pure evaluation cannot read the environment, and the processes' output has the token replaced by `<redacted>` before it becomes a `log_tail`. Builds keep the shared fetcher cache. Since a `rev` alone counts as locked and that cache serves any commit it holds, the server refuses lock entries without a `narHash` (local skills' `path:./<dir>` entries have none and need none). Results are stored per key and shared between users, and the store is shared too, so a private input fetched for one user can serve another whose lock names it with the same `narHash` ([known limit](sharing-skills.md#private-repositories)).
 
 ### What the builder builds
 

@@ -39,6 +39,8 @@ It does not support `env` or `file` indirection. Git remote credentials belong t
 
 The token is embedded as `x-access-token:<token>` in the remote URL for HTTPS authentication. If no token is configured, the remote is added without credentials, which is suitable for public repos or SSH URLs.
 
+The [skill builder](builder.md#fetch-credentials) fetches the user's skill inputs with the same token, for the remote's host only, so skills can come from private repositories on that forge ([sharing skills](sharing-skills.md#private-repositories)). That needs an HTTPS remote.
+
 ## Remote branch
 
 The `branch` setting refers exclusively to the remote branch for that user's repo. It controls which remote branch carapace fetches from and pushes to. It does not change the local branch name, which remains `main` internally. This means a user can point carapace at any existing remote branch such as `main`, `dev`, or `production` without changing how sandboxes or the agent interact with the repo locally.

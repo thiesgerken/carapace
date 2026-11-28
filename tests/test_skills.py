@@ -86,16 +86,41 @@ def test_an_input_on_the_builders_disk_is_refused(locked: dict[str, str]) -> Non
         parse_skills_lock(json.dumps(lock))
 
 
+NAR = {"narHash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
+
+
+@pytest.mark.parametrize("node_id", ["tracker", "nested"])
+def test_an_input_locked_without_a_nar_hash_is_refused(node_id: str) -> None:
+    """A rev alone counts as locked, and the builder's Git cache would serve a commit another user's token fetched."""
+    nodes = {
+        "root": {"inputs": {"tracker": "tracker", "local": "local"}},
+        "tracker": {
+            "inputs": {"nested": "nested"},
+            "locked": {"type": "git", "url": "https://git.example.org/alice/tracker", "rev": "2" * 40, **NAR},
+        },
+        "nested": {"locked": {"type": "github", "owner": "alice", "repo": "nested", "rev": "3" * 40, **NAR}},
+        # A local skill's node never has one; it comes from the repo itself.
+        "local": {"locked": {"type": "path", "path": "./local"}},
+    }
+    lock = {"nodes": nodes, "root": "root", "version": 7}
+    assert [skill.name for skill in parse_skills_lock(json.dumps(lock))] == ["local", "tracker"]
+
+    del nodes[node_id]["locked"]["narHash"]
+
+    with pytest.raises(SkillsFlakeError, match=f"input {node_id}: its lock entry has no narHash"):
+        parse_skills_lock(json.dumps(lock))
+
+
 @pytest.mark.parametrize("node_id", ["nixpkgs", "nested"])
 def test_a_shared_or_nested_input_on_the_builders_disk_is_refused(node_id: str) -> None:
     nodes = {
         "root": {"inputs": {"nixpkgs": "nixpkgs", "tracker": "tracker"}},
-        "nixpkgs": {"locked": {"type": "github", "owner": "NixOS", "repo": "nixpkgs", "rev": "0" * 40}},
+        "nixpkgs": {"locked": {"type": "github", "owner": "NixOS", "repo": "nixpkgs", "rev": "0" * 40, **NAR}},
         "tracker": {
             "inputs": {"nested": "nested"},
-            "locked": {"type": "github", "owner": "someone", "repo": "tracker", "rev": "2" * 40},
+            "locked": {"type": "github", "owner": "someone", "repo": "tracker", "rev": "2" * 40, **NAR},
         },
-        "nested": {"locked": {"type": "github", "owner": "someone", "repo": "nested", "rev": "3" * 40}},
+        "nested": {"locked": {"type": "github", "owner": "someone", "repo": "nested", "rev": "3" * 40, **NAR}},
     }
     nodes[node_id]["locked"] = {"type": "path", "path": "/etc", "narHash": "sha256-x"}
 
@@ -115,7 +140,14 @@ def test_a_listed_skill_says_where_it_comes_from_and_what_is_locked() -> None:
             "root": {"inputs": {"notes": "notes", "tracker": "tracker"}},
             "notes": {"locked": {"type": "path", "path": "./notes"}},
             "tracker": {
-                "locked": {"type": "github", "owner": "someone", "repo": "skills", "rev": "a" * 40, "lastModified": 1},
+                "locked": {
+                    "type": "github",
+                    "owner": "someone",
+                    "repo": "skills",
+                    "rev": "a" * 40,
+                    "lastModified": 1,
+                    **NAR,
+                },
                 "original": {"type": "github", "owner": "someone", "repo": "skills", "dir": "tracker"},
             },
         },

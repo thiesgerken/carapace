@@ -8,7 +8,9 @@ settings like the build sandbox off.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,7 +18,7 @@ from pathlib import Path
 from loguru import logger
 from pydantic import ValidationError
 
-from .models import BuildResult, InputUpdate, SkillDeclarations
+from .models import BuildResult, FetchCredential, InputUpdate, SkillDeclarations
 from .skill_dir import SkillFileError, checked_skill_dir, list_files, read_file
 
 LOG_TAIL_CHARS = 16_000
@@ -34,13 +36,55 @@ derivation {
 """
 
 
-async def _run(*args: str) -> tuple[int, str, str]:
+def _basic_auth(credential: FetchCredential) -> str:
+    # The username the server's knowledge remote uses too; GitHub and Gitea ignore it next to a token.
+    return base64.b64encode(f"x-access-token:{credential.token}".encode()).decode()
+
+
+def _fetch_env(credential: FetchCredential) -> dict[str, str]:
+    """The environment that lets one nix invocation's fetchers authenticate to *credential*'s host, and no other.
+
+    Nix fetches `git+https` inputs with the git CLI, which ignores Nix's `access-tokens` and `netrc-file`, so a
+    header scoped to the host reaches git through its environment config. `github:` inputs go through GitHub's API,
+    which takes `access-tokens` only. Other hosts get no `access-tokens`: Nix's GitLab fetcher would print a token
+    without a "PAT:" prefix in a warning.
+    """
+    remote = f"http.https://{credential.host}/"
+    env = {
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_0": f"{remote}.extraHeader",
+        "GIT_CONFIG_VALUE_0": f"Authorization: Basic {_basic_auth(credential)}",
+        # Git sends the header on every request it makes itself, also to the base URL a redirect moved it to.
+        "GIT_CONFIG_KEY_1": f"{remote}.followRedirects",
+        "GIT_CONFIG_VALUE_1": "false",
+    }
+    if credential.host == "github.com":
+        env["NIX_CONFIG"] = "\n".join(
+            filter(None, [os.environ.get("NIX_CONFIG"), f"access-tokens = github.com={credential.token}"])
+        )
+    return env
+
+
+def _redacted(log: str, credential: FetchCredential | None) -> str:
+    if credential is None:
+        return log
+    return log.replace(credential.token, "<redacted>").replace(_basic_auth(credential), "<redacted>")
+
+
+async def _run(
+    *args: str, credential: FetchCredential | None = None, env: dict[str, str] | None = None
+) -> tuple[int, str, str]:
+    """Run a command with *env* added; with *credential*, its fetchers may use it and its stderr never shows it."""
+    added = {**(env or {}), **(_fetch_env(credential) if credential else {})}
     process = await asyncio.create_subprocess_exec(
-        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env={**os.environ, **added} if added else None,
     )
     stdout, stderr = await process.communicate()
     assert process.returncode is not None
-    return process.returncode, stdout.decode(errors="replace"), stderr.decode(errors="replace")
+    return process.returncode, stdout.decode(errors="replace"), _redacted(stderr.decode(errors="replace"), credential)
 
 
 def _tail(log: str) -> str:
@@ -114,7 +158,9 @@ def _failed(
     )
 
 
-async def _declarations(source: Path, system: str, skill: str) -> SkillDeclarations | None:
+async def _declarations(
+    source: Path, system: str, skill: str, credential: FetchCredential | None
+) -> SkillDeclarations | None:
     """What the package declares, which needs no values: what the Knowledge view offers to configure.
 
     None when it does not evaluate, in which case the manifest's evaluation fails too and its log says why,
@@ -128,6 +174,7 @@ async def _declarations(source: Path, system: str, skill: str) -> SkillDeclarati
         f"path:{source}#packages.{system}.{skill}.passthru.carapace",
         "--apply",
         "c: { inherit (c) settings credentials; }",
+        credential=credential,
     )
     if code != 0:
         return None
@@ -157,18 +204,27 @@ _NO_MANIFESTS = (
 )
 
 
-async def build_skill(source: Path, key: str, skill: str, system: str, roots: Path) -> BuildResult:
+async def build_skill(
+    source: Path, key: str, skill: str, system: str, roots: Path, credential: FetchCredential | None
+) -> BuildResult:
     """Build `packages.<system>.<skill>` of the skills flake in `source` and read its manifest.
+
+    *credential* is what fetching its inputs may use (`_fetch_env`).
 
     Only that attribute is evaluated, so a broken skill does not stop the others' builds. A skill that
     skills/config.json turns off is not built: its manifest says so and nothing else.
     """
     if not (source / "flake.lock").is_file():
         return _failed(key, skill, "skills/flake.lock is missing. The builder never writes lock files; commit one.")
-    declarations = await _declarations(source, system, skill)
+    declarations = await _declarations(source, system, skill, credential)
     # The manifest first: it fails fast on a mistake in the declarations or settings, before any build runs.
     code, stdout, eval_log = await _run(
-        "nix", "eval", "--json", "--no-update-lock-file", f"path:{source}#manifests.{system}.{skill}"
+        "nix",
+        "eval",
+        "--json",
+        "--no-update-lock-file",
+        f"path:{source}#manifests.{system}.{skill}",
+        credential=credential,
     )
     if code != 0:
         missing = "does not provide attribute 'manifests" in eval_log
@@ -191,6 +247,7 @@ async def build_skill(source: Path, key: str, skill: str, system: str, roots: Pa
         "--out-link",
         str(roots / key),
         package,
+        credential=credential,
     )
     if code != 0:
         return _failed(key, skill, build_log, docs, declarations)
@@ -209,7 +266,9 @@ async def build_skill(source: Path, key: str, skill: str, system: str, roots: Pa
     )
 
 
-async def update_input(source: Path, name: str, out: Path, store: Path) -> InputUpdate:
+async def update_input(
+    source: Path, name: str, out: Path, store: Path, credential: FetchCredential | None
+) -> InputUpdate:
     """The lock of the skills flake in *source* after `nix flake update <name>`, written to *out*, not *source*.
 
     Only that input moves, so nixpkgs and carapace stay as locked, and one input that cannot be fetched
@@ -218,6 +277,10 @@ async def update_input(source: Path, name: str, out: Path, store: Path) -> Input
     Fetches go to the throwaway *store*, not the daemon's: an update locks whatever a local skill's
     flake.nix names, unlocked `path:/…` inputs included, and the shared store is what the binary cache
     serves. Builds never fetch those, since they refuse to change the lock.
+
+    Nix's fetcher cache goes there too. When a fetch fails, Nix falls back to the Git clone it cached
+    and locks its newest commit, so with a shared cache a user without access to a private repository
+    would get the head another user's token fetched, knowing nothing but its URL.
     """
     code, _, log = await _run(
         "nix",
@@ -230,6 +293,8 @@ async def update_input(source: Path, name: str, out: Path, store: Path) -> Input
         str(out),
         "--store",
         str(store),
+        credential=credential,
+        env={"XDG_CACHE_HOME": str(store / "cache")},
     )
     if code != 0:
         return InputUpdate(log_tail=_tail(log))

@@ -34,9 +34,9 @@ from carapace.api_keys import Access, ApiKeyGrant, ApiKeyStore, Scope
 from carapace.artifact_shares import ArtifactShareStore
 from carapace.auth import AuthStore, UserIdentity
 from carapace.bootstrap import ensure_data_dir
-from carapace.builder.models import CredentialSlotDeclaration, SettingDeclaration, SkillDeclarations
+from carapace.builder.models import CredentialSlotDeclaration, FetchCredential, SettingDeclaration, SkillDeclarations
 from carapace.builder.skill_builds import RetryRefusedError, SkillBuild, SkillBuilds, SkillCommand, SkillNeeds
-from carapace.builder.skill_updates import PendingUpdate, UpdateRefusedError
+from carapace.builder.skill_updates import PendingUpdate, UpdateRefusedError, no_fetch_credentials
 from carapace.codex_auth import CodexAccounts, CodexCredentialStore
 from carapace.config import build_config, resolve_user_knowledge_dir
 from carapace.credentials import CredentialBackendError, CredentialRegistry
@@ -167,7 +167,7 @@ def _setup_server(tmp_path, monkeypatch, db_factory):
         data_dir=tmp_path,
         session_mgr=session_mgr,
         sandbox_mgr=sandbox_mgr,
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         credential_registry_for_session=credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
         memory_block_for=lambda _user, _state: "",
@@ -253,6 +253,32 @@ def test_enabled_user_git_configs_skips_disabled_users(tmp_path, db_factory_seco
     selected = srv._enabled_user_git_configs(store)
 
     assert set(selected) == {"bob"}
+
+
+def test_a_repos_skill_inputs_are_fetched_with_its_owners_remote_token(
+    tmp_path, db_factory_secondary, monkeypatch
+) -> None:
+    store = AuthStore(db_factory_secondary, srv._config.auth, tmp_path / "fetch-owners")
+    for username, remote, token in [
+        ("alice", "https://git.example.org/alice/knowledge.git", "alice-token"),
+        ("bob", "https://github.com/bob/knowledge.git", "bob-token"),
+        ("carol", "git@github.com:carol/knowledge.git", "carol-token"),
+    ]:
+        config = UserConfig.model_validate({"git": {"remote": remote, "token": token}})
+        store.create_user(username=username, password="secret", config=config)
+    registry = KnowledgeRepoRegistry(tmp_path)
+    for username in ("alice", "bob", "carol"):
+        registry.ensure_user_repo(username)
+    monkeypatch.setattr(srv, "_auth_store", store, raising=False)
+    monkeypatch.setattr(srv, "_knowledge_repo_registry", registry, raising=False)
+
+    def credential(username: str) -> FetchCredential | None:
+        return srv._fetch_credentials(registry.get_for_user(username).knowledge_dir)
+
+    assert credential("alice") == FetchCredential(host="git.example.org", token="alice-token")
+    assert credential("bob") == FetchCredential(host="github.com", token="bob-token")
+    # An SSH remote's token is for HTTPS on no host the builder could fetch from.
+    assert credential("carol") is None
 
 
 @pytest.mark.anyio
@@ -1588,6 +1614,12 @@ def test_user_settings_rejects_agent_icon_that_is_not_an_emoji(client, auth_head
     for icon in ("my agent", "x", "\U0001f422\U0001f98a", "\U0001f422" * 9, "\U0001f422" + "\u200d" * 50):
         resp = client.patch("/api/user/settings", headers=auth_headers, json={"agent_icon": icon})
         assert resp.status_code == 422, icon
+
+
+def test_user_settings_rejects_a_git_token_with_whitespace(client, auth_headers):
+    """The builder's fetches put it into an HTTP header and Nix settings, where a newline would add a line."""
+    resp = client.patch("/api/user/settings", headers=auth_headers, json={"git": {"token": "ghp_x\nsandbox = false"}})
+    assert resp.status_code == 422
 
 
 def test_user_settings_accepts_composed_agent_icons(client, auth_headers):
@@ -5608,7 +5640,7 @@ def test_the_skill_list_shows_origins_and_an_update_check_on_request(
     subprocess.run([*git, "add", "-A"], check=True)
     subprocess.run([*git, "commit", "-qm", "skills"], check=True)
     # No builder: the check runs and says why it could not ask anyone.
-    builds = SkillBuilds(None)
+    builds = SkillBuilds(None, no_fetch_credentials)
     monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
     started: list[Path] = []
     real_start = builds.updates.start
@@ -5640,7 +5672,7 @@ def test_the_skill_list_shows_origins_and_an_update_check_on_request(
 def test_a_skill_update_is_committed_as_the_user_and_pushed(
     client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    builds = SkillBuilds(None)
+    builds = SkillBuilds(None, no_fetch_credentials)
     monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
     pending = PendingUpdate(base_tree="f" * 40, lock_text="{}\n", message="⬆️ skills: update tracker")
     monkeypatch.setattr(builds.updates, "pending_update", AsyncMock(return_value=pending))
@@ -5664,7 +5696,7 @@ def test_a_skill_update_is_committed_as_the_user_and_pushed(
 def test_a_skill_update_that_cannot_be_applied_is_a_conflict(
     client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    builds = SkillBuilds(None)
+    builds = SkillBuilds(None, no_fetch_credentials)
     monkeypatch.setattr(srv, "_skill_builds", builds, raising=False)
     refused = UpdateRefusedError("skills/ changed since the last check; check for updates again.")
     monkeypatch.setattr(builds.updates, "pending_update", AsyncMock(side_effect=refused))

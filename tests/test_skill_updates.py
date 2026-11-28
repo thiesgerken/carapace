@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from carapace.builder.client import BuilderClient
-from carapace.builder.models import InputUpdate, UpdatedLocks
+from carapace.builder.models import FetchCredential, InputUpdate, UpdatedLocks
 from carapace.builder.skill_updates import (
     SkillUpdate,
     SkillUpdates,
@@ -22,6 +22,7 @@ from carapace.builder.skill_updates import (
     compare,
     describe_source,
     graft,
+    no_fetch_credentials,
 )
 from carapace.git.store import ConcurrentChangeError, GitStore
 from carapace.skills import ListedSkill
@@ -169,7 +170,9 @@ class FakeBuilder:
         self.answer = answer
         self.asked: list[list[str]] = []
 
-    async def check_updates(self, archive: bytes, inputs: list[str]) -> UpdatedLocks:
+    async def check_updates(
+        self, archive: bytes, inputs: list[str], credential: FetchCredential | None
+    ) -> UpdatedLocks:
         self.asked.append(inputs)
         if isinstance(self.answer, Exception):
             raise self.answer
@@ -202,7 +205,7 @@ async def test_a_check_asks_the_builder_about_every_skill_and_compares_each(repo
     moved = copy.deepcopy(lock)
     moved["nodes"]["tracker"]["locked"]["rev"] = _NEW_REV
     builder = FakeBuilder({"notes": InputUpdate(lock=json.dumps(lock)), "tracker": InputUpdate(lock=json.dumps(moved))})
-    updates = SkillUpdates(cast(BuilderClient, builder))
+    updates = SkillUpdates(cast(BuilderClient, builder), no_fetch_credentials)
 
     await _checked(updates, repo)
 
@@ -217,7 +220,7 @@ async def test_a_check_asks_the_builder_about_every_skill_and_compares_each(repo
 async def test_an_input_the_builder_could_not_update_fails_alone(repo: Path) -> None:
     lock = (repo / "skills" / "flake.lock").read_text()
     builder = FakeBuilder({"notes": InputUpdate(lock=lock), "tracker": InputUpdate(log_tail="error: 404")})
-    updates = SkillUpdates(cast(BuilderClient, builder))
+    updates = SkillUpdates(cast(BuilderClient, builder), no_fetch_credentials)
 
     await _checked(updates, repo)
 
@@ -229,7 +232,7 @@ async def test_an_input_the_builder_could_not_update_fails_alone(repo: Path) -> 
 
 @pytest.mark.anyio
 async def test_an_unreachable_builder_is_the_checks_error(repo: Path) -> None:
-    updates = SkillUpdates(cast(BuilderClient, FakeBuilder(httpx.ConnectError("builder down"))))
+    updates = SkillUpdates(cast(BuilderClient, FakeBuilder(httpx.ConnectError("builder down"))), no_fetch_credentials)
 
     await _checked(updates, repo)
 
@@ -240,7 +243,7 @@ async def test_an_unreachable_builder_is_the_checks_error(repo: Path) -> None:
 
 @pytest.mark.anyio
 async def test_without_a_builder_the_check_says_so(repo: Path) -> None:
-    updates = SkillUpdates(None)
+    updates = SkillUpdates(None, no_fetch_credentials)
 
     await _checked(updates, repo)
 
@@ -251,7 +254,7 @@ async def test_without_a_builder_the_check_says_so(repo: Path) -> None:
 @pytest.mark.anyio
 async def test_a_repo_without_skills_flake_has_no_check(tmp_path: Path) -> None:
     _git(tmp_path, "init", "-q")
-    updates = SkillUpdates(cast(BuilderClient, FakeBuilder({})))
+    updates = SkillUpdates(cast(BuilderClient, FakeBuilder({})), no_fetch_credentials)
 
     await _checked(updates, tmp_path)
 
@@ -266,7 +269,7 @@ async def _available(repo: Path) -> SkillUpdates:
     updated["nodes"]["notes"]["inputs"] = {"extra": "extra"}
     updated["nodes"]["extra"] = {"locked": {"type": "github", "owner": "x", "repo": "extra", "rev": "5" * 40}}
     answer = {"notes": InputUpdate(lock=json.dumps(lock)), "tracker": InputUpdate(lock=json.dumps(updated))}
-    updates = SkillUpdates(cast(BuilderClient, FakeBuilder(answer)))
+    updates = SkillUpdates(cast(BuilderClient, FakeBuilder(answer)), no_fetch_credentials)
     await _checked(updates, repo)
     return updates
 

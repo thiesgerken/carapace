@@ -38,7 +38,8 @@ from ..api_keys import ApiKeyStore
 from ..artifact_shares import ArtifactShareStore
 from ..auth import AuthStore
 from ..bootstrap import ensure_data_dir, ensure_knowledge_dir
-from ..builder.client import BuilderClient
+from ..builder.client import BuilderClient, knowledge_remote_credential
+from ..builder.models import FetchCredential
 from ..builder.profile import ProfilePlan, profile_plan
 from ..builder.skill_builds import SkillBuilds, unbound_slot_hint
 from ..cache import SessionListCache
@@ -163,6 +164,13 @@ def _enabled_user_git_configs(auth_store: AuthStore) -> dict[str, KnowledgeGitCo
             token=user.config.git.token,
         )
     return configs
+
+
+def _fetch_credentials(repo_dir: Path) -> FetchCredential | None:
+    """What fetching the skill inputs of the knowledge repo in *repo_dir* may use: its owner's remote token."""
+    owner = next((repo.owner for repo in _knowledge_repo_registry.existing() if repo.knowledge_dir == repo_dir), None)
+    user = _auth_store.get_user(owner) if owner else None
+    return knowledge_remote_credential(user.config.git) if user else None
 
 
 async def _bootstrap_user_knowledge_repo(
@@ -531,7 +539,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         raise SystemExit(1)
 
     _builder = await _connect_builder(_config.builder)
-    _skill_builds = SkillBuilds(_builder)
+    _skill_builds = SkillBuilds(_builder, _fetch_credentials)
 
     sandbox_network = _config.sandbox.network_name
     if _config.sandbox.runtime == "docker":

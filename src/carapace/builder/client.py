@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import platform
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
-from .models import CACHE_HOST, BuilderInfo, BuildResult, Roots, UpdatedLocks
+from ..models.user import UserGitConfig
+from .models import CACHE_HOST, BuilderInfo, BuildResult, FetchCredential, Roots, UpdatedLocks
 from .skill_dir import relative_parts
 
 
@@ -28,6 +29,23 @@ def sandbox_system() -> str:
     machine = platform.machine().lower()
     cpu = {"amd64": "x86_64", "arm64": "aarch64"}.get(machine, machine)
     return f"{cpu}-linux"
+
+
+def knowledge_remote_credential(git: UserGitConfig) -> FetchCredential | None:
+    """The knowledge remote's token, for fetching skill inputs from the remote's host over HTTPS.
+
+    Sharing goes through the forge's access control: whatever that token can read, the user's skills can use.
+    """
+    remote = urlsplit(git.remote)
+    if git.token is None or remote.scheme != "https" or remote.hostname is None:
+        return None
+    host = remote.hostname if remote.port is None else f"{remote.hostname}:{remote.port}"
+    return FetchCredential(host=host, token=git.token)
+
+
+def _credential_form(credential: FetchCredential | None) -> dict[str, str]:
+    """The credential as a form field next to the archive: in the URL it would end up in access logs."""
+    return {} if credential is None else {"fetch_credential": credential.model_dump_json()}
 
 
 class BuilderClient:
@@ -84,24 +102,35 @@ class BuilderClient:
         response.raise_for_status()
         return BuildResult.model_validate(response.json())
 
-    async def build(self, key: str, skill: str, archive: bytes, *, retry: bool = False) -> BuildResult:
+    async def build(
+        self, key: str, skill: str, archive: bytes, credential: FetchCredential | None, *, retry: bool = False
+    ) -> BuildResult:
         """Build *skill* of a skills directory archive (`git archive` of its tree). Blocks until the build ends.
 
         A stored result is returned as it is, unless it is a failure and *retry* is set. Builds can
         take minutes; callers must not hold up a push or a session on this.
         """
         await self._ensure_system()
-        response = await self._client.put(f"/builds/{key}", content=archive, params={"skill": skill, "retry": retry})
+        response = await self._client.put(
+            f"/builds/{key}",
+            params={"skill": skill, "retry": retry},
+            files={"archive": archive},
+            data=_credential_form(credential),
+        )
         response.raise_for_status()
         return BuildResult.model_validate(response.json())
 
-    async def check_updates(self, archive: bytes, inputs: list[str]) -> UpdatedLocks:
+    async def check_updates(
+        self, archive: bytes, inputs: list[str], credential: FetchCredential | None
+    ) -> UpdatedLocks:
         """The lock each input of a skills directory archive would get from `nix flake update <input>`.
 
         Fetches from every upstream, so it takes as long as they do; callers run it in the background.
         """
         await self._ensure_system()
-        response = await self._client.post("/updates", content=archive, params={"input": inputs})
+        response = await self._client.post(
+            "/updates", params={"input": inputs}, files={"archive": archive}, data=_credential_form(credential)
+        )
         response.raise_for_status()
         return UpdatedLocks.model_validate(response.json())
 
