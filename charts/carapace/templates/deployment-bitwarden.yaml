@@ -41,7 +41,10 @@ data:
 {{- end }}
 
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        # bw serve rejects (403) any Host other than localhost/127.0.0.1/[::1] with its port, and
+        # any request that carries an Origin header, against DNS rebinding and browser requests.
+        proxy_set_header Host 127.0.0.1:{{ $servePort }};
+        proxy_set_header Origin "";
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_pass http://127.0.0.1:{{ $servePort }};
       }
