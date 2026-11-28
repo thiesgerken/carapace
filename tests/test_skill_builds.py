@@ -635,7 +635,10 @@ async def test_a_failed_build_keeps_the_description_of_its_manifest(repo: Path) 
 async def test_a_manifest_without_a_description_asks_for_newer_helpers(repo: Path) -> None:
     builder = FakeBuilder()
     old = {key: value for key, value in _METADATA.items() if key not in ("description", "overridden")}
-    builder.answer = lambda key, skill: _answer_with({skill: "unused"})(key, skill).model_copy(update={"metadata": old})
+    # Their package has no skillDir attribute either, so the builder's build of it fails.
+    builder.answer = lambda key, skill: _answer_with({skill: "unused"}, "failed")(key, skill).model_copy(
+        update={"metadata": old, "log_tail": "error: attribute 'skillDir' missing"}
+    )
     builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
@@ -644,6 +647,7 @@ async def test_a_manifest_without_a_description_asks_for_newer_helpers(repo: Pat
 
     assert weather.state == "failed"
     assert "nix flake update carapace --flake ./skills" in weather.detail
+    assert weather.detail.endswith("error: attribute 'skillDir' missing")
     assert builds.catalog(repo)[0].description.startswith("BROKEN")
 
 

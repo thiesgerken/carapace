@@ -417,9 +417,12 @@ def _read_result(result: BuildResult) -> _Outcome:
     if result.state == "failed":
         metadata = result.metadata if isinstance(result.metadata, dict) else {}
         description = metadata.get("description")
+        # Old helpers write a manifest without a description, and their package has no skillDir to build:
+        # that failure needs the update, not Nix's "attribute missing".
+        outdated = metadata.get("enable") is True and "description" not in metadata
         return _Outcome(
             state="failed",
-            detail=result.log_tail,
+            detail=f"{_NO_DESCRIPTION}\n\n{result.log_tail}" if outdated else result.log_tail,
             skill_dir=result.skill_dir,
             skill_md=result.skill_md,
             skill_files=result.skill_files,
