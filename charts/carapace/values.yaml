@@ -80,9 +80,14 @@ builder:
     # that skill flakes fetch from, NodeLocal DNSCache (169.254.20.10/32).
     allowedCidrs: []
   auth:
-    # -- Secret holding the builder token under the key `token`, in both the release and the builder
-    # namespace. Generated for the in-cluster builder when empty, through a Helm `lookup` that
-    # `helm template` (GitOps) cannot resolve, so set it there; required with externalUrl.
+    # -- Secret holding the builder token under the key `token`. Generated for the in-cluster
+    # builder when empty (kept across upgrades via a Helm `lookup`); required with externalUrl.
+    # WARNING: `lookup` only works under `helm install/upgrade`. Rendering with `helm template`
+    # (Argo CD, Kustomize `helmCharts`) gets an empty lookup and writes a fresh token
+    # into both `<release>-builder` Secrets on every sync. Running pods keep the token they
+    # started with, so once only the server or only the builder restarts, every skill build
+    # fails with 401. There, set existingSecret, created in both the release and the builder
+    # namespace.
     existingSecret: ""
   persistence:
     # -- The builder's Nix store: built skills, their dependencies and nixpkgs sources
