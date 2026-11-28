@@ -23,6 +23,7 @@
         {
           default = skill.mkSkill {
             name = "demo-npm";
+            description = "Example skill packaged with the Carapace npm helper. Use it to check that skill flakes build.";
             src = ./.;
             commands = {
               demo-npm-hello = {

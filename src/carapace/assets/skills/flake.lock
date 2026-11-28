@@ -11,11 +11,11 @@
       },
       "locked": {
         "dir": "src/carapace/assets/skills/artifacts",
-        "lastModified": 1795741227,
-        "narHash": "sha256-HhCN4ZDhbVaKJSyggg16+zDX9kkXaBu4Bs5CBNGF7VA=",
+        "lastModified": 1795862221,
+        "narHash": "sha256-MRVEDiIYdEVrutivMY/WXnYP6OY+NVi6qkpSZHO1fy0=",
         "owner": "thiesgerken",
         "repo": "carapace",
-        "rev": "1bf14e59cc94965bad8c19b05981223419da0400",
+        "rev": "bf655d6250f2b4ef8bcf5dd91af590a1aa732569",
         "type": "github"
       },
       "original": {
@@ -36,11 +36,11 @@
       },
       "locked": {
         "dir": "nix/skills",
-        "lastModified": 1795741227,
-        "narHash": "sha256-HhCN4ZDhbVaKJSyggg16+zDX9kkXaBu4Bs5CBNGF7VA=",
+        "lastModified": 1795862221,
+        "narHash": "sha256-MRVEDiIYdEVrutivMY/WXnYP6OY+NVi6qkpSZHO1fy0=",
         "owner": "thiesgerken",
         "repo": "carapace",
-        "rev": "1bf14e59cc94965bad8c19b05981223419da0400",
+        "rev": "bf655d6250f2b4ef8bcf5dd91af590a1aa732569",
         "type": "github"
       },
       "original": {
@@ -61,11 +61,11 @@
       },
       "locked": {
         "dir": "src/carapace/assets/skills/carapace",
-        "lastModified": 1795741227,
-        "narHash": "sha256-HhCN4ZDhbVaKJSyggg16+zDX9kkXaBu4Bs5CBNGF7VA=",
+        "lastModified": 1795862221,
+        "narHash": "sha256-MRVEDiIYdEVrutivMY/WXnYP6OY+NVi6qkpSZHO1fy0=",
         "owner": "thiesgerken",
         "repo": "carapace",
-        "rev": "1bf14e59cc94965bad8c19b05981223419da0400",
+        "rev": "bf655d6250f2b4ef8bcf5dd91af590a1aa732569",
         "type": "github"
       },
       "original": {
@@ -86,11 +86,11 @@
       },
       "locked": {
         "dir": "src/carapace/assets/skills/create-skill",
-        "lastModified": 1795741227,
-        "narHash": "sha256-HhCN4ZDhbVaKJSyggg16+zDX9kkXaBu4Bs5CBNGF7VA=",
+        "lastModified": 1795862221,
+        "narHash": "sha256-MRVEDiIYdEVrutivMY/WXnYP6OY+NVi6qkpSZHO1fy0=",
         "owner": "thiesgerken",
         "repo": "carapace",
-        "rev": "1bf14e59cc94965bad8c19b05981223419da0400",
+        "rev": "bf655d6250f2b4ef8bcf5dd91af590a1aa732569",
         "type": "github"
       },
       "original": {
@@ -111,11 +111,11 @@
       },
       "locked": {
         "dir": "src/carapace/assets/skills/credentials",
-        "lastModified": 1795741227,
-        "narHash": "sha256-HhCN4ZDhbVaKJSyggg16+zDX9kkXaBu4Bs5CBNGF7VA=",
+        "lastModified": 1795862221,
+        "narHash": "sha256-MRVEDiIYdEVrutivMY/WXnYP6OY+NVi6qkpSZHO1fy0=",
         "owner": "thiesgerken",
         "repo": "carapace",
-        "rev": "1bf14e59cc94965bad8c19b05981223419da0400",
+        "rev": "bf655d6250f2b4ef8bcf5dd91af590a1aa732569",
         "type": "github"
       },
       "original": {
@@ -136,11 +136,11 @@
       },
       "locked": {
         "dir": "src/carapace/assets/skills/ferret",
-        "lastModified": 1795741227,
-        "narHash": "sha256-HhCN4ZDhbVaKJSyggg16+zDX9kkXaBu4Bs5CBNGF7VA=",
+        "lastModified": 1795862221,
+        "narHash": "sha256-MRVEDiIYdEVrutivMY/WXnYP6OY+NVi6qkpSZHO1fy0=",
         "owner": "thiesgerken",
         "repo": "carapace",
-        "rev": "1bf14e59cc94965bad8c19b05981223419da0400",
+        "rev": "bf655d6250f2b4ef8bcf5dd91af590a1aa732569",
         "type": "github"
       },
       "original": {
@@ -161,11 +161,11 @@
       },
       "locked": {
         "dir": "src/carapace/assets/skills/mermaid",
-        "lastModified": 1795741227,
-        "narHash": "sha256-HhCN4ZDhbVaKJSyggg16+zDX9kkXaBu4Bs5CBNGF7VA=",
+        "lastModified": 1795862221,
+        "narHash": "sha256-MRVEDiIYdEVrutivMY/WXnYP6OY+NVi6qkpSZHO1fy0=",
         "owner": "thiesgerken",
         "repo": "carapace",
-        "rev": "1bf14e59cc94965bad8c19b05981223419da0400",
+        "rev": "bf655d6250f2b4ef8bcf5dd91af590a1aa732569",
         "type": "github"
       },
       "original": {
@@ -291,11 +291,11 @@
       },
       "locked": {
         "dir": "src/carapace/assets/skills/web",
-        "lastModified": 1795741227,
-        "narHash": "sha256-HhCN4ZDhbVaKJSyggg16+zDX9kkXaBu4Bs5CBNGF7VA=",
+        "lastModified": 1795862221,
+        "narHash": "sha256-MRVEDiIYdEVrutivMY/WXnYP6OY+NVi6qkpSZHO1fy0=",
         "owner": "thiesgerken",
         "repo": "carapace",
-        "rev": "1bf14e59cc94965bad8c19b05981223419da0400",
+        "rev": "bf655d6250f2b4ef8bcf5dd91af590a1aa732569",
         "type": "github"
       },
       "original": {
@@ -316,11 +316,11 @@
       },
       "locked": {
         "dir": "src/carapace/assets/skills/wikipedia",
-        "lastModified": 1795741227,
-        "narHash": "sha256-HhCN4ZDhbVaKJSyggg16+zDX9kkXaBu4Bs5CBNGF7VA=",
+        "lastModified": 1795862221,
+        "narHash": "sha256-MRVEDiIYdEVrutivMY/WXnYP6OY+NVi6qkpSZHO1fy0=",
         "owner": "thiesgerken",
         "repo": "carapace",
-        "rev": "1bf14e59cc94965bad8c19b05981223419da0400",
+        "rev": "bf655d6250f2b4ef8bcf5dd91af590a1aa732569",
         "type": "github"
       },
       "original": {

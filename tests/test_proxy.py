@@ -31,7 +31,6 @@ from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.sandbox.skill_profile import SkillProfileSync
 from carapace.security.context import BoundaryEvaluation
 from carapace.session.manager import SessionManager, SessionMeta
-from carapace.skills import SkillDocumentError, parse_skill_document
 from tests.runtime_mocks import NO_LEFTOVER_PROCESSES, fake_dns, make_runtime_mock
 
 
@@ -442,30 +441,6 @@ async def test_exec_container_gone_recovery_restores_git_identity(tmp_path: Path
     # without reporting a fresh runtime; recovery must restore the identity anyway.
     runtime.create_sandbox.assert_not_awaited()
     assert "git config --global user.name" in runtime.exec.await_args_list[1].args[1]
-
-
-# ── SKILL.md metadata parsing ───────────────────────────────────────
-
-
-class TestSkillMetadataParsing:
-    def test_no_carapace_metadata(self):
-        assert parse_skill_document("Body.\n", fallback_name="plain").carapace_config() is None
-
-    def test_invalid_frontmatter_carapace_raises(self):
-        text = (
-            "---\n"
-            "name: bad-inline\n"
-            "metadata:\n"
-            "  carapace:\n"
-            "    commands:\n"
-            "      - name: ok\n"
-            "        command: uv run ok\n"
-            "---\n"
-            "Body.\n"
-        )
-
-        with pytest.raises(SkillDocumentError, match="moved out of the frontmatter into the skill's flake"):
-            parse_skill_document(text, fallback_name="bad-inline").carapace_config()
 
 
 def _make_exec_state(**overrides) -> SandboxExecState:

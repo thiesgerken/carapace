@@ -26,17 +26,16 @@ from ..builder.skill_config import (
     skill_entry,
     with_skill_entry,
 )
-from ..builder.skill_updates import SkillUpdates, UpdateRefusedError, UpdateState
+from ..builder.skill_updates import UpdateRefusedError, UpdateState
 from ..builder.skills_head import skills_flake_at_head
 from ..credentials import CredentialBackendError
 from ..git.store import ConcurrentChangeError, GitStore
 from ..knowledge import contained_target
 from ..models.credentials import CredentialMetadata
 from ..models.git import FileCommit
-from ..models.skills import SkillCarapaceConfig
 from ..session.manager import SessionManager
 from ..session.sent_files import INLINE_MIME_TYPES, guess_mime
-from ..skills import SkillDocumentError, SkillsFlakeError, parse_skill_document, read_skills_flake
+from ..skills import SkillsFlakeError, read_skills_flake
 from .artifact_rendering import artifact_headers
 from .auth import AuthContext, current_auth_context, require, require_browser_session
 from .state import server_module
@@ -121,13 +120,10 @@ def session_archive_entry(directory: Path, root: Path) -> tuple[str | None, str]
 
 
 class KnowledgeSkill(BaseModel):
-    """Frontmatter of a skill dir's SKILL.md, rendered as a card above its prose."""
+    """A local skill's directory, rendered as a card above its SKILL.md; its description comes with the build."""
 
     name: str
-    description: str = ""
-    # None when metadata.carapace is absent or invalid; the prose still renders.
-    carapace: SkillCarapaceConfig | None = None
-    # Why the frontmatter is unusable: a broken skill stays browsable so it can be fixed.
+    # Why there is no SKILL.md to show: a broken skill stays browsable so it can be fixed.
     error: str | None = None
 
 
@@ -139,6 +135,10 @@ class KnowledgeSkillBuild(BaseModel):
     commands: dict[str, SkillCommand]
     # Why it failed or is unavailable: the end of the build log, or what went wrong before it.
     log_tail: str
+    # The catalog line from the manifest; None while building or when the manifest does not evaluate.
+    description: str | None
+    # Whether skills/flake.nix adjusts the skill with an override.
+    overridden: bool
 
 
 class KnowledgeSkillUpdate(BaseModel):
@@ -159,6 +159,8 @@ class KnowledgeSkillSource(BaseModel):
     locked_at: datetime | None
     # None until a check covered it.
     update: KnowledgeSkillUpdate | None
+    # Whether skills/flake.nix adjusts the skill with an override, as its last build says.
+    overridden: bool
 
 
 class KnowledgeSkillSources(BaseModel):
@@ -188,7 +190,7 @@ class KnowledgeDirListing(BaseModel):
     path: str
     entries: list[KnowledgeEntry]
     # Recognized directory conventions get their defining document inlined, rendered
-    # below the listing (a skill dir's SKILL.md, frontmatter stripped into `skill`).
+    # below the listing (a skill dir's SKILL.md, with `skill` as its card).
     kind: Literal["skill", "artifact"] | None = None
     doc_name: str | None = None
     doc: str | None = None
@@ -296,11 +298,11 @@ def inline_doc(
 ) -> None:
     """Attach the directory's defining document, so the browser needs no second request.
 
-    A listed skill's SKILL.md gets its frontmatter split out; any other directory falls back to its README.
+    A listed skill's SKILL.md comes with its card; any other directory falls back to its README.
     """
     if skill is not None:
         listing.kind = "skill"
-        # Named by its attribute in skills/flake.nix, whatever the frontmatter says.
+        # Named by its attribute in skills/flake.nix, whatever mkSkill says.
         listing.skill = KnowledgeSkill(name=skill)
         skill_doc = contained_target(target / SKILL_DOC, root)
         raw = read_text_content(skill_doc, skill_doc.stat().st_size) if skill_doc and skill_doc.is_file() else None
@@ -308,18 +310,7 @@ def inline_doc(
             listing.skill.error = f"{SKILL_DOC} is missing or not text"
             return
         listing.doc_name = SKILL_DOC
-        try:
-            document = parse_skill_document(raw, fallback_name=skill)
-        except SkillDocumentError as exc:
-            listing.doc = raw
-            listing.skill.error = str(exc)
-            return
-        listing.doc = document.body
-        listing.skill.description = document.description
-        try:
-            listing.skill.carapace = document.carapace_config()
-        except SkillDocumentError as exc:
-            listing.skill.error = str(exc)
+        listing.doc = raw
         return
 
     readme = find_readme(target, entries, root)
@@ -390,7 +381,14 @@ async def skill_build(builds: SkillBuilds, repo_dir: Path, name: str) -> Knowled
     build = next((build for build in await builds.ensure_built(repo_dir) if build.skill == name), None)
     if build is None:
         return None
-    return KnowledgeSkillBuild(state=build.state, key=build.key, commands=build.commands, log_tail=build.detail)
+    return KnowledgeSkillBuild(
+        state=build.state,
+        key=build.key,
+        commands=build.commands,
+        log_tail=build.detail,
+        description=build.description,
+        overridden=build.overridden,
+    )
 
 
 @router.post("/knowledge/skills/{name}/build/retry")
@@ -408,8 +406,9 @@ async def retry_skill_build(
     return build
 
 
-async def skill_sources(updates: SkillUpdates, repo_dir: Path) -> KnowledgeSkillSources:
+async def skill_sources(builds: SkillBuilds, repo_dir: Path) -> KnowledgeSkillSources:
     head = await skills_flake_at_head(repo_dir)
+    updates = builds.updates
     check = updates.latest(repo_dir)
     results = check.skills if check is not None else {}
     skills = [
@@ -420,6 +419,8 @@ async def skill_sources(updates: SkillUpdates, repo_dir: Path) -> KnowledgeSkill
             locked_rev=skill.locked_rev,
             locked_at=skill.locked_at,
             update=KnowledgeSkillUpdate(**asdict(results[skill.name])) if skill.name in results else None,
+            # As known now: listing the sources starts no build.
+            overridden=(build := builds.readable(repo_dir, skill.name)) is not None and build.overridden,
         )
         for skill in (head.skills if head is not None else [])
     ]
@@ -437,7 +438,7 @@ async def list_skill_sources(
     user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.read))],
 ) -> KnowledgeSkillSources:
     root = server._knowledge_repo_registry.get_for_user(user.username).knowledge_dir.resolve()
-    return await skill_sources(server._skill_builds.updates, root)
+    return await skill_sources(server._skill_builds, root)
 
 
 @router.post("/knowledge/skills/updates/check")
@@ -447,7 +448,7 @@ async def check_skill_updates(
     """Start an update check of the user's skills; poll `GET /knowledge/skills` until `checking` is false."""
     root = server._knowledge_repo_registry.get_for_user(user.username).knowledge_dir.resolve()
     server._skill_builds.updates.start(root)
-    return await skill_sources(server._skill_builds.updates, root)
+    return await skill_sources(server._skill_builds, root)
 
 
 def _commit_author(user: UserIdentity) -> str:
@@ -480,7 +481,7 @@ async def update_skill(
     except (UpdateRefusedError, ConcurrentChangeError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await server._after_push(user.username)
-    return await skill_sources(server._skill_builds.updates, root)
+    return await skill_sources(server._skill_builds, root)
 
 
 class KnowledgeSkillSetting(BaseModel):

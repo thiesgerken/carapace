@@ -1,12 +1,3 @@
----
-name: mermaid
-description: >-
-  Write Mermaid diagrams that render as pictures in the carapace web UI. Use
-  when an answer is easier to see than to read: architectures, request flows,
-  state machines, database schemas, decision trees, schedules, org structures.
-  Ships syntax references for every diagram type.
----
-
 # Mermaid Diagrams
 
 The carapace web UI renders every fenced ` ```mermaid ` block as a diagram. Write the

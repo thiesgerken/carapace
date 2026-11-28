@@ -336,7 +336,7 @@ def _recipe_skill(start: datetime) -> Transcript:
     t.run("mkdir -p /workspace/skills/recipes", "")
     write = t.call(
         "write",
-        {"path": "/workspace/skills/recipes/SKILL.md", "content": "---\nname: recipes\n---\n# Recipes\n..."},
+        {"path": "/workspace/skills/recipes/SKILL.md", "content": "# Recipes\n..."},
         source="sentinel",
         explanation="Writing a new skill file inside the sandbox workspace is low risk.",
     )

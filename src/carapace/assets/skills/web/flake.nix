@@ -20,7 +20,10 @@
         in
         {
           default = skill.mkSkill {
+            # Before turning it on, bind its BRAVE_API_KEY slot to your Brave Search API key in skills/config.json:
+            # {"web": {"credentials": {"BRAVE_API_KEY": "<backend>/<id>"}}}.
             name = "web";
+            description = "Search the web and fetch page content. Use web_search to find information across the web via Brave Search. Use web_fetch to retrieve and extract readable content from a specific URL. Activate when the user asks to look something up online, find recent information, or read a webpage.";
             src = ./.;
             # Bind it to the entry that holds your Brave Search API key, in skills/config.json.
             credentials.BRAVE_API_KEY = {

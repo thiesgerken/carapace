@@ -78,9 +78,10 @@ class BuildResult(BaseModel):
     state: Literal["succeeded", "failed"]
     # Every output of `packages.<system>.<skill>`; empty for a failed build.
     store_paths: list[str] = []
-    # `manifests.<system>.<skill>` of the skills flake as JSON, written by `skillsFlake`; None when absent.
+    # `manifests.<system>.<skill>` of the skills flake as JSON, written by `skillsFlake`; also there for a build
+    # that failed after it evaluated, None when absent.
     metadata: Any = None
-    # Its `skillDir`, the skill directory in the store, and what is in it, read right after the evaluation,
+    # Its `skillDir`, the skill directory in the store, and what is in it, read before the commands build,
     # so a failed build has them too. None and empty for a package from helpers without `src`.
     skill_dir: str | None = None
     skill_md: str | None = None

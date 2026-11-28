@@ -29,6 +29,7 @@ The functions below come from the skills subflake of the Carapace repo, `github:
         {
           default = skill.mkSkill {
             name = "weather";
+            description = "Current weather and forecasts. Use when the user asks about the weather.";
             src = ./.;
             credentials.WEATHER_TOKEN = {
               type = "secret";
@@ -64,7 +65,7 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 
 ## The skills flake
 
-`skills/flake.nix` at the top of the knowledge repo is the only list of skills. Every input except `nixpkgs` and `carapace` is a skill, named by its attribute; a skill's `name` in `mkSkill` or in its frontmatter does not matter. A new knowledge repo gets one that lists every bundled skill; shortened, and with a local skill added, it looks like this:
+`skills/flake.nix` at the top of the knowledge repo is the only list of skills. Every input except `nixpkgs` and `carapace` is a skill, named by its attribute; a skill's `name` in `mkSkill` does not matter. A new knowledge repo gets one that lists every bundled skill; shortened, and with a local skill added, it looks like this:
 
 ```nix
 {
@@ -102,9 +103,10 @@ The functions below come from the skills subflake of the Carapace repo, `github:
 
 - A local skill is a `path:./<dir>` input, a skill from elsewhere any flake reference (e.g. `github:someone/skill-weather`); [sharing-skills.md](sharing-skills.md) covers consuming, pinning and publishing one. Every skill follows `nixpkgs` and `carapace`, so the lock holds one of each, and `nix flake update carapace --flake ./skills` moves the helpers of every skill at once.
 - The bundled skills come from Carapace's `main` branch, without a tag: every push to `main` is a release. The lock pins the commit they were last updated to; `nix flake update <name> --flake ./skills` brings one to the latest.
-- `skillsFlake` exposes each skill's package as `packages.<system>.<name>` and its [manifest](#the-manifest) as `manifests.<system>.<name>`. The builder evaluates and builds every attribute on its own, from `skills/flake.nix`, its lock, `config.json` and the skill's own directory at `HEAD`. A skill's package and manifest read no other skill's flake, so one broken skill leaves the others built and usable.
+- `skillsFlake` exposes each skill's package as `packages.<system>.<name>` and its [manifest](#the-manifest) as `manifests.<system>.<name>`. The builder evaluates and builds every attribute on its own, from `skills/flake.nix`, its lock, `config.json`, the skill's own directory and `skills/<attribute>/` at `HEAD`. A skill's package and manifest read no other skill's flake, so one broken skill leaves the others built and usable.
 - The server reads the list from `skills/flake.lock` (the root's inputs), never by evaluating Nix. Without `skills/flake.nix` or its lock the repo has no skills, and the Knowledge view says so.
 - `carapace` is the helpers' attribute, so the bundled skill in `skills/carapace` is listed as `carapace-cli`.
+- `overrides` adjusts a skill the repo takes from elsewhere, per attribute: `overrides.<attribute> = skill: skill.override (old: { … });` changes any `mkSkill` argument, such as the description, the instructions or added files. [sharing-skills.md](sharing-skills.md#overriding-a-shared-skill) shows how; an override of an attribute that is not a skill input fails the evaluation.
 
 To add a skill, add its input and lock: `nix flake lock ./skills`. A new skill directory must be tracked by Git first (`git add`), because `./skills` is a Git flake. After changing a local skill's inputs or its own `flake.lock`, run `nix flake update <name> --flake ./skills`: the top-level lock copies a local skill's inputs once and does not notice later changes. Editing a local skill's code or `SKILL.md` needs no new lock. Commit `skills/flake.lock` together with the change.
 
@@ -129,7 +131,16 @@ The Knowledge view of `skills/` edits it too: each skill's "Settings" opens a fo
 
 ## Commands and what they need
 
-`mkSkill { name, src, commands ? { }, needs ? { }, settings ? { }, credentials ? { } }` builds the package. `src` is the skill directory, normally `./.`: it becomes a store path of its own, referenced by the package, so the sandbox gets `SKILL.md`, scripts and references together with the commands. Each command has:
+`mkSkill { name, description, src, instructions ? <src/SKILL.md>, extraFiles ? { }, commands ? { }, needs ? { }, settings ? { }, credentials ? { } }` builds the package.
+
+- `description` is the skill's line in the agent's catalog: what it does and when to use it.
+- `src` is the skill directory, normally `./.`. The skill directory in the store is a copy of it with `SKILL.md` set to `instructions` and the `extraFiles` added, a derivation of its own that the package references, so the sandbox gets `SKILL.md`, scripts and references together with the commands.
+- `instructions` default to the contents of `src/SKILL.md`, which holds only the instructions. Instructions that start with YAML frontmatter fail the evaluation.
+- `extraFiles` maps paths relative to the skill directory to files (`{ "albums.md" = ./albums.md; }`). A path that `src` already has, or `SKILL.md`, fails the evaluation: added files never shadow the skill's own.
+
+`mkSkill` is made with `lib.makeOverridable`, so every skill package has `.override`, which calls it again with changed arguments; `old` holds every argument, the defaults included ([sharing-skills.md](sharing-skills.md#overriding-a-shared-skill)).
+
+Each command has:
 
 - `exec`: what the wrapper runs, with the wrapper's arguments appended. It is shell words, not quoted for you: it gets word-split and expanded, which is what lets a store path carry fixed arguments (`"${pkgs.nodejs}/bin/node ${app}/src/main.mjs"`). A path with spaces needs its own quoting.
 - `description`: one short line, shown to the agent.
@@ -217,7 +228,9 @@ nix eval --json 'path:skills#manifests.x86_64-linux.weather'
 {
   "enable": true,
   "name": "weather",
-  "skillDir": "/nix/store/…-skill-weather-src",
+  "description": "Current weather and forecasts. Use when the user asks about the weather.",
+  "overridden": false,
+  "skillDir": "/nix/store/…-skill-weather-dir",
   "settings": { "CITY": "Berlin", "UNITS": "metric" },
   "credentials": {
     "WEATHER_TOKEN": { "type": "secret", "description": "A weather API token", "binding": "personal/weather-token" },
@@ -241,7 +254,8 @@ nix eval --json 'path:skills#manifests.x86_64-linux.weather'
 - `settings` are this instance's values, from `skills/config.json` or the declared defaults.
 - `credentials` are the declared slots with their bindings from `skills/config.json`, `null` while unbound.
 - `needs` is resolved for those values: the skill-wide default with the command's override applied, every kind present, and `credentials` and `oauth` mapping each slot the command needs to its binding (or `null`).
-- `skillDir` is the store path of `src`. The evaluation already copies it into the store, so the builder reads `SKILL.md` from it before the commands are built.
+- `description` is the catalog line; `overridden` says whether `skills/flake.nix` adjusts the skill with an override, which the Knowledge view marks.
+- `skillDir` is the store path of the skill directory. The builder builds it alone (`packages.<system>.<name>.skillDir`, which only copies files) and reads `SKILL.md` from it before the commands are built.
 - `commands` has one entry per wrapper in `bin/`, under the same name. `mcp` is `true` for a command made by `mcpCommands`; `read_skill` lists its tools.
 - A skill that `config.json` turns off has the manifest `{ "enable": false }`. It is not built, and Carapace treats it like a skill that is not listed.
 - `skillsFlake` writes the manifest from what `mkSkill` declares in `passthru.carapace` (the settings, the credential slots, the commands) and `passthru.carapaceNeeds` (the needs for given setting values). Both sides come from the same helpers (every skill follows the skills flake's `carapace`), so the shape changes with them; the server reads the manifest of the helpers the repo pins.
@@ -266,6 +280,7 @@ A skill without commands still needs a flake, so that it is built and listed lik
       packages = carapace.lib.forSkillSystems (system: {
         default = (carapace.lib.skill nixpkgs.legacyPackages.${system}).mkSkill {
           name = "notes";
+          description = "Where and how the user keeps notes. Use when the user wants to write down or find a note.";
           src = ./.;
         };
       });

@@ -1,8 +1,3 @@
----
-name: create-skill
-description: Create and refine carapace AgentSkills. Use when the user wants to add a new skill, reshape an existing one, or asks how a skill should be structured.
----
-
 # Create Skill
 
 Create or update skills under `skills/<name>/` for carapace.
@@ -51,12 +46,10 @@ Good filenames are `REFERENCE.md`, `CONFIG.md`, or `references/*.md`.
 
 1. Read `REFERENCE.md` before writing or restructuring any skill. Treat it as required context, not optional background.
 2. Inspect nearby skills for tone, structure, and command style before inventing a new pattern.
-3. Create or edit `skills/<name>/SKILL.md`.
-4. Write tight frontmatter:
-   - `name` matches the folder name and the skill's attribute name in `skills/flake.nix` (step 7), which is the name Carapace uses.
-   - `description` says what the skill does and when to use it.
-5. Write the body for the agent who will use the skill, including the operational facts needed for safe normal use.
-6. Every skill is a flake: write `flake.nix`, lock it, and commit `flake.lock` (see `REFERENCE.md`). A skill with only instructions needs the few lines of `mkSkill { name = "<name>"; src = ./.; }`. A skill with commands declares them and what they need; add an `Exposed Commands` section near the top of `SKILL.md` with the real command names.
+3. Create or edit `skills/<name>/SKILL.md`. It holds only the instructions: no YAML frontmatter, which fails the build.
+4. Write the body for the agent who will use the skill, including the operational facts needed for safe normal use.
+5. Every skill is a flake: write `flake.nix`, lock it, and commit `flake.lock` (see `REFERENCE.md`). A skill with only instructions needs the few lines of `mkSkill { name = "<name>"; description = "…"; src = ./.; }`. A skill with commands declares them and what they need; add an `Exposed Commands` section near the top of `SKILL.md` with the real command names.
+6. Write a tight `description` in `mkSkill`: what the skill does and when to use it. It is the skill's line in the agent's catalog. `name` matches the folder name and the skill's attribute name in `skills/flake.nix` (step 7), which is the name Carapace uses.
 7. List the skill in `skills/flake.nix`: an input `<name>` with `url = "path:./<name>"` that follows `nixpkgs` and `carapace` like the others. `git add skills/<name>`, then `nix flake lock ./skills`. After changing the skill's own inputs or its `flake.lock` later, run `nix flake update <name> --flake ./skills`. Commit `skills/flake.lock` with the skill. A directory that is not listed is not a skill.
 8. Build and run every command from the workspace before pushing: `nix shell path:./skills/<name> -c <command> …`. A command that has settings or needs gets them from the committed version of the skill, so a new one of those runs only after its first push and build; until then, run what its `exec` names directly, with the settings in the environment.
 9. If implementation or reference material is not needed for normal use, add a sidecar markdown file and link it from `SKILL.md`.
@@ -69,11 +62,6 @@ If a command needs credentials or network access, declare them in `flake.nix` (a
 ## Template
 
 ```markdown
----
-name: <skill-name>
-description: <What the skill does and when to use it.>
----
-
 # <Skill Title>
 
 One short paragraph describing the skill.
@@ -106,4 +94,4 @@ If a command asks for a credential, say which vault entry the user has to create
 
 ## Reference
 
-IMPORTANT: Read [REFERENCE.md](REFERENCE.md) before authoring a skill. It contains the required maintainer guidance for file layout, frontmatter, sidecar docs, skill flakes, the development loop, and common failure modes.
+IMPORTANT: Read [REFERENCE.md](REFERENCE.md) before authoring a skill. It contains the required maintainer guidance for file layout, name and description, sidecar docs, skill flakes, the development loop, and common failure modes.

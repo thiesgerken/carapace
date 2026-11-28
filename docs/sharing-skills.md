@@ -1,6 +1,6 @@
 # Sharing skills
 
-A skill is a flake in a directory, so any repository can hold one and any knowledge repo can list it: a skill from a family member's knowledge repo, from a public collection, or one you publish yourself. This guide covers consuming a skill from elsewhere, choosing between pinning and following, publishing a skill so others can use it, and letting Renovate keep the locks current. The formats it relies on are in [skill-flakes.md](skill-flakes.md); how Carapace builds, lists and updates skills is in [skills.md](skills.md).
+A skill is a flake in a directory, so any repository can hold one and any knowledge repo can list it: a skill from a family member's knowledge repo, from a public collection, or one you publish yourself. This guide covers consuming a skill from elsewhere, overriding it for your repo, choosing between pinning and following, publishing a skill so others can use it, and letting Renovate keep the locks current. The formats it relies on are in [skill-flakes.md](skill-flakes.md); how Carapace builds, lists and updates skills is in [skills.md](skills.md).
 
 ## Consuming a skill
 
@@ -17,7 +17,7 @@ inputs = {
 };
 ```
 
-- **The attribute is the name.** `weather` is what the catalog, `read_skill` and `skills/config.json` call it, whatever its `mkSkill` name or frontmatter say. Pick another attribute if it collides with one of yours.
+- **The attribute is the name.** `weather` is what the catalog, `read_skill` and `skills/config.json` call it, whatever its `mkSkill` name says. Pick another attribute if it collides with one of yours.
 - **Always write both `follows`.** The skill then builds with your `nixpkgs` and your Carapace helpers, the ones every other skill uses, and `nix flake update carapace --flake ./skills` moves them for all. Its other inputs (a Python or npm toolchain, say) come from its own `flake.lock`.
 - **Any flake reference works:** `github:`, `gitlab:`, `git+https://…`, `sourcehut:`, with `?dir=` for a skill in a subdirectory. A private repository works on the host of your knowledge remote ([private repositories](#private-repositories)).
 
@@ -40,7 +40,33 @@ nix flake lock ./skills
 
 The skill's commands ask for what they need when they run, reviewed like any other request. Reading its `SKILL.md` and its flake before listing it is still worth it: a skill's instructions reach the agent, and its commands run in your sandboxes.
 
-To change a consumed skill, copy its directory into your `skills/`, point its input at `path:./<dir>`, and lock again. It is then a local skill, and no longer updates from upstream.
+To adjust a consumed skill for your repo, [override it](#overriding-a-shared-skill). Only for deeper changes copy its directory into your `skills/`, point its input at `path:./<dir>`, and lock again: it is then a local skill, and no longer updates from upstream.
+
+## Overriding a shared skill
+
+A shared skill carries instructions that fit everyone who uses it, but each repo knows things the skill can't: account-specific IDs, folder names, who "the user" is. `skillsFlake` takes `overrides`, one function per skill attribute that gets the skill's package and returns the one to use. Every package has the standard `.override` (as in nixpkgs), which calls `mkSkill` again with changed arguments; `old` holds all of them, the defaults included:
+
+```nix
+outputs =
+  { carapace, ... }@inputs:
+  carapace.lib.skillsFlake {
+    inherit inputs;
+    config = ./config.json;
+    overrides.photos = skill: skill.override (old: {
+      description = old.description + " Also covers the family's shared albums.";
+      instructions = old.instructions + "\n" + builtins.readFile ./photos/household.md;
+      extraFiles."albums.md" = ./photos/albums.md;
+    });
+  };
+```
+
+- **Append or replace, as you write it:** `old.instructions + …` appends, a new value replaces. There is no separator or heading convention; the example's `"\n"` keeps the appended text in a paragraph of its own.
+- **Any `mkSkill` argument:** `description`, `instructions`, `extraFiles`, setting defaults, `needs`. `extraFiles` adds files next to the skill's own (`albums.md` above, which the added instructions can point to); a path the skill already has fails the evaluation, so an override adds files and never shadows them.
+- **Keep the texts in `skills/<attribute>/`** (`skills/photos/` above). The builder gets that directory with the skill, and its build key covers it, so editing a text rebuilds just that skill; it needs no `flake.nix`, since only inputs are skills. They are pinned by your repo's own commit, so nothing more is locked. A file elsewhere in `skills/` is not part of the skill's build, which then fails: Nix names the path as missing in the builder's copy, and the builder adds where such files belong.
+- **An override of an attribute that is not a skill input** fails the evaluation, so a typo or a removed input does not go unnoticed.
+- **The result is what everyone sees:** the agent's catalog and `read_skill` show the overridden description and instructions, and the sandbox gets the same skill directory. The skill list on `skills/` in the Knowledge view marks the skill as overridden.
+
+Settings are the other way to adjust a shared skill, but they reach its commands as environment variables, not the agent's prompt. What the agent should know belongs in an override.
 
 ## Private repositories
 
@@ -82,6 +108,7 @@ Keep everything instance-specific out of it, so it works in any knowledge repo:
 - **Settings for what differs per instance:** a server URL, a city, a default (`settings.<NAME>`). An MCP server whose address differs per instance takes it from a setting (`mcpCommands { urlSetting = "…"; }`).
 - **Credential slots for secrets** (`credentials.<NAME> = { type = "secret" | "oauth"; … }`), never vault paths: a flake that names one fails to evaluate. Each consumer binds the slots to their own password-manager entries.
 - **Descriptions on every setting and slot**, since that is what consumers read when they configure the skill, and a `SKILL.md` that says what it needs ("needs a weather API token in its `WEATHER_TOKEN` slot").
+- **Instructions for everyone:** what only one repo knows (IDs, folder names, who the user is) goes into that repo's [override](#overriding-a-shared-skill), not into the shared `SKILL.md`.
 
 Before publishing, build and run it the way a consumer will:
 

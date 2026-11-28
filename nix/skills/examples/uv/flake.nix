@@ -29,6 +29,7 @@
         {
           default = skill.mkSkill {
             name = "demo-uv";
+            description = "Example skill packaged with the Carapace uv helper. Use it to check that skill flakes build.";
             src = ./.;
             credentials.DEMO_API_TOKEN = {
               type = "secret";

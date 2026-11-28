@@ -59,9 +59,7 @@ _TOOLS = "search\tFind issues by text\ncreate\tOpen an issue\n"
 _SKILL_DIR = f"/nix/store/{'b' * 32}-skill-demo-src"
 
 
-def _build(
-    skill: str, state: BuildState, frontmatter: str = "", files: tuple[str, ...] = (), **commands: SkillCommand
-) -> SkillBuild:
+def _build(skill: str, state: BuildState, files: tuple[str, ...] = (), **commands: SkillCommand) -> SkillBuild:
     return SkillBuild(
         skill=skill,
         key=skill[0] * 64,
@@ -70,7 +68,8 @@ def _build(
         commands=dict(commands),
         detail="error: attribute 'packages' missing" if state == "failed" else "",
         skill_dir=_SKILL_DIR,
-        skill_md=f"---\nname: {skill}\ndescription: demo\n{frontmatter}---\nUse it well.\n",
+        skill_md="Use it well.\n",
+        description="demo",
         skill_files=["SKILL.md", *files],
     )
 
@@ -119,7 +118,7 @@ async def test_a_built_skill_lists_its_commands_and_waits_for_the_profile(tmp_pa
 
     result = await _read_skill(deps, "weather")
 
-    assert result.startswith("---\nname: weather")
+    assert result.startswith("Use it well.\n")
     assert "Use it well." in result
     assert "- `forecast`: Offline forecast.\n" in result
     assert (
@@ -163,7 +162,7 @@ async def test_a_denied_listing_is_reported_and_the_rest_still_returns(tmp_path:
 
     result = await _read_skill(deps, "tracker")
 
-    assert result.startswith("---\nname: tracker")
+    assert result.startswith("Use it well.\n")
     assert "The commands are on PATH." in result
     assert result.endswith(
         "# Tools of `tracker`\n\nThe tools could not be listed; the server may still answer a call: "
@@ -283,34 +282,6 @@ async def test_a_missing_skill_is_reported(tmp_path: Path) -> None:
         "repo: add its input there, run `nix flake lock ./skills`, commit and push, and the builder builds it after "
         "the push."
     )
-
-
-@pytest.mark.anyio
-async def test_disabled_in_the_frontmatter_is_reported(tmp_path: Path) -> None:
-    deps = _deps(tmp_path, [_build("parked", "succeeded", "metadata:\n  carapace:\n    disabled: true\n")])
-
-    result = await _read_skill(deps, "parked")
-
-    assert result.startswith("Error: the SKILL.md of parked is invalid: ")
-    assert "disabled is gone" in result
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    "moved",
-    [
-        "    network:\n      domains: [ideas.example]\n",
-        "    mcp:\n      - name: ideas\n        url: https://ideas.example/mcp\n",
-    ],
-)
-async def test_a_broken_skill_md_is_reported_with_its_text(tmp_path: Path, moved: str) -> None:
-    deps = _deps(tmp_path, [_build("ideas", "succeeded", f"metadata:\n  carapace:\n{moved}")])
-
-    result = await _read_skill(deps, "ideas")
-
-    assert result.startswith("Error: the SKILL.md of ideas is invalid: ")
-    assert "moved out of the frontmatter into the skill's flake" in result
-    assert result.endswith("Use it well.\n")
 
 
 @pytest.mark.anyio

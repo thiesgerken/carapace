@@ -19,6 +19,7 @@ import {
 import { formatAbsoluteTime } from "@/lib/format-time";
 import { knowledgeBrowseHref } from "@/lib/knowledge-links";
 
+import { OverriddenBadge } from "./overridden-badge";
 import { SkillConfigForm } from "./skill-config-form";
 
 const POLL_MS = 2000;
@@ -233,6 +234,7 @@ export function SkillSourcesPanel({ server }: { server: string }) {
                       {skillConfig && !skillConfig.enabled ? (
                         <span className="rounded bg-muted px-1.5 text-[11px] font-normal text-muted-foreground">{t("off")}</span>
                       ) : null}
+                      {skill.overridden ? <OverriddenBadge label={t("overridden")} hint={t("overriddenHint")} /> : null}
                       {needsConfig ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-normal text-warning">
                           <CircleAlert className="h-3 w-3" />

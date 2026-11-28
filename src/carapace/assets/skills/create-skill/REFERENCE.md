@@ -17,14 +17,14 @@ If a paragraph helps the future runtime agent act correctly during normal use, i
 
 Use this checklist when writing or reviewing a skill:
 
-1. Confirm the folder name, frontmatter `name`, and skill identity all match.
-2. Make sure the `description` contains the strongest trigger phrases a routing agent will search for.
+1. Confirm the folder name, the `name` in `mkSkill`, and the attribute in `skills/flake.nix` all match.
+2. Make sure the `description` in `mkSkill` contains the strongest trigger phrases a routing agent will search for.
 3. Keep `SKILL.md` focused on runtime workflow, guardrails, expected commands, and domain facts needed for safe use.
 4. Keep domain facts in `SKILL.md` when the agent needs them to act correctly, even if they are user-specific.
 5. Move schemas, dependency setup, auth internals, wrapper internals, and maintainer troubleshooting into sidecar docs.
 6. Link any sidecar docs from `SKILL.md` when the runtime agent may need to know they exist.
 7. If the skill has commands, add a short `Exposed Commands` list near the top of `SKILL.md` with the real command names from `flake.nix`.
-8. Commands live in `flake.nix`, never in frontmatter; the body only lists them for the runtime agent.
+8. Commands, name and description live in `flake.nix`; `SKILL.md` has no frontmatter and its body only lists the commands for the runtime agent.
 9. If the skill performs risky actions, add explicit safety rules near the top of `SKILL.md`.
 10. If a command needs domains or credentials, declare them in `flake.nix`; one sentence in `SKILL.md` that the command asks for them itself is enough.
 11. Build and run every command with `nix shell path:./skills/<name> -c <command>` before pushing (see [Developing before you push](#developing-before-you-push)).
@@ -82,7 +82,7 @@ These mistakes make skills harder to discover or use:
 
 ## Standard Skill Layout
 
-Skills live under `skills/` in the knowledge repo. Every skill is a Nix flake: `flake.nix` and `flake.lock` next to `SKILL.md`, plus the code and its lock files if it has commands. A skill with only instructions needs just the flake of a few lines from docs/skill-flakes.md ("Skills with only instructions"): `mkSkill { name = "my-skill"; src = ./.; }`.
+Skills live under `skills/` in the knowledge repo. Every skill is a Nix flake: `flake.nix` and `flake.lock` next to `SKILL.md`, plus the code and its lock files if it has commands. A skill with only instructions needs just the flake of a few lines from docs/skill-flakes.md ("Skills with only instructions"): `mkSkill { name = "my-skill"; description = "…"; src = ./.; }`.
 
 Every skill is listed in `skills/flake.nix`, one input per skill, and its attribute name there is the skill's name:
 
@@ -96,7 +96,7 @@ inputs.my-skill = {
 
 Always write both `follows`: every skill then shares the one `nixpkgs` and the one Carapace helper version that `skills/flake.nix` pins, and `nix flake update carapace --flake ./skills` updates the helpers of all skills at once. A skill's own `flake.lock` only matters when it is built on its own.
 
-The bundled skills are not in `skills/` but inputs on Carapace's `main` branch (`github:thiesgerken/carapace?dir=src/carapace/assets/skills/<dir>`), configured in `skills/config.json`. To change one beyond its settings, copy its directory into `skills/`, point its input at `path:./<dir>` and lock again; it is then a local skill.
+The bundled skills are not in `skills/` but inputs on Carapace's `main` branch (`github:thiesgerken/carapace?dir=src/carapace/assets/skills/<dir>`), configured in `skills/config.json`. To adjust one beyond its settings (its description, extra instructions, an added file), override it in `skills/flake.nix` (docs/sharing-skills.md, "Overriding a shared skill"); only for deeper changes copy its directory into `skills/`, point its input at `path:./<dir>` and lock again, which makes it a local skill.
 
 ```text
 skills/
@@ -116,15 +116,16 @@ skills/
 
 Use `REFERENCE.md`, `CONFIG.md`, or `references/*.md` for maintainer docs, large examples, or implementation notes.
 
-## Frontmatter Rules
+## Name and Description
 
-Required frontmatter:
+Both are `mkSkill` arguments in the skill's `flake.nix`, next to its commands. `SKILL.md` holds only the instructions; a SKILL.md that starts with YAML frontmatter fails the build.
 
-```yaml
----
-name: my-skill
-description: What this skill does and when to use it. Be specific.
----
+```nix
+default = skill.mkSkill {
+  name = "my-skill";
+  description = "What this skill does and when to use it. Be specific.";
+  src = ./.;
+};
 ```
 
 `name` rules:
@@ -140,24 +141,16 @@ description: What this skill does and when to use it. Be specific.
 - describe both what the skill does and when to use it
 - max 1024 characters
 
-Optional frontmatter fields:
-
-| Field           | Purpose                                                       |
-| --------------- | ------------------------------------------------------------- |
-| `license`       | License name or reference to a bundled `LICENSE` file         |
-| `compatibility` | Environment requirements such as tools, network, or OS limits |
-| `metadata`      | Arbitrary key-value pairs                                     |
-
 Good description example:
 
-```yaml
-description: Summarise email threads and draft replies. Use when the user mentions email, inbox, or wants to compose a message.
+```nix
+description = "Summarise email threads and draft replies. Use when the user mentions email, inbox, or wants to compose a message.";
 ```
 
 Bad description example:
 
-```yaml
-description: Helps with email.
+```nix
+description = "Helps with email.";
 ```
 
 When in doubt, bias toward concrete routing language:
@@ -206,6 +199,7 @@ The Carapace builder builds the flake whenever the skill changes on the server, 
         {
           default = skill.mkSkill {
             name = "my-skill";
+            description = "Search the Example service. Use when the user asks about Example records.";
             src = ./.;
             # Bound to a password-manager entry in skills/config.json, never written here.
             credentials.EXAMPLE_TOKEN = {

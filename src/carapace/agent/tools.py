@@ -31,7 +31,6 @@ from ..models.tooling import SentFileInfo, ToolResult, normalize_tool_call_args
 from ..prompt_prefix import join_prompt_sections, shared_prompt_prefix
 from ..sandbox.manager import READ_TOOL_MAX_LINE_WINDOW, SandboxLimitError, UploadError, UploadTooLargeError
 from ..security.context import ToolResultEntry
-from ..skills import SkillDocumentError, parse_skill_document
 from ..spans import ToolSpanCapability, span
 from ..usage import LlmRequestLogCapability
 from .autonomy import AutonomyLimitCapability
@@ -537,15 +536,6 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             reason = build.detail or "its skill directory has no SKILL.md"
             return _emit_tool_result(
                 ctx, "read_skill", f"Error: {skill_name} has no SKILL.md to read: {reason}", exit_code=1
-            )
-        try:
-            parse_skill_document(instructions, fallback_name=skill_name).carapace_config()
-        except SkillDocumentError as exc:
-            return _emit_tool_result(
-                ctx,
-                "read_skill",
-                f"Error: the SKILL.md of {skill_name} is invalid: {exc}. Fix it, commit and push.\n\n{instructions}",
-                exit_code=1,
             )
         commands = await _skill_commands(ctx, build)
         sources, config_error = await _skills_at_head(ctx)

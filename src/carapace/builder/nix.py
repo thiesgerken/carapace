@@ -11,6 +11,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -139,18 +140,39 @@ class _SkillDocs:
 _NO_DOCS = _SkillDocs()
 
 
+# Nix's message for a file a skill's flake reads that is not in what it got, e.g. an override's text kept
+# outside skills/<attr>/. It names the builder's copy, while the same build works in the user's checkout.
+# Path coercion (`"${./x}"`, an `extraFiles` value) and `builtins.readFile` word it differently.
+_MISSING_SOURCE_PATH = re.compile(
+    r"(?:path|opening file) '/nix/store/[0-9a-df-np-sv-z]{32}-source/[^']*'"
+    r"(?: does not exist|: No such file or directory)"
+)
+_ARCHIVE_HINT = (
+    "\nIf that path is in your skills/ directory: the builder gets only skills/flake.nix, flake.lock, config.json, "
+    "the skill's own directory and skills/<attribute>/. Keep an override's files in skills/<attribute>/ "
+    "(docs/sharing-skills.md)."
+)
+
+
+def _failure_log(log: str) -> str:
+    """The end of *log*, with the archive hint when Nix missed a path of a source it got."""
+    return _tail(log) + (_ARCHIVE_HINT if _MISSING_SOURCE_PATH.search(log) else "")
+
+
 def _failed(
     key: str,
     skill: str,
     log: str,
     docs: _SkillDocs = _NO_DOCS,
     declarations: SkillDeclarations | None = None,
+    metadata: object = None,
 ) -> BuildResult:
     return BuildResult(
         key=key,
         skill=skill,
         state="failed",
-        log_tail=_tail(log),
+        metadata=metadata,
+        log_tail=_failure_log(log),
         skill_dir=docs.skill_dir,
         skill_md=docs.skill_md,
         skill_files=docs.skill_files,
@@ -233,10 +255,25 @@ async def build_skill(
     if isinstance(metadata, dict) and metadata.get("enable") is False:
         return BuildResult(key=key, skill=skill, state="succeeded", metadata=metadata, declarations=declarations)
     package = f"path:{source}#packages.{system}.{skill}"
+    # The skill directory alone, which only copies files: its SKILL.md is readable before the commands build.
+    # A manifest that names none leaves the docs empty, and the server reports that.
+    if isinstance(metadata, dict) and "skillDir" in metadata:
+        code, _, dir_log = await _run(
+            "nix",
+            "build",
+            "--no-update-lock-file",
+            "--no-link",
+            f"{package}.skillDir",
+            credential=credential,
+        )
+        if code != 0:
+            return _failed(key, skill, dir_log, declarations=declarations, metadata=metadata)
     try:
         docs = _skill_docs(metadata)
     except (SkillFileError, OSError, UnicodeDecodeError) as exc:
-        return _failed(key, skill, f"Cannot read the skill directory: {exc}", declarations=declarations)
+        return _failed(
+            key, skill, f"Cannot read the skill directory: {exc}", declarations=declarations, metadata=metadata
+        )
     code, stdout, build_log = await _run(
         "nix",
         "build",
@@ -250,7 +287,7 @@ async def build_skill(
         credential=credential,
     )
     if code != 0:
-        return _failed(key, skill, build_log, docs, declarations)
+        return _failed(key, skill, build_log, docs, declarations, metadata)
     store_paths = [path for built in json.loads(stdout) for path in built["outputs"].values()]
     return BuildResult(
         key=key,

@@ -91,8 +91,8 @@ def test_metadata_from_helpers_without_src_names_no_directory() -> None:
     assert checked_skill_dir(None) is None
 
 
-def _nix(directory: str, *, build_code: int = 0):
-    """`nix eval` answers with metadata naming *directory*; `nix build` succeeds or fails."""
+def _nix(directory: str, *, build_code: int = 0, dir_code: int = 0):
+    """`nix eval` answers with metadata naming *directory*; building it and the package succeed or fail."""
 
     async def run(*args: str, credential: FetchCredential | None = None) -> tuple[int, str, str]:
         if args[1] == "eval" and "--apply" in args:
@@ -101,9 +101,13 @@ def _nix(directory: str, *, build_code: int = 0):
         if args[1] == "eval":
             return (
                 0,
-                json.dumps({"enable": True, "name": "demo", "skillDir": directory, "settings": {}, "commands": {}}),
+                json.dumps(
+                    {"enable": True, "name": "demo", "description": "Demo", "skillDir": directory, "commands": {}}
+                ),
                 "",
             )
+        if args[-1].endswith(".skillDir"):
+            return dir_code, "", "error: the skill directory does not build" if dir_code else ""
         if build_code:
             return build_code, "", "error: builder ran out of disk"
         return 0, json.dumps([{"outputs": {"out": "/nix/store/x-skill-demo"}}]), "built"
@@ -118,7 +122,7 @@ async def _build(tmp_path: Path) -> BuildResult:
     return await nix.build_skill(source, KEY, "demo", "x86_64-linux", tmp_path / "roots", None)
 
 
-async def test_a_build_carries_the_skill_md_and_files_it_read_after_the_evaluation(
+async def test_a_build_carries_the_skill_md_and_files_it_read_before_the_commands_build(
     directory: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(nix, "_run", _nix(directory))
@@ -139,6 +143,19 @@ async def test_a_failed_build_still_carries_the_skill_md(
 
     assert result.state == "failed"
     assert result.skill_md is not None and "error: builder ran out of disk" in result.log_tail
+    # The manifest evaluated, so the catalog keeps the skill's description.
+    assert result.metadata["description"] == "Demo"
+
+
+async def test_a_skill_dir_that_does_not_build_fails_before_the_commands(
+    directory: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(nix, "_run", _nix(directory, dir_code=1, build_code=1))
+
+    result = await _build(tmp_path)
+
+    assert result.state == "failed" and "the skill directory does not build" in result.log_tail
+    assert (result.skill_md, result.metadata["description"]) == (None, "Demo")
 
 
 async def test_a_skill_dir_outside_the_store_fails_the_build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -253,3 +270,50 @@ async def test_a_skills_flake_without_manifests_says_how_to_write_one(
 
     assert result.state == "failed"
     assert result.log_tail.startswith("skills/flake.nix has no manifests for its skills: write its outputs with")
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        # Path coercion, e.g. an extraFiles value.
+        f"error: path '/nix/store/{'a' * 32}-source/shared/household.md' does not exist",
+        # builtins.readFile, the documented form for instructions.
+        f"error: opening file '/nix/store/{'a' * 32}-source/shared/household.md': No such file or directory",
+    ],
+)
+async def test_a_path_missing_from_the_archive_gets_a_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+
+    async def run(*args: str, credential: FetchCredential | None = None) -> tuple[int, str, str]:
+        if "--apply" in args:
+            return 0, json.dumps({"settings": {}, "credentials": {}}), ""
+        return 1, "", missing
+
+    monkeypatch.setattr(nix, "_run", run)
+
+    result = await _build(tmp_path)
+
+    assert result.log_tail.startswith(missing)
+    assert "Keep an override's files in skills/<attribute>/" in result.log_tail
+
+
+async def test_a_manifest_without_a_skill_dir_builds_only_the_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built: list[str] = []
+
+    async def run(*args: str, credential: FetchCredential | None = None) -> tuple[int, str, str]:
+        if "--apply" in args:
+            return 0, json.dumps({"settings": {}, "credentials": {}}), ""
+        if args[1] == "eval":
+            return 0, json.dumps({"enable": True, "commands": {}}), ""
+        built.append(args[-1])
+        return 0, json.dumps([{"outputs": {"out": "/nix/store/x-skill-demo"}}]), ""
+
+    monkeypatch.setattr(nix, "_run", run)
+
+    result = await _build(tmp_path)
+
+    assert (result.state, result.skill_dir) == ("succeeded", None)
+    assert [target.rsplit("#", 1)[1] for target in built] == ["packages.x86_64-linux.demo"]

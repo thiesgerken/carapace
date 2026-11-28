@@ -1,8 +1,3 @@
----
-name: demo-nix
-description: Example skill built from nixpkgs alone, without a language package manager. Use it to check that skill flakes build.
----
-
 # demo-nix
 
 - `demo-nix-pages <file.pdf>` counts the pages of a PDF with qpdf and jq.

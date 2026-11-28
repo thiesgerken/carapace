@@ -23,6 +23,7 @@ const checked: KnowledgeSkillSources = {
       locked_rev: "a".repeat(40),
       locked_at: "2026-11-01T00:00:00Z",
       update: { state: "available", available_rev: "b".repeat(40), available_at: "2026-11-20T00:00:00Z", detail: "" },
+      overridden: true,
     },
     {
       name: "notes",
@@ -36,6 +37,7 @@ const checked: KnowledgeSkillSources = {
         available_at: null,
         detail: "Its inputs changed: run `nix flake update notes --flake ./skills` and commit skills/flake.lock.",
       },
+      overridden: false,
     },
     {
       name: "archive",
@@ -44,6 +46,7 @@ const checked: KnowledgeSkillSources = {
       locked_rev: null,
       locked_at: "2026-11-02T00:00:00Z",
       update: { state: "current", available_rev: null, available_at: null, detail: "" },
+      overridden: false,
     },
   ],
 };
@@ -81,6 +84,10 @@ test("the skill list shows origin, locked rev and the update verdict, and starts
     assert.match(archiveRow?.textContent ?? "", /Nov 2, 2026/);
     assert.doesNotMatch(archiveRow?.textContent ?? "", /local/);
     assert.equal(view.container.querySelector('a[href="/knowledge?path=skills%2Fnotes"]')?.textContent, "notes");
+    // Only the skill skills/flake.nix overrides carries the marker.
+    const rowOf = (name: string) => Array.from(view.container.querySelectorAll("tr")).find((row) => row.textContent?.includes(name));
+    assert.match(rowOf("github:someone/tracker")?.textContent ?? "", /overridden/);
+    assert.doesNotMatch(rowOf("./notes")?.textContent ?? "", /overridden/);
 
     const button = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Check for updates");
     assert.ok(button);

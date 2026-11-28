@@ -1,7 +1,11 @@
 #!/bin/sh
-# Lists the skills of a knowledge repo in skills/flake.nix, for repos from before it existed.
-# Run it from anywhere inside the repo; it stages its changes and leaves the commit to you.
-# See docs/upgrading-to-skill-flakes.md ("The skills flake").
+# Lists the skills of a knowledge repo in skills/flake.nix, for repos from before it existed, and moves
+# the SKILL.md frontmatter of its local skills into their flakes. Run it from anywhere inside the repo; it
+# stages its changes and leaves the commit to you. See docs/upgrading-to-skill-flakes.md.
+#
+# With a skills/flake.nix already there, it only moves the frontmatter: each local skill's description
+# goes into its mkSkill and SKILL.md keeps the instructions. Then it updates carapace and the bundled
+# skills in skills/flake.lock, whose new versions expect exactly that.
 #
 # - A bundled skill that Carapace now ships from its main branch, and that only bootstrap ever
 #   touched, becomes an input on carapace and its copy is removed. A copy you changed stays local.
@@ -23,10 +27,6 @@ BOOTSTRAP_SUBJECT="🔧 bootstrap: seed default files"
 CARAPACE_URL="github:thiesgerken/carapace"
 
 cd "$(git rev-parse --show-toplevel)/skills"
-if [ -e flake.nix ] || [ -e config.json ]; then
-  echo "skills/flake.nix or skills/config.json exists already; nothing to do." >&2
-  exit 1
-fi
 # The script stages what it changes, so nothing else may be pending there.
 if [ -n "$(git status --porcelain -- .)" ]; then
   echo "skills/ has uncommitted changes; commit or stash them first." >&2
@@ -72,6 +72,68 @@ input() { # name url [prefix]
     "${3:-}" "$1" "${3:-}" "$2" "${3:-}" "${3:-}" "${3:-}" | sed 's/^/    /'
 }
 
+# Whether SKILL.md starts with YAML frontmatter, which mkSkill refuses.
+has_frontmatter() { # SKILL.md
+  [ "$(head -n 1 "$1")" = "---" ]
+}
+
+# A top-level key of the frontmatter as a Nix string literal: a plain or quoted value, or a folded (>) or
+# literal (|) block. Empty when the key is missing.
+frontmatter_value() { # SKILL.md key
+  awk -v key="$2" '
+    function nix(value) {
+      gsub(/\\/, "\\\\", value); gsub(/"/, "\\\"", value); gsub(/\$\{/, "\\${", value); gsub(/\n/, "\\n", value)
+      return "\"" value "\""
+    }
+    NR == 1 { next }
+    /^---[[:space:]]*$/ { exit }
+    block {
+      if ($0 != "" && $0 !~ /^[[:space:]]/) exit
+      sub(/^[[:space:]]+/, "")
+      value = value (value == "" ? "" : separator) $0
+      next
+    }
+    index($0, key ":") == 1 {
+      value = substr($0, length(key) + 2)
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      if (value ~ /^[>|][-+]?$/) { separator = value ~ /^>/ ? " " : "\n"; value = ""; block = 1; next }
+      if (value ~ /^".*"$/ || value ~ /^\047.*\047$/) value = substr(value, 2, length(value) - 2)
+      print nix(value)
+      done = 1
+      exit
+    }
+    END { if (block && !done) { sub(/[[:space:]]+$/, "", value); print nix(value) } }
+  ' "$1"
+}
+
+# The other top-level keys of the frontmatter, which have no place in the flake.
+frontmatter_rest() { # SKILL.md
+  awk 'NR == 1 { next } /^---[[:space:]]*$/ { exit } /^[A-Za-z_][A-Za-z0-9_-]*:/ { sub(/:.*/, ""); if ($0 != "name" && $0 != "description") print }' "$1" | tr '\n' ' '
+}
+
+strip_frontmatter() { # SKILL.md
+  awk 'NR == 1 { inside = 1; next } inside { if ($0 ~ /^---[[:space:]]*$/) { inside = 0; leading = 1 } next } leading && /^[[:space:]]*$/ { next } { leading = 0; print }' "$1" > "$1.new"
+  mv "$1.new" "$1"
+}
+
+# Moves the description from SKILL.md's frontmatter into the skill's mkSkill and strips the frontmatter.
+move_frontmatter() { # dir
+  has_frontmatter "$1/SKILL.md" || return 0
+  description=$(frontmatter_value "$1/SKILL.md" description)
+  if [ -z "$description" ]; then
+    echo "skills/$1: its SKILL.md frontmatter has no description; add description = \"…\"; to its mkSkill by hand" >&2
+    description='"TODO: describe the skill"'
+  fi
+  if ! MKSKILL_ARG="description = $description;" add_arg "$1/flake.nix" description; then
+    echo "skills/$1: move the frontmatter description into mkSkill by hand; SKILL.md keeps its frontmatter until then" >&2
+    return 0
+  fi
+  rest=$(frontmatter_rest "$1/SKILL.md")
+  strip_frontmatter "$1/SKILL.md"
+  [ -z "$rest" ] || echo "skills/$1: dropped frontmatter keys without a place in the flake: $rest"
+}
+
 mini_flake() { # name
   cat <<EOF
 {
@@ -97,34 +159,70 @@ mini_flake() { # name
 EOF
 }
 
-# mkSkill takes the skill directory as `src` since the release that reads skills from their build. Only
-# mkSkill's own arguments count (depth 1 of its braces), not a `src` of a package inside it.
-add_src() { # flake.nix
-  awk '
+# Adds the line $MKSKILL_ARG after mkSkill's `name` unless mkSkill sets <key> already. Only mkSkill's own
+# arguments count (depth 1 of its braces), not a `src` of a package inside it. Fails when the flake has no
+# `mkSkill {` it can read (`mkSkill rec {`, a brace on the next line) or that mkSkill has no `name` line.
+add_arg() { # flake.nix key
+  status=0
+  awk -v key="$2" '
     function braces(line,  opened, closed) {
       opened = gsub(/\{/, "{", line); closed = gsub(/\}/, "}", line); return opened - closed
     }
     function flush(  i) {
       for (i = 0; i < n; i++) {
         print block[i]
-        if (!has_src && i == name_at) { match(block[i], /^[[:space:]]*/); print substr(block[i], 1, RLENGTH) "src = ./.;" }
+        if (!has_key && i == name_at) { match(block[i], /^[[:space:]]*/); print substr(block[i], 1, RLENGTH) ENVIRON["MKSKILL_ARG"] }
       }
-      if (!has_src && name_at < 0) print FILENAME ": add src = ./.; to mkSkill by hand" > "/dev/stderr"
+      if (has_key || name_at >= 0) set = 1
       inside = 0
     }
     inside {
       block[n++] = $0
-      if (depth == 1 && $0 ~ /^[[:space:]]*src[[:space:]]*=/) has_src = 1
+      if (depth == 1 && $0 ~ "^[[:space:]]*" key "[[:space:]]*=") has_key = 1
       if (depth == 1 && $0 ~ /^[[:space:]]*name[[:space:]]*=/ && name_at < 0) name_at = n - 1
       depth += braces($0)
       if (depth <= 0) flush()
       next
     }
-    /mkSkill[[:space:]]*\{/ { print; inside = 1; depth = braces($0); n = 0; has_src = 0; name_at = -1; next }
+    /mkSkill[[:space:]]*\{/ { print; inside = 1; depth = braces($0); n = 0; has_key = 0; name_at = -1; next }
     { print }
-  ' "$1" > "$1.new"
+    END { exit !set }
+  ' "$1" > "$1.new" || status=$?
   mv "$1.new" "$1"
+  return "$status"
 }
+
+# mkSkill takes the skill directory as `src` since the release that reads skills from their build.
+add_src() { # flake.nix
+  MKSKILL_ARG="src = ./.;" add_arg "$1" src || echo "$1: add src = ./.; to mkSkill by hand" >&2
+}
+
+# skills/flake.nix exists: only the frontmatter is left to move, then the helpers and bundled skills that
+# expect it are updated.
+if [ -e flake.nix ]; then
+  for dir in */; do
+    name=${dir%/}
+    [ -f "$name/SKILL.md" ] && [ -f "$name/flake.nix" ] && move_frontmatter "$name"
+  done
+  git add -A .
+  cd ..
+  listed=$(nix eval --raw --impure --expr \
+    'let lock = builtins.fromJSON (builtins.readFile ./skills/flake.lock); in toString (builtins.attrNames lock.nodes.${lock.root}.inputs)')
+  bundled=""
+  for attr in $FROM_CARAPACE carapace-cli ferret web; do
+    one_of "$attr" "$listed" && bundled="$bundled $attr"
+  done
+  # shellcheck disable=SC2086 # one argument per input
+  nix flake update --flake ./skills carapace $bundled
+  git add skills/flake.lock
+  echo "Done. Skills from other repos need the same move there (scripts/upgrade-skills-flake.sh in each)."
+  echo "Review \`git diff --cached\`, then commit and push."
+  exit 0
+fi
+if [ -e config.json ]; then
+  echo "skills/config.json exists without skills/flake.nix; move it away first." >&2
+  exit 1
+fi
 
 # Lines of SKILL.md that only switch a bundled skill on or off, which the release shipped and you may
 # have changed to turn it on.
@@ -246,6 +344,7 @@ for dir in */; do
     fi
     # Its flake does not declare the settings and slots yet, and config.json may only set declared ones.
     add_src "$name/flake.nix"
+    move_frontmatter "$name"
     local="$local$(input "$attr" "path:./$name")
 "
     config="$config  \"$attr\": {\"enable\": false},
@@ -280,8 +379,10 @@ for dir in */; do
   if grep -Eq '^[[:space:]]+disabled:[[:space:]]*true[[:space:]]*(#.*)?$' "$name/SKILL.md"; then
     off="$off$(input "$attr" "path:./$name" "# ")
 "
-    echo "skills/$name: disabled, listed commented out; delete \`disabled\` from its SKILL.md before listing it"
+    echo "skills/$name: disabled, listed commented out"
+    move_frontmatter "$name"
   else
+    move_frontmatter "$name"
     local="$local$(input "$attr" "path:./$name")
 "
   fi

@@ -180,7 +180,7 @@ When the sentinel escalates a boundary request or a push, the session engine sen
 
 ### Skill Catalog
 
-Lists the skills of `skills/flake.lock` with the descriptions from their `SKILL.md`, which the builder reads from each skill's build (`builder/skill_builds.py`). The full `SKILL.md` comes from the build too, when the agent reads a skill with `read_skill`. See [skills.md](skills.md).
+Lists the skills of `skills/flake.lock` with the descriptions from their manifests, which the builder evaluates for each skill's build (`builder/skill_builds.py`). The full `SKILL.md` comes from the build too, when the agent reads a skill with `read_skill`. See [skills.md](skills.md).
 
 ### Git Store
 
@@ -222,7 +222,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `platform_store.py` | Database store for platform settings and the model catalog.                              |
 | `prompt_prefix.py` | System prompt prefix shared by the agent, compaction and memory tasks (see [persistent context](persistent-context.md#system-prompt-loading)). |
 | `prompt_preview.py` | What every LLM role sends, split into sections with token counts.                        |
-| `skills.py`    | The skill list from `skills/flake.lock` and frontmatter parsing.                               |
+| `skills.py`    | The skill list from `skills/flake.lock`.                                                       |
 | `span_names.py` | Span names clients match on (dependency-free for the CLI).                                   |
 | `spans.py`     | Timing spans of a running turn (`TurnTrace`, `span()`, `attach_sandbox_call`).                |
 | `usage.py`     | Usage tracking, cost estimation, budget gauges, and LLM request activity records.             |

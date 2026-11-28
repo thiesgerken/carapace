@@ -56,7 +56,7 @@ src/carapace/          # main package
   span_names.py        # span names clients match on (kept dependency-free for the CLI)
   prompt_prefix.py     # shared system prompt prefix (AGENTS/SOUL/USER.md, skill catalog)
   prompt_preview.py    # what every LLM role sends, split into sections (GET /api/prompts/preview)
-  skills.py            # skill list from skills/flake.lock, SKILL.md frontmatter
+  skills.py            # skill list from skills/flake.lock
   credentials/         # credential backends (Bitwarden, secrets file) and OAuth refresh
   database/            # SQLAlchemy tables, engine and Alembic migrations (SQLite by default)
   agent/
@@ -126,7 +126,7 @@ data/                  # runtime data directory (SQLite database, session files,
 - Tool calls are not reviewed: `security.record_tool_call()` puts each one into the action log. The LLM sentinel reviews what crosses the sandbox boundary (proxy domains, credentials, `cgate request`, git pushes)
 - The sentinel maintains a persistent shadow conversation per session for contextual decisions
 - An append-only action log tracks all agent actions, user messages, and security decisions
-- Skills follow the open [AgentSkills](https://agentskills.io/) format
+- Skills are modeled on the open [AgentSkills](https://agentskills.io/) format, but `name` and `description` live in the skill's `mkSkill`, not in SKILL.md frontmatter (docs/skills.md)
 - All runtime state lives under `$CARAPACE_DATA_DIR` (defaults to `./data`)
 - Secrets come from a password manager, never stored in the repo
 - Frontend colors come from the semantic tokens in `frontend/src/app/globals.css` (`primary`, `success`, `info`, `warning`, `destructive`, the `surface`/`inset` levels), never from raw Tailwind palette classes; only categorical series (debug timeline, context breakdown, budget gauges, prompt sections) keep a palette. Panels differ by background, not by bordered cards

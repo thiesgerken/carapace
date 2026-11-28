@@ -8,7 +8,6 @@ import {
   Copy,
   Download,
   GitCommitHorizontal,
-  Lightbulb,
   Loader2,
   Puzzle,
 } from "lucide-react";
@@ -22,6 +21,7 @@ import { ArtifactPreview } from "@/components/artifact-preview";
 import { useAppLocale } from "@/components/locale-provider";
 import { GlobalGitPanel, KNOWLEDGE_GIT_CHANGED_EVENT, useGlobalGit } from "@/components/git-sync";
 import { MarkdownContent } from "@/components/markdown-content";
+import { OverriddenBadge } from "@/components/overridden-badge";
 import { SkillBuildPanel } from "@/components/skill-build-panel";
 import { SkillSourcesPanel } from "@/components/skill-sources-panel";
 import {
@@ -32,6 +32,7 @@ import {
   type KnowledgeEntry,
   type KnowledgeFileInfo,
   type KnowledgeSkill,
+  type KnowledgeSkillBuild,
 } from "@/lib/api";
 import { useBrand } from "@/hooks/use-brand";
 import { entryIcon } from "@/lib/file-icons";
@@ -213,57 +214,23 @@ function EntryRow({
   );
 }
 
-function SkillSection({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1 sm:flex-row sm:gap-3">
-      {/* self-start: the label row must not stretch, or items-center drifts it to the
-          vertical middle of a multi-line value list. */}
-      <div className="flex shrink-0 items-center gap-1.5 self-start pt-0.5 text-xs font-medium text-muted-foreground sm:w-32">
-        {icon}
-        {label}
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">{children}</div>
-    </div>
-  );
-}
-
-const sectionIconClass = "h-3.5 w-3.5 shrink-0";
-
-/** Frontmatter of a skill's SKILL.md as a card: name, description, and hints. */
-function SkillCard({ skill }: { skill: KnowledgeSkill }) {
+/** A local skill as a card above its SKILL.md: name, and the description and override its build reports. */
+function SkillCard({ skill, build }: { skill: KnowledgeSkill; build: KnowledgeSkillBuild | null }) {
   const t = useTranslations("knowledge.skill");
-  const carapace = skill.carapace;
-  const hints = Object.entries(carapace?.hints ?? {});
 
   return (
     <section className="rounded-lg bg-surface p-4">
-      <div className="flex items-baseline gap-2">
+      <div className="flex flex-wrap items-baseline gap-2">
         <Puzzle className="h-4 w-4 shrink-0 self-center text-accent-foreground/70" />
         <h2 className="min-w-0 break-all font-mono text-sm font-semibold">{skill.name}</h2>
+        {build?.overridden ? <OverriddenBadge label={t("overridden")} hint={t("overriddenHint")} /> : null}
       </div>
-      {skill.description ? (
-        <p className="mt-1.5 text-sm text-muted-foreground">{skill.description}</p>
-      ) : null}
+      {build?.description ? <p className="mt-1.5 text-sm text-muted-foreground">{build.description}</p> : null}
       {skill.error ? (
         <p className="mt-1.5 flex items-start gap-1.5 text-sm text-destructive">
           <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 break-words">{t("invalid", { error: skill.error })}</span>
+          <span className="min-w-0 break-words">{skill.error}</span>
         </p>
-      ) : null}
-
-      {hints.length ? (
-        <div className="mt-4 flex flex-col gap-3 border-t border-border/70 pt-3 text-sm">
-          {hints.length ? (
-            <SkillSection icon={<Lightbulb className={sectionIconClass} />} label={t("hints")}>
-              {hints.map(([key, value]) => (
-                <div key={key} className="min-w-0 break-words text-xs">
-                  <code className="break-all font-mono font-semibold">{key}</code>
-                  <span className="ml-2 text-muted-foreground">{value}</span>
-                </div>
-              ))}
-            </SkillSection>
-          ) : null}
-        </div>
       ) : null}
     </section>
   );
@@ -469,7 +436,11 @@ export function KnowledgeView() {
                 <SkillSourcesPanel server={server} />
               </div>
             ) : null}
-            {result.skill ? <div className="mt-6"><SkillCard skill={result.skill} /></div> : null}
+            {result.skill ? (
+              <div className="mt-6">
+                <SkillCard skill={result.skill} build={result.build} />
+              </div>
+            ) : null}
             {result.build && result.skill ? (
               <div className="mt-4">
                 <SkillBuildPanel

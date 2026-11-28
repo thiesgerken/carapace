@@ -1,4 +1,4 @@
-"""Listing skills from skills/flake.lock and reading SKILL.md frontmatter (no LLM tokens needed)."""
+"""Listing skills from skills/flake.lock (no LLM tokens needed)."""
 
 from __future__ import annotations
 
@@ -9,10 +9,8 @@ from pathlib import Path, PurePosixPath
 import pytest
 
 from carapace.skills import (
-    SkillDocumentError,
     SkillsFlakeError,
     flake_ref,
-    parse_skill_document,
     parse_skills_lock,
     read_skills_flake,
 )
@@ -49,13 +47,6 @@ def test_only_what_the_flake_lists_is_a_skill_named_by_its_attribute(tmp_path: P
     listed = {skill.name: skill.directory for skill in read_skills_flake(tmp_path)}
 
     assert listed == {"carapace-cli": PurePosixPath("carapace"), "tracker": None}
-
-
-def test_disabled_in_the_frontmatter_is_refused() -> None:
-    text = "---\nname: private-search\nmetadata:\n  carapace:\n    disabled: true\n---\nFull instructions.\n"
-
-    with pytest.raises(SkillDocumentError, match="disabled is gone"):
-        parse_skill_document(text, fallback_name="private-search").carapace_config()
 
 
 @pytest.mark.parametrize("path", ["../outside", ".", "./a/../.."])

@@ -23,6 +23,7 @@
         {
           default = skill.mkSkill {
             name = "carapace";
+            description = "Drive a carapace server non-interactively from inside the sandbox: list/inspect/create/update sessions, send messages and wait for turns, resolve pending approvals by id, and manage jobs (list/get/create/update/delete/run). Use this to let the agent configure, read, start, and interact with carapace sessions and jobs over the JSON CLI. Requires a scoped API key in the vault.";
             src = ./.;
             # Set and bound in skills/config.json (REFERENCE.md).
             settings.CARAPACE_HOST = {
