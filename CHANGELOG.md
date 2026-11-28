@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v0.203.3 (2026-11-28)
+
+### 🍱 Add or update assets
+
+- docs: retake the README screenshots
+
+### 🐛 Fix a bug
+
+- fix: bootstrap the demo knowledge repo like the server does
+
 ## v0.203.2 (2026-11-28)
 
 ### 🐛 Fix a bug
