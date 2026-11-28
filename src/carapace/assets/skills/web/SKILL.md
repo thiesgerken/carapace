@@ -1,13 +1,3 @@
----
-name: web
-# Before turning it on, bind its BRAVE_API_KEY slot to your Brave Search API key in skills/config.json: {"web": {"credentials": {"BRAVE_API_KEY": "<backend>/<id>"}}}.
-description: >-
-  Search the web and fetch page content. Use web_search to find information
-  across the web via Brave Search. Use web_fetch to retrieve and extract
-  readable content from a specific URL. Activate when the user asks to look
-  something up online, find recent information, or read a webpage.
----
-
 # Web Skill
 
 Two tools for accessing web content: **web_search** (search engine queries) and **web_fetch** (fetch and extract a single URL).

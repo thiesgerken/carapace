@@ -14,12 +14,17 @@ Ferret is bundled and listed in `skills/flake.nix`, but the seeded
    Ferret uses API-key bearer auth, not OAuth or a browser session cookie.
 3. Store the actual key in the vault and note its `<backend>/<id>` path. Never put
    the key in chat or the skill file.
-4. Optionally, name your actual indexed sources in the frontmatter `description`,
-   an always-visible coverage hint (`ferret list_sources` shows the sources the
-   key may read). The bundled skill comes from Carapace's `main`, so this needs a
-   local copy: copy `src/carapace/assets/skills/ferret` from the Carapace repo into
-   `skills/ferret`, replace the `X, Y, Z` placeholder, and point the `ferret` input
-   in `skills/flake.nix` at `path:./ferret`, then `nix flake lock ./skills`.
+4. Optionally, name your actual indexed sources in the skill's description, an
+   always-visible coverage hint (`ferret list_sources` shows the sources the key
+   may read). Override it in `skills/flake.nix`, which replaces the `X, Y, Z`
+   placeholder without a copy of the skill:
+
+   ```nix
+   overrides.ferret = skill: skill.override (old: {
+     description = builtins.replaceStrings [ "X, Y, Z (TODO: add specific sources here!)" ] [ "mail, notes and documents" ] old.description;
+   });
+   ```
+
 5. In `skills/config.json`, replace ferret's `"enable": false` with
    `{"settings": {"FERRET_URL": "https://…/mcp"}, "credentials": {"FERRET_API_KEY": "<backend>/<id>"}}`,
    commit and push. The builder builds the skill, and a new session lists it in

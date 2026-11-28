@@ -1,12 +1,3 @@
----
-name: artifacts
-description: >-
-  Build self-contained HTML artifacts: reports, dashboards, calculators, and
-  interactive explainers that render in carapace chat and the knowledge browser.
-  Use when the user needs a reusable page or local interaction rather than a
-  short answer, a Mermaid diagram, or a downloadable file.
----
-
 # Artifacts
 
 Build one self-contained page at `/workspace/artifacts/<slug>/index.html`.

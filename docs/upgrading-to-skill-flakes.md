@@ -101,7 +101,8 @@ Copies from before skill flakes declare commands or `mcp` in their frontmatter a
 - Every other directory with a `SKILL.md` becomes a `path:./<dir>` input. The bundled `carapace` skill is listed as `carapace-cli`, because `carapace` names the helpers.
 - A skill without a `flake.nix` gets a flake of a few lines ([Skills with only instructions](skill-flakes.md#skills-with-only-instructions)).
 - `mkSkill` now takes the skill directory as `src`. The script adds `src = ./.;` to each local flake that lacks it, right after `mkSkill`'s `name`, and names any flake where it could not.
-- A skill of your own whose `SKILL.md` still sets `metadata.carapace.disabled` is written as a commented-out input. `disabled` is gone: a skill is off when it is not listed, and one that still sets the field shows up as broken once listed, so delete the field before you uncomment it.
+- A skill of your own whose `SKILL.md` still sets `metadata.carapace.disabled` is written as a commented-out input. `disabled` is gone: a skill is off when it is not listed.
+- Each local skill's frontmatter moves into its flake, as in [SKILL.md frontmatter](#skillmd-frontmatter) below.
 - Every input follows the repo's `nixpkgs` and `carapace`, and the outputs come from `carapace.lib.skillsFlake`. The script writes `skills/config.json` with the [settings and credential bindings](skill-flakes.md#skillsconfigjson) it found, then runs `nix flake lock ./skills` and stages everything, but commits nothing.
 
 It needs Git and Nix and runs anywhere in a clone of the repo. The agent can run it in its sandbox too; fetching the script is a domain request like any other:
@@ -114,7 +115,18 @@ git commit -m "List the skills in skills/flake.nix"
 git push
 ```
 
-It refuses to run when `skills/flake.nix` or `skills/config.json` exists already or `skills/` has uncommitted changes, and when a skill directory's name can't be a flake attribute (`nixpkgs`, `self`, or one with dots), which you rename first. It checks all of that before it changes anything.
+With `skills/flake.nix` already there it only does the [frontmatter move](#skillmd-frontmatter). It refuses to run when only `skills/config.json` exists or `skills/` has uncommitted changes, and when a skill directory's name can't be a flake attribute (`nixpkgs`, `self`, or one with dots), which you rename first. It checks all of that before it changes anything.
+
+### SKILL.md frontmatter
+
+A later release ([#707](https://github.com/thiesgerken/carapace/issues/707)) moves a skill's `name` and `description` out of `SKILL.md` into `mkSkill`, so that a repo can [override a shared skill](sharing-skills.md#overriding-a-shared-skill) with plain Nix. There is no compatibility for the old YAML: a `SKILL.md` that still starts with frontmatter fails the evaluation, and a skills flake on helpers from before it shows every skill as failed, with the command that updates them. `metadata.carapace.hints` is gone without a replacement.
+
+The same script does the move for a repo that has `skills/flake.nix`:
+
+- Every local skill whose `SKILL.md` starts with frontmatter gets `description = "…";` in its `mkSkill`, right after `name` (a folded `>` or literal `|` block becomes one string), and its `SKILL.md` keeps only the instructions. It names the frontmatter keys it dropped (`metadata`, `license`, …) and any flake where it could not add the line; a skill without a description gets a `TODO` to fill in.
+- Then it runs `nix flake update --flake ./skills carapace` plus the bundled skills the lock lists, whose new versions are migrated too, and stages everything.
+
+A skill from another repo needs the move in its own repo (the script there, or the two edits by hand) before the new helpers can build it: until then it fails with the frontmatter message.
 
 ### `SECURITY.md`
 

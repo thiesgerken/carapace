@@ -28,7 +28,7 @@ def _make_repo(tmp_path: Path) -> Path:
     (root / ".git").mkdir(parents=True)
     (root / ".git" / "config").write_text("secret")
     (root / "skills" / "weather").mkdir(parents=True)
-    (root / "skills" / "weather" / "SKILL.md").write_text("---\nname: weather\n---\n")
+    (root / "skills" / "weather" / "SKILL.md").write_text("# Weather\n")
     write_skills_flake(root / "skills", ["weather"])
     (root / "SOUL.md").write_text("# soul")
     return root
@@ -179,8 +179,7 @@ def test_list_dir_inlines_skill_doc(tmp_path: Path) -> None:
     listing = list_dir(root, skill.resolve())
 
     assert (listing.kind, listing.doc_name) == ("skill", "SKILL.md")
-    # Frontmatter-only SKILL.md: nothing left in the body once it is stripped.
-    assert listing.doc == ""
+    assert listing.doc == (skill / "SKILL.md").read_text()
     assert listing.skill is not None and listing.skill.name == "weather"
 
 
@@ -188,21 +187,6 @@ def test_list_dir_without_skill_doc_has_no_kind(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     listing = list_dir(root, (root / "skills").resolve())
     assert (listing.kind, listing.doc_name, listing.doc) == (None, None, None)
-
-
-_SKILL_MD = """---
-name: weather
-description: Forecast via Home Assistant
-metadata:
-  carapace:
-    hints:
-      weather: Prefer metric units.
----
-
-# Weather
-
-Body prose.
-"""
 
 
 def _skill(root: Path, name: str, text: str) -> Path:
@@ -215,19 +199,15 @@ def _skill(root: Path, name: str, text: str) -> Path:
     return directory
 
 
-def test_list_dir_strips_frontmatter_into_skill(tmp_path: Path) -> None:
+def test_list_dir_shows_skill_md_as_written(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
-    _skill(root, "weather", _SKILL_MD)
+    _skill(root, "weather", "# Weather\n\nBody prose.\n")
 
     listing = list_dir(root, (root / "skills" / "weather").resolve())
 
     assert listing.kind == "skill"
     assert listing.doc == "# Weather\n\nBody prose.\n"
-    assert listing.skill is not None
-    assert (listing.skill.name, listing.skill.description) == ("weather", "Forecast via Home Assistant")
-    carapace = listing.skill.carapace
-    assert carapace is not None
-    assert carapace.hints == {"weather": "Prefer metric units."}
+    assert listing.skill is not None and (listing.skill.name, listing.skill.error) == ("weather", None)
 
 
 def test_an_unlisted_skill_directory_is_a_plain_directory(tmp_path: Path) -> None:
@@ -261,18 +241,6 @@ def test_a_listed_skill_without_skill_md_still_shows_as_a_skill(tmp_path: Path) 
     assert listing.skill is not None and listing.skill.error == "SKILL.md is missing or not text"
 
 
-def test_disabled_in_the_frontmatter_shows_as_an_error(tmp_path: Path) -> None:
-    root = _make_repo(tmp_path)
-    text = "---\nname: parked\nmetadata:\n  carapace:\n    disabled: true\n---\nInstructions.\n"
-    directory = _skill(root, "parked", text)
-
-    listing = list_dir(root, directory.resolve())
-
-    assert listing.skill is not None and listing.skill.carapace is None
-    assert listing.skill.error is not None and "disabled is gone" in listing.skill.error
-    assert listing.doc == "Instructions.\n"
-
-
 @pytest.mark.parametrize("missing", ["flake.nix", "flake.lock"])
 def test_without_a_usable_skills_flake_the_root_and_skills_say_why(tmp_path: Path, missing: str) -> None:
     root = _make_repo(tmp_path)
@@ -288,54 +256,6 @@ def test_without_a_usable_skills_flake_the_root_and_skills_say_why(tmp_path: Pat
 def test_with_a_usable_skills_flake_there_is_no_skills_error(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     assert list_dir(root, root.resolve()).skills_error is None
-
-
-def test_list_dir_skill_without_carapace_metadata(tmp_path: Path) -> None:
-    root = _make_repo(tmp_path)
-    _skill(root, "plain", "---\nname: plain\ndescription: No metadata\n---\n\nBody.\n")
-
-    listing = list_dir(root, (root / "skills" / "plain").resolve())
-
-    assert listing.skill is not None
-    assert listing.skill.carapace is None
-    assert listing.doc == "Body.\n"
-
-
-def test_list_dir_skill_with_invalid_carapace_keeps_prose(tmp_path: Path) -> None:
-    root = _make_repo(tmp_path)
-    # hints must map names to text; a bare string fails validation.
-    _skill(root, "broken", "---\nname: broken\nmetadata:\n  carapace:\n    hints: nope\n---\n\nBody.\n")
-
-    listing = list_dir(root, (root / "skills" / "broken").resolve())
-
-    assert listing.skill is not None
-    assert listing.skill.carapace is None
-    assert listing.skill.error == "invalid metadata.carapace: hints: Input should be a valid dictionary"
-    assert listing.doc == "Body.\n"
-
-
-def test_list_dir_skill_with_invalid_yaml_shows_error_and_raw_doc(tmp_path: Path) -> None:
-    root = _make_repo(tmp_path)
-    text = "---\nname: ideas\ndescription: Ideas: shared\n---\n\nBody.\n"
-    _skill(root, "ideas", text)
-
-    listing = list_dir(root, (root / "skills" / "ideas").resolve())
-
-    assert listing.skill is not None
-    assert listing.skill.name == "ideas"
-    assert listing.skill.error is not None and "mapping values are not allowed here" in listing.skill.error
-    assert listing.doc == text
-
-
-def test_list_dir_skill_without_frontmatter_falls_back_to_dir_name(tmp_path: Path) -> None:
-    root = _make_repo(tmp_path)
-    _skill(root, "bare", "# Bare skill\n")
-
-    listing = list_dir(root, (root / "skills" / "bare").resolve())
-
-    assert listing.skill is not None
-    assert (listing.skill.name, listing.skill.description) == ("bare", "")
-    assert listing.doc == "# Bare skill\n"
 
 
 def test_list_dir_inlines_readme_for_plain_dir(tmp_path: Path) -> None:

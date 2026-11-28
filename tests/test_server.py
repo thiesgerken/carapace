@@ -5593,6 +5593,8 @@ def test_a_skill_listing_shows_its_build(
         "key": "9f2b6c1e4d8a3f7b" * 4,
         "commands": {},
         "log_tail": "error: flake.lock is missing nixpkgs",
+        "description": None,
+        "overridden": False,
     }
     # Only skills skills/flake.nix lists are built.
     assert elsewhere is None

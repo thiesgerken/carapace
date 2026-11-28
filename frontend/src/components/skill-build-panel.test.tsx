@@ -11,8 +11,8 @@ import { SkillBuildPanel } from "./skill-build-panel";
 const SERVER = "https://carapace.example.test";
 const KEY = "9f2b6c1e4d8a3f7b0c5e2d9a6b1f4c8e7d3a0b5c2e9f6d1a8b4c7e0f3a6d9b2c";
 
-const failed: KnowledgeSkillBuild = { state: "failed", key: KEY, commands: {}, log_tail: "error: flake.lock is missing nixpkgs" };
-const building: KnowledgeSkillBuild = { state: "building", key: KEY, commands: {}, log_tail: "" };
+const failed: KnowledgeSkillBuild = { state: "failed", key: KEY, commands: {}, log_tail: "error: flake.lock is missing nixpkgs", description: null, overridden: false };
+const building: KnowledgeSkillBuild = { state: "building", key: KEY, commands: {}, log_tail: "", description: null, overridden: false };
 
 test("a failed build shows its log and retries into building", async () => {
   const restore = installDom();

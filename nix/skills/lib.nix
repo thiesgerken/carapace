@@ -171,48 +171,64 @@ let
       chmod -R u+w $out
       ln -s ${modules}/node_modules $out/node_modules
     '';
-in
-{
-  # The host of an https URL, checked as an MCP server's URL is: for a command whose domain follows a setting.
-  #
-  #   needs = settings: { domains = [ (skill.urlHost settings.API_URL) ]; };
-  urlHost = urlHostIn "urlHost";
-
-  # The skill's package: one wrapper per command in bin/, so skills never collide on interpreters or
-  # libraries in the session profile, and a reference to the skill directory (SKILL.md, scripts,
-  # references), which brings it into every sandbox that installs the commands. The declarations travel as
-  # `passthru.carapace`, which `skillsFlake` turns into the manifest the builder evaluates without building
-  # anything; its `skillDir` is already in the store after that evaluation, so SKILL.md can be read before
-  # the commands are built. `settings` are typed values from skills/config.json; a command sees each as an
-  # environment variable, and `needs` (skill-wide or per command) may be a function of them.
-  #
-  #   mkSkill { name = "notes"; src = ./.; }   # instructions only
-  #
-  #   mkSkill {
-  #     name = "weather";
-  #     src = ./.;
-  #     settings.CITY = { type = "str"; description = "City to report on"; default = "Berlin"; };
-  #     credentials.WEATHER_TOKEN = { type = "secret"; description = "A weather API token"; };
-  #     needs.domains = [ "api.example.com" ];
-  #     commands.weather = { exec = "${env}/bin/weather"; description = "Current weather"; };
-  #     commands.weather-offline = { exec = "..."; description = "..."; needs = { domains = [ ]; }; };
-  #   }
-  mkSkill =
+  # mkSkill without its defaults, which `mkSkill` fills in so that `.override` sees them as `old`.
+  mkSkillWith =
     {
       name,
+      description,
       src,
+      instructions,
+      extraFiles,
       commands ? { },
       needs ? { },
       settings ? { },
       credentials ? { },
     }:
     let
-      # A store path of its own: with a `path:` input `src` lies inside the whole skills tree, which
-      # would otherwise come along and change with every other skill.
-      skillDir = builtins.path {
-        path = src;
-        name = "skill-${name}-src";
-      };
+      where = "skill ${name}";
+      # Paths of src and SKILL.md: added files never shadow the skill's own.
+      shadowed = lib.filter (path: path == "SKILL.md" || builtins.pathExists (src + "/${path}")) (
+        lib.attrNames extraFiles
+      );
+      outside = lib.filter (
+        path: lib.hasPrefix "/" path || builtins.elem ".." (lib.splitString "/" path)
+      ) (lib.attrNames extraFiles);
+      skillDir =
+        assert lib.assertMsg (
+          builtins.isString description && description != ""
+        ) "${where}: mkSkill needs a description, the skill's line in the agent's catalog";
+        assert lib.assertMsg (!lib.hasPrefix "---" instructions)
+          "${where}: its instructions start with YAML frontmatter, but name and description belong in mkSkill now. Run scripts/upgrade-skills-flake.sh from the Carapace repo (docs/upgrading-to-skill-flakes.md)";
+        assert lib.assertMsg (
+          shadowed == [ ]
+        ) "${where}: extraFiles would shadow files of the skill: ${lib.concatStringsSep ", " shadowed}";
+        assert lib.assertMsg (outside == [ ])
+          "${where}: extraFiles paths are relative and stay in the skill directory: ${lib.concatStringsSep ", " outside}";
+        pkgs.runCommand "skill-${name}-dir"
+          {
+            inherit instructions;
+            passAsFile = [ "instructions" ];
+          }
+          (
+            ''
+              # A store path of its own: with a `path:` input `src` lies inside the whole skills tree, which
+              # would otherwise come along and change with every other skill.
+              cp -r ${
+                builtins.path {
+                  path = src;
+                  name = "skill-${name}-src";
+                }
+              } $out
+              chmod -R u+w $out
+              cp "$instructionsPath" $out/SKILL.md
+            ''
+            + lib.concatStrings (
+              lib.mapAttrsToList (path: file: ''
+                mkdir -p "$(dirname $out/${lib.escapeShellArg path})"
+                cp ${file} $out/${lib.escapeShellArg path}
+              '') extraFiles
+            )
+          );
       declaredSettings = checkSettings name settings;
       declaredCredentials = checkCredentials name settings credentials;
       # An MCP command's URL setting, checked here because only mkSkill sees the settings.
@@ -255,7 +271,7 @@ in
         passthru = {
           # What the skills flake (`skillsFlake`) and the builder read, as JSON.
           carapace = {
-            inherit name;
+            inherit name description;
             skillDir = "${skillDir}";
             settings = declaredSettings;
             # Forcing it checks the skill-wide needs too, which no command checks in a skill without commands.
@@ -268,6 +284,8 @@ in
           };
           # Each command's needs for the given setting values; checked when `skillsFlake` resolves them.
           carapaceNeeds = commandNeeds;
+          # What the builder builds to read SKILL.md before the commands.
+          inherit skillDir;
         };
       }
       (
@@ -286,6 +304,48 @@ in
           '') checkedCommands
         )
       );
+in
+{
+  # The host of an https URL, checked as an MCP server's URL is: for a command whose domain follows a setting.
+  #
+  #   needs = settings: { domains = [ (skill.urlHost settings.API_URL) ]; };
+  urlHost = urlHostIn "urlHost";
+
+  # The skill's package: one wrapper per command in bin/, so skills never collide on interpreters or
+  # libraries in the session profile, and a reference to the skill directory (SKILL.md, scripts,
+  # references), which brings it into every sandbox that installs the commands. The declarations travel as
+  # `passthru.carapace`, which `skillsFlake` turns into the manifest the builder evaluates; the builder then
+  # builds `skillDir` alone, which is quick, and reads SKILL.md before the commands are built. `settings`
+  # are typed values from skills/config.json; a command sees each as an environment variable, and `needs`
+  # (skill-wide or per command) may be a function of them.
+  #
+  # `description` is the skill's line in the agent's catalog. `instructions` become SKILL.md in the skill
+  # directory; by default they are src/SKILL.md, which holds only the instructions. `extraFiles` adds files
+  # next to src's. Every argument, defaults included, can be changed with the standard `.override`:
+  #
+  #   skill.override (old: { instructions = old.instructions + builtins.readFile ./household.md; })
+  #
+  #   mkSkill { name = "notes"; description = "Keeps notes in the repo"; src = ./.; }   # instructions only
+  #
+  #   mkSkill {
+  #     name = "weather";
+  #     description = "Current weather and forecasts";
+  #     src = ./.;
+  #     settings.CITY = { type = "str"; description = "City to report on"; default = "Berlin"; };
+  #     credentials.WEATHER_TOKEN = { type = "secret"; description = "A weather API token"; };
+  #     needs.domains = [ "api.example.com" ];
+  #     commands.weather = { exec = "${env}/bin/weather"; description = "Current weather"; };
+  #     commands.weather-offline = { exec = "..."; description = "..."; needs = { domains = [ ]; }; };
+  #   }
+  mkSkill =
+    args:
+    lib.makeOverridable mkSkillWith (
+      {
+        instructions = builtins.readFile (args.src + "/SKILL.md");
+        extraFiles = { };
+      }
+      // args
+    );
 
   # Commands for MCP servers, one per attribute, for `mkSkill.commands`: `<name> --list-tools`,
   # `<name> <tool> --flag …`. They run the `mcp` bridge from the sandbox image; what they need follows

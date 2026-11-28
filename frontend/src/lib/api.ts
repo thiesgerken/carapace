@@ -1838,16 +1838,10 @@ export interface KnowledgeEntry {
   shared: boolean;
 }
 
-export interface SkillCarapaceConfig {
-  hints: Record<string, string>;
-}
-
+/** A local skill's directory; its description comes with the build. */
 export interface KnowledgeSkill {
   name: string;
-  description: string;
-  /** Null when the skill declares no carapace metadata, or it failed validation. */
-  carapace: SkillCarapaceConfig | null;
-  /** Why the SKILL.md frontmatter is unusable. */
+  /** Why there is no SKILL.md to show. */
   error: string | null;
 }
 
@@ -1869,6 +1863,10 @@ export interface KnowledgeSkillBuild {
   commands: Record<string, { description: string; needs: SkillCommandNeeds }>;
   /** Why it failed or is unavailable: the end of the build log. */
   log_tail: string;
+  /** The catalog line from the manifest; null while building or when the manifest does not evaluate. */
+  description: string | null;
+  /** Whether skills/flake.nix adjusts the skill with an override. */
+  overridden: boolean;
 }
 
 export interface ArtifactSession {
@@ -1887,7 +1885,7 @@ export interface KnowledgeDirListing {
   type: "dir";
   /** Recognized directory convention, e.g. a skill dir. */
   kind: "skill" | "artifact" | null;
-  /** Defining document inlined by the server (SKILL.md), frontmatter stripped. */
+  /** Defining document inlined by the server (SKILL.md, or a README). */
   doc_name: string | null;
   doc: string | null;
   skill: KnowledgeSkill | null;
@@ -1957,6 +1955,8 @@ export interface KnowledgeSkillSource {
   locked_at: string | null;
   /** Null until a check covered it. */
   update: KnowledgeSkillUpdate | null;
+  /** Whether skills/flake.nix adjusts the skill with an override, as its last build says. */
+  overridden: boolean;
 }
 
 export interface KnowledgeSkillSources {

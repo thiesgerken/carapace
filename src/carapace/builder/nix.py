@@ -145,11 +145,13 @@ def _failed(
     log: str,
     docs: _SkillDocs = _NO_DOCS,
     declarations: SkillDeclarations | None = None,
+    metadata: object = None,
 ) -> BuildResult:
     return BuildResult(
         key=key,
         skill=skill,
         state="failed",
+        metadata=metadata,
         log_tail=_tail(log),
         skill_dir=docs.skill_dir,
         skill_md=docs.skill_md,
@@ -233,10 +235,23 @@ async def build_skill(
     if isinstance(metadata, dict) and metadata.get("enable") is False:
         return BuildResult(key=key, skill=skill, state="succeeded", metadata=metadata, declarations=declarations)
     package = f"path:{source}#packages.{system}.{skill}"
+    # The skill directory alone, which only copies files: its SKILL.md is readable before the commands build.
+    code, _, dir_log = await _run(
+        "nix",
+        "build",
+        "--no-update-lock-file",
+        "--no-link",
+        f"{package}.skillDir",
+        credential=credential,
+    )
+    if code != 0:
+        return _failed(key, skill, dir_log, declarations=declarations, metadata=metadata)
     try:
         docs = _skill_docs(metadata)
     except (SkillFileError, OSError, UnicodeDecodeError) as exc:
-        return _failed(key, skill, f"Cannot read the skill directory: {exc}", declarations=declarations)
+        return _failed(
+            key, skill, f"Cannot read the skill directory: {exc}", declarations=declarations, metadata=metadata
+        )
     code, stdout, build_log = await _run(
         "nix",
         "build",
@@ -250,7 +265,7 @@ async def build_skill(
         credential=credential,
     )
     if code != 0:
-        return _failed(key, skill, build_log, docs, declarations)
+        return _failed(key, skill, build_log, docs, declarations, metadata)
     store_paths = [path for built in json.loads(stdout) for path in built["outputs"].values()]
     return BuildResult(
         key=key,

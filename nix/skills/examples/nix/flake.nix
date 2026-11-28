@@ -34,6 +34,7 @@
         {
           default = skill.mkSkill {
             name = "demo-nix";
+            description = "Example skill built from nixpkgs alone, without a language package manager. Use it to check that skill flakes build.";
             src = ./.;
             commands = {
               demo-nix-pages = {

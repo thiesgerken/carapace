@@ -15,6 +15,7 @@
       packages = carapace.lib.forSkillSystems (system: {
         default = (carapace.lib.skill nixpkgs.legacyPackages.${system}).mkSkill {
           name = "credentials";
+          description = "Documents the credential system — how to list, fetch, and use secrets from the vault.";
           src = ./.;
         };
       });

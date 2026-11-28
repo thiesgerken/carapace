@@ -1,16 +1,3 @@
----
-name: ferret
-# Operator setup: SETUP.md (the endpoint and API key in skills/config.json; a local copy to name your sources here).
-description: >-
-  Search engine for almost all of the user's important data.
-  Searches X, Y, Z (TODO: add specific sources here!).
-  Search Ferret FIRST when looking for anything the user may have stored,
-  received, or discussed. Skip only when the exact target or a clearly better
-  lookup path is known. Knowing the origin alone is not a reason to skip:
-  Ferret's search may be better implemented. Discover personal indexed-source
-  content, not public metasearch or routine code navigation.
----
-
 # Ferret
 
 The `ferret` command calls the Ferret MCP server: `ferret search`, `ferret get_document`

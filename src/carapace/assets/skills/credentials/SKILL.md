@@ -1,8 +1,3 @@
----
-name: credentials
-description: Documents the credential system — how to list, fetch, and use secrets from the vault.
----
-
 # Credentials
 
 carapace provides a pull-based credential system. Credentials live in an

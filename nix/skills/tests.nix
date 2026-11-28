@@ -15,6 +15,7 @@ let
     needs:
     let
       bad = skillLib.mkSkill {
+        description = "A test skill";
         src = fixture;
         name = "bad";
         commands.cmd = {
@@ -43,6 +44,7 @@ let
   ];
   # MCP servers: the bridge's arguments and what each command declares follow from the server.
   mcp = skillLib.mkSkill {
+    description = "A test skill";
     src = fixture;
     name = "mcp-contract";
     credentials = {
@@ -74,6 +76,7 @@ let
   };
   # Instructions only: no commands, just the skill directory.
   notes = skillLib.mkSkill {
+    description = "A test skill";
     name = "notes";
     src = fixture;
   };
@@ -91,6 +94,7 @@ let
     !(builtins.tryEval (
       builtins.toJSON (
         (skillLib.mkSkill {
+          description = "A test skill";
           src = fixture;
           name = "bad-mcp";
           commands = skillLib.mcpCommands {
@@ -133,6 +137,7 @@ let
     }
   ];
   skill = skillLib.mkSkill {
+    description = "A test skill";
     src = fixture;
     name = "contract";
     credentials.DEMO_TOKEN = {
@@ -167,6 +172,7 @@ let
   };
   # A skill with settings: its needs follow from their values, which skills/config.json sets.
   weather = skillLib.mkSkill {
+    description = "A test skill";
     src = fixture;
     name = "weather";
     settings = {
@@ -185,9 +191,14 @@ let
       description = "Print what cgate exported";
     };
   };
-  manifestsWith =
-    values:
+  manifestsWith = values: flakeWith { config = values; };
+  flakeWith =
+    {
+      config ? { },
+      overrides ? { },
+    }:
     (skillsFlake {
+      inherit overrides;
       inputs = {
         self = { };
         nixpkgs = { };
@@ -198,8 +209,23 @@ let
         # A local skill whose flake.nix is broken, or missing from the archive of another skill's build.
         broken.packages.${system}.default = throw "skills/broken/flake.nix: syntax error";
       };
-      config = builtins.toFile "config.json" (builtins.toJSON values);
+      config = builtins.toFile "config.json" (builtins.toJSON config);
     }).manifests.${system};
+  # A shared skill adjusted by the repo that lists it: appended to, replaced, and with a file added.
+  overriddenNotes =
+    (flakeWith {
+      config.broken.enable = false;
+      overrides.notes =
+        skill:
+        skill.override (old: {
+          description = old.description + ", for the household";
+          instructions = "# Household\n";
+          extraFiles."household/albums.md" = builtins.toFile "albums.md" "Albums\n";
+        });
+    }).notes;
+  appended = notes.override (old: {
+    instructions = old.instructions + "Appended\n";
+  });
   configured = manifestsWith {
     weather.settings.CITY = "Berlin";
     contract.credentials.DEMO_TOKEN = "demo/token";
@@ -222,6 +248,39 @@ let
   ];
 in
 assert pkgs.lib.assertMsg (pkgs.lib.all (x: x) rejected) "mkSkill accepted invalid needs";
+assert pkgs.lib.assertMsg (
+  overriddenNotes.description == "A test skill, for the household"
+  && overriddenNotes.overridden
+  && overriddenNotes.skillDir != notes.passthru.carapace.skillDir
+) "skillsFlake did not apply the override: ${builtins.toJSON overriddenNotes}";
+assert pkgs.lib.assertMsg (fails
+  (flakeWith { overrides.photos = skill: skill; }).notes
+) "skillsFlake accepted an override of an attribute that is no skill input";
+assert pkgs.lib.assertMsg (fails
+  (notes.override (_: {
+    extraFiles."SKILL.md" = builtins.toFile "SKILL.md" "shadow";
+  })).passthru.carapace.skillDir
+) "mkSkill let extraFiles shadow SKILL.md";
+assert pkgs.lib.assertMsg (fails
+  (notes.override (_: {
+    extraFiles."flake.nix" = builtins.toFile "flake.nix" "shadow";
+  })).passthru.carapace.skillDir
+) "mkSkill let extraFiles shadow a file of src";
+assert pkgs.lib.assertMsg (fails
+  (notes.override (_: {
+    extraFiles."../escape.md" = builtins.toFile "escape.md" "out";
+  })).passthru.carapace.skillDir
+) "mkSkill let an extraFiles path leave the skill directory";
+assert pkgs.lib.assertMsg (fails
+  (notes.override (_: {
+    instructions = "---\nname: notes\n---\nBody\n";
+  })).passthru.carapace.skillDir
+) "mkSkill accepted instructions that start with frontmatter";
+assert pkgs.lib.assertMsg (fails
+  (notes.override (_: {
+    description = "";
+  })).passthru.carapace.skillDir
+) "mkSkill accepted an empty description";
 assert pkgs.lib.assertMsg (
   urlHosts == [
     "api.example.com"
@@ -295,6 +354,8 @@ assert pkgs.lib.assertMsg (
     configured.notes == {
       enable = true;
       name = "notes";
+      description = "A test skill";
+      overridden = false;
       skillDir = notes.passthru.carapace.skillDir;
       settings = { };
       credentials = { };
@@ -351,6 +412,7 @@ assert pkgs.lib.assertMsg (
 ) "skillsFlake did not turn weather off";
 assert pkgs.lib.assertMsg (fails
   (skillLib.mkSkill {
+    description = "A test skill";
     src = fixture;
     name = "bad-settings";
     settings."NOT-A-VAR".type = "str";
@@ -358,6 +420,7 @@ assert pkgs.lib.assertMsg (fails
 ) "mkSkill accepted a setting that is no shell identifier";
 assert pkgs.lib.assertMsg (fails
   (skillLib.mkSkill {
+    description = "A test skill";
     src = fixture;
     name = "bad-settings";
     settings.URL.type = "url";
@@ -365,6 +428,7 @@ assert pkgs.lib.assertMsg (fails
 ) "mkSkill accepted an unknown setting type";
 assert pkgs.lib.assertMsg (fails
   (skillLib.mkSkill {
+    description = "A test skill";
     src = fixture;
     name = "bad-slot";
     credentials.TOKEN = {
@@ -375,6 +439,7 @@ assert pkgs.lib.assertMsg (fails
 ) "mkSkill accepted a credential slot with a default";
 assert pkgs.lib.assertMsg (fails
   (skillLib.mkSkill {
+    description = "A test skill";
     src = fixture;
     name = "bad-skill-wide";
     needs.credentials.TOKEN = "demo/token";
@@ -388,6 +453,7 @@ assert pkgs.lib.assertMsg (
     server =
       settings: extra:
       skillLib.mkSkill {
+        description = "A test skill";
         src = fixture;
         name = "url-checks";
         inherit settings;
@@ -475,5 +541,11 @@ pkgs.runCommand "skill-wrapper-contract" { } ''
   cmp ${skill.passthru.carapace.skillDir}/SKILL.md ${fixture}/SKILL.md
   [ -z "$(ls -A ${notes}/bin)" ]
   cmp ${notes.passthru.carapace.skillDir}/SKILL.md ${fixture}/SKILL.md
+
+  # An override's instructions replace SKILL.md and its files join the skill's own; appending keeps the original.
+  [ "$(cat ${overriddenNotes.skillDir}/SKILL.md)" = "# Household" ]
+  [ "$(cat ${overriddenNotes.skillDir}/household/albums.md)" = Albums ]
+  cmp ${overriddenNotes.skillDir}/flake.nix ${fixture}/flake.nix
+  { cat ${fixture}/SKILL.md; echo Appended; } | cmp - ${appended.passthru.carapace.skillDir}/SKILL.md
   touch $out
 ''

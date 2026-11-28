@@ -21,7 +21,6 @@ from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from ..models.skills import SkillInfo
-from ..skills import SkillDocumentError, parse_skill_document
 from ..span_names import SKILL_BUILD_WAIT_SPAN
 from ..spans import span
 from .client import BuilderClient, BuilderSystemMismatchError
@@ -58,6 +57,10 @@ class SkillManifest(BaseModel):
     """
 
     enable: bool
+    # None only from a skills flake whose helpers are older than mkSkill's description.
+    description: str | None = None
+    # Whether skills/flake.nix adjusts the skill with an override.
+    overridden: bool = False
     settings: dict[str, SettingValue] = {}
     commands: dict[str, SkillCommand] = {}
 
@@ -80,6 +83,9 @@ class _Outcome:
     skill_md: str | None = None
     skill_files: list[str] = field(default_factory=list)
     declarations: SkillDeclarations | None = None
+    # From the manifest, which a build that failed later has too.
+    description: str | None = None
+    overridden: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +106,10 @@ class SkillBuild:
     # What the skill declares, for the Knowledge view to offer: also there for a failed or turned-off build,
     # None while building or when the package did not evaluate.
     declarations: SkillDeclarations | None = None
+    # The catalog line, from the manifest; None while building or when the manifest did not evaluate.
+    description: str | None = None
+    # Whether skills/flake.nix adjusts the skill with an override.
+    overridden: bool = False
 
     def unbound(self, command: str) -> list[str]:
         """The credential slots *command* needs that skills/config.json does not bind."""
@@ -115,8 +125,9 @@ class _HeadSkill:
     key: str
     # The skills/ tree at HEAD, which the builder gets part of as an archive.
     skills_tree: str
-    # The skill's directory below skills/; None for a flake from elsewhere.
-    directory: str | None
+    # Directories below skills/ the build reads: a local skill's own, and skills/<name>/ for an override's
+    # files when the tree has it.
+    directories: list[str]
     # Whether skills/ has a config.json, which the builder gets along for the manifest.
     config: bool
 
@@ -373,7 +384,7 @@ async def _build_outcome(
                     "flake.nix",
                     "flake.lock",
                     *(["config.json"] if skill.config else []),
-                    *([skill.directory] if skill.directory else []),
+                    *skill.directories,
                 ]
                 archive = await archive_skills(repo_dir, skill.skills_tree, *paths)
             except RuntimeError as exc:
@@ -404,6 +415,8 @@ def _log_crash(task: asyncio.Task[None], skill: _HeadSkill) -> None:
 def _read_result(result: BuildResult) -> _Outcome:
     declarations = result.declarations
     if result.state == "failed":
+        metadata = result.metadata if isinstance(result.metadata, dict) else {}
+        description = metadata.get("description")
         return _Outcome(
             state="failed",
             detail=result.log_tail,
@@ -411,6 +424,8 @@ def _read_result(result: BuildResult) -> _Outcome:
             skill_md=result.skill_md,
             skill_files=result.skill_files,
             declarations=declarations,
+            description=description if isinstance(description, str) else None,
+            overridden=metadata.get("overridden") is True,
         )
     try:
         manifest = SkillManifest.model_validate(result.metadata)
@@ -423,8 +438,12 @@ def _read_result(result: BuildResult) -> _Outcome:
         )
     if result.skill_dir is None:
         return _Outcome(state="failed", detail=_NO_SKILL_DIR, declarations=declarations)
+    if manifest.description is None:
+        return _Outcome(state="failed", detail=_NO_DESCRIPTION, declarations=declarations)
     return _Outcome(
         declarations=declarations,
+        description=manifest.description,
+        overridden=manifest.overridden,
         state="succeeded",
         store_paths=result.store_paths,
         commands=manifest.commands,
@@ -451,6 +470,12 @@ _NO_SKILL_DIR = (
 )
 
 
+_NO_DESCRIPTION = (
+    "The skill's manifest has no description: skills/flake.nix uses Carapace helpers older than mkSkill's "
+    "description. Update them: nix flake update carapace --flake ./skills (docs/upgrading-to-skill-flakes.md)"
+)
+
+
 def _build(skill: _HeadSkill, outcome: _Outcome) -> SkillBuild:
     return SkillBuild(
         skill=skill.name,
@@ -465,25 +490,21 @@ def _build(skill: _HeadSkill, outcome: _Outcome) -> SkillBuild:
         enabled=outcome.enabled,
         settings=outcome.settings,
         declarations=outcome.declarations,
+        description=outcome.description,
+        overridden=outcome.overridden,
     )
 
 
 def _catalog_entry(name: str, build: SkillBuild) -> SkillInfo:
-    """The skill under its attribute name, with the description of its SKILL.md or why there is none yet."""
-    if build.skill_md is None:
+    """The skill under its attribute name, with the description of its manifest or why there is none yet."""
+    if build.description is None:
         description = {
             "building": "Being built; its description follows once it is. read_skill waits for the build.",
             # Fixed text, not the error: the catalog is part of the cached prompt prefix.
             "unavailable": "Not available: the skill builder cannot be reached. read_skill shows why.",
-        }.get(build.state, "BROKEN, its build has no SKILL.md; read_skill shows why.")
+        }.get(build.state, "BROKEN, it does not evaluate; read_skill shows why.")
         return SkillInfo(name=name, description=description)
-    try:
-        document = parse_skill_document(build.skill_md, fallback_name=name)
-        document.carapace_config()
-    except SkillDocumentError as exc:
-        # Listed rather than dropped: the agent has to see the skill is broken to fix it.
-        return SkillInfo(name=name, description=f"BROKEN, cannot be used until its SKILL.md is fixed: {exc}")
-    return SkillInfo(name=name, description=document.description)
+    return SkillInfo(name=name, description=build.description)
 
 
 async def _skills_at_head(repo_dir: Path) -> list[_HeadSkill]:
@@ -493,20 +514,27 @@ async def _skills_at_head(repo_dir: Path) -> list[_HeadSkill]:
         return []
     skills: list[_HeadSkill] = []
     for skill in head.skills:
-        # A missing directory keys as empty; archiving it then fails and says why.
-        directory = await object_id(repo_dir, f"{head.tree}:{skill.directory}") if skill.directory else ""
-        key = build_key(skill.name, head.flake, head.lock, head.config, directory)
-        local = str(skill.directory) if skill.directory is not None else None
+        # A missing local directory keys as empty; archiving it then fails and says why. skills/<name>/ is
+        # optional: an override's files, or simply the local skill's own directory.
+        local = [str(skill.directory)] if skill.directory is not None else []
+        extension = (
+            [skill.name] if skill.name not in local and await object_id(repo_dir, f"{head.tree}:{skill.name}") else []
+        )
+        directories = local + extension
+        ids = [await object_id(repo_dir, f"{head.tree}:{directory}") for directory in directories]
+        key = build_key(skill.name, head.flake, head.lock, head.config, ids)
         skills.append(
-            _HeadSkill(name=skill.name, key=key, skills_tree=head.tree, directory=local, config=bool(head.config))
+            _HeadSkill(
+                name=skill.name, key=key, skills_tree=head.tree, directories=directories, config=bool(head.config)
+            )
         )
     return skills
 
 
-def build_key(skill: str, flake: str, lock: str, config: str, directory: str) -> str:
+def build_key(skill: str, flake: str, lock: str, config: str, directories: list[str]) -> str:
     """What a skill's build depends on: its attribute, the Git ids of skills/flake.nix, its lock and
-    skills/config.json (empty without one), and of its own directory (empty for a flake from elsewhere,
-    which the lock pins).
+    skills/config.json (empty without one), and of the directories it reads (a local skill's own, and
+    skills/<name>/ with an override's files; a flake from elsewhere is pinned by the lock).
 
     Editing one local skill re-keys only that skill, so the others keep their results and stay on PATH.
     A change to config.json re-keys every skill, but builds nothing new: the packages do not depend on it,
@@ -514,4 +542,4 @@ def build_key(skill: str, flake: str, lock: str, config: str, directory: str) ->
     """
     # Exactly what the builder gets (`_build_outcome` archives these paths), so a key cannot hide a change.
     # A config.json change re-evaluates every manifest; key on each skill's entry if that ever gets slow.
-    return hashlib.sha256("\0".join([skill, flake, lock, config, directory]).encode()).hexdigest()
+    return hashlib.sha256("\0".join([skill, flake, lock, config, *directories]).encode()).hexdigest()

@@ -19,7 +19,9 @@
         in
         {
           default = skill.mkSkill {
+            # Operator setup: SETUP.md.
             name = "ferret";
+            description = "Search engine for almost all of the user's important data. Searches X, Y, Z (TODO: add specific sources here!). Search Ferret FIRST when looking for anything the user may have stored, received, or discussed. Skip only when the exact target or a clearly better lookup path is known. Knowing the origin alone is not a reason to skip: Ferret's search may be better implemented. Discover personal indexed-source content, not public metasearch or routine code navigation.";
             src = ./.;
             # Set in skills/config.json (SETUP.md).
             settings.FERRET_URL = {

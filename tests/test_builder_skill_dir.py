@@ -91,8 +91,8 @@ def test_metadata_from_helpers_without_src_names_no_directory() -> None:
     assert checked_skill_dir(None) is None
 
 
-def _nix(directory: str, *, build_code: int = 0):
-    """`nix eval` answers with metadata naming *directory*; `nix build` succeeds or fails."""
+def _nix(directory: str, *, build_code: int = 0, dir_code: int = 0):
+    """`nix eval` answers with metadata naming *directory*; building it and the package succeed or fail."""
 
     async def run(*args: str, credential: FetchCredential | None = None) -> tuple[int, str, str]:
         if args[1] == "eval" and "--apply" in args:
@@ -101,9 +101,13 @@ def _nix(directory: str, *, build_code: int = 0):
         if args[1] == "eval":
             return (
                 0,
-                json.dumps({"enable": True, "name": "demo", "skillDir": directory, "settings": {}, "commands": {}}),
+                json.dumps(
+                    {"enable": True, "name": "demo", "description": "Demo", "skillDir": directory, "commands": {}}
+                ),
                 "",
             )
+        if args[-1].endswith(".skillDir"):
+            return dir_code, "", "error: the skill directory does not build" if dir_code else ""
         if build_code:
             return build_code, "", "error: builder ran out of disk"
         return 0, json.dumps([{"outputs": {"out": "/nix/store/x-skill-demo"}}]), "built"
@@ -118,7 +122,7 @@ async def _build(tmp_path: Path) -> BuildResult:
     return await nix.build_skill(source, KEY, "demo", "x86_64-linux", tmp_path / "roots", None)
 
 
-async def test_a_build_carries_the_skill_md_and_files_it_read_after_the_evaluation(
+async def test_a_build_carries_the_skill_md_and_files_it_read_before_the_commands_build(
     directory: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(nix, "_run", _nix(directory))
@@ -139,6 +143,19 @@ async def test_a_failed_build_still_carries_the_skill_md(
 
     assert result.state == "failed"
     assert result.skill_md is not None and "error: builder ran out of disk" in result.log_tail
+    # The manifest evaluated, so the catalog keeps the skill's description.
+    assert result.metadata["description"] == "Demo"
+
+
+async def test_a_skill_dir_that_does_not_build_fails_before_the_commands(
+    directory: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(nix, "_run", _nix(directory, dir_code=1, build_code=1))
+
+    result = await _build(tmp_path)
+
+    assert result.state == "failed" and "the skill directory does not build" in result.log_tail
+    assert (result.skill_md, result.metadata["description"]) == (None, "Demo")
 
 
 async def test_a_skill_dir_outside_the_store_fails_the_build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

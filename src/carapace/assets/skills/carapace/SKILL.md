@@ -1,12 +1,3 @@
----
-name: carapace
-description: >-
-  Drive a carapace server non-interactively from inside the sandbox: list/inspect/create/update
-  sessions, send messages and wait for turns, resolve pending approvals by id, and manage jobs
-  (list/get/create/update/delete/run). Use this to let the agent configure, read, start, and
-  interact with carapace sessions and jobs over the JSON CLI. Requires a scoped API key in the vault.
----
-
 # carapace CLI
 
 Drive a carapace server over its non-interactive JSON CLI. Authentication is automatic:

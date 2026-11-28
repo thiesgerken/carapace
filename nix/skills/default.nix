@@ -60,13 +60,18 @@ let
   # (docs/skill-flakes.md): its settings and credential bindings with this instance's values, and each
   # command's needs for them.
   skillsFor =
-    skills: values: system:
+    skills: values: overrides: system:
     let
-      packages = lib.mapAttrs (_: skill: skill.packages.${system}.default) skills;
+      packages = lib.mapAttrs (
+        attr: skill: (overrides.${attr} or lib.id) skill.packages.${system}.default
+      ) skills;
       # A config.json entry of a skill that is not listed is ignored here; the server reports it.
       manifest =
         attr: package:
         let
+          description =
+            package.passthru.carapace.description
+              or (throw "skill ${attr}: its Carapace helpers are older than mkSkill's description; let it follow carapace and run `nix flake update carapace --flake ./skills`");
           # The module system over this skill alone: one over all of them would read every skill's flake for
           # each manifest, and one broken skill must not fail the others.
           evaluated = lib.evalModules {
@@ -90,7 +95,9 @@ let
             "skill ${attr}: no value for its setting ${lib.concatStringsSep ", " missing}; set it in skills/config.json, e.g. {\"${attr}\": {\"settings\": {\"${builtins.head missing}\": …}}}";
           {
             enable = true;
+            inherit description;
             inherit (package.passthru.carapace) name skillDir;
+            overridden = overrides ? ${attr};
             inherit (cfg) settings;
             credentials = lib.mapAttrs (
               slot: declared: declared // { binding = cfg.credentials.${slot}; }
@@ -121,8 +128,14 @@ in
 
   # The outputs of skills/flake.nix: every input but nixpkgs and carapace is a skill. `config` is the
   # path of skills/config.json, the values of their settings; without the file every skill takes its defaults.
+  # `overrides` adjusts skills this repo takes from elsewhere: per skill attribute, a function from the
+  # package to the one to use, typically `skill: skill.override (old: { … })` (docs/sharing-skills.md).
   skillsFlake =
-    { inputs, config }:
+    {
+      inputs,
+      config,
+      overrides ? { },
+    }:
     let
       skills = removeAttrs inputs [
         "self"
@@ -130,8 +143,11 @@ in
         "carapace"
       ];
       values = if builtins.pathExists config then lib.importJSON config else { };
-      perSystem = forSkillSystems (skillsFor skills values);
+      unknown = lib.subtractLists (lib.attrNames skills) (lib.attrNames overrides);
+      perSystem = forSkillSystems (skillsFor skills values overrides);
     in
+    assert lib.assertMsg (unknown == [ ])
+      "skills/flake.nix: overrides for ${lib.concatStringsSep ", " unknown}, which are not skill inputs (skills: ${lib.concatStringsSep ", " (lib.attrNames skills)})";
     {
       packages = lib.mapAttrs (_: system: system.packages) perSystem;
       manifests = lib.mapAttrs (_: system: system.manifests) perSystem;

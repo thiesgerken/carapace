@@ -91,11 +91,14 @@ def repo(tmp_path: Path) -> Path:
 
 
 def _run(repo: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
-    """Run the script with a `nix` that only records the call and writes a lock."""
+    """Run the script with a `nix` that lists some inputs, records the last other call and writes a lock."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     nix = bin_dir / "nix"
-    nix.write_text('#!/bin/sh\necho "$*" > "$NIX_CALLS"\necho "{}" > skills/flake.lock\n')
+    nix.write_text(
+        '#!/bin/sh\nif [ "$1" = eval ]; then echo "artifacts carapace nixpkgs notes web"; exit; fi\n'
+        'echo "$*" > "$NIX_CALLS"\necho "{}" > skills/flake.lock\n'
+    )
     nix.chmod(0o755)
     env = os.environ | _ENV | {"PATH": f"{bin_dir}:{os.environ['PATH']}", "NIX_CALLS": str(tmp_path / "calls")}
     return subprocess.run(["sh", str(SCRIPT)], cwd=repo / "skills", capture_output=True, text=True, env=env)
@@ -126,10 +129,19 @@ def test_an_existing_repo_gets_its_skills_listed(repo: Path, tmp_path: Path) -> 
     )
     assert flake.count('inputs.carapace.follows = "carapace";') == 8
     # Skills without a flake get one; a flake without src gets it.
-    assert 'name = "notes";\n          src = ./.;' in (repo / "skills" / "notes" / "flake.nix").read_text()
+    assert (
+        'name = "notes";\n          description = "TODO: describe the skill";\n          src = ./.;'
+        in (repo / "skills" / "notes" / "flake.nix").read_text()
+    )
     assert (repo / "skills" / "mermaid" / "flake.nix").is_file()
     assert "src = ./.;" in (repo / "skills" / "ferret" / "flake.nix").read_text()
-    assert 'name = "tool";\n        src = ./.;' in (repo / "skills" / "tool" / "flake.nix").read_text()
+    assert (
+        'name = "tool";\n        description = "TODO: describe the skill";\n        src = ./.;'
+        in (repo / "skills" / "tool" / "flake.nix").read_text()
+    )
+    # The frontmatter moved: SKILL.md keeps only the instructions.
+    assert (repo / "skills" / "notes" / "SKILL.md").read_text() == "Body\n"
+    assert "skills/drafts: dropped frontmatter keys without a place in the flake: metadata" in result.stdout
     assert (tmp_path / "calls").read_text() == "flake lock ./skills\n"
     staged = _git(repo, "diff", "--cached", "--name-status")
     assert "D\tskills/artifacts/SKILL.md" in staged and "A\tskills/flake.lock" in staged
@@ -147,14 +159,26 @@ def test_an_existing_repo_gets_its_skills_listed(repo: Path, tmp_path: Path) -> 
     assert "carapace.lib.skillsFlake {" in flake
 
 
-def test_a_repo_that_has_a_skills_flake_is_left_alone(repo: Path, tmp_path: Path) -> None:
+def test_a_repo_with_a_skills_flake_gets_the_frontmatter_moved(repo: Path, tmp_path: Path) -> None:
     (repo / "skills" / "flake.nix").write_text("mine\n")
+    (repo / "skills" / "notes" / "flake.nix").write_text(_OLD_FLAKE.replace('"carapace"', '"notes"'))
+    (repo / "skills" / "notes" / "SKILL.md").write_text(
+        '---\nname: notes\ndescription: >\n  Keeps "notes",\n  in ${HOME}.\nlicense: MIT\n---\n\n# Notes\n'
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "skills flake")
 
     result = _run(repo, tmp_path)
 
-    assert result.returncode == 1
-    assert "exists already" in result.stderr
+    assert result.returncode == 0, result.stderr
     assert (repo / "skills" / "flake.nix").read_text() == "mine\n"
+    flake = (repo / "skills" / "notes" / "flake.nix").read_text()
+    assert 'name = "notes";\n        description = "Keeps \\"notes\\", in \\${HOME}.";\n' in flake
+    assert (repo / "skills" / "notes" / "SKILL.md").read_text() == "# Notes\n"
+    assert "skills/notes: dropped frontmatter keys without a place in the flake: license" in result.stdout
+    # Only the bundled skills the lock lists move along with the helpers.
+    assert (tmp_path / "calls").read_text() == "flake update --flake ./skills carapace artifacts web\n"
+    assert "M\tskills/notes/SKILL.md" in _git(repo, "diff", "--cached", "--name-status")
 
 
 def test_a_directory_that_cannot_be_an_attribute_stops_it_before_any_change(repo: Path, tmp_path: Path) -> None:

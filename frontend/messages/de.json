@@ -59,8 +59,6 @@
         "largeFileNotice": "Syntax-Hervorhebung ist für diese Datei deaktiviert — sie ist zu groß.",
         "tooLarge": "Diese Datei ist zu groß für eine Vorschau — bitte herunterladen.",
         "skill": {
-            "hints": "Hinweise",
-            "invalid": "Ungültiges Frontmatter: {error}",
             "build": {
                 "title": "Build",
                 "key": "Build-Schlüssel des Skills im HEAD",
@@ -79,7 +77,9 @@
                     "failed": "Seine Befehle sind nicht verfügbar. Skill korrigieren und pushen, oder erneut versuchen, wenn der Fehler vorübergehend war.",
                     "unavailable": "Der Skill-Builder ist nicht erreichbar; der Build startet, sobald er wieder da ist."
                 }
-            }
+            },
+            "overridden": "angepasst",
+            "overriddenHint": "skills/flake.nix passt diesen Skill mit einem Override an"
         },
         "skillConfig": {
             "fullLog": "Vollständiges Log",
@@ -119,7 +119,9 @@
                 "available": "Update verfügbar",
                 "outdated": "Lock veraltet",
                 "failed": "Prüfung fehlgeschlagen"
-            }
+            },
+            "overridden": "angepasst",
+            "overriddenHint": "skills/flake.nix passt diesen Skill mit einem Override an"
         }
     },
     "memory": {

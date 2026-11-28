@@ -1,9 +1,3 @@
----
-name: wikipedia
-description: >-
-  Suche und Lese-Funktion für Wikipedia-Artikel (Deutsch als Standard). Nutze diesen Skill, um nach Artikeln zu suchen oder deren Inhalt abzurufen. Unterstützt Deutsch und Englisch via --lang Flag.
----
-
 # Wikipedia Search & Fetch
 
 Zwei Kommandos für Wikipedia-Zugriff über die offizielle API: **wiki-search** (Artikelsuche) und **wiki-fetch** (Artikelinhalt abrufen).

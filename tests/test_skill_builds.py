@@ -26,6 +26,8 @@ from tests.skills_flake import write_skills_flake
 _METADATA = {
     "enable": True,
     "name": "weather",
+    "description": "Current weather",
+    "overridden": False,
     "settings": {"CITY": "Berlin"},
     "commands": {
         "weather": {
@@ -46,7 +48,7 @@ class FakeBuilder:
         self.unreachable = False
         self.reject_with: int | None = None
         self.retries = 0
-        self.files: dict[str, bytes] = {"SKILL.md": b"---\nname: weather\ndescription: Current weather\n---\n"}
+        self.files: dict[str, bytes] = {"SKILL.md": b"# Weather\n"}
         self.answer = lambda key, skill: BuildResult(
             key=key,
             skill=skill,
@@ -118,7 +120,7 @@ def _key(repo: Path, name: str, directory: str | None = None) -> str:
         object_id("skills/flake.nix"),
         object_id("skills/flake.lock"),
         "",
-        object_id(f"skills/{directory or name}") if directory != "" else "",
+        [object_id(f"skills/{directory or name}")] if directory != "" else [],
     )
 
 
@@ -222,6 +224,27 @@ async def test_an_external_skill_is_keyed_without_a_directory(repo: Path) -> Non
     keys = {build.skill: build.key for build in await builds.ensure_built(repo)}
 
     assert keys == {"tracker": _key(repo, "tracker", directory=""), "weather": _key(repo, "weather")}
+
+
+@pytest.mark.anyio
+async def test_an_external_skill_gets_its_override_files_and_is_keyed_on_them(repo: Path) -> None:
+    _write_skills_flake(repo, ["weather"], external=("tracker",))
+    (repo / "skills" / "tracker").mkdir()
+    (repo / "skills" / "tracker" / "household.md").write_text("Our boards.\n")
+    _commit(repo, "tracker with an override text")
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
+
+    keys = {build.skill: build.key for build in await builds.ensure_built(repo)}
+    await _settled(builds, repo)
+
+    assert keys["tracker"] == _key(repo, "tracker")
+    archived = next(names for _, skill, names in builder.built if skill == "tracker")
+    assert "tracker/household.md" in archived and not any(name.startswith("weather") for name in archived)
+    (repo / "skills" / "tracker" / "household.md").write_text("Our boards, renamed.\n")
+    _commit(repo, "edit the override text")
+    rekeyed = {build.skill: build.key for build in await builds.ensure_built(repo)}
+    assert rekeyed["tracker"] != keys["tracker"] and rekeyed["weather"] == keys["weather"]
 
 
 @pytest.mark.anyio
@@ -546,19 +569,20 @@ async def test_a_cancelled_waiter_leaves_the_build_running_for_the_others(repo: 
     assert len(builder.built) == 2
 
 
-def _answer_with(skill_mds: dict[str, str | None], state: str = "succeeded"):
-    """Results whose SKILL.md is *skill_mds* by skill, the way the builder reads it from the skill directory."""
+def _answer_with(descriptions: dict[str, str | None], state: str = "succeeded", **manifest: object):
+    """Results whose manifest has *descriptions* by skill; None for a manifest that did not evaluate."""
 
     def answer(key: str, skill: str) -> BuildResult:
+        description = descriptions[skill]
         return BuildResult.model_validate(
             {
                 "key": key,
                 "skill": skill,
                 "state": state,
                 "store_paths": [f"/nix/store/{key[:32]}-skill"] if state == "succeeded" else [],
-                "metadata": _METADATA,
+                "metadata": None if description is None else _METADATA | {"description": description} | manifest,
                 "skill_dir": f"/nix/store/{key[32:64]}-skill-src",
-                "skill_md": skill_mds[skill],
+                "skill_md": "# Instructions\n",
                 "skill_files": ["SKILL.md"],
                 "log_tail": "error: builder ran out of disk" if state == "failed" else "",
             }
@@ -569,12 +593,11 @@ def _answer_with(skill_mds: dict[str, str | None], state: str = "succeeded"):
 
 @pytest.mark.anyio
 async def test_the_catalog_names_each_skill_by_its_attribute_with_its_built_description(repo: Path) -> None:
-    # Two flakes whose frontmatter names collide coexist under their attributes, one of them from elsewhere.
+    # Two flakes whose mkSkill names collide coexist under their attributes, one of them from elsewhere.
     _write_skills_flake(repo, ["weather"], external=("tracker",))
     _commit(repo, "external tracker")
     builder = FakeBuilder()
-    same = "---\nname: weather\ndescription: {}\n---\n"
-    builder.answer = _answer_with({"weather": same.format("Local weather"), "tracker": same.format("Remote weather")})
+    builder.answer = _answer_with({"weather": "Local weather", "tracker": "Remote weather"})
     builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
 
     assert builds.catalog(repo) == []
@@ -591,9 +614,9 @@ async def test_the_catalog_names_each_skill_by_its_attribute_with_its_built_desc
 
 
 @pytest.mark.anyio
-async def test_a_failed_build_keeps_the_description_it_read(repo: Path) -> None:
+async def test_a_failed_build_keeps_the_description_of_its_manifest(repo: Path) -> None:
     builder = FakeBuilder()
-    builder.answer = _answer_with({"weather": "---\ndescription: Current weather\n---\n", "notes": None}, "failed")
+    builder.answer = _answer_with({"weather": "Current weather", "notes": None}, "failed", overridden=True)
     builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
@@ -601,23 +624,27 @@ async def test_a_failed_build_keeps_the_description_it_read(repo: Path) -> None:
     catalog = {info.name: info.description for info in builds.catalog(repo)}
 
     assert catalog["weather"] == "Current weather"
-    assert catalog["notes"] == "BROKEN, its build has no SKILL.md; read_skill shows why."
+    assert catalog["notes"] == "BROKEN, it does not evaluate; read_skill shows why."
+    assert {build.skill: build.overridden for build in await builds.ensure_built(repo)} == {
+        "notes": False,
+        "weather": True,
+    }
 
 
 @pytest.mark.anyio
-async def test_a_broken_frontmatter_is_listed_as_broken(repo: Path) -> None:
+async def test_a_manifest_without_a_description_asks_for_newer_helpers(repo: Path) -> None:
     builder = FakeBuilder()
-    disabled = "---\ndescription: Private material\nmetadata:\n  carapace:\n    disabled: true\n---\n"
-    builder.answer = _answer_with({"weather": disabled, "notes": "Just a body.\n"})
+    old = {key: value for key, value in _METADATA.items() if key not in ("description", "overridden")}
+    builder.answer = lambda key, skill: _answer_with({skill: "unused"})(key, skill).model_copy(update={"metadata": old})
     builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
-    catalog = {info.name: info.description for info in builds.catalog(repo)}
+    weather = next(build for build in await builds.ensure_built(repo) if build.skill == "weather")
 
-    assert catalog["weather"].startswith("BROKEN") and "unlist it there" in catalog["weather"]
-    assert "Private material" not in catalog["weather"]
-    assert catalog["notes"] == ""
+    assert weather.state == "failed"
+    assert "nix flake update carapace --flake ./skills" in weather.detail
+    assert builds.catalog(repo)[0].description.startswith("BROKEN")
 
 
 @pytest.mark.anyio
