@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.203.1 (2026-11-28)
+
+### 🐛 Fix a bug
+
+- fix: replay pending approvals without a dead risk_level field
+- fix: keep data PVCs and the Postgres Secret on helm uninstall
+
+### 📝 Add or update documentation
+
+- docs: address review on the docs drift pass
+- docs: fix drift between docs and implementation
+
 ## v0.203.0 (2026-11-28)
 
 ### ✨ Introduce new features
