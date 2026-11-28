@@ -296,3 +296,24 @@ async def test_a_path_missing_from_the_archive_gets_a_hint(
 
     assert result.log_tail.startswith(missing)
     assert "Keep an override's files in skills/<attribute>/" in result.log_tail
+
+
+async def test_a_manifest_without_a_skill_dir_builds_only_the_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built: list[str] = []
+
+    async def run(*args: str, credential: FetchCredential | None = None) -> tuple[int, str, str]:
+        if "--apply" in args:
+            return 0, json.dumps({"settings": {}, "credentials": {}}), ""
+        if args[1] == "eval":
+            return 0, json.dumps({"enable": True, "commands": {}}), ""
+        built.append(args[-1])
+        return 0, json.dumps([{"outputs": {"out": "/nix/store/x-skill-demo"}}]), ""
+
+    monkeypatch.setattr(nix, "_run", run)
+
+    result = await _build(tmp_path)
+
+    assert (result.state, result.skill_dir) == ("succeeded", None)
+    assert [target.rsplit("#", 1)[1] for target in built] == ["packages.x86_64-linux.demo"]

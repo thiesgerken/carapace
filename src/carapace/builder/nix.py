@@ -256,16 +256,18 @@ async def build_skill(
         return BuildResult(key=key, skill=skill, state="succeeded", metadata=metadata, declarations=declarations)
     package = f"path:{source}#packages.{system}.{skill}"
     # The skill directory alone, which only copies files: its SKILL.md is readable before the commands build.
-    code, _, dir_log = await _run(
-        "nix",
-        "build",
-        "--no-update-lock-file",
-        "--no-link",
-        f"{package}.skillDir",
-        credential=credential,
-    )
-    if code != 0:
-        return _failed(key, skill, dir_log, declarations=declarations, metadata=metadata)
+    # A manifest that names none leaves the docs empty, and the server reports that.
+    if isinstance(metadata, dict) and "skillDir" in metadata:
+        code, _, dir_log = await _run(
+            "nix",
+            "build",
+            "--no-update-lock-file",
+            "--no-link",
+            f"{package}.skillDir",
+            credential=credential,
+        )
+        if code != 0:
+            return _failed(key, skill, dir_log, declarations=declarations, metadata=metadata)
     try:
         docs = _skill_docs(metadata)
     except (SkillFileError, OSError, UnicodeDecodeError) as exc:
