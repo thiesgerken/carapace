@@ -81,7 +81,13 @@ builder:
     allowedCidrs: []
   auth:
     # -- Secret holding the builder token under the key `token`. Generated for the in-cluster
-    # builder when empty; required with externalUrl.
+    # builder when empty (kept across upgrades via a Helm `lookup`); required with externalUrl.
+    # WARNING: `lookup` only works under `helm install/upgrade`. GitOps tools that render
+    # with `helm template` (Argo CD, Flux) get an empty lookup and write a fresh token into
+    # both `<release>-builder` Secrets on every sync. Running pods keep the token they started
+    # with, so once only the server or only the builder restarts, every skill build fails
+    # with 401. Under GitOps, set existingSecret, created in both the release and the builder
+    # namespace.
     existingSecret: ""
   persistence:
     # -- The builder's Nix store: built skills, their dependencies and nixpkgs sources

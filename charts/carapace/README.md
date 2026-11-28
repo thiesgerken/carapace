@@ -164,6 +164,15 @@ extraEnv:
     value: foo
 ```
 
+> **GitOps (Argo CD / Flux): use `builder.auth.existingSecret`.** The generated builder
+> token is kept across upgrades by a Helm `lookup`, which returns nothing under
+> `helm template`. Argo CD/Flux then write a fresh token into both `<release>-builder`
+> Secrets on every sync. Server and builder read the token at start, so they keep matching
+> until only one of them restarts (OOM, node drain, eviction); from then on every skill
+> build fails with 401. Point `builder.auth.existingSecret` at a Secret you manage
+> (SealedSecret, External Secrets, …) with the token under `token`, and create it in both
+> the release namespace and the builder namespace.
+
 Set the server log level via `logLevel` (default `info`; `debug`, `warning`, `error`).
 
 `sandbox.warmPoolSize` (default `1`) keeps that many generic warm sandboxes ready for faster claims; set it to `0` to disable.
@@ -290,7 +299,7 @@ The Bitwarden CLI binds to the fixed localhost-only internal port `8088` inside 
 | `builder.namespace`                                    | `""` (`<release namespace>-builder`) | Namespace of the in-cluster builder                            |
 | `builder.createNamespace`                              | `true`                           | Create that namespace with Pod Security `privileged`                |
 | `builder.externalUrl` / `builder.externalCacheUrl`     | `""`                             | A builder outside the cluster, with `builder.enabled: false`        |
-| `builder.auth.existingSecret`                          | `""` (generated)                 | Secret with the builder token under `token`                         |
+| `builder.auth.existingSecret`                          | `""` (generated)                 | Secret with the builder token under `token`, in both namespaces; **recommended for GitOps** (generating uses Helm `lookup`) |
 | `builder.persistence.size`                             | `20Gi`                           | The builder's Nix store                                             |
 | `builder.upstreamCaches`                               | `[]` (cache.nixos.org)           | Binary caches the builder substitutes from                          |
 | `builder.egress.allowedCidrs`                          | `[]`                             | Private CIDRs the builder may reach, e.g. a substituter in your network |
