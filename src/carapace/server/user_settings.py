@@ -205,6 +205,14 @@ class GitSettingsPatch(SettingsModel):
         normalized = value.strip()
         return normalized or None
 
+    @field_validator("token", mode="after")
+    @classmethod
+    def _validate_token(cls, value: str | None) -> str | None:
+        # It goes into an HTTP header and into Nix settings for the builder's fetches (FetchCredential).
+        if value is not None and any(character.isspace() for character in value):
+            raise ValueError("a token contains no whitespace")
+        return value
+
 
 class UserSettingsPatch(SettingsModel):
     agent_name: str | None = None

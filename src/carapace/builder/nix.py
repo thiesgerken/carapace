@@ -49,10 +49,14 @@ def _fetch_env(credential: FetchCredential) -> dict[str, str]:
     which takes `access-tokens` only. Other hosts get no `access-tokens`: Nix's GitLab fetcher would print a token
     without a "PAT:" prefix in a warning.
     """
+    remote = f"http.https://{credential.host}/"
     env = {
-        "GIT_CONFIG_COUNT": "1",
-        "GIT_CONFIG_KEY_0": f"http.https://{credential.host}/.extraHeader",
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_0": f"{remote}.extraHeader",
         "GIT_CONFIG_VALUE_0": f"Authorization: Basic {_basic_auth(credential)}",
+        # Git sends the header on every request it makes itself, also to the base URL a redirect moved it to.
+        "GIT_CONFIG_KEY_1": f"{remote}.followRedirects",
+        "GIT_CONFIG_VALUE_1": "false",
     }
     if credential.host == "github.com":
         env["NIX_CONFIG"] = "\n".join(

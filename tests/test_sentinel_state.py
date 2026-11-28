@@ -12,6 +12,7 @@ from pydantic_ai.models.test import TestModel
 from sqlalchemy import select
 
 from carapace.builder.skill_builds import SkillBuilds
+from carapace.builder.skill_updates import no_fetch_credentials
 from carapace.database.models import SessionActionLogRow, SessionSentinelRow
 from carapace.security.context import RewindEntry, SessionSecurity, ToolCallEntry, UserMessageEntry
 from carapace.security.sentinel import Sentinel, _action_log_prompt
@@ -25,7 +26,7 @@ def _sentinel(tmp_path: Path, *, timeout: timedelta = timedelta(seconds=30)) -> 
         model="test:model",
         user="thies",
         knowledge_dir=tmp_path,
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         llm_slots=None,
         timeout=timeout,
         model_factory=lambda _name, *, user: TestModel(call_tools=[]),

@@ -53,6 +53,7 @@ def parse_skills_lock(text: str) -> list[ListedSkill]:
         for node_id, node in nodes.items():
             if node_id != lock["root"]:
                 _refuse_builder_local(node_id, node)
+                _refuse_without_nar_hash(node_id, node)
         skills = [
             _listed_skill(name, nodes[node]) for name, node in sorted(inputs.items()) if name not in _SHARED_INPUTS
         ]
@@ -108,6 +109,16 @@ def _refuse_builder_local(node_id: str, node: dict[str, Any]) -> None:
                 f"input {node_id}: an absolute path, file: or git+file: input reads the builder's disk; "
                 "use path:./<dir> for a skill in this repo or a remote flake reference"
             )
+
+
+def _refuse_without_nar_hash(node_id: str, node: dict[str, Any]) -> None:
+    """Any node but a local skill's, nested ones included: a `rev` alone counts as locked, and the builder's
+    fetcher cache serves a commit another user's token fetched without asking the forge. With the `narHash`
+    required, using a private input takes reading a lock that uses it. `nix flake lock` always writes one;
+    a local skill's `path:./<dir>` node has none and comes from this repo anyway."""
+    locked = node["locked"]
+    if locked["type"] != "path" and "narHash" not in locked:
+        raise SkillsFlakeError(f"input {node_id}: its lock entry has no narHash; lock it again with nix flake lock")
 
 
 def _local_directory(name: str, node: dict[str, Any]) -> PurePosixPath | None:

@@ -377,20 +377,23 @@ def test_the_fetch_credential_is_the_knowledge_remotes_token_for_its_host(
 @pytest.mark.parametrize(("host", "access_tokens"), [("github.com", True), ("git.example.org", False)])
 async def test_a_credential_reaches_git_for_its_host_only_and_never_the_log(host: str, access_tokens: bool) -> None:
     credential = FetchCredential(host=host, token="ghp_s3cret")
-    show_env = 'echo "$GIT_CONFIG_KEY_0|$GIT_CONFIG_VALUE_0|$NIX_CONFIG" >&2; echo "$GIT_CONFIG_COUNT"'
+    show_env = (
+        'echo "$GIT_CONFIG_KEY_0|$GIT_CONFIG_VALUE_0|$NIX_CONFIG" >&2; '
+        'echo "$GIT_CONFIG_COUNT $GIT_CONFIG_KEY_1=$GIT_CONFIG_VALUE_1"'
+    )
 
     code, stdout, stderr = await nix._run("sh", "-c", show_env, credential=credential)
     _, unauthenticated, _ = await nix._run("sh", "-c", show_env)
 
     assert code == 0
-    assert stdout == "1\n"
+    assert stdout == f"2 http.https://{host}/.followRedirects=false\n"
     key, header, nix_config = stderr.strip().split("|")
     assert key == f"http.https://{host}/.extraHeader"
     assert header == "Authorization: Basic <redacted>"
     assert nix_config.endswith("access-tokens = github.com=<redacted>") is access_tokens
     assert "s3cret" not in stderr
     # The next invocation, and the builder's own environment, never see it.
-    assert unauthenticated == "\n"
+    assert unauthenticated == " =\n"
     assert "GIT_CONFIG_COUNT" not in os.environ
 
 

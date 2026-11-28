@@ -26,7 +26,7 @@ from ..span_names import SKILL_BUILD_WAIT_SPAN
 from ..spans import span
 from .client import BuilderClient, BuilderSystemMismatchError
 from .models import BuildResult, FetchCredential, SkillDeclarations
-from .skill_updates import FetchCredentials, SkillUpdates, no_fetch_credentials
+from .skill_updates import FetchCredentials, SkillUpdates
 from .skills_head import archive_skills, object_id, skills_flake_at_head
 
 
@@ -132,9 +132,7 @@ class RetryRefusedError(Exception):
 
 
 class SkillBuilds:
-    def __init__(
-        self, builder: BuilderClient | None, fetch_credentials: FetchCredentials = no_fetch_credentials
-    ) -> None:
+    def __init__(self, builder: BuilderClient | None, fetch_credentials: FetchCredentials) -> None:
         self._builder = builder
         self._fetch_credentials = fetch_credentials
         # Whether the skills have something newer: the same builder and repos, a separate question.

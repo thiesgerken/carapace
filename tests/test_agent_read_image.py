@@ -18,6 +18,7 @@ from carapace.agent.tools import (
     create_agent,
 )
 from carapace.builder.skill_builds import SkillBuilds
+from carapace.builder.skill_updates import no_fetch_credentials
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.llm import model_supports_vision
@@ -51,7 +52,7 @@ def _deps(tmp_path: Path, *, model_id: str, vision: bool, results: list[ToolResu
     sandbox.file_read = AsyncMock(return_value="TEXT-STUB")
     sandbox.file_read_bytes = AsyncMock(return_value=b"\x89PNG-bytes")
     return Deps(
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         config=_config(vision_default=vision),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,

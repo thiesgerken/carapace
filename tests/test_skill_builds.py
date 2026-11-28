@@ -19,7 +19,7 @@ from carapace.builder import skill_builds, skills_head
 from carapace.builder.client import BuilderClient
 from carapace.builder.models import BuildResult, FetchCredential, SettingDeclaration, SkillDeclarations, UpdatedLocks
 from carapace.builder.skill_builds import SkillBuilds
-from carapace.builder.skill_updates import UpdateCheck
+from carapace.builder.skill_updates import UpdateCheck, no_fetch_credentials
 from carapace.spans import TurnTrace, attach
 from tests.skills_flake import write_skills_flake
 
@@ -59,11 +59,15 @@ class FakeBuilder:
             skill_files=sorted(self.files),
         )
         self.file_reads: list[tuple[str, str]] = []
+        # The fetch credential each build (by skill) and update check (by its inputs) was sent with.
+        self.build_credentials: dict[str, FetchCredential | None] = {}
+        self.update_credentials: dict[tuple[str, ...], FetchCredential | None] = {}
 
     async def check_updates(
         self, archive: bytes, inputs: list[str], credential: FetchCredential | None
     ) -> UpdatedLocks:
         """ensure_built starts an update check for a new skills/ tree; these tests are about builds."""
+        self.update_credentials[tuple(inputs)] = credential
         return UpdatedLocks(inputs={})
 
     async def get(self, key: str) -> BuildResult | None:
@@ -76,6 +80,7 @@ class FakeBuilder:
     ) -> BuildResult:
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
             self.built.append((key, skill, set(tar.getnames())))
+        self.build_credentials[skill] = credential
         self.retries += retry
         if self.reject_with is not None:
             request = httpx.Request("PUT", f"http://builder/builds/{key}")
@@ -142,9 +147,32 @@ async def _settled(builds: SkillBuilds, repo: Path) -> dict[str, str]:
 
 
 @pytest.mark.anyio
+async def test_each_repos_builds_and_update_checks_carry_its_owners_credential(repo: Path, tmp_path: Path) -> None:
+    other = tmp_path / "other"
+    other.mkdir()
+    _git(other, "init", "-q")
+    _write_skill(other, "tracker")
+    _write_skills_flake(other, ["tracker"])
+    _commit(other, "skills")
+    alice = FetchCredential(host="git.example.org", token="alice-token")
+    bob = FetchCredential(host="github.com", token="bob-token")
+    owners = {repo: alice, other: bob}
+    builder = FakeBuilder()
+    builds = SkillBuilds(cast(BuilderClient, builder), owners.get)
+
+    await _settled(builds, repo)
+    await _settled(builds, other)
+    await builds.updates.wait(repo)
+    await builds.updates.wait(other)
+
+    assert builder.build_credentials == {"weather": alice, "notes": alice, "tracker": bob}
+    assert builder.update_credentials == {("notes", "weather"): alice, ("tracker",): bob}
+
+
+@pytest.mark.anyio
 async def test_a_head_change_builds_only_the_skills_whose_key_changed(repo: Path) -> None:
     builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
 
     first = await builds.ensure_built(repo)
 
@@ -173,7 +201,7 @@ async def test_a_head_change_builds_only_the_skills_whose_key_changed(repo: Path
 @pytest.mark.anyio
 async def test_a_lock_change_rekeys_every_skill(repo: Path) -> None:
     builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
@@ -189,7 +217,7 @@ async def test_a_lock_change_rekeys_every_skill(repo: Path) -> None:
 async def test_an_external_skill_is_keyed_without_a_directory(repo: Path) -> None:
     _write_skills_flake(repo, ["weather"], external=("tracker",))
     _commit(repo, "external tracker")
-    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
+    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()), no_fetch_credentials)
 
     keys = {build.skill: build.key for build in await builds.ensure_built(repo)}
 
@@ -198,7 +226,7 @@ async def test_an_external_skill_is_keyed_without_a_directory(repo: Path) -> Non
 
 @pytest.mark.anyio
 async def test_a_built_skill_reports_its_store_paths_and_commands(repo: Path) -> None:
-    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
+    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
@@ -214,7 +242,7 @@ async def test_a_result_the_builder_already_has_is_not_built_again(repo: Path) -
     builder = FakeBuilder()
     for name in ("weather", "notes"):
         builder.stored[_key(repo, name)] = builder.answer(_key(repo, name), name)
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
 
     await builds.ensure_built(repo)
 
@@ -228,7 +256,7 @@ async def test_a_failed_build_is_reported_with_its_log(repo: Path) -> None:
     builder.answer = lambda key, skill: BuildResult(
         key=key, skill=skill, state="failed", log_tail="error: flake.lock is missing nixpkgs"
     )
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
@@ -244,7 +272,7 @@ async def test_a_skill_without_a_manifest_counts_as_failed(repo: Path) -> None:
     builder.answer = lambda key, skill: BuildResult(
         key=key, skill=skill, state="succeeded", store_paths=["/nix/store/x"], metadata=None
     )
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
@@ -258,7 +286,7 @@ async def test_a_skill_without_a_manifest_counts_as_failed(repo: Path) -> None:
 async def test_an_unreachable_builder_reads_unavailable_and_is_asked_again(repo: Path) -> None:
     builder = FakeBuilder()
     builder.unreachable = True
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
 
     assert await _settled(builds, repo) == {"notes": "unavailable", "weather": "unavailable"}
@@ -274,7 +302,7 @@ async def test_an_unreachable_builder_reads_unavailable_and_is_asked_again(repo:
 async def test_a_skill_the_builder_refuses_fails_and_is_not_sent_again(repo: Path) -> None:
     builder = FakeBuilder()
     builder.reject_with = 400
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
@@ -288,7 +316,7 @@ async def test_a_skill_the_builder_refuses_fails_and_is_not_sent_again(repo: Pat
 
 @pytest.mark.anyio
 async def test_without_a_builder_listed_skills_are_unavailable(repo: Path) -> None:
-    builds = SkillBuilds(None)
+    builds = SkillBuilds(None, no_fetch_credentials)
 
     states = {build.skill: build.state for build in await builds.ensure_built(repo)}
 
@@ -301,14 +329,14 @@ async def test_without_the_skills_flake_a_repo_has_no_skills(repo: Path, missing
     (repo / "skills" / missing).unlink()
     _commit(repo, f"drop {missing}")
 
-    assert await SkillBuilds(cast(BuilderClient, FakeBuilder())).ensure_built(repo) == []
+    assert await SkillBuilds(cast(BuilderClient, FakeBuilder()), no_fetch_credentials).ensure_built(repo) == []
 
 
 @pytest.mark.anyio
 async def test_a_repository_without_commits_has_no_skills(tmp_path: Path) -> None:
     _git(tmp_path, "init", "-q")
 
-    assert await SkillBuilds(cast(BuilderClient, FakeBuilder())).ensure_built(tmp_path) == []
+    assert await SkillBuilds(cast(BuilderClient, FakeBuilder()), no_fetch_credentials).ensure_built(tmp_path) == []
 
 
 @pytest.mark.anyio
@@ -354,7 +382,7 @@ async def test_a_skill_that_cannot_be_archived_fails(repo: Path, monkeypatch: py
 
     monkeypatch.setattr(skills_head, "_git", git)
     builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
 
     assert await _settled(builds, repo) == {"notes": "failed", "weather": "failed"}
@@ -380,7 +408,7 @@ def _held(builder: FakeBuilder) -> asyncio.Event:
 async def test_waiting_for_a_build_returns_its_result_and_is_a_span(repo: Path) -> None:
     builder = FakeBuilder()
     release = _held(builder)
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     trace = TurnTrace("t1", on_change=lambda _span: None)
     root = trace.start("turn", "turn", parent_id=None, attrs={})
 
@@ -398,7 +426,7 @@ async def test_waiting_for_a_build_returns_its_result_and_is_a_span(repo: Path) 
 
 @pytest.mark.anyio
 async def test_waiting_for_an_unlisted_skill_returns_none_at_once(repo: Path) -> None:
-    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
+    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()), no_fetch_credentials)
 
     unlisted = await builds.wait_built(repo, "unlisted")
 
@@ -428,7 +456,7 @@ async def test_the_builder_roots_are_the_skill_keys_of_all_heads(repo: Path, tmp
     _git(empty, "init", "-q")
     builder = RootsBuilder()
 
-    await SkillBuilds(cast(BuilderClient, builder)).sync_roots([repo, other, empty])
+    await SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials).sync_roots([repo, other, empty])
 
     expected = {_key(repo, "weather"), _key(repo, "notes"), _key(other, "weather")}
     assert builder.roots == [sorted(expected)]
@@ -437,7 +465,7 @@ async def test_the_builder_roots_are_the_skill_keys_of_all_heads(repo: Path, tmp
 @pytest.mark.anyio
 async def test_a_key_no_head_references_is_looked_up_again(repo: Path) -> None:
     builder = RootsBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
     old_weather = _key(repo, "weather")
@@ -455,7 +483,7 @@ async def test_a_key_no_head_references_is_looked_up_again(repo: Path) -> None:
 async def test_a_failed_build_is_retried_on_request(repo: Path) -> None:
     builder = FakeBuilder()
     builder.answer = lambda key, skill: BuildResult(key=key, skill=skill, state="failed", log_tail="error: reset")
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     assert (await _settled(builds, repo))["weather"] == "failed"
 
@@ -469,7 +497,7 @@ async def test_a_failed_build_is_retried_on_request(repo: Path) -> None:
 @pytest.mark.anyio
 @pytest.mark.parametrize("name", ["weather", "unlisted", "missing"])
 async def test_only_a_failed_listed_skill_can_be_retried(repo: Path, name: str) -> None:
-    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
+    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
@@ -490,7 +518,7 @@ async def test_an_unreadable_repo_does_not_stop_the_other_repos_roots(repo: Path
     (broken / ".git" / "objects" / tree[:2] / tree[2:]).unlink()
     builder = RootsBuilder()
 
-    await SkillBuilds(cast(BuilderClient, builder)).sync_roots([broken, repo])
+    await SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials).sync_roots([broken, repo])
 
     assert builder.roots == [sorted([_key(repo, "weather"), _key(repo, "notes")])]
 
@@ -499,7 +527,7 @@ async def test_an_unreadable_repo_does_not_stop_the_other_repos_roots(repo: Path
 async def test_a_cancelled_waiter_leaves_the_build_running_for_the_others(repo: Path) -> None:
     builder = FakeBuilder()
     release = _held(builder)
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     trace = TurnTrace("t1", on_change=lambda _span: None)
     root = trace.start("turn", "turn", parent_id=None, attrs={})
     with attach(trace, root.span_id):
@@ -547,7 +575,7 @@ async def test_the_catalog_names_each_skill_by_its_attribute_with_its_built_desc
     builder = FakeBuilder()
     same = "---\nname: weather\ndescription: {}\n---\n"
     builder.answer = _answer_with({"weather": same.format("Local weather"), "tracker": same.format("Remote weather")})
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
 
     assert builds.catalog(repo) == []
     await builds.ensure_built(repo)
@@ -566,7 +594,7 @@ async def test_the_catalog_names_each_skill_by_its_attribute_with_its_built_desc
 async def test_a_failed_build_keeps_the_description_it_read(repo: Path) -> None:
     builder = FakeBuilder()
     builder.answer = _answer_with({"weather": "---\ndescription: Current weather\n---\n", "notes": None}, "failed")
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
@@ -581,7 +609,7 @@ async def test_a_broken_frontmatter_is_listed_as_broken(repo: Path) -> None:
     builder = FakeBuilder()
     disabled = "---\ndescription: Private material\nmetadata:\n  carapace:\n    disabled: true\n---\n"
     builder.answer = _answer_with({"weather": disabled, "notes": "Just a body.\n"})
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
@@ -598,7 +626,7 @@ async def test_a_package_without_a_skill_directory_counts_as_failed(repo: Path) 
     builder.answer = lambda key, skill: BuildResult(
         key=key, skill=skill, state="succeeded", store_paths=["/nix/store/x"], metadata=_METADATA
     )
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
@@ -612,7 +640,7 @@ async def test_a_package_without_a_skill_directory_counts_as_failed(repo: Path) 
 async def test_an_unavailable_builder_has_a_fixed_catalog_text(repo: Path) -> None:
     builder = FakeBuilder()
     builder.unreachable = True
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
@@ -626,7 +654,7 @@ async def test_an_unavailable_builder_has_a_fixed_catalog_text(repo: Path) -> No
 async def test_a_skill_file_is_read_from_the_builder_under_its_build_key(repo: Path) -> None:
     builder = FakeBuilder()
     builder.files["references/syntax.md"] = b"syntax"
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
     [weather] = [build for build in await builds.ensure_built(repo) if build.skill == "weather"]
@@ -640,7 +668,7 @@ async def test_a_skill_file_is_read_from_the_builder_under_its_build_key(repo: P
 @pytest.mark.anyio
 async def test_a_rekeyed_skill_keeps_its_description_and_files_while_it_builds(repo: Path) -> None:
     builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.refresh(repo)
     await _settled(builds, repo)
     await builds.ensure_built(repo)
@@ -670,7 +698,7 @@ async def test_after_a_restart_the_refresh_waits_for_what_the_builder_already_ha
     builder = FakeBuilder()
     for name in ("weather", "notes"):
         builder.stored[_key(repo, name)] = builder.answer(_key(repo, name), name)
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
 
     await builds.refresh(repo)
 
@@ -692,7 +720,7 @@ async def test_a_slow_lookup_does_not_hold_up_the_refresh(repo: Path, monkeypatc
 
     builder.get = slow_get  # type: ignore[method-assign]
     monkeypatch.setattr(skill_builds, "_LOOKUP_WAIT_SECONDS", 0.01)
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
 
     await builds.refresh(repo)
 
@@ -706,7 +734,7 @@ async def test_a_slow_lookup_does_not_hold_up_the_refresh(repo: Path, monkeypatc
 @pytest.mark.anyio
 async def test_the_profile_keeps_the_last_succeeded_build_while_skills_rebuild_or_fail(repo: Path) -> None:
     builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
     before = {build.skill: build for build in await builds.installable(repo)}
@@ -734,7 +762,7 @@ async def test_an_external_skill_gets_only_the_flake_and_its_lock(repo: Path) ->
     _write_skills_flake(repo, [], external=("tracker",))
     _commit(repo, "only tracker")
     builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
 
     assert await _settled(builds, repo) == {"tracker": "succeeded"}
@@ -748,7 +776,7 @@ async def test_next_to_a_local_skill_an_external_one_still_gets_only_the_flake_a
     _write_skills_flake(repo, ["weather"], external=("tracker",))
     _commit(repo, "a local and an external skill")
     builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
 
     assert await _settled(builds, repo) == {"tracker": "succeeded", "weather": "succeeded"}
@@ -762,7 +790,7 @@ async def test_a_listed_directory_that_is_missing_fails_before_the_builder(repo:
     _write_skills_flake(repo, ["weather", "gone"])
     _commit(repo, "list a skill without its directory")
     builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
@@ -773,7 +801,7 @@ async def test_a_listed_directory_that_is_missing_fails_before_the_builder(repo:
 
 @pytest.mark.anyio
 async def test_a_new_skills_tree_at_head_gets_an_update_check(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
+    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()), no_fetch_credentials)
     started: list[Path] = []
     monkeypatch.setattr(builds.updates, "start", started.append)
 
@@ -798,7 +826,7 @@ async def test_a_skill_directory_name_is_no_pattern(repo: Path) -> None:
     write_skills_flake(repo / "skills", {"w": "w*"})
     _commit(repo, "a skill directory named like a glob")
     builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 
@@ -810,7 +838,7 @@ async def test_a_skill_directory_name_is_no_pattern(repo: Path) -> None:
 @pytest.mark.anyio
 async def test_config_json_rekeys_every_skill_and_goes_to_the_builder(repo: Path) -> None:
     builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     before = {build.skill: build.key for build in await builds.ensure_built(repo)}
     await _settled(builds, repo)
 
@@ -829,7 +857,7 @@ async def test_config_json_rekeys_every_skill_and_goes_to_the_builder(repo: Path
 @pytest.mark.anyio
 async def test_a_skill_turned_off_counts_as_not_listed(repo: Path) -> None:
     builder = FakeBuilder()
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
     weather = next(build for build in await builds.installable(repo) if build.skill == "weather")
@@ -866,7 +894,7 @@ async def test_a_skill_turned_off_counts_as_not_listed(repo: Path) -> None:
 
 @pytest.mark.anyio
 async def test_a_wrapper_finds_its_build_by_store_path_then_by_command(repo: Path) -> None:
-    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()))
+    builds = SkillBuilds(cast(BuilderClient, FakeBuilder()), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
     weather = next(build for build in await builds.installable(repo) if build.skill == "weather")
@@ -885,7 +913,7 @@ async def test_declarations_outlive_a_rekey_even_from_a_build_that_failed(repo: 
     builder.answer = lambda key, skill: BuildResult(
         key=key, skill=skill, state="failed", log_tail="no value for CITY", declarations=declared
     )
-    builds = SkillBuilds(cast(BuilderClient, builder))
+    builds = SkillBuilds(cast(BuilderClient, builder), no_fetch_credentials)
     await builds.ensure_built(repo)
     await _settled(builds, repo)
 

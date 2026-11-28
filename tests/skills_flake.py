@@ -10,14 +10,15 @@ from pathlib import Path
 def write_skills_flake(skills_dir: Path, local: list[str] | dict[str, str], external: Sequence[str] = ()) -> None:
     """List *local* as `path:` inputs (a dict maps a name to its directory) and *external* as GitHub flakes."""
     directories = local if isinstance(local, dict) else {name: name for name in local}
+    nar = {"narHash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
     nodes: dict[str, object] = {
-        "nixpkgs": {"locked": {"type": "github", "owner": "NixOS", "repo": "nixpkgs", "rev": "0" * 40}},
-        "carapace": {"locked": {"type": "github", "owner": "thiesgerken", "repo": "carapace", "rev": "1" * 40}},
+        "nixpkgs": {"locked": {"type": "github", "owner": "NixOS", "repo": "nixpkgs", "rev": "0" * 40, **nar}},
+        "carapace": {"locked": {"type": "github", "owner": "thiesgerken", "repo": "carapace", "rev": "1" * 40, **nar}},
     }
     nodes |= {name: {"locked": {"type": "path", "path": f"./{directory}"}} for name, directory in directories.items()}
     nodes |= {
         name: {
-            "locked": {"type": "github", "owner": "someone", "repo": name, "rev": "2" * 40},
+            "locked": {"type": "github", "owner": "someone", "repo": name, "rev": "2" * 40, **nar},
             "original": {"type": "github", "owner": "someone", "repo": name},
         }
         for name in external

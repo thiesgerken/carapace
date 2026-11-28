@@ -28,6 +28,7 @@ from .agent.autonomy import AutonomyStreak
 from .agent.deps import Deps
 from .agent.tools import agent_instructions, build_session_info, create_agent
 from .builder.skill_builds import SkillBuilds
+from .builder.skill_updates import no_fetch_credentials
 from .credentials import CredentialRegistry
 from .knowledge import KnowledgeRepoHandle
 from .memory.llm import structured_agent
@@ -131,7 +132,7 @@ async def _agent(inputs: PreviewInputs) -> PromptPreview:
         git_store=inputs.repo.git_store,
         skill_catalog=inputs.skill_catalog,
         # The preview records the first request and runs no tool.
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         agent_model=_recording_model(),
         agent_model_id=model,
         usage_tracker=UsageTracker(),
@@ -273,7 +274,7 @@ def _sentinel_for(inputs: PreviewInputs, state: SessionState) -> Sentinel:
         user=inputs.user,
         knowledge_dir=inputs.repo.knowledge_dir,
         # The preview records the first request and runs no tool.
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         # Previews record the request locally instead of sending it, so they take no LLM slot.
         llm_slots=None,
         model_factory=lambda model_name, *, user: _recording_model(),

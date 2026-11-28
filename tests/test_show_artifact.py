@@ -14,6 +14,7 @@ from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps
 from carapace.agent.tools import create_agent
 from carapace.builder.skill_builds import SkillBuilds
+from carapace.builder.skill_updates import no_fetch_credentials
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models.config import Config
@@ -25,7 +26,7 @@ from carapace.usage import UsageTracker
 
 def _deps(tmp_path: Path) -> Deps:
     return Deps(
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         config=Config(),
         data_dir=tmp_path / "data",
         knowledge_dir=tmp_path / "knowledge",

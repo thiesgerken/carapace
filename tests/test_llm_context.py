@@ -26,6 +26,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from pydantic_ai.usage import RequestUsage
 
 from carapace.builder.skill_builds import SkillBuilds
+from carapace.builder.skill_updates import no_fetch_credentials
 from carapace.security.context import SENTINEL_VERDICT_TOOL, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.engine import SessionEngine
@@ -82,7 +83,7 @@ def _sentinel(tmp_path: Path, model: FunctionModel, *, timeout: timedelta = time
         model="test:model",
         user="thies",
         knowledge_dir=tmp_path,
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         llm_slots=None,
         timeout=timeout,
         model_factory=lambda _name, *, user: model,

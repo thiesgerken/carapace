@@ -21,6 +21,7 @@ from carapace.agent import build_session_info, build_system_prompt, create_agent
 from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps
 from carapace.builder.skill_builds import SkillBuilds
+from carapace.builder.skill_updates import no_fetch_credentials
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models.config import AvailableModelEntry, Config
@@ -35,7 +36,7 @@ from carapace.usage import UsageTracker
 def test_build_system_prompt_minimal(tmp_path: Path):
     state = SessionState.now(session_id="test-123")
     deps = Deps(
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         config=Config(),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
@@ -66,7 +67,7 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
     (tmp_path / "AGENTS.md").write_text("# Agent Instructions\nBe helpful.")
     state = SessionState.now(session_id="s1")
     deps = Deps(
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         config=Config(),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
@@ -91,7 +92,7 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
 def test_build_system_prompt_unattended_mentions_task_outputs(tmp_path: Path):
     state = SessionState.now(session_id="s1", unattended=True)
     deps = Deps(
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         config=Config(),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
@@ -118,7 +119,7 @@ def test_build_system_prompt_puts_the_memory_block_between_fixed_instructions_an
     state = SessionState.now(session_id="s1", ask_mode=True)
     state.memory = MemorySnapshot(text="# Memory\n\n<memory>\nrecent work\n</memory>", as_of=datetime.now(tz=UTC))
     deps = Deps(
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         config=Config(),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
@@ -142,7 +143,7 @@ def test_build_system_prompt_puts_the_memory_block_between_fixed_instructions_an
 def test_build_system_prompt_ask_mode_mentions_read_only_limits(tmp_path: Path):
     state = SessionState.now(session_id="s1", ask_mode=True)
     deps = Deps(
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         config=Config(),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
@@ -171,7 +172,7 @@ def test_build_system_prompt_leads_with_the_shared_prefix_and_ends_volatile(tmp_
     catalog = [SkillInfo(name="web", description="Search the web.", path=tmp_path / "skills" / "web")]
     state = SessionState.now(session_id="s1", ask_mode=True)
     deps = Deps(
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         config=Config(),
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
@@ -218,7 +219,7 @@ def _capture_agent_request(
     config = Config()
     config.agent.available_models.append(AvailableModelEntry.model_validate(model_id))
     deps = Deps(
-        skill_builds=SkillBuilds(None),
+        skill_builds=SkillBuilds(None, no_fetch_credentials),
         config=config,
         data_dir=tmp_path,
         knowledge_dir=tmp_path,

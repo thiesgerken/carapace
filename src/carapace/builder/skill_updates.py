@@ -182,9 +182,7 @@ def _rev(rev: str | None, at: datetime | None) -> str:
 
 
 class SkillUpdates:
-    def __init__(
-        self, builder: BuilderClient | None, fetch_credentials: FetchCredentials = no_fetch_credentials
-    ) -> None:
+    def __init__(self, builder: BuilderClient | None, fetch_credentials: FetchCredentials) -> None:
         self._builder = builder
         self._fetch_credentials = fetch_credentials
         self._checks: dict[Path, UpdateCheck] = {}
