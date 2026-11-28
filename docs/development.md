@@ -144,16 +144,16 @@ The demo user also has memory data for the Memory pages and the home page: `memo
    gh pr edit 123 -R thiesgerken/carapace --body-file body.md --attach ./budget-light.png --attach ./budget-dark.png
    ```
 
-The README screenshots in `docs/assets/screenshots/` are not regenerated automatically, and most of them can't come from `screenshot.mjs`: the chat opens scrolled to the bottom, and some shots need scrolling or expanded tool details, which the script doesn't do. To retake them, run steps 1 and 2, log in as `demo` in a 1280×800 browser window, and take them by hand:
+The README screenshots in `docs/assets/screenshots/` are not regenerated automatically, and most of them can't come from `screenshot.mjs`: the chat opens scrolled to the bottom, and some shots need scrolling or expanded tool details, which the script doesn't do. To retake them, run steps 1 and 2, commit the four sessions' archives (**Knowledge** in the Environment tab) and start the sandboxes of `demo-sandbox-tour`, `demo-recipe-skill` and `demo-pancake-recipe`, so the inspector shows live state. Then log in as `demo` in a 1600×900 browser window with the inspector open, and take them in light mode:
 
-| README file | Session | Position |
-| --- | --- | --- |
-| `sandbox_info.png` | `demo-sandbox-tour` | top of the chat |
-| `pancake_web.png` | `demo-pancake-recipe` | `web_fetch` call expanded |
-| `pancake_skill.png` | `demo-recipe-skill` | first turn, `git push` expanded |
-| `pancake_git.png` | `demo-recipe-skill` | git log in the last answer |
-| `pancake_tree.png` | `demo-recipe-skill` | workspace tree in the last answer |
-| `post_readonly.png` | `demo-blocked-post` | denied call expanded |
+| README file | Page | Inspector tab | Position |
+| --- | --- | --- | --- |
+| `sandbox_info.png` | `demo-sandbox-tour` | Environment | top of the chat, tool group and `exec` expanded |
+| `pancake_web.png` | `demo-pancake-recipe` | Session | user message on top, `web_search` and its credential access expanded |
+| `pancake_skill.png` | `demo-recipe-skill` | Environment | the `git push` `exec` and its push decision expanded |
+| `pancake_git.png` | `demo-recipe-skill` | Environment | the last turn: git log and workspace tree |
+| `pancake_tree.png` | `/knowledge` | | the repo root |
+| `post_readonly.png` | `demo-blocked-post` | Session | tool group, `exec` and the denied domain expanded |
 
 Clean up with `process-compose down`, then remove the stack's [Docker resources](#instance-and-docker-resources) and the worktree.
 
