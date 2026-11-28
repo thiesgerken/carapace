@@ -13,6 +13,7 @@ timestamps relative to the seeding time, so the same script gives the same pictu
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import subprocess
@@ -40,8 +41,10 @@ from pydantic_ai.usage import RequestUsage, RunUsage
 from sqlalchemy.engine import make_url
 
 from carapace.auth import AuthStore
+from carapace.bootstrap import ensure_knowledge_dir
 from carapace.config import build_config, resolve_user_knowledge_dir
 from carapace.database.engine import SessionFactory, create_engine_and_factory, resolve_database_url, run_migrations
+from carapace.git.store import GitStore
 from carapace.memory.input import INPUT_FORMAT_VERSION
 from carapace.memory.models import (
     ExtractionResult,
@@ -979,6 +982,14 @@ def _sales_dashboard(start: datetime) -> Transcript:
     return t
 
 
+async def _bootstrap_knowledge_repo(repo: Path) -> None:
+    """Set up the repo the way the server bootstraps a user's: the seed runs after server start, so the
+    server never initializes, configures (committer identity, updateInstead, hook) or seeds it itself."""
+    store = GitStore(repo)
+    await store.ensure_repo()
+    await store.commit(ensure_knowledge_dir(repo), "🔧 bootstrap: seed default files")
+
+
 def _seed_artifacts(data_dir: Path, start: datetime) -> None:
     """Commit the sales dashboard's history into the demo user's knowledge repo, as the session pushed it."""
     repo = resolve_user_knowledge_dir(data_dir, DEMO_USER)
@@ -1004,7 +1015,7 @@ def _seed_artifacts(data_dir: Path, start: datetime) -> None:
             at=start + timedelta(minutes=minutes),
         )
 
-    git("init", "-b", "main")
+    asyncio.run(_bootstrap_knowledge_repo(repo))
     draft = repo / "artifacts" / "sales-draft" / "index.html"
     draft.parent.mkdir(parents=True)
     draft.write_text(_artifact_page("Sales draft", trend=False), encoding="utf-8")
