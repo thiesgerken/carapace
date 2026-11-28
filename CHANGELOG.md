@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.204.0 (2026-11-28)
+
+### ✨ Introduce new features
+
+- feat: override shared skills in skills/flake.nix; SKILL.md frontmatter moves into Nix
+
+### 🐛 Fix a bug
+
+- fix: point a failed build on old helpers at the update
+- fix: build the skill directory only when the manifest names one
+- fix: give the archive hint for a missing readFile path too
+- fix: address review on skill overrides
+
+### 📌 Pin dependencies to specific versions
+
+- deps: pin the bundled skills and examples to the migrated helpers
+
 ## v0.203.4 (2026-11-28)
 
 ### 🍱 Add or update assets
