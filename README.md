@@ -84,7 +84,7 @@ Who doesn't want a personal assistant? OpenClaw showed that this is achievable w
   <img src="docs/assets/screenshots/pancake_tree.png" width="1000">
 </p>
 
-<p align="center"><em>State of one user's knowledge repo after some sessions and a new skill were added.</em></p>
+<p align="center"><em>One user's knowledge repo in the web UI: persona, security policy and skills, next to archived sessions and artifacts, all versioned in git.</em></p>
 
 <p align="center">
   <img src="docs/assets/screenshots/post_readonly.png" width="1000">

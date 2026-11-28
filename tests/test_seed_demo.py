@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from carapace.config import resolve_user_knowledge_dir
 from carapace.database.engine import create_engine_and_factory
 from carapace.memory.store import MemoryStore
 from carapace.models.config import DatabaseConfig
@@ -85,3 +87,9 @@ def test_seeded_demo_sessions_load_like_real_sessions(tmp_path: Path, monkeypatc
     # The memory demo bills one extraction on a paid model and one on the subscription.
     spend = MemoryStore(session_factory).spend(seed_demo.DEMO_USER, now)
     assert spend.cost == CostSplit(actual=Decimal("0.0214"), equivalent=Decimal("0.0600"))
+
+    # The knowledge repo is set up like one the server bootstraps, so server-side commits work in it.
+    repo = resolve_user_knowledge_dir(data_dir, seed_demo.DEMO_USER)
+    assert (repo / "skills" / "flake.nix").is_file()
+    identity = subprocess.run(["git", "config", "--local", "user.email"], cwd=repo, capture_output=True, text=True)
+    assert identity.stdout.strip()
