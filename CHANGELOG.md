@@ -1,6 +1,80 @@
 # CHANGELOG
 
 
+## v0.201.0 (2026-11-28)
+
+### ✨ Introduce new features
+
+- feat: web, carapace and ferret as external inputs (WIP)
+- feat: OAuth credential slots, MCP URLs from settings
+- feat: credential slots of type oauth (WIP)
+- feat: credential slots, bound in skills/config.json
+- feat: seed skills/config.json and write the skills flake's outputs with skillsFlake
+- feat: settings for skills, resolved per instance from skills/config.json
+
+### 🐛 Fix a bug
+
+- fix: fill the sandbox git identity with the sandbox's hostname
+- fix: evaluate each skill's manifest on its own, so one broken skill fails only itself
+- fix: read bundled configuration by whole lines, keep copies it cannot convert, handle pre-flake copies
+- fix: check MCP URLs on the command, document OAuth slots in the manifest and cgate answer
+- fix: slot template and checks, carapace-cli off after an upgrade, drop unused slot plumbing
+- fix: keep a turned-off skill off while it re-keys, tell the sentinel where a command's needs came from
+
+### 📌 Pin dependencies to specific versions
+
+- chore: lock the seeded skills, now all inputs on carapace
+- chore: lock the seeded skills and ferret to helpers with OAuth slots
+- chore: lock the seeded and bundled skills to helpers with credential slots
+
+### 💄 Add or update the UI and style files
+
+- ui: lead a skill's evaluation error with Nix's message, the trace behind a toggle
+
+### 🔒️ Fix security or privacy issues
+
+- fix: vault listing and slot binding need a browser session; harden config edits
+
+### ♻️ Refactor code
+
+- refactor: report config.json entries of unlisted skills on the server instead of failing every skill
+
+### 📝 Add or update documentation
+
+- docs: the web search skill also has to be turned on
+- docs: the README tells the shareable skill flakes story
+- docs: keep Renovate to the skills flake, pinned tags can move, catalog until /compact
+- docs: sharing and consuming skills, pinning, and Renovate on a knowledge repo
+- docs: a leftover config.json entry is reported, not fatal
+- docs: every bundled skill comes from carapace main, configured in config.json
+- docs: settings, skills/config.json, the manifest and cgate --command
+
+### 🚧 Work in progress
+
+- wip: no configuration badges for a skill that is off
+- wip: credential slots in the skill config form
+- wip: settings form in the skill table
+- wip: skill config routes and tests
+- wip: skill settings from the declarations, config.json edits
+
+### 🎉 Begin a project
+
+- Start portable skills, phase 3 (#621)
+- Start portable skills, phase 2 (#621)
+
+### ✅ Add, update, or pass tests
+
+- test: the upgrade script moves bundled configuration into config.json
+- test: settings, turned-off skills and the gate's store path lookup
+
+### 🎨 Improve structure / format of the code
+
+- style: nixfmt the skill helpers
+
+### 💡 Add or update comments in source code
+
+- docs: say why the gate's fallback to the command name grants nothing
+
 ## v0.200.0 (2026-11-27)
 
 ### ✨ Introduce new features
