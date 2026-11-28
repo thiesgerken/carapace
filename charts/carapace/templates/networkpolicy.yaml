@@ -113,10 +113,11 @@ spec:
         - ipBlock:
             cidr: ::/0
             except:
-              # Loopback and IPv4-compatible; then forms that embed an IPv4 address (mapped, NAT64,
-              # 6to4), which a policy cannot look into.
+              # Loopback and IPv4-compatible; then forms that embed an IPv4 address (NAT64, 6to4),
+              # which a policy cannot look into. IPv4-mapped destinations (::ffff:0:0/96) leave
+              # Linux as IPv4, so the excepts above cover them, and the API server rejects the
+              # mapped form.
               - ::/96
-              - ::ffff:0:0/96
               - 64:ff9b::/96
               - 64:ff9b:1::/48
               - 2002::/16
