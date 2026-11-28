@@ -181,6 +181,22 @@ def test_a_repo_with_a_skills_flake_gets_the_frontmatter_moved(repo: Path, tmp_p
     assert "M\tskills/notes/SKILL.md" in _git(repo, "diff", "--cached", "--name-status")
 
 
+def test_a_flake_it_cannot_edit_keeps_the_frontmatter(repo: Path, tmp_path: Path) -> None:
+    (repo / "skills" / "flake.nix").write_text("mine\n")
+    flake = _OLD_FLAKE.replace("mkSkill {", "mkSkill rec {").replace('"carapace"', '"notes"')
+    (repo / "skills" / "notes" / "flake.nix").write_text(flake)
+    (repo / "skills" / "notes" / "SKILL.md").write_text("---\nname: notes\ndescription: Keeps notes\n---\nBody\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "skills flake")
+
+    result = _run(repo, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "skills/notes: move the frontmatter description into mkSkill by hand" in result.stderr
+    assert (repo / "skills" / "notes" / "flake.nix").read_text() == flake
+    assert (repo / "skills" / "notes" / "SKILL.md").read_text().startswith("---\nname: notes")
+
+
 def test_a_directory_that_cannot_be_an_attribute_stops_it_before_any_change(repo: Path, tmp_path: Path) -> None:
     _skill(repo, "nixpkgs")
     _git(repo, "add", "-A")

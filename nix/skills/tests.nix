@@ -266,11 +266,22 @@ assert pkgs.lib.assertMsg (fails
     extraFiles."flake.nix" = builtins.toFile "flake.nix" "shadow";
   })).passthru.carapace.skillDir
 ) "mkSkill let extraFiles shadow a file of src";
-assert pkgs.lib.assertMsg (fails
-  (notes.override (_: {
-    extraFiles."../escape.md" = builtins.toFile "escape.md" "out";
-  })).passthru.carapace.skillDir
-) "mkSkill let an extraFiles path leave the skill directory";
+assert pkgs.lib.assertMsg (pkgs.lib.all
+  (
+    path:
+    fails
+      (notes.override (_: {
+        extraFiles.${path} = builtins.toFile "escape.md" "out";
+      })).passthru.carapace.skillDir
+  )
+  [
+    "../escape.md"
+    "/etc/escape.md"
+    ""
+    "."
+    "docs/"
+  ]
+) "mkSkill let an extraFiles path leave the skill directory or name the directory itself";
 assert pkgs.lib.assertMsg (fails
   (notes.override (_: {
     instructions = "---\nname: notes\n---\nBody\n";

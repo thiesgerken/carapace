@@ -190,8 +190,17 @@ let
       shadowed = lib.filter (path: path == "SKILL.md" || builtins.pathExists (src + "/${path}")) (
         lib.attrNames extraFiles
       );
+      # An empty segment also catches a leading, doubled or trailing slash and the empty path.
       outside = lib.filter (
-        path: lib.hasPrefix "/" path || builtins.elem ".." (lib.splitString "/" path)
+        path:
+        lib.any (
+          segment:
+          builtins.elem segment [
+            ""
+            "."
+            ".."
+          ]
+        ) (lib.splitString "/" path)
       ) (lib.attrNames extraFiles);
       skillDir =
         assert lib.assertMsg (
@@ -199,11 +208,11 @@ let
         ) "${where}: mkSkill needs a description, the skill's line in the agent's catalog";
         assert lib.assertMsg (!lib.hasPrefix "---" instructions)
           "${where}: its instructions start with YAML frontmatter, but name and description belong in mkSkill now. Run scripts/upgrade-skills-flake.sh from the Carapace repo (docs/upgrading-to-skill-flakes.md)";
+        assert lib.assertMsg (outside == [ ])
+          "${where}: extraFiles paths are relative and stay in the skill directory: ${lib.concatStringsSep ", " outside}";
         assert lib.assertMsg (
           shadowed == [ ]
         ) "${where}: extraFiles would shadow files of the skill: ${lib.concatStringsSep ", " shadowed}";
-        assert lib.assertMsg (outside == [ ])
-          "${where}: extraFiles paths are relative and stay in the skill directory: ${lib.concatStringsSep ", " outside}";
         pkgs.runCommand "skill-${name}-dir"
           {
             inherit instructions;
@@ -225,7 +234,7 @@ let
             + lib.concatStrings (
               lib.mapAttrsToList (path: file: ''
                 mkdir -p "$(dirname $out/${lib.escapeShellArg path})"
-                cp ${file} $out/${lib.escapeShellArg path}
+                cp ${lib.escapeShellArg "${file}"} $out/${lib.escapeShellArg path}
               '') extraFiles
             )
           );

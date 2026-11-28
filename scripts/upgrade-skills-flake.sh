@@ -125,7 +125,10 @@ move_frontmatter() { # dir
     echo "skills/$1: its SKILL.md frontmatter has no description; add description = \"…\"; to its mkSkill by hand" >&2
     description='"TODO: describe the skill"'
   fi
-  MKSKILL_ARG="description = $description;" add_arg "$1/flake.nix" description
+  if ! MKSKILL_ARG="description = $description;" add_arg "$1/flake.nix" description; then
+    echo "skills/$1: move the frontmatter description into mkSkill by hand; SKILL.md keeps its frontmatter until then" >&2
+    return 0
+  fi
   rest=$(frontmatter_rest "$1/SKILL.md")
   strip_frontmatter "$1/SKILL.md"
   [ -z "$rest" ] || echo "skills/$1: dropped frontmatter keys without a place in the flake: $rest"
@@ -157,8 +160,10 @@ EOF
 }
 
 # Adds the line $MKSKILL_ARG after mkSkill's `name` unless mkSkill sets <key> already. Only mkSkill's own
-# arguments count (depth 1 of its braces), not a `src` of a package inside it.
+# arguments count (depth 1 of its braces), not a `src` of a package inside it. Fails when the flake has no
+# `mkSkill {` it can read (`mkSkill rec {`, a brace on the next line) or that mkSkill has no `name` line.
 add_arg() { # flake.nix key
+  status=0
   awk -v key="$2" '
     function braces(line,  opened, closed) {
       opened = gsub(/\{/, "{", line); closed = gsub(/\}/, "}", line); return opened - closed
@@ -168,7 +173,7 @@ add_arg() { # flake.nix key
         print block[i]
         if (!has_key && i == name_at) { match(block[i], /^[[:space:]]*/); print substr(block[i], 1, RLENGTH) ENVIRON["MKSKILL_ARG"] }
       }
-      if (!has_key && name_at < 0) print FILENAME ": add " ENVIRON["MKSKILL_ARG"] " to mkSkill by hand" > "/dev/stderr"
+      if (has_key || name_at >= 0) set = 1
       inside = 0
     }
     inside {
@@ -181,13 +186,15 @@ add_arg() { # flake.nix key
     }
     /mkSkill[[:space:]]*\{/ { print; inside = 1; depth = braces($0); n = 0; has_key = 0; name_at = -1; next }
     { print }
-  ' "$1" > "$1.new"
+    END { exit !set }
+  ' "$1" > "$1.new" || status=$?
   mv "$1.new" "$1"
+  return "$status"
 }
 
 # mkSkill takes the skill directory as `src` since the release that reads skills from their build.
 add_src() { # flake.nix
-  MKSKILL_ARG="src = ./.;" add_arg "$1" src
+  MKSKILL_ARG="src = ./.;" add_arg "$1" src || echo "$1: add src = ./.; to mkSkill by hand" >&2
 }
 
 # skills/flake.nix exists: only the frontmatter is left to move, then the helpers and bundled skills that

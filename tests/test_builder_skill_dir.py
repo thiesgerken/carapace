@@ -270,3 +270,19 @@ async def test_a_skills_flake_without_manifests_says_how_to_write_one(
 
     assert result.state == "failed"
     assert result.log_tail.startswith("skills/flake.nix has no manifests for its skills: write its outputs with")
+
+
+async def test_a_path_missing_from_the_archive_gets_a_hint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    missing = f"error: path '/nix/store/{'a' * 32}-source/shared/household.md' does not exist"
+
+    async def run(*args: str, credential: FetchCredential | None = None) -> tuple[int, str, str]:
+        if "--apply" in args:
+            return 0, json.dumps({"settings": {}, "credentials": {}}), ""
+        return 1, "", missing
+
+    monkeypatch.setattr(nix, "_run", run)
+
+    result = await _build(tmp_path)
+
+    assert result.log_tail.startswith(missing)
+    assert "Keep an override's files in skills/<attribute>/" in result.log_tail
