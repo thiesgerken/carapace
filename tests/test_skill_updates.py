@@ -63,19 +63,34 @@ def _lock() -> dict[str, Any]:
 
 
 def test_an_unchanged_input_is_current() -> None:
-    assert compare("tracker", _lock(), _lock()) == SkillUpdate(state="current")
-    assert compare("notes", _lock(), _lock()) == SkillUpdate(state="current")
+    assert compare("tracker", _lock(), _lock(), skill_dir_changed=False) == SkillUpdate(state="current")
+    assert compare("notes", _lock(), _lock(), skill_dir_changed=None) == SkillUpdate(state="current")
 
 
-def test_a_moved_upstream_is_an_available_update() -> None:
+def _moved_tracker() -> dict[str, Any]:
     updated = _lock()
     updated["nodes"]["tracker"]["locked"] |= {"rev": _NEW_REV, "lastModified": 1_795_000_000}
+    return updated
 
-    update = compare("tracker", _lock(), updated)
+
+def test_a_moved_upstream_that_changes_the_skill_directory_is_an_available_update() -> None:
+    update = compare("tracker", _lock(), _moved_tracker(), skill_dir_changed=True)
 
     assert update.state == "available"
     assert (update.available_rev, update.available_at) == (_NEW_REV, datetime.fromtimestamp(1_795_000_000, UTC))
-    assert compare("notes", _lock(), updated).state == "current", "only the input that moved"
+    assert compare("notes", _lock(), _moved_tracker(), skill_dir_changed=None).state == "current", (
+        "only the input that moved"
+    )
+
+
+def test_a_moved_upstream_that_leaves_the_skill_directory_as_it_is_is_current() -> None:
+    """A commit elsewhere in the skill's repository, as every Carapace commit is for the bundled skills."""
+    assert compare("tracker", _lock(), _moved_tracker(), skill_dir_changed=False) == SkillUpdate(state="current")
+
+
+def test_an_external_input_needs_the_builders_word_on_its_directory() -> None:
+    with pytest.raises(ValueError, match="directory of tracker"):
+        compare("tracker", _lock(), _lock(), skill_dir_changed=None)
 
 
 def test_a_local_skill_with_a_new_input_is_outdated() -> None:
@@ -83,7 +98,7 @@ def test_a_local_skill_with_a_new_input_is_outdated() -> None:
     updated["nodes"]["notes"]["inputs"]["utils"] = "utils_2"
     updated["nodes"]["utils_2"] = {"locked": {"type": "github", "owner": "numtide", "repo": "flake-utils"}}
 
-    update = compare("notes", _lock(), updated)
+    update = compare("notes", _lock(), updated, skill_dir_changed=None)
 
     assert update.state == "outdated"
     assert "`nix flake update notes --flake ./skills`" in update.detail
@@ -95,14 +110,16 @@ def test_renamed_nodes_compare_by_content() -> None:
     nodes["utils_2"] = nodes.pop("utils")
     nodes["tracker"]["inputs"]["utils"] = "utils_2"
 
-    assert compare("tracker", _lock(), updated).state == "current"
+    assert compare("tracker", _lock(), updated, skill_dir_changed=False).state == "current"
 
 
-def test_a_moved_transitive_input_is_an_update_of_its_skill() -> None:
+def test_a_moved_transitive_input_is_an_update_of_its_skill_whatever_its_directory() -> None:
     updated = _lock()
     updated["nodes"]["utils"]["locked"]["rev"] = "4" * 40
 
-    assert compare("tracker", _lock(), updated).state == "available"
+    assert compare("tracker", _lock(), updated, skill_dir_changed=False).state == "available"
+    updated["nodes"]["tracker"]["locked"]["rev"] = _NEW_REV
+    assert compare("tracker", _lock(), updated, skill_dir_changed=False).state == "available"
 
 
 def test_a_graft_takes_only_the_one_skill_from_the_updated_lock() -> None:
@@ -204,7 +221,12 @@ async def test_a_check_asks_the_builder_about_every_skill_and_compares_each(repo
     lock = json.loads((repo / "skills" / "flake.lock").read_text())
     moved = copy.deepcopy(lock)
     moved["nodes"]["tracker"]["locked"]["rev"] = _NEW_REV
-    builder = FakeBuilder({"notes": InputUpdate(lock=json.dumps(lock)), "tracker": InputUpdate(lock=json.dumps(moved))})
+    builder = FakeBuilder(
+        {
+            "notes": InputUpdate(lock=json.dumps(lock)),
+            "tracker": InputUpdate(lock=json.dumps(moved), skill_dir_changed=True),
+        }
+    )
     updates = SkillUpdates(cast(BuilderClient, builder), no_fetch_credentials)
 
     await _checked(updates, repo)
@@ -214,6 +236,29 @@ async def test_a_check_asks_the_builder_about_every_skill_and_compares_each(repo
     assert builder.asked == [["notes", "tracker"]]
     assert check.skills_tree == _git(repo, "rev-parse", "HEAD:skills")
     assert {name: update.state for name, update in check.skills.items()} == {"notes": "current", "tracker": "available"}
+
+
+@pytest.mark.anyio
+async def test_a_moved_rev_with_the_same_skill_directory_offers_no_update(repo: Path) -> None:
+    lock = json.loads((repo / "skills" / "flake.lock").read_text())
+    moved = copy.deepcopy(lock)
+    moved["nodes"]["tracker"]["locked"]["rev"] = _NEW_REV
+    builder = FakeBuilder(
+        {
+            "notes": InputUpdate(lock=json.dumps(lock)),
+            "tracker": InputUpdate(lock=json.dumps(moved), skill_dir_changed=False),
+        }
+    )
+    updates = SkillUpdates(cast(BuilderClient, builder), no_fetch_credentials)
+
+    await _checked(updates, repo)
+
+    check = updates.latest(repo)
+    assert check is not None
+    assert check.skills["tracker"] == SkillUpdate(state="current")
+    assert check.locks == {}
+    with pytest.raises(UpdateRefusedError, match="no update for tracker"):
+        await updates.pending_update(repo, "tracker")
 
 
 @pytest.mark.anyio
@@ -268,7 +313,10 @@ async def _available(repo: Path) -> SkillUpdates:
     updated["nodes"]["tracker"]["locked"]["rev"] = _NEW_REV
     updated["nodes"]["notes"]["inputs"] = {"extra": "extra"}
     updated["nodes"]["extra"] = {"locked": {"type": "github", "owner": "x", "repo": "extra", "rev": "5" * 40}}
-    answer = {"notes": InputUpdate(lock=json.dumps(lock)), "tracker": InputUpdate(lock=json.dumps(updated))}
+    answer = {
+        "notes": InputUpdate(lock=json.dumps(lock)),
+        "tracker": InputUpdate(lock=json.dumps(updated), skill_dir_changed=True),
+    }
     updates = SkillUpdates(cast(BuilderClient, FakeBuilder(answer)), no_fetch_credentials)
     await _checked(updates, repo)
     return updates

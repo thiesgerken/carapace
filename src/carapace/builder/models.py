@@ -98,6 +98,9 @@ class InputUpdate(BaseModel):
     lock: str | None = None
     # The end of its output, for showing why it failed.
     log_tail: str = ""
+    # Whether the update changes the input's skill directory; None for a local (`path`) input, whose own
+    # directory is in the knowledge repo, and when the update failed.
+    skill_dir_changed: bool | None = None
 
 
 class UpdatedLocks(BaseModel):

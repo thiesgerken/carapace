@@ -1,9 +1,10 @@
 """Whether a skill has something newer than skills/flake.lock pins: an upstream update or a stale local lock.
 
 One check covers both: the builder runs `nix flake update <skill>` on a copy of skills/ and returns the
-lock it would write, and the skill's part of that lock is compared with the repo's. Results live in
-memory per knowledge repo; a restart checks again. They never reach the skill catalog, which is part of
-the cached prompt prefix (docs/persistent-context.md).
+lock it would write, and the skill's part of that lock is compared with the repo's. For a skill from
+elsewhere, the builder also says whether its directory changed: a new commit of its repository need not
+touch it. Results live in memory per knowledge repo; a restart checks again. They never reach the skill
+catalog, which is part of the cached prompt prefix (docs/persistent-context.md).
 """
 
 from __future__ import annotations
@@ -35,8 +36,8 @@ def no_fetch_credentials(_repo_dir: Path) -> FetchCredential | None:
 
 @dataclass(frozen=True, slots=True)
 class SkillUpdate:
-    # current: nothing newer. available: an external skill's upstream moved. outdated: a local skill's
-    # inputs or lock changed without `nix flake update <name>`. failed: the check could not tell.
+    # current: nothing newer. available: an external skill's directory or inputs changed upstream. outdated:
+    # a local skill's inputs or lock changed without `nix flake update <name>`. failed: the check could not tell.
     state: UpdateState
     # What an update would lock, for an available one.
     available_rev: str | None = None
@@ -73,17 +74,27 @@ class UpdateRefusedError(Exception):
     """The update cannot be applied as asked; the message says why."""
 
 
-def compare(name: str, current: dict[str, Any], updated: dict[str, Any]) -> SkillUpdate:
-    """What changed for input *name* between the repo's lock and the lock an update of it would write."""
+def compare(name: str, current: dict[str, Any], updated: dict[str, Any], skill_dir_changed: bool | None) -> SkillUpdate:
+    """What changed for input *name* between the repo's lock and the lock an update of it would write.
+
+    *skill_dir_changed* is the builder's word on whether the update changes an external skill's directory.
+    """
     before, after = _resolved(current, name), _resolved(updated, name)
+    local = after["locked"]["type"] == "path"
+    if not local and skill_dir_changed is None:
+        raise ValueError(f"The builder did not say whether the update changes the directory of {name}")
     if before == after:
         return SkillUpdate(state="current")
-    if after["locked"]["type"] == "path":
+    if local:
         return SkillUpdate(
             state="outdated",
             detail=f"Its inputs or flake.lock changed since skills/flake.lock was written: run "
             f"`nix flake update {name} --flake ./skills` and commit skills/flake.lock.",
         )
+    # A commit elsewhere in the skill's repository moves its rev without changing the skill.
+    only_locked_moved = {**before, "locked": after["locked"]} == after
+    if only_locked_moved and not skill_dir_changed:
+        return SkillUpdate(state="current")
     modified = after["locked"].get("lastModified")
     return SkillUpdate(
         state="available",
@@ -269,7 +280,7 @@ class SkillUpdates:
                 skills[name] = SkillUpdate(state="failed", detail=log)
             else:
                 updated = json.loads(update.lock)
-                skills[name] = compare(name, current, updated)
+                skills[name] = compare(name, current, updated, update.skill_dir_changed)
                 if skills[name].state == "available":
                     locks[name] = updated
         return UpdateCheck(head.tree, now, skills, locks=locks)
