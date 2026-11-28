@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import tarfile
 from datetime import UTC, datetime, timedelta
@@ -18,6 +19,7 @@ from carapace.builder.client import BuilderClient, BuilderSystemMismatchError, B
 from carapace.builder.models import BuilderInfo, BuildResult, FetchCredential, InputUpdate
 from carapace.builder.store import SkillStore
 from carapace.models.user import UserGitConfig
+from tests.skills_flake import write_skills_flake
 
 TOKEN = "builder-test-token"
 KEY = "0123456789abcdef" * 4
@@ -258,7 +260,7 @@ def test_an_update_check_answers_per_input_and_stores_nothing(
         (store / "nix" / "store" / f"{name}-source").chmod(0o555)
         if name == "broken":
             return InputUpdate(log_tail="error: cannot fetch")
-        return InputUpdate(lock=f'{{"updated": "{name}"}}')
+        return InputUpdate(lock=f'{{"updated": "{name}"}}', skill_dir_changed=True)
 
     monkeypatch.setattr(nix, "update_input", fake_update)
     body = archive({"flake.nix": b"{}", "flake.lock": b"{}", "weather/flake.nix": b"{}"})
@@ -268,8 +270,8 @@ def test_an_update_check_answers_per_input_and_stores_nothing(
     assert response.status_code == 200
     assert response.json() == {
         "inputs": {
-            "weather": {"lock": '{"updated": "weather"}', "log_tail": ""},
-            "broken": {"lock": None, "log_tail": "error: cannot fetch"},
+            "weather": {"lock": '{"updated": "weather"}', "log_tail": "", "skill_dir_changed": True},
+            "broken": {"lock": None, "log_tail": "error: cannot fetch", "skill_dir_changed": None},
         }
     }
     assert seen == [
@@ -410,3 +412,78 @@ async def test_an_update_check_fetches_with_a_cache_of_its_own(tmp_path: Path, m
     await nix.update_input(tmp_path / "skills", "weather", tmp_path / "out.lock", tmp_path / "store", None)
 
     assert runs == [{"XDG_CACHE_HOME": str(tmp_path / "store" / "cache")}]
+
+
+class FakeNix:
+    """`nix flake update` moving *moved* to a new rev, and the skill directory eval answering *skill_dirs*."""
+
+    def __init__(self, source: Path, out: Path, moved: str, skill_dirs: tuple[int, str, str]) -> None:
+        self.source, self.out, self.moved, self.skill_dirs = source, out, moved, skill_dirs
+        self.runs: list[tuple[tuple[str, ...], dict[str, str] | None]] = []
+
+    async def run(self, *args: str, credential: FetchCredential | None = None, env: dict[str, str] | None = None):
+        self.runs.append((args, env))
+        if args[:3] == ("nix", "flake", "update"):
+            lock = json.loads((self.source / "flake.lock").read_text())
+            if self.moved in lock["nodes"]:
+                lock["nodes"][self.moved]["locked"]["rev"] = "f" * 40
+            self.out.write_text(json.dumps(lock))
+            return 0, "", "updated"
+        assert args[:2] == ("nix", "eval")
+        return self.skill_dirs
+
+    def argstr(self, name: str) -> dict[str, object]:
+        args = self.runs[-1][0]
+        return json.loads(args[args.index(name) + 1])
+
+
+def _skill_dirs(before: str, after: str) -> tuple[int, str, str]:
+    return 0, json.dumps([f"/nix/store/{before * 32}-skill", f"/nix/store/{after * 32}-skill"]), ""
+
+
+@pytest.mark.parametrize(("skill_dirs", "changed"), [(_skill_dirs("a", "a"), False), (_skill_dirs("a", "b"), True)])
+async def test_an_update_check_compares_the_skill_directories_in_its_own_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, skill_dirs: tuple[int, str, str], changed: bool
+) -> None:
+    source, out, store = tmp_path / "skills", tmp_path / "out.lock", tmp_path / "store"
+    write_skills_flake(source, ["notes"], external=["weather"])
+    fake = FakeNix(source, out, "weather", skill_dirs)
+    monkeypatch.setattr(nix, "_run", fake.run)
+
+    update = await nix.update_input(source, "weather", out, store, None)
+
+    assert update == InputUpdate(lock=out.read_text(), log_tail="updated", skill_dir_changed=changed)
+    throwaway = {"XDG_CACHE_HOME": str(store / "cache")}
+    assert [(args[:2], args[-2:], env) for args, env in fake.runs] == [
+        (("nix", "flake"), ("--store", str(store)), throwaway),
+        (("nix", "eval"), ("--store", str(store)), throwaway),
+    ]
+    assert fake.argstr("before")["rev"] == "2" * 40
+    assert fake.argstr("after")["rev"] == "f" * 40
+
+
+async def test_a_failed_skill_directory_comparison_fails_the_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source, out = tmp_path / "skills", tmp_path / "out.lock"
+    write_skills_flake(source, ["notes"], external=["weather"])
+    monkeypatch.setattr(nix, "_run", FakeNix(source, out, "weather", (1, "", "error: cannot fetch rev")).run)
+
+    update = await nix.update_input(source, "weather", out, tmp_path / "store", None)
+
+    assert update == InputUpdate(log_tail="updatederror: cannot fetch rev")
+
+
+@pytest.mark.parametrize(("name", "changed"), [("weather", False), ("notes", None)])
+async def test_an_unmoved_or_local_input_needs_no_skill_directory_comparison(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, changed: bool | None
+) -> None:
+    source, out = tmp_path / "skills", tmp_path / "out.lock"
+    write_skills_flake(source, ["notes"], external=["weather"])
+    fake = FakeNix(source, out, "nothing", (1, "", "not run"))
+    monkeypatch.setattr(nix, "_run", fake.run)
+
+    update = await nix.update_input(source, name, out, tmp_path / "store", None)
+
+    assert update == InputUpdate(lock=out.read_text(), log_tail="updated", skill_dir_changed=changed)
+    assert len(fake.runs) == 1

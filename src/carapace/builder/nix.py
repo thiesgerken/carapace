@@ -36,6 +36,26 @@ derivation {
 }
 """
 
+# The skill directory of an input's `locked` attributes (JSON) in the lock before and after an update, both as
+# store paths. Copied under one fixed name, a directory's store path is a hash of its contents alone, so equal
+# paths mean the update leaves the directory as it is, whatever else moved in the repository.
+# `dir` (`?dir=` of the flake reference) is a flake attribute, not a fetcher's: fetchTree refuses it.
+_SKILL_DIRS = """
+{ before, after }:
+let
+  skillDir = attrs:
+    let
+      locked = builtins.fromJSON attrs;
+      tree = builtins.fetchTree (removeAttrs locked [ "dir" ]);
+    in
+    builtins.path {
+      name = "skill";
+      path = if locked ? dir then "${tree}/${locked.dir}" else tree.outPath;
+    };
+in
+[ (skillDir before) (skillDir after) ]
+"""
+
 
 def _basic_auth(credential: FetchCredential) -> str:
     # The username the server's knowledge remote uses too; GitHub and Gitea ignore it next to a token.
@@ -318,8 +338,12 @@ async def update_input(
     Nix's fetcher cache goes there too. When a fetch fails, Nix falls back to the Git clone it cached
     and locks its newest commit, so with a shared cache a user without access to a private repository
     would get the head another user's token fetched, knowing nothing but its URL.
+
+    For an input from elsewhere that moved, the skill directories before and after are compared in the
+    same store (`_SKILL_DIRS`): a repository's new commit need not touch the skill.
     """
-    code, _, log = await _run(
+    code, _, log = await _run_in(
+        store,
         "nix",
         "flake",
         "update",
@@ -328,11 +352,47 @@ async def update_input(
         f"path:{source}",
         "--output-lock-file",
         str(out),
-        "--store",
-        str(store),
         credential=credential,
-        env={"XDG_CACHE_HOME": str(store / "cache")},
     )
     if code != 0:
         return InputUpdate(log_tail=_tail(log))
-    return InputUpdate(lock=out.read_text(), log_tail=_tail(log))
+    lock = out.read_text()
+    before, after = _locked((source / "flake.lock").read_text(), name), _locked(lock, name)
+    if after["type"] == "path":
+        return InputUpdate(lock=lock, log_tail=_tail(log))
+    if before == after:
+        return InputUpdate(lock=lock, log_tail=_tail(log), skill_dir_changed=False)
+    if before["type"] == "path":
+        # A local skill whose input now names a flake elsewhere: no locked directory to compare with.
+        return InputUpdate(lock=lock, log_tail=_tail(log), skill_dir_changed=True)
+    code, stdout, eval_log = await _run_in(
+        store,
+        "nix",
+        "eval",
+        "--json",
+        "--expr",
+        _SKILL_DIRS,
+        "--argstr",
+        "before",
+        json.dumps(before),
+        "--argstr",
+        "after",
+        json.dumps(after),
+        credential=credential,
+    )
+    if code != 0:
+        return InputUpdate(log_tail=_tail(log + eval_log))
+    dir_before, dir_after = json.loads(stdout)
+    return InputUpdate(lock=lock, log_tail=_tail(log), skill_dir_changed=dir_before != dir_after)
+
+
+async def _run_in(store: Path, *args: str, credential: FetchCredential | None) -> tuple[int, str, str]:
+    """Run a nix command with *store* as its store and fetcher cache (`update_input` says why)."""
+    return await _run(*args, "--store", str(store), credential=credential, env={"XDG_CACHE_HOME": str(store / "cache")})
+
+
+def _locked(lock_text: str, name: str) -> dict[str, object]:
+    """The `locked` attributes of the skills flake's input *name* in a flake.lock."""
+    lock = json.loads(lock_text)
+    nodes = lock["nodes"]
+    return nodes[nodes[lock["root"]]["inputs"][name]]["locked"]

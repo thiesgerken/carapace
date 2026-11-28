@@ -89,8 +89,8 @@ The input URL decides what an update can move to:
 
 | URL | Locks | Updates |
 | --- | --- | --- |
-| `github:alice/knowledge?dir=skills/weather` | the default branch's head | to its new head |
-| `github:alice/knowledge/dev?dir=skills/weather` | the `dev` branch's head | to its new head |
+| `github:alice/knowledge?dir=skills/weather` | the default branch's head | to its new head, once `skills/weather` changes |
+| `github:alice/knowledge/dev?dir=skills/weather` | the `dev` branch's head | to its new head, once `skills/weather` changes |
 | `github:alice/knowledge/weather-v2?dir=skills/weather` | the tag `weather-v2` | only if the tag is moved |
 | `github:alice/knowledge/<40-hex rev>?dir=skills/weather` | that commit | never |
 

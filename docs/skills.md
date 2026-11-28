@@ -90,7 +90,8 @@ Skills can come from other repositories too: [sharing-skills.md](sharing-skills.
 Every listed skill has an origin (`./<dir>` for a local skill, its flake reference otherwise) and, for a skill from elsewhere, the rev and date `skills/flake.lock` pins. An update check tells whether something newer is there, with one mechanism for both kinds:
 
 - The builder runs `nix flake update <skill> --output-lock-file <tmp>` on a copy of `skills/` at `HEAD`, once per skill, and the server compares that skill's part of the resulting lock with the repo's (its node and the inputs nested under it).
-- **Update available:** a skill from elsewhere whose upstream moved, with the rev and date an update would lock. `nix flake update <name> --flake ./skills` takes it.
+- For a skill from elsewhere whose rev moved, the builder also fetches both revs and compares the skill's directory (`?dir=`) in them: the store paths of the two directories, copied under one name, are hashes of their contents. A new commit elsewhere in the repository moves the rev of every skill in it (each Carapace commit does for the bundled skills) and leaves the skill current, with no update to apply: its lock keeps the old rev until the skill itself changes. For a skill whose flake reads files outside its own directory in the same repository, the check misses changes to those files.
+- **Update available:** a skill from elsewhere whose directory changed upstream, or one of whose own inputs moved, with the rev and date an update would lock. `nix flake update <name> --flake ./skills` takes it.
 - **Outdated:** a local skill whose own inputs or `flake.lock` changed without `nix flake update <name> --flake ./skills`. The top-level lock copies a local skill's inputs once, so it goes stale silently otherwise.
 - An input pinned to a rev or a tag never moves, so it never reports an update.
 - `nixpkgs` and `carapace` are not checked: they are not skills.
