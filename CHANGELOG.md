@@ -1,6 +1,12 @@
 # CHANGELOG
 
 
+## v0.202.0 (2026-11-28)
+
+### ✨ Introduce new features
+
+- feat: export the helpers' https URL host check as skill.urlHost
+
 ## v0.201.0 (2026-11-28)
 
 ### ✨ Introduce new features
