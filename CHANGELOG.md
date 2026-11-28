@@ -1,6 +1,12 @@
 # CHANGELOG
 
 
+## v0.203.4 (2026-11-28)
+
+### 🍱 Add or update assets
+
+- docs: show the skill update view in the README
+
 ## v0.203.3 (2026-11-28)
 
 ### 🍱 Add or update assets
