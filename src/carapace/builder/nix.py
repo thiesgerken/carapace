@@ -142,7 +142,11 @@ _NO_DOCS = _SkillDocs()
 
 # Nix's message for a file a skill's flake reads that is not in what it got, e.g. an override's text kept
 # outside skills/<attr>/. It names the builder's copy, while the same build works in the user's checkout.
-_MISSING_SOURCE_PATH = re.compile(r"path '/nix/store/[0-9a-df-np-sv-z]{32}-source/[^']*' does not exist")
+# Path coercion (`"${./x}"`, an `extraFiles` value) and `builtins.readFile` word it differently.
+_MISSING_SOURCE_PATH = re.compile(
+    r"(?:path|opening file) '/nix/store/[0-9a-df-np-sv-z]{32}-source/[^']*'"
+    r"(?: does not exist|: No such file or directory)"
+)
 _ARCHIVE_HINT = (
     "\nIf that path is in your skills/ directory: the builder gets only skills/flake.nix, flake.lock, config.json, "
     "the skill's own directory and skills/<attribute>/. Keep an override's files in skills/<attribute>/ "

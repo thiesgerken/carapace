@@ -272,8 +272,18 @@ async def test_a_skills_flake_without_manifests_says_how_to_write_one(
     assert result.log_tail.startswith("skills/flake.nix has no manifests for its skills: write its outputs with")
 
 
-async def test_a_path_missing_from_the_archive_gets_a_hint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    missing = f"error: path '/nix/store/{'a' * 32}-source/shared/household.md' does not exist"
+@pytest.mark.parametrize(
+    "missing",
+    [
+        # Path coercion, e.g. an extraFiles value.
+        f"error: path '/nix/store/{'a' * 32}-source/shared/household.md' does not exist",
+        # builtins.readFile, the documented form for instructions.
+        f"error: opening file '/nix/store/{'a' * 32}-source/shared/household.md': No such file or directory",
+    ],
+)
+async def test_a_path_missing_from_the_archive_gets_a_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
 
     async def run(*args: str, credential: FetchCredential | None = None) -> tuple[int, str, str]:
         if "--apply" in args:
