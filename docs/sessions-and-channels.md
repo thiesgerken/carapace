@@ -9,7 +9,7 @@ Each session has a `SessionState` (`models/session.py`), stored in the `state` c
 ```python
 class SessionState(BaseModel):
     session_id: str
-    channel_type: str           # "cli" | "matrix" | "job" | ...
+    channel_type: str           # "web" | "cli" | "matrix" | "job"
     channel_ref: str | None     # channel-specific ID (room_id, etc.)
     title: str | None           # auto-generated after first messages
     agent_model_name: str | None

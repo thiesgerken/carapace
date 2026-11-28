@@ -122,9 +122,10 @@ obfuscated code; it does not prevent document navigation.
 
 ## Sharing
 
-The live `ArtifactToolbar` has a **Share publicly** switch. Enabling it asks for
-confirmation that anyone with the link can see the page, including future agent
-changes. While sharing is on, the view shows the public link and a copy action.
+Every view of a knowledge artifact (the full-screen viewer, the knowledge browser
+and `show_artifact` in the chat) has a **Share publicly** switch in its toolbar.
+Enabling it asks for confirmation that anyone with the link can see the page,
+including future agent changes. While sharing is on, the view shows the public link and a copy action.
 Sharing is controlled by the authenticated user, not by files in the knowledge
 repository.
 

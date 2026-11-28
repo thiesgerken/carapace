@@ -70,7 +70,7 @@ The frontend listens on 8080 internally. If your API is on another origin, mount
 set $csp_img_src "img-src 'self' data: blob: https://api.example.com";
 ```
 
-Mount it read-only at `/etc/nginx/csp.d/img-src.conf` in the frontend service (see the commented Compose example). No snippet is needed for the default same-origin deployment. `CARAPACE_CSP_IMG_SRC_EXTRA` is no longer supported.
+Mount it read-only at `/etc/nginx/csp.d/img-src.conf` in the frontend service (see the commented Compose example). No snippet is needed for the default same-origin deployment.
 
 See [auth.md](auth.md) for users, the admin API, and session-cookie behavior.
 
@@ -107,7 +107,11 @@ agent:
   #   cost_usd: 5.00             # billed per token
   #   equivalent_cost_usd: 20.00 # list price, subscription usage included
   #   autonomous_tool_calls: 100  # the platform default when the whole block is omitted
+```
 
+The session commit flow runs on built-in defaults that no UI, API route or environment variable changes:
+
+```yaml
 sessions:
   commit:
     enabled: true
@@ -121,7 +125,7 @@ sessions:
 
 The Redis URL is the environment variable `CARAPACE_CACHE_REDIS_URL` (Compose sets `redis://redis:6379/0`).
 
-Session histories live in the database. The `sessions.commit.*` settings control a secondary commit flow into the owning user's knowledge repo so the agent can refer back to past conversations later.
+Session histories live in the database. The `sessions.commit.*` defaults drive a secondary commit flow into the owning user's knowledge repo so the agent can refer back to past conversations later.
 
 By default the knowledge root is `data/knowledges/`. Each enabled user gets a repo at `data/knowledges/<normalized-user>/`, initialized independently on startup. If a user has a Git remote configured, carapace adds that remote and pulls its configured branch before seeding any missing bootstrap files into that user's repo.
 

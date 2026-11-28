@@ -514,7 +514,7 @@ The `$CARAPACE_DATA_DIR` environment variable (defaults to `./data`) points to t
 
 ## Configuration
 
-Platform configuration (model catalog, agent/sentinel/title defaults, session budget, session-commit settings) is stored in the **database** (`models` + `platform_settings` tables) and edited from **Settings** -> **Admin** -> **Models**. The built-in default model shape:
+Platform configuration (model catalog, agent/sentinel/title defaults, session budget) is stored in the **database** (`models` + `platform_settings` tables) and edited from **Settings** -> **Admin** -> **Models**. The built-in default model shape:
 
 ```yaml
 agent:
@@ -560,7 +560,7 @@ Operator/bootstrap configuration comes entirely from **environment variables** (
 | sandbox | `CARAPACE_SANDBOX_` | `CARAPACE_SANDBOX_RUNTIME`, `CARAPACE_SANDBOX_K8S_NAMESPACE`, `CARAPACE_SANDBOX_PROXY_ALLOWED_NETWORKS` |
 | builder | `CARAPACE_BUILDER_` | `CARAPACE_BUILDER_URL`, `CARAPACE_BUILDER_CACHE_URL`, `CARAPACE_BUILDER_TOKEN` |
 
-Session commit settings (DB-backed, edited via the Platform UI) control how conversation histories are copied into the knowledge repo:
+Session commit settings control how conversation histories are copied into the knowledge repo. No UI, API route or environment variable sets them, so they always have the built-in defaults shown in [quickstart.md](quickstart.md#4-configure-from-settings):
 
 - `sessions.commit.enabled`: master switch for the feature
 - `sessions.commit.path_prefix`: subtree inside the knowledge repo where `conversation.json` files are written

@@ -73,6 +73,8 @@ helmCharts:
     valuesFile: values.yaml
 ```
 
+`helm template` cannot reuse generated secrets, so set `postgres.auth.existingSecret` and `builder.auth.existingSecret` in `values.yaml` before the first sync (see [Database](#database) and [Injecting secrets](#injecting-secrets-and-environment-variables)). A Postgres password set later does not reach a data directory that was already initialized.
+
 A trusted workflow from `main` publishes preview images tagged as `pr<PR number>` only after read-only PR CI verifies the archives. It requires an open same-repository PR against `main` with the same head SHA. The matching OCI chart uses `appVersion=pr<PR number>`, so default image tags resolve to the verified PR images automatically.
 
 Example for PR 99 when the base chart version is `0.28.0`:

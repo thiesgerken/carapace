@@ -54,7 +54,7 @@ metadata:
 
 **`hints`** — optional map of strings, extra metadata for tooling.
 
-There is no `disabled` field: a skill is active when `skills/flake.nix` lists it. To turn one off, remove its input there and lock again. A `SKILL.md` that still sets `disabled` is [broken](#invalid-frontmatter), with a message that says so.
+There is no `disabled` field: a skill is active when `skills/flake.nix` lists it and `skills/config.json` does not set `"enable": false` for it. To turn one off, set that, or remove its input and lock again. A `SKILL.md` that still sets `disabled` is [broken](#invalid-frontmatter), with a message that says so.
 
 `network`, `credentials`, `commands` and `mcp` belong in the skill's flake: each command declares the domains, credentials and OAuth entries it needs ([skill-flakes.md](skill-flakes.md#commands-and-what-they-need)), and an MCP server is a command made by `mcpCommands` ([skill-flakes.md](skill-flakes.md#mcp-servers)). A `SKILL.md` that still has one of them is [broken](#invalid-frontmatter), with a message that points there.
 

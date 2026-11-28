@@ -57,7 +57,7 @@ src/carapace/          # main package
   prompt_prefix.py     # shared system prompt prefix (AGENTS/SOUL/USER.md, skill catalog)
   prompt_preview.py    # what every LLM role sends, split into sections (GET /api/prompts/preview)
   skills.py            # skill list from skills/flake.lock, SKILL.md frontmatter
-  credentials/         # password-manager-backed credentials (Bitwarden, file, OAuth refresh)
+  credentials/         # credential backends (Bitwarden, secrets file) and OAuth refresh
   database/            # SQLAlchemy tables, engine and Alembic migrations (SQLite by default)
   agent/
     __init__.py        # re-exports (create_agent, build_system_prompt, run_agent_turn)

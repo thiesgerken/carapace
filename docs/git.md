@@ -6,19 +6,16 @@ Each user can optionally connect an upstream remote so their knowledge repo is s
 
 ## Configuration
 
-Each user's settings live in the `config` column of their user record in the database. Add a `git` section there (shown as YAML):
+Each user's remote settings are a `git` object in their user config (shown as YAML):
 
 ```yaml
-users:
-  alice:
-    config:
-      git:
-        remote: https://gitea.example.com/team/alice-knowledge.git
-        branch: main
-        token: ghp_xxxxxxxxxxxx
+git:
+  remote: https://gitea.example.com/team/alice-knowledge.git
+  branch: main
+  token: ghp_xxxxxxxxxxxx
 ```
 
-The owning user can also manage these fields from the web UI under Settings -> Account. The token field is write-only: responses report `token_set`, but never return the token value.
+The owning user edits them under Settings -> Account, which saves through `PATCH /api/user/settings` (body `{"git": {...}}`). An admin can set them for any user with `PATCH /api/admin/users/{username}` (body `{"config": {"git": {...}}}`). The token field is write-only: responses report `token_set`, but never return the token value.
 
 | Field    | Default                    | Description                                                                                                                                                                             |
 | -------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -61,7 +58,7 @@ If the pull fails (unreachable remote, bad credentials, or a pull that would nee
 
 ## Adding or changing a remote on an existing instance
 
-If you add or change a user's `git` settings while the server is running (Settings -> Account, or `PATCH /api/admin/users/{username}`):
+If you add or change a user's `git` settings while the server is running (Settings -> Account through `PATCH /api/user/settings`, or an admin through `PATCH /api/admin/users/{username}`):
 
 1. Saving applies them right away to that user's repo only: carapace registers the new remote (or removes it), pulls the configured branch, and reapplies the Git identity in that user's running sandboxes. If this fails, the save is rejected and the previous settings stay in place. A save through the admin API also seeds missing bootstrap files and pushes them.
 2. Running sandboxes are not hot-migrated. They keep the clone they already have.

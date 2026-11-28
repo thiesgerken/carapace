@@ -226,20 +226,17 @@ bitwarden:
         existingSecret: carapace-bitwarden-alice-basic-auth
 ```
 
-Configure the matching Bitwarden backend in **Settings** -> **Account** -> **Credentials** for the owning user. The equivalent backing user config is:
+Configure the matching Bitwarden backend in **Settings** -> **Account** -> **Credentials** for the owning user (or as an admin through `PATCH /api/admin/users/alice`, under `config.credentials`). It stores this in the user's config:
 
 ```yaml
-users:
-  alice:
-    config:
-      credentials:
-        backends:
-          vault:
-            type: bitwarden
-            url: http://carapace-bitwarden-alice
-            basic_auth:
-              username: alice
-              password: user-specific-random-proxy-password
+credentials:
+  backends:
+    vault:
+      type: bitwarden
+      url: http://carapace-bitwarden-alice
+      basic_auth:
+        username: alice
+        password: user-specific-random-proxy-password
 ```
 
 Keep the username/password in the carapace user config aligned with the htpasswd entry in the proxy Secret. carapace redacts the proxy password from admin API responses, but stores it in the user's config in the database (`users.config`) so the server can authenticate to nginx.

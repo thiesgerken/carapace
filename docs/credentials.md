@@ -12,25 +12,26 @@ In short: credentials are consumed inside the sandbox, not returned to the user-
 
 ## Backends
 
-Backends are configured on each user record under `config.credentials` (shown as YAML below). Sessions use the credential
+Backends are a `credentials` object in each user's config (shown as YAML below). Sessions use the credential
 backends owned by their session user.
 
 ```yaml
-users:
-  thies:
-    config:
-      credentials:
-        backends:
-          dev:
-            type: file
-            path: ./data/secrets.env
-          personal:
-            type: bitwarden
-            url: http://carapace-bitwarden-thies
-            basic_auth:
-              username: thies
-              password: user-specific-random-proxy-password
+credentials:
+  backends:
+    dev:
+      type: file
+      path: ./data/secrets.env
+    personal:
+      type: bitwarden
+      url: http://carapace-bitwarden-alice
+      basic_auth:
+        username: alice
+        password: user-specific-random-proxy-password
 ```
+
+Users edit their own backends under Settings -> Account, which saves through `PATCH /api/user/settings` (body
+`{"credentials": {...}}`). Admins can set them for any user with `PATCH /api/admin/users/{username}` (body
+`{"config": {"credentials": {...}}}`).
 
 The file backend is disabled by default. Enable it with `CARAPACE_ALLOW_FILE_CREDENTIAL_BACKEND=true` only when the
 users who can influence credential backend configuration are trustworthy: a file backend path is read by the server
@@ -39,9 +40,9 @@ process and can point at arbitrary files the backend can access.
 Each user can point at their own vault proxy and authentication boundary. Admin API responses redact backend proxy
 passwords, and updates that omit an existing proxy password keep the stored value.
 
-Users can also manage their own credential backends from the web UI under Settings -> Account. Password fields are
-write-only there: responses report whether a password is configured, but never return the stored value. The file
-backend is only accepted when `CARAPACE_ALLOW_FILE_CREDENTIAL_BACKEND=true` is set on the server process.
+Password fields are write-only in Settings -> Account: responses report whether a password is configured, but never
+return the stored value. The file backend is only accepted when `CARAPACE_ALLOW_FILE_CREDENTIAL_BACKEND=true` is set on
+the server process.
 
 Supported backend types:
 
