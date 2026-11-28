@@ -82,11 +82,11 @@ builder:
   auth:
     # -- Secret holding the builder token under the key `token`. Generated for the in-cluster
     # builder when empty (kept across upgrades via a Helm `lookup`); required with externalUrl.
-    # WARNING: `lookup` only works under `helm install/upgrade`. GitOps tools that render
-    # with `helm template` (Argo CD, Flux) get an empty lookup and write a fresh token into
-    # both `<release>-builder` Secrets on every sync. Running pods keep the token they started
-    # with, so once only the server or only the builder restarts, every skill build fails
-    # with 401. Under GitOps, set existingSecret, created in both the release and the builder
+    # WARNING: `lookup` only works under `helm install/upgrade`. Rendering with `helm template`
+    # (Argo CD, `kustomize build --enable-helm`) gets an empty lookup and writes a fresh token
+    # into both `<release>-builder` Secrets on every sync. Running pods keep the token they
+    # started with, so once only the server or only the builder restarts, every skill build
+    # fails with 401. There, set existingSecret, created in both the release and the builder
     # namespace.
     existingSecret: ""
   persistence:
@@ -312,11 +312,11 @@ postgres:
     username: carapace
     # -- Password for the carapace DB user. Leave empty to auto-generate one and persist
     # it in the {release}-postgres Secret, reused across upgrades via a Helm `lookup`.
-    # WARNING: `lookup` only works under `helm install/upgrade`. GitOps tools that render
-    # with `helm template` (Argo CD, Flux) get an empty lookup and regenerate a fresh
+    # WARNING: `lookup` only works under `helm install/upgrade`. Rendering with `helm template`
+    # (Argo CD, `kustomize build --enable-helm`) gets an empty lookup and regenerates a fresh
     # random password on every sync — but Postgres only sets the password at initdb, so
     # the running DB keeps the old one and the server fails with "password authentication
-    # failed". Under GitOps, set existingSecret (recommended) or an explicit password.
+    # failed". There, set existingSecret (recommended) or an explicit password.
     password: ""
     # -- Use an externally managed Secret (SealedSecret, External Secrets, etc.) instead of
     # generating one. Recommended for GitOps. It must contain the password under passwordKey

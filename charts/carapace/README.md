@@ -119,13 +119,13 @@ Three options:
   > directory, so move between majors with `pg_dump`/restore into a fresh data directory,
   > not by bumping the tag alone.
 
-  > **GitOps (Argo CD / Flux): use `postgres.auth.existingSecret`.** The auto-generate
-  > path relies on Helm `lookup`, which returns nothing when manifests are rendered with
-  > `helm template`. Argo CD/Flux then regenerate a fresh random password on every sync,
-  > but Postgres only applies the password at initdb — so the running DB keeps the old one
-  > and the server crashes with `password authentication failed for user "carapace"`.
-  > Point `postgres.auth.existingSecret` at a Secret you manage (SealedSecret, External
-  > Secrets, …) containing `postgres-password` and `database-url`
+  > **GitOps (Argo CD): use `postgres.auth.existingSecret`.** The auto-generate path relies
+  > on Helm `lookup`, which returns nothing when manifests are rendered with `helm template`
+  > (Argo CD, `kustomize build --enable-helm`). Those then regenerate a fresh random
+  > password on every sync, but Postgres only applies the password at initdb — so the
+  > running DB keeps the old one and the server crashes with `password authentication failed
+  > for user "carapace"`. Point `postgres.auth.existingSecret` at a Secret you manage
+  > (SealedSecret, External Secrets, …) containing `postgres-password` and `database-url`
   > (`postgresql+psycopg://carapace@<release>-postgres:5432/carapace`, password omitted).
   > Alternatively set an explicit `postgres.auth.password`.
 - **External database.** Set `postgres.enabled=false` and `database.url` to a SQLAlchemy
@@ -164,14 +164,14 @@ extraEnv:
     value: foo
 ```
 
-> **GitOps (Argo CD / Flux): use `builder.auth.existingSecret`.** The generated builder
-> token is kept across upgrades by a Helm `lookup`, which returns nothing under
-> `helm template`. Argo CD/Flux then write a fresh token into both `<release>-builder`
-> Secrets on every sync. Server and builder read the token at start, so they keep matching
-> until only one of them restarts (OOM, node drain, eviction); from then on every skill
-> build fails with 401. Point `builder.auth.existingSecret` at a Secret you manage
-> (SealedSecret, External Secrets, …) with the token under `token`, and create it in both
-> the release namespace and the builder namespace.
+> **GitOps (Argo CD): use `builder.auth.existingSecret`.** The generated builder token is
+> kept across upgrades by a Helm `lookup`, which returns nothing under `helm template` (Argo
+> CD, `kustomize build --enable-helm`). Those then write a fresh token into both
+> `<release>-builder` Secrets on every sync. Server and builder read the token at start, so
+> they keep matching until only one of them restarts (OOM, node drain, eviction); from then
+> on every skill build fails with 401. Point `builder.auth.existingSecret` at a Secret you
+> manage (SealedSecret, External Secrets, …) with the token under `token`, and create it in
+> both the release namespace and the builder namespace.
 
 Set the server log level via `logLevel` (default `info`; `debug`, `warning`, `error`).
 

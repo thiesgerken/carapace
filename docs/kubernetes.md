@@ -307,14 +307,14 @@ with an external-URL (`database.url`) or SQLite-on-the-data-PVC option. See the
 > only changes when you change it. A new major does not start on the old data directory:
 > upgrade with `pg_dump`/restore into a fresh data directory.
 
-> **GitOps (Argo CD / Flux): set `postgres.auth.existingSecret`.** When `postgres.auth`
-> has no password, the chart auto-generates one and reuses it across upgrades via a Helm
-> `lookup`. `lookup` returns nothing under `helm template`, which is how Argo CD/Flux
-> render manifests — so they regenerate a fresh random password on every sync. Postgres
-> only sets the password at initdb, so the running DB keeps the old one and the server
-> crashloops with `password authentication failed for user "carapace"`. Provide a stable
-> Secret instead (SealedSecret / External Secrets) as in step 2 of the quick start, with
-> keys `postgres-password` and `database-url`
+> **GitOps (Argo CD): set `postgres.auth.existingSecret`.** When `postgres.auth` has no
+> password, the chart auto-generates one and reuses it across upgrades via a Helm `lookup`.
+> `lookup` returns nothing under `helm template`, which is how Argo CD and `kustomize build
+> --enable-helm` render manifests — so they regenerate a fresh random password on every
+> sync. Postgres only sets the password at initdb, so the running DB keeps the old one and
+> the server crashloops with `password authentication failed for user "carapace"`. Provide a
+> stable Secret instead (SealedSecret / External Secrets) as in step 2 of the quick start,
+> with keys `postgres-password` and `database-url`
 > (`postgresql+psycopg://carapace@<release>-postgres:5432/carapace`, password omitted).
 
 Runtime platform settings — the model catalog and scalar `agent`/`sessions` config edited in
