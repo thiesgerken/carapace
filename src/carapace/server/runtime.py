@@ -316,7 +316,7 @@ class KnowledgeGitRuntime:
             )
 
     async def pull_for_user(self, owner: str) -> tuple[bool, str]:
-        """Pull the backend repo from the external remote and invalidate skills.
+        """Pull the backend repo from the external remote.
 
         Returns ``(ok, message)``; ``ok`` is False when no remote is configured.
         """
