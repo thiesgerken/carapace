@@ -207,8 +207,31 @@ let
     broken.enable = false;
   };
   fails = value: !(builtins.tryEval (builtins.toJSON value)).success;
+  urlHosts = map skillLib.urlHost [
+    "https://api.example.com"
+    "https://api.example.com:8443/v1?q=1"
+    "https://api.example.com#top"
+  ];
+  rejectedUrlHosts = map (url: fails (skillLib.urlHost url)) [
+    "http://api.example.com"
+    "https://user@api.example.com"
+    "https://10.0.0.1/v1"
+    "https://[::1]/v1"
+    "api.example.com"
+    "https://"
+  ];
 in
 assert pkgs.lib.assertMsg (pkgs.lib.all (x: x) rejected) "mkSkill accepted invalid needs";
+assert pkgs.lib.assertMsg (
+  urlHosts == [
+    "api.example.com"
+    "api.example.com"
+    "api.example.com"
+  ]
+) "urlHost read the wrong hosts: ${builtins.toJSON urlHosts}";
+assert pkgs.lib.assertMsg (pkgs.lib.all (
+  x: x
+) rejectedUrlHosts) "urlHost accepted a URL that is not https with a host name";
 assert pkgs.lib.assertMsg (pkgs.lib.all (
   x: x
 ) rejectedMcp) "mcpCommands accepted an invalid server";

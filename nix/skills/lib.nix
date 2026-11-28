@@ -137,10 +137,10 @@ let
       exec ${command.exec} "$@"
     '';
 
-  # The host of an MCP server's URL. A host name and an optional port: no userinfo, whose `u@` would become
-  # the declared domain, and no IP literal, which the proxy's domain review does not cover. HTTPS only,
-  # since tokens go along.
-  mcpHost =
+  # The host of a URL a command connects to, for its domains. A host name and an optional port: no userinfo,
+  # whose `u@` would become the declared domain, and no IP literal, which the proxy's domain review does not
+  # cover. HTTPS only, since tokens go along. *where* names the caller in the error.
+  urlHostIn =
     where: url:
     let
       authority = builtins.match "https://([A-Za-z0-9.-]+)(:[0-9]+)?([/?#].*)?" url;
@@ -173,6 +173,11 @@ let
     '';
 in
 {
+  # The host of an https URL, checked as an MCP server's URL is: for a command whose domain follows a setting.
+  #
+  #   needs = settings: { domains = [ (skill.urlHost settings.API_URL) ]; };
+  urlHost = urlHostIn "urlHost";
+
   # The skill's package: one wrapper per command in bin/, so skills never collide on interpreters or
   # libraries in the session profile, and a reference to the skill directory (SKILL.md, scripts,
   # references), which brings it into every sandbox that installs the commands. The declarations travel as
@@ -316,8 +321,10 @@ in
         }
         // lib.optionalAttrs (bearer != null) { credentials = [ bearer ]; }
         // lib.optionalAttrs (oauth != null) { oauth = [ oauth ]; };
-      fixedDomains = lib.optional (url != null) (mcpHost where url);
-      settingDomains = settings: [ (mcpHost "${where} (setting ${urlSetting})" settings.${urlSetting}) ];
+      fixedDomains = lib.optional (url != null) (urlHostIn where url);
+      settingDomains = settings: [
+        (urlHostIn "${where} (setting ${urlSetting})" settings.${urlSetting})
+      ];
     in
     assert lib.assertMsg (
       lib.count (x: x != null) [
@@ -339,7 +346,7 @@ in
       ])
       "${where}: bearer and oauth name credential slots of the skill and urlSetting one of its settings, not a vault path or URL";
     # On the command itself, so a `needs` override of the domains cannot skip it.
-    assert url == null || builtins.isString (mcpHost where url);
+    assert url == null || builtins.isString (urlHostIn where url);
     {
       inherit description urlSetting;
       mcp = true;

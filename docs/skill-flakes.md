@@ -173,6 +173,19 @@ mkSkill {
 
 The values come from [`skills/config.json`](#skillsconfigjson). A setting without a default is required. Every command of the skill gets each setting as an environment variable of the same name, so names must be shell identifiers; numbers and booleans arrive in their JSON spelling (`443`, `true`). Settings are no secrets: a password or token belongs in a credential slot.
 
+A command whose server's address is a setting takes its domain from it with `skill.urlHost`, the check [MCP servers](#mcp-servers) get for their URLs: it returns the host of an `https://<host name>[:port][/path]` URL and fails the evaluation for anything else (`http://`, userinfo such as `user@host`, an IP address), so a bad value in `config.json` is an error that names it instead of a junk domain:
+
+```nix
+mkSkill {
+  name = "tracker";
+  src = ./.;
+  settings.TRACKER_URL = { type = "str"; description = "The tracker's base URL, https://<host>"; };
+  credentials.TRACKER_TOKEN = { type = "secret"; description = "A tracker API token"; };
+  needs = settings: { domains = [ (skill.urlHost settings.TRACKER_URL) ]; };
+  commands.tracker = { exec = "${env}/bin/tracker --server $TRACKER_URL"; description = "Search and update tickets"; };
+}
+```
+
 ### Credential slots
 
 A skill names the secrets it needs, never where they are stored:
