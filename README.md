@@ -86,6 +86,14 @@ Who doesn't want a personal assistant? OpenClaw showed that this is achievable w
 
 <p align="center"><em>One user's knowledge repo in the web UI: persona, security policy and skills, next to archived sessions and artifacts, all versioned in git.</em></p>
 
+<br>
+
+<p align="center">
+  <img src="docs/assets/screenshots/skill_updates.png" width="1000">
+</p>
+
+<p align="center"><em>Skills are Nix flakes listed in the knowledge repo. The Knowledge view shows where each one comes from and which version is locked, checks for updates and applies one with a click.</em></p>
+
 <p align="center">
   <img src="docs/assets/screenshots/post_readonly.png" width="1000">
 </p>

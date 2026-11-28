@@ -153,6 +153,7 @@ The README screenshots in `docs/assets/screenshots/` are not regenerated automat
 | `pancake_skill.png` | `demo-recipe-skill` | Environment | the `git push` `exec` and its push decision expanded |
 | `pancake_git.png` | `demo-recipe-skill` | Environment | the last turn: git log and workspace tree |
 | `pancake_tree.png` | `/knowledge` | | the repo root |
+| `skill_updates.png` | `/knowledge?path=skills` | | after **Check for updates**; the bundled skills report an update whenever Carapace's `main` moved past the seeded lock |
 | `post_readonly.png` | `demo-blocked-post` | Session | tool group, `exec` and the denied domain expanded |
 
 Clean up with `process-compose down`, then remove the stack's [Docker resources](#instance-and-docker-resources) and the worktree.
